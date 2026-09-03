@@ -1,13 +1,55 @@
 import os
+import re
 import sqlite3
 from typing import Dict, Any, List, Optional
 from .base import BaseDatabaseAdapter
+
+def normalize_sqlite_path(raw_path: str) -> str:
+    if not raw_path:
+        return ""
+
+    p = raw_path.strip().strip("'\"")
+
+    # 1. Cek Windows Drive Letter (contoh: G:\AI-Agents\... atau C:/Users/...)
+    win_match = re.match(r"^([a-zA-Z]):[\\/](.*)$", p)
+    if win_match:
+        drive = win_match.group(1).lower()
+        subpath = win_match.group(2).replace("\\", "/")
+        wsl_path = f"/mnt/{drive}/{subpath}"
+        if os.path.exists(wsl_path):
+            return wsl_path
+        if os.name != "nt":
+            return wsl_path
+
+    # 2. Cek Windows UNC Path (contoh: \\wsl.localhost\Ubuntu\... atau \\wsl$\Ubuntu\...)
+    if p.startswith("\\\\") or p.startswith("//"):
+        unc_clean = p.replace("\\", "/")
+        for prefix in ["//wsl.localhost/Ubuntu", "//wsl$/Ubuntu", "//wsl.localhost/ubuntu", "//wsl$/ubuntu"]:
+            if unc_clean.startswith(prefix):
+                linux_path = unc_clean[len(prefix):]
+                if os.path.exists(linux_path):
+                    return linux_path
+
+    # 3. Cek Relative Path dari root project / folder dataset
+    p_unix = p.replace("\\", "/")
+    if not os.path.isabs(p_unix):
+        candidates = [
+            os.path.join("/mnt/g/AI-Agents/Eksperiment-AIOS-by-GLM", p_unix),
+            os.path.join("/mnt/g/AI-Agents/Eksperiment-AIOS-by-GLM/dataset", p_unix),
+            os.path.join(os.getcwd(), p_unix),
+            os.path.expanduser(p_unix)
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+
+    return os.path.expanduser(p_unix)
 
 class SQLiteAdapter(BaseDatabaseAdapter):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         raw_path = config.get("path") or config.get("file_path", "")
-        self.file_path = os.path.expanduser(raw_path) if raw_path else ""
+        self.file_path = normalize_sqlite_path(raw_path)
 
     def _get_connection(self) -> sqlite3.Connection:
         if not self.file_path:
