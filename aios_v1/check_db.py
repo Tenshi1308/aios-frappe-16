@@ -7,10 +7,12 @@ def main():
     frappe.connect()
     tenants = frappe.get_all('AIOS Tenant', fields=['name', 'tenant_name', 'role', 'status'])
     convs = frappe.get_all('AIOS Conversation', fields=['name', 'tenant', 'branch', 'title'])
-    msgs = frappe.get_all('AIOS Message', fields=['name', 'role', 'worker_key', 'input_tokens', 'output_tokens'])
-    print("=== TENANTS ===", len(tenants), tenants)
-    print("=== CONVERSATIONS ===", len(convs))
-    print("=== TOTAL MESSAGES ===", len(msgs))
+    mapping = frappe.get_all('AIOS Mapping', fields=['name', 'connection', 'status'])
+    entries = frappe.get_all('AIOS Mapping Entry', fields=['name', 'mapping', 'canonical_entity', 'canonical_field', 'source_table', 'source_column'])
+    print("=== MAPPINGS ===", mapping)
+    print("=== TOTAL ENTRIES ===", len(entries))
+    tables = sorted(list(set(e.source_table for e in entries)))
+    print("=== SOURCE TABLES IN ENTRIES ===", tables)
 
 if __name__ == '__main__':
     main()

@@ -65,78 +65,119 @@ CANONICAL_ENTITIES = [
             {"name": "amount", "aliases": ["total", "total_bayar", "total_harga", "amount", "nilai", "biaya"], "required": False},
             {"name": "status", "aliases": ["status", "state", "keterangan"], "required": False}
         ]
+    },
+    {
+        "name": "Account",
+        "description": "Akun rekening finansial atau saldo kas/bank nasabah",
+        "table_aliases": ["accounts", "account", "rekening", "akun", "bank_account", "daftar_rekening", "saldo"],
+        "fields": [
+            {"name": "id", "aliases": ["account_id", "no_rekening", "nomor_rekening", "id", "account_number", "kode_akun"], "required": True},
+            {"name": "customerId", "aliases": ["customer_id", "id_nasabah", "id_pelanggan", "nasabah_id", "owner_id"], "required": False},
+            {"name": "type", "aliases": ["account_type", "tipe_akun", "jenis_rekening", "type", "jenis", "kategori"], "required": False},
+            {"name": "balance", "aliases": ["balance", "saldo", "current_balance", "saldo_akhir", "jumlah_saldo", "amount", "total"], "required": True},
+            {"name": "status", "aliases": ["status", "state", "status_rekening", "is_active"], "required": False}
+        ]
+    },
+    {
+        "name": "Transaction",
+        "description": "Riwayat transaksi atau mutasi perbankan / keuangan",
+        "table_aliases": ["transactions", "transaction", "transaksi", "mutasi", "riwayat_transaksi", "bank_transactions"],
+        "fields": [
+            {"name": "id", "aliases": ["transaction_id", "id_transaksi", "kode_transaksi", "id", "tx_id", "no_transaksi"], "required": True},
+            {"name": "accountId", "aliases": ["account_id", "no_rekening", "rekening_id", "id_rekening"], "required": False},
+            {"name": "date", "aliases": ["created_at", "transaction_date", "tanggal", "tgl", "waktu", "date"], "required": True},
+            {"name": "type", "aliases": ["transaction_type", "jenis_transaksi", "tipe", "type", "direction"], "required": False},
+            {"name": "amount", "aliases": ["amount", "nominal", "jumlah", "nilai", "total", "mutasi"], "required": True},
+            {"name": "balanceAfter", "aliases": ["balance_after", "saldo_setelahnya", "saldo_akhir", "current_balance"], "required": False},
+            {"name": "description", "aliases": ["description", "keterangan", "deskripsi", "catatan", "memo"], "required": False}
+        ]
+    },
+    {
+        "name": "Loan",
+        "description": "Fasilitas kredit atau pinjaman nasabah",
+        "table_aliases": ["loans", "loan", "pinjaman", "kredit", "daftar_pinjaman", "pembiayaan"],
+        "fields": [
+            {"name": "id", "aliases": ["loan_id", "id_pinjaman", "nomor_kredit", "no_pinjaman", "id"], "required": True},
+            {"name": "customerId", "aliases": ["customer_id", "id_nasabah", "id_pelanggan", "nasabah"], "required": False},
+            {"name": "amount", "aliases": ["principal_amount", "amount", "nominal_pinjaman", "plafon", "total_pinjaman", "nilai"], "required": True},
+            {"name": "interestRate", "aliases": ["interest_rate", "bunga", "suku_bunga", "rate"], "required": False},
+            {"name": "status", "aliases": ["status", "state", "status_pinjaman", "keterangan"], "required": False}
+        ]
     }
 ]
 
-def analyze_schema_to_mapping(schema: Dict[str, Any]) -> Dict[str, Any]:
+def analyze_schema_to_mapping(schema: Dict[str, Any], on_progress=None) -> Dict[str, Any]:
     tables = schema.get("tables", [])
+    total = len(tables)
     if not tables:
         return {"entries": [], "overallConfidence": 0.0, "notes": "Tidak ada tabel yang ditemukan pada database client"}
 
     matched_entries = []
 
-    for entity in CANONICAL_ENTITIES:
-        ent_name = entity["name"]
-        ent_aliases = entity["table_aliases"]
+    # Iterasi tabel per tabel (granular architecture seperti C5/analyzer.ts)
+    for idx, table in enumerate(tables):
+        t_name = table.get("name", "")
+        t_name_lower = t_name.lower()
+        table_cols = table.get("columns", [])
 
-        # Cari tabel terbaik untuk entitas ini
-        best_table = None
-        best_table_score = 0
+        if on_progress:
+            on_progress(done=idx, total=total, current_table=t_name)
 
-        for t in tables:
-            t_name_lower = t["name"].lower()
+        # Cari entitas canonical yang cocok dengan tabel ini
+        for entity in CANONICAL_ENTITIES:
+            ent_name = entity["name"]
+            ent_aliases = entity["table_aliases"]
+
+            matched_score = 0.0
             if t_name_lower in ent_aliases:
-                best_table = t
-                best_table_score = 1.0
-                break
-            for a in ent_aliases:
-                if a in t_name_lower:
-                    best_table = t
-                    best_table_score = 0.8
-                    break
-
-        if not best_table and tables:
-            continue
-
-        # Cocokkan kolom-kolom di best_table
-        table_cols = best_table["columns"]
-
-        for f_def in entity["fields"]:
-            f_name = f_def["name"]
-            f_aliases = f_def["aliases"]
-
-            best_col = None
-            col_conf = 0.0
-
-            for c in table_cols:
-                c_name_lower = c["name"].lower()
-                if c_name_lower in f_aliases:
-                    best_col = c["name"]
-                    col_conf = 0.98
-                    break
-                for a in f_aliases:
-                    if a in c_name_lower:
-                        best_col = c["name"]
-                        col_conf = 0.85
+                matched_score = 1.0
+            else:
+                for a in ent_aliases:
+                    if a in t_name_lower:
+                        matched_score = 0.8
                         break
 
-            if best_col:
-                matched_entries.append({
-                    "canonicalEntity": ent_name,
-                    "canonicalField": f_name,
-                    "sourceTable": best_table["name"],
-                    "sourceColumn": best_col,
-                    "confidence": col_conf,
-                    "lowConfidence": col_conf < 0.75,
-                    "reason": f"Pencocokan semantik alias '{best_col}' ke konsep '{ent_name}.{f_name}'"
-                })
+            if matched_score > 0:
+                # Cocokkan kolom-kolom di tabel ini
+                for f_def in entity["fields"]:
+                    f_name = f_def["name"]
+                    f_aliases = f_def["aliases"]
+
+                    best_col = None
+                    col_conf = 0.0
+
+                    for c in table_cols:
+                        c_name_lower = c["name"].lower()
+                        if c_name_lower in f_aliases:
+                            best_col = c["name"]
+                            col_conf = 0.98
+                            break
+                        for a in f_aliases:
+                            if a in c_name_lower:
+                                best_col = c["name"]
+                                col_conf = 0.85
+                                break
+
+                    if best_col:
+                        matched_entries.append({
+                            "canonicalEntity": ent_name,
+                            "canonicalField": f_name,
+                            "sourceTable": t_name,
+                            "sourceColumn": best_col,
+                            "confidence": col_conf,
+                            "lowConfidence": col_conf < 0.75,
+                            "reason": f"Pencocokan semantik tabel '{t_name}.{best_col}' ke konsep '{ent_name}.{f_name}'"
+                        })
+
+        if on_progress:
+            on_progress(done=idx + 1, total=total, current_table=t_name)
 
     overall = sum(e["confidence"] for e in matched_entries) / len(matched_entries) if matched_entries else 0.0
 
     return {
         "entries": matched_entries,
         "overallConfidence": round(overall, 2),
-        "notes": f"Analisis semantik berhasil memetakan {len(matched_entries)} konsep data bisnis secara otomatis."
+        "notes": f"Analisis semantik berhasil memetakan {len(matched_entries)} konsep data bisnis secara bertahap."
     }
 
 def get_or_create_mapping_for_connection(conn_id: str) -> Dict[str, Any]:

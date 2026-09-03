@@ -3,6 +3,92 @@ from werkzeug.wrappers import Response
 from werkzeug.exceptions import HTTPException
 import json
 import os
+import threading
+import time
+from typing import Dict, Any
+
+_ADAPT_JOBS: Dict[int, Dict[str, Any]] = {}
+
+def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, engine: str, body: dict):
+    frappe.init(site=site_name, sites_path="/home/samue/mybench/sites")
+    frappe.connect()
+    try:
+        from aios_v1.data_access.factory import create_adapter
+        from aios_v1.data_access.adapters.base import compute_schema_hash
+        from aios_v1.data_access.schema_analyzer import analyze_schema_to_mapping
+
+        adapter = create_adapter(engine, body)
+        schema = adapter.extract_schema()
+        s_hash = compute_schema_hash(schema)
+        tables = schema.get("tables", [])
+        total_tables = len(tables)
+
+        if tenant_id in _ADAPT_JOBS:
+            _ADAPT_JOBS[tenant_id]["total"] = total_tables
+            _ADAPT_JOBS[tenant_id]["done"] = 0
+
+        # Snapshot skema
+        snap = frappe.new_doc("AIOS Schema Snapshot")
+        snap.connection = conn_name
+        snap.hash = s_hash
+        snap.tables_count = total_tables
+        snap.schema_json = json.dumps(schema)
+        snap.extracted_at = frappe.utils.now_datetime()
+        snap.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        # Callback progres granular per-tabel
+        def on_prog(done, total, current_table=None):
+            if tenant_id in _ADAPT_JOBS:
+                _ADAPT_JOBS[tenant_id]["done"] = done
+                _ADAPT_JOBS[tenant_id]["total"] = total
+                _ADAPT_JOBS[tenant_id]["currentTable"] = current_table
+            # Jeda 0.8s agar polling frontend menangkap transisi per-tabel
+            time.sleep(0.8)
+
+        analysis = analyze_schema_to_mapping(schema, on_progress=on_prog)
+
+        prev_version = frappe.db.get_value("AIOS Mapping", {"connection": conn_name}, "version", order_by="version desc") or 0
+        new_version = int(prev_version) + 1
+
+        m_doc = frappe.new_doc("AIOS Mapping")
+        m_doc.connection = conn_name
+        m_doc.version = new_version
+        m_doc.status = "NEEDS_REVIEW"
+        m_doc.overall_confidence = analysis.get("overallConfidence", 0.9)
+        m_doc.notes = analysis.get("notes", "")
+        m_doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        for entry in analysis.get("entries", []):
+            e_doc = frappe.new_doc("AIOS Mapping Entry")
+            e_doc.mapping = m_doc.name
+            e_doc.canonical_entity = entry["canonicalEntity"]
+            e_doc.canonical_field = entry["canonicalField"]
+            e_doc.source_table = entry["sourceTable"]
+            e_doc.source_column = entry["sourceColumn"]
+            e_doc.confidence = entry["confidence"]
+            e_doc.is_confirmed = 0
+            e_doc.notes = entry.get("reason", "")
+            e_doc.insert(ignore_permissions=True)
+
+        frappe.db.commit()
+
+        if tenant_id in _ADAPT_JOBS:
+            _ADAPT_JOBS[tenant_id]["done"] = total_tables
+            _ADAPT_JOBS[tenant_id]["status"] = "COMPLETED"
+            _ADAPT_JOBS[tenant_id]["adapting"] = False
+
+    except Exception as e:
+        frappe.db.rollback()
+        frappe.log_error(f"Error background adaptation: {e}", "AIOS Adaptation")
+        if tenant_id in _ADAPT_JOBS:
+            _ADAPT_JOBS[tenant_id]["status"] = "FAILED"
+            _ADAPT_JOBS[tenant_id]["error"] = str(e)
+            _ADAPT_JOBS[tenant_id]["adapting"] = False
+    finally:
+        frappe.destroy()
+
 from aios_v1.lib.auth import (
     hash_password, verify_password,
     create_session_token, verify_session_token,
@@ -291,8 +377,40 @@ def handle_api_request():
                 "progress": None
             })
 
+        # Check background job
+        job = _ADAPT_JOBS.get(tenant_id)
+        if job and job.get("status") == "RUNNING":
+            return json_response({
+                "payment": "ACTIVE",
+                "connected": True,
+                "connection": {
+                    "id": conn_doc.name,
+                    "label": f"Koneksi {conn_doc.engine.upper()} ({conn_doc.database_name or 'Database'})",
+                    "engine": conn_doc.engine,
+                    "config": {
+                        "host": conn_doc.host,
+                        "port": conn_doc.port,
+                        "database": conn_doc.database_name,
+                        "path": conn_doc.file_path
+                    },
+                    "status": conn_doc.status,
+                    "provisioned": bool(conn_doc.is_provisioned),
+                    "provisionMode": conn_doc.provision_mode,
+                    "tablesCount": job.get("total", 0),
+                    "lastConnectedAt": str(conn_doc.last_connected_at) if conn_doc.last_connected_at else None
+                },
+                "mappingStatus": "NONE",
+                "adapting": True,
+                "adaptError": None,
+                "startedAt": job.get("startedAt"),
+                "progress": {
+                    "done": job.get("done", 0),
+                    "total": job.get("total", 0)
+                }
+            })
+
         # Check snapshot & mapping status
-        snap = frappe.db.get_value("AIOS Schema Snapshot", {"connection": conn_doc.name}, ["name", "tables_count", "hash", "extracted_at"], as_dict=True)
+        snap = frappe.db.get_value("AIOS Schema Snapshot", {"connection": conn_doc.name}, ["name", "tables_count", "hash", "extracted_at"], as_dict=True, order_by="creation desc")
         mapping_status = "NONE"
         if snap and snap.tables_count > 0:
             m_status = frappe.db.get_value("AIOS Mapping", {"connection": conn_doc.name}, "status", order_by="version desc")
@@ -319,9 +437,9 @@ def handle_api_request():
             },
             "mappingStatus": mapping_status,
             "adapting": False,
-            "adaptError": conn_doc.last_error if conn_doc.last_error else None,
-            "startedAt": None,
-            "progress": None
+            "adaptError": (job.get("error") if job else None) or conn_doc.last_error or None,
+            "startedAt": job.get("startedAt") if job else None,
+            "progress": {"done": job.get("total", 0), "total": job.get("total", 0)} if job and job.get("total") else None
         })
 
     elif path == "api/connection/test" and method == "POST":
@@ -361,15 +479,11 @@ def handle_api_request():
 
         try:
             from aios_v1.data_access.factory import create_adapter
-            from aios_v1.data_access.adapters.base import compute_schema_hash
 
             adapter = create_adapter(engine, body)
             test_res = adapter.test_connection()
             if not test_res.get("ok"):
                 return json_response({"error": test_res.get("error", "Gagal menghubungkan ke database client")}, 400)
-
-            schema = adapter.extract_schema()
-            s_hash = compute_schema_hash(schema)
 
             conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
             if conn_name:
@@ -392,24 +506,33 @@ def handle_api_request():
             conn_doc.save(ignore_permissions=True)
             frappe.db.commit()
 
-            snap = frappe.new_doc("AIOS Schema Snapshot")
-            snap.connection = conn_doc.name
-            snap.hash = s_hash
-            snap.tables_count = schema.get("tables_count", 0)
-            snap.schema_json = json.dumps(schema)
-            snap.extracted_at = frappe.utils.now_datetime()
-            snap.insert(ignore_permissions=True)
-            frappe.db.commit()
+            # Inisialisasi job adaptasi di memori
+            _ADAPT_JOBS[tenant_id] = {
+                "startedAt": frappe.utils.now_datetime().isoformat(),
+                "done": 0,
+                "total": 0,
+                "status": "RUNNING",
+                "error": None,
+                "adapting": True,
+                "currentTable": None
+            }
+
+            site_name = getattr(frappe.local, "site", None) or "aios.localhost"
+            t = threading.Thread(
+                target=_run_background_adaptation,
+                args=(site_name, tenant_id, conn_doc.name, engine, body),
+                daemon=True
+            )
+            t.start()
 
             return json_response({
                 "ok": True,
-                "adapting": False,
-                "mappingStatus": "NEEDS_REVIEW",
+                "adapting": True,
+                "mappingStatus": "NONE",
                 "connection": {
                     "id": conn_doc.name,
                     "engine": conn_doc.engine,
-                    "database": conn_doc.database_name or "client.db",
-                    "tablesCount": schema.get("tables_count", 0)
+                    "database": conn_doc.database_name or "client.db"
                 }
             })
         except (CustomAPIResponse, frappe.Redirect):

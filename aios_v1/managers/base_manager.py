@@ -132,6 +132,26 @@ ATURAN JAWABAN (WAJIB):
                 "content": f"[DIREKTIF PERAN AKTIF]: Anda saat ini sedang berbicara sebagai Sub-Agent Spesialis: {worker_def['jobRole']}. Terapkan keahlian mendalam peran {worker_def['jobRole']}."
             })
 
+        # Ambil konsep data canonical yang aktif dan tersedia untuk tenant ini
+        try:
+            from aios_v1.data_access.query_engine import get_available_concepts
+            available_concepts = get_available_concepts(company_id)
+            if available_concepts:
+                concepts_summary = "\n".join([f"- {ent}: {', '.join(fields)}" for ent, fields in available_concepts.items()])
+                llm_messages.append({
+                    "role": "system",
+                    "content": (
+                        "[STATUS KONEKSI & KONSEP DATA AKTIF]:\n"
+                        "Sistem AIOS Anda saat ini TERHUBUNG AKTIF ke database perusahaan client.\n"
+                        "Berikut adalah konsep data bisnis yang berhasil dipetakan dan dapat diakses:\n"
+                        f"{concepts_summary}\n\n"
+                        "Pedoman: Jika pengguna menanyakan apakah database terdeteksi atau menanyakan struktur/tabel/data apa saja yang Anda miliki, "
+                        "tegaskan bahwa sistem terhubung ke konsep-konsep data di atas tanpa mengarang atau meminta pengguna melampirkan file dokumen secara manual."
+                    )
+                })
+        except Exception as e:
+            frappe.log_error(f"Error fetching available concepts: {e}", "AIOS Concepts Context")
+
         # Ambil data faktual dari database client via Safe Query Engine
         data_used = []
         try:

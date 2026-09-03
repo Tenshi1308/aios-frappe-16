@@ -18,6 +18,12 @@ def get_mapping_lookup(tenant_id: int):
         filters={"mapping": mapping_name, "is_confirmed": 1},
         fields=["canonical_entity", "canonical_field", "source_table", "source_column"]
     )
+    if not entries:
+        entries = frappe.get_all(
+            "AIOS Mapping Entry",
+            filters={"mapping": mapping_name},
+            fields=["canonical_entity", "canonical_field", "source_table", "source_column"]
+        )
 
     lookup = {}
     for e in entries:
@@ -27,6 +33,18 @@ def get_mapping_lookup(tenant_id: int):
         }
 
     return conn_name, lookup
+
+def get_available_concepts(tenant_id: int) -> Dict[str, List[str]]:
+    conn_name, lookup = get_mapping_lookup(tenant_id)
+    if not lookup:
+        return {}
+    concepts = {}
+    for (ent, fld), binding in lookup.items():
+        ent_cap = ent.capitalize()
+        if ent_cap not in concepts:
+            concepts[ent_cap] = []
+        concepts[ent_cap].append(fld)
+    return concepts
 
 def execute_canonical_query(tenant_id: int, query: Dict[str, Any]) -> Dict[str, Any]:
     conn_name, lookup = get_mapping_lookup(tenant_id)
@@ -161,11 +179,17 @@ def get_relevant_business_data(tenant_id: int, user_message: str, branch_key: st
     entities_to_query = set()
 
     # 1. Deteksi entitas dari kata kunci pertanyaan
-    if any(k in msg_lower for k in ["penjualan", "order", "transaksi", "omzet", "nota", "faktur", "revenue", "beli", "laba"]):
+    if any(k in msg_lower for k in ["rekening", "saldo", "akun", "balance", "bank", "tabungan", "giro", "account"]):
+        entities_to_query.add("Account")
+    if any(k in msg_lower for k in ["mutasi", "debit", "kredit", "transfer", "trx", "transaksi"]):
+        entities_to_query.add("Transaction")
+    if any(k in msg_lower for k in ["pinjaman", "kredit", "loan", "bunga", "angsuran", "cicilan"]):
+        entities_to_query.add("Loan")
+    if any(k in msg_lower for k in ["penjualan", "order", "omzet", "nota", "faktur", "revenue", "beli", "laba"]):
         entities_to_query.add("SalesOrder")
     if any(k in msg_lower for k in ["produk", "barang", "item", "stok", "katalog", "harga"]):
         entities_to_query.add("Product")
-    if any(k in msg_lower for k in ["pelanggan", "customer", "klien", "member", "pembeli"]):
+    if any(k in msg_lower for k in ["pelanggan", "customer", "klien", "member", "pembeli", "nasabah"]):
         entities_to_query.add("Customer")
     if any(k in msg_lower for k in ["karyawan", "pegawai", "staff", "gaji", "divisi", "departemen", "hr"]):
         entities_to_query.add("Employee")
@@ -174,7 +198,11 @@ def get_relevant_business_data(tenant_id: int, user_message: str, branch_key: st
 
     # 2. Tambahkan entitas default berdasarkan branch jika belum terdeteksi
     if not entities_to_query:
-        if branch_key in ("sales", "finance"):
+        if branch_key == "finance":
+            entities_to_query.add("Account")
+            entities_to_query.add("Transaction")
+            entities_to_query.add("SalesOrder")
+        elif branch_key == "sales":
             entities_to_query.add("SalesOrder")
             entities_to_query.add("Product")
         elif branch_key == "hr":
