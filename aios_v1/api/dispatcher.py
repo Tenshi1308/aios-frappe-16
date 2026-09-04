@@ -336,12 +336,17 @@ def handle_api_request():
     # 2. PAYMENT ROUTES
     elif path == "api/payment/status":
         sess = get_current_session()
+        if not sess:
+            return json_response({"error": "Belum login"}, 401)
         return json_response({
             "companyStatus": "ACTIVE",
             "lastPayment": {"id": 1, "status": "SUCCESS", "paidAt": "2026-08-30T10:00:00.000Z"}
         })
 
     elif path == "api/payment/checkout" and method == "POST":
+        sess = get_current_session()
+        if not sess:
+            return json_response({"error": "Belum login"}, 401)
         return json_response({
             "activated": True,
             "message": "Pembayaran berhasil — akun aktif otomatis"
@@ -357,7 +362,9 @@ def handle_api_request():
     # 4. CONNECTION & MAPPING ROUTES
     elif path == "api/connection/status" and method == "GET":
         sess = get_current_session()
-        tenant_id = sess.get("companyId") if sess else None
+        if not sess:
+            return json_response({"error": "Belum login"}, 401)
+        tenant_id = sess.get("companyId")
         
         conn_doc = None
         if tenant_id:
@@ -443,6 +450,9 @@ def handle_api_request():
         })
 
     elif path == "api/connection/test" and method == "POST":
+        sess = get_current_session()
+        if not sess:
+            return json_response({"error": "Belum login"}, 401)
         try:
             body = frappe.request.get_json(force=True, silent=True) or {}
             if not body and frappe.request.data:
