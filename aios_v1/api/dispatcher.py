@@ -934,36 +934,21 @@ def handle_api_request():
                 }, 400)
 
             try:
-                import io
-                from pypdf import PdfReader
+                from aios_v1.lib.pdf_extractor import extract_text_from_pdf
 
-                reader = PdfReader(io.BytesIO(file_bytes), strict=False)
-                pages_text = []
-                total_pages = len(reader.pages)
+                result = extract_text_from_pdf(file_bytes, filename=filename)
 
-                for idx, page in enumerate(reader.pages):
-                    try:
-                        p_txt = page.extract_text() or ""
-                    except Exception:
-                        p_txt = ""
-                    if p_txt.strip():
-                        pages_text.append(f"--- [Halaman {idx + 1}] ---\n{p_txt.strip()}")
-
-                full_text = "\n\n".join(pages_text).strip()
-                if not full_text:
-                    full_text = f"Dokumen PDF '{filename}' ({total_pages} halaman) berhasil dibaca, namun tidak ditemukan teks langsung (kemungkinan formulir hasil pindaian/scan atau berbasis gambar)."
+                return json_response({
+                    "success": result.get("success", True),
+                    "filename": result.get("filename", filename),
+                    "pages": result.get("pages", 1),
+                    "text": result.get("text", "")
+                })
 
             except CustomAPIResponse:
                 raise
             except Exception as e:
                 return json_response({"error": f"Gagal membaca dokumen PDF: {str(e)}"}, 500)
-
-            return json_response({
-                "success": True,
-                "filename": filename,
-                "pages": total_pages,
-                "text": full_text
-            })
 
         parts = path.split("/")
         if len(parts) >= 3:
