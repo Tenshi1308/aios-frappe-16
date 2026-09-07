@@ -744,50 +744,51 @@ def handle_api_request():
 
     # 5. MONITORING ROUTES
     elif path.startswith("api/monitoring"):
-        sess = get_current_session()
-        if not sess or sess.get("role") != "DEVELOPER":
-            return json_response({"error": "Akses ditolak"}, 403)
-
         parts = path.split("/")
+        sess = get_current_session()
 
-        # GET /api/monitoring/usage (Summary per client)
-        if len(parts) == 3 and parts[2] == "usage" and method == "GET":
-            tenants = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status"])
-            companies = []
-            for t in tenants:
-                c_id = int(t.name) if str(t.name).isdigit() else 1
-                convs = frappe.get_all("AIOS Conversation", filters={"tenant": str(t.name)}, fields=["name"])
-                conv_names = [c.name for c in convs]
-                total_in = 0
-                total_out = 0
-                if conv_names:
-                    msgs = frappe.get_all(
-                        "AIOS Message",
-                        filters={"conversation": ["in", conv_names]},
-                        fields=["input_tokens", "output_tokens"]
-                    )
-                    total_in = sum(int(m.get("input_tokens") or 0) for m in msgs)
-                    total_out = sum(int(m.get("output_tokens") or 0) for m in msgs)
+        # GET /api/monitoring/insight (Panel Insight Kanan Client & Developer)
+        if len(parts) == 3 and parts[2] == "insight" and method == "GET":
+            try:
+                from aios_v1.lib.monitoring_service import get_company_insight, get_developer_monitoring_data
 
-                cost_idr = round((total_in / 1000.0) * 50 + (total_out / 1000.0) * 150)
-                companies.append({
-                    "id": c_id,
-                    "name": t.tenant_name,
-                    "status": t.status,
-                    "conversations": len(convs),
-                    "inputTokens": total_in,
-                    "outputTokens": total_out,
-                    "costIdr": cost_idr
-                })
+                mode = frappe.request.args.get("mode") or ""
+                if mode == "developer" or (sess and sess.get("role") == "DEVELOPER"):
+                    dev_data = get_developer_monitoring_data()
+                    return json_response({
+                        "success": True,
+                        "mode": "developer",
+                        "distribution": dev_data.get("distribution", []),
+                        "topConsumer": dev_data.get("topConsumer", {}),
+                        "busiestWorker": dev_data.get("busiestWorker", {}),
+                        "databaseStatus": dev_data.get("databaseStatus", {})
+                    })
+                else:
+                    raw_cid = frappe.request.args.get("companyId") or (sess.get("companyId") if sess else 2) or 2
+                    try:
+                        company_id = int(raw_cid)
+                    except Exception:
+                        company_id = 2
+                    client_data = get_company_insight(company_id=company_id)
+                    return json_response(client_data)
 
-            return json_response({
-                "pricing": {
-                    "per1kInputIdr": 50,
-                    "per1kOutputIdr": 150,
-                    "currency": "IDR"
-                },
-                "companies": companies
-            })
+            except CustomAPIResponse:
+                raise
+            except Exception as e:
+                return json_response({"error": f"Gagal memuat insight: {str(e)}"}, 500)
+
+        # GET /api/monitoring/usage atau /api/monitoring/tenants (Data Lengkap Portal Developer)
+        if len(parts) == 3 and parts[2] in ("usage", "tenants") and method == "GET":
+            try:
+                from aios_v1.lib.monitoring_service import get_developer_monitoring_data
+
+                dev_data = get_developer_monitoring_data()
+                return json_response(dev_data)
+
+            except CustomAPIResponse:
+                raise
+            except Exception as e:
+                return json_response({"error": f"Gagal memuat monitoring: {str(e)}"}, 500)
 
         # GET /api/monitoring/usage/<company_id> (Drill-down per branch)
         elif len(parts) == 4 and parts[2] == "usage" and method == "GET":
