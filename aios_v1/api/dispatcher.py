@@ -188,10 +188,12 @@ def handle_api_request():
         if host.startswith("developer."):
             if not path:
                 return redirect_response("/developer")
+            if path == "login":
+                return redirect_response("/developer/login")
             return serve_static_nextjs(path)
 
         elif host.startswith("client."):
-            if not path:
+            if not path or path.startswith("developer"):
                 return redirect_response("/login")
             return serve_static_nextjs(path)
 
