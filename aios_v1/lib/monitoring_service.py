@@ -14,16 +14,68 @@ logger = logging.getLogger(__name__)
 
 # Definisi 9 Cabang Canonical ERP AIOS beserta warna representasi
 CANONICAL_BRANCHES = [
-    {"id": "finance", "name": "Finance", "color": "bg-blue-500"},
-    {"id": "logistic", "name": "Logistic", "color": "bg-emerald-500"},
-    {"id": "sales", "name": "Sales", "color": "bg-amber-500"},
-    {"id": "hr", "name": "Human Resource", "color": "bg-purple-500"},
-    {"id": "manufacturing", "name": "Manufacturing", "color": "bg-rose-500"},
-    {"id": "maintenance", "name": "Maintenance", "color": "bg-cyan-500"},
-    {"id": "procurement", "name": "Procurement", "color": "bg-indigo-500"},
-    {"id": "quality", "name": "Quality Management", "color": "bg-teal-500"},
-    {"id": "strategic_planning", "name": "Strategic Planning", "color": "bg-violet-500"},
+    {"id": "finance", "name": "Finance", "code": "FIN", "color": "bg-blue-500", "managerName": "Finance Orchestrator"},
+    {"id": "logistic", "name": "Logistic Management", "code": "LOG", "color": "bg-emerald-500", "managerName": "Logistics Orchestrator"},
+    {"id": "sales", "name": "Sales Management", "code": "SLS", "color": "bg-amber-500", "managerName": "Sales Orchestrator"},
+    {"id": "hr", "name": "Human Resource", "code": "HR", "color": "bg-purple-500", "managerName": "HR Orchestrator"},
+    {"id": "manufacturing", "name": "Manufacturing Management", "code": "MFG", "color": "bg-rose-500", "managerName": "Manufacturing Orchestrator"},
+    {"id": "maintenance", "name": "Maintenance Management", "code": "MNT", "color": "bg-cyan-500", "managerName": "Maintenance Orchestrator"},
+    {"id": "procurement", "name": "Procurement Management", "code": "PRC", "color": "bg-indigo-500", "managerName": "Procurement Orchestrator"},
+    {"id": "quality", "name": "Quality Management", "code": "QMS", "color": "bg-teal-500", "managerName": "Quality Orchestrator"},
+    {"id": "strategic_planning", "name": "Strategic Planning", "code": "SOP", "color": "bg-violet-500", "managerName": "Strategic Planning Orchestrator"},
 ]
+
+BRANCH_WORKERS_DEF = {
+    "strategic_planning": [
+        {"id": "bi_analyst", "name": "BI Analyst", "role": "Business Intelligence"},
+        {"id": "report_developer", "name": "Report Developer", "role": "Pelaporan Eksekutif"},
+        {"id": "data_steward", "name": "Data Steward", "role": "Tata Kelola Data"},
+    ],
+    "finance": [
+        {"id": "finance_staff", "name": "Finance Staff", "role": "Operasional Keuangan"},
+        {"id": "financial_analyst", "name": "Financial Analyst", "role": "Analisis Keuangan"},
+        {"id": "budgeting_staff", "name": "Budgeting Staff", "role": "Anggaran & Audit"},
+        {"id": "treasurer", "name": "Treasurer", "role": "Perbendaharaan & Kas"},
+        {"id": "cfo", "name": "CFO", "role": "Tata Kelola Korporat"},
+    ],
+    "hr": [
+        {"id": "hr_staff", "name": "HR Staff", "role": "Administrasi HR"},
+        {"id": "recruiter", "name": "Recruiter", "role": "Rekrutmen & Seleksi"},
+        {"id": "payroll_officer", "name": "Payroll Officer", "role": "Kompensasi & Gaji"},
+        {"id": "training_specialist", "name": "Training Specialist", "role": "Pengembangan SDM"},
+        {"id": "hr_manager", "name": "HR Manager", "role": "Kepala Personalia"},
+    ],
+    "logistic": [
+        {"id": "logistics_coordinator", "name": "Logistics Coordinator", "role": "Koordinator Logistik"},
+        {"id": "shipping_clerk", "name": "Shipping & Receiving Clerk", "role": "Ekspedisi & Penerimaan"},
+        {"id": "fleet_manager", "name": "Fleet Manager", "role": "Manajemen Armada"},
+    ],
+    "maintenance": [
+        {"id": "maintenance_planner", "name": "Maintenance Planner", "role": "Perencana Perawatan"},
+        {"id": "technician", "name": "Field Technician", "role": "Teknisi Lapangan"},
+        {"id": "reliability_engineer", "name": "Reliability Engineer", "role": "Keandalan Aset"},
+    ],
+    "manufacturing": [
+        {"id": "production_planner", "name": "Production Planner", "role": "Perencana Produksi"},
+        {"id": "shop_floor_supervisor", "name": "Shop Floor Supervisor", "role": "Supervisor Lantai Produksi"},
+        {"id": "process_engineer", "name": "Process Engineer", "role": "Teknik Proses"},
+    ],
+    "procurement": [
+        {"id": "buyer", "name": "Purchasing Officer", "role": "Pengadaan Barang"},
+        {"id": "vendor_manager", "name": "Vendor Relationship Specialist", "role": "Manajemen Vendor"},
+        {"id": "sourcing_specialist", "name": "Strategic Sourcing Specialist", "role": "Sourcing Strategis"},
+    ],
+    "quality": [
+        {"id": "qc_inspector", "name": "QC Inspector", "role": "Inspeksi Kualitas"},
+        {"id": "qa_auditor", "name": "QA Auditor", "role": "Audit Mutu & Standar"},
+        {"id": "lab_technician", "name": "Laboratory Technician", "role": "Uji Mutu Laboratorium"},
+    ],
+    "sales": [
+        {"id": "account_executive", "name": "Account Executive", "role": "Manajemen Akun Klien"},
+        {"id": "sales_support", "name": "Sales Support Specialist", "role": "Dukungan Penjualan"},
+        {"id": "sales_analyst", "name": "Sales & Revenue Analyst", "role": "Analisis Pendapatan"},
+    ],
+}
 
 WORKER_LABELS = {
     "manager": "AI Manager",
@@ -269,6 +321,32 @@ def get_developer_monitoring_data() -> Dict[str, Any]:
         tb_rows = frappe.db.sql(sql_tb, (str(tr["id"]),), as_dict=True)
         tb_map = {r["branch"]: r for r in tb_rows}
 
+        # Ambil worker breakdown untuk tenant ini
+        sql_tw = """
+            SELECT 
+                c.branch,
+                m.worker_key,
+                COALESCE(SUM(m.input_tokens), 0) as win,
+                COALESCE(SUM(m.output_tokens), 0) as wout,
+                (COALESCE(SUM(m.input_tokens), 0) + COALESCE(SUM(m.output_tokens), 0)) as wtot
+            FROM `tabAIOS Conversation` c
+            JOIN `tabAIOS Message` m ON m.conversation = c.name
+            WHERE c.tenant = %s AND m.worker_key IS NOT NULL AND m.worker_key != 'manager'
+            GROUP BY c.branch, m.worker_key
+        """
+        tw_rows = frappe.db.sql(sql_tw, (str(tr["id"]),), as_dict=True)
+        worker_usage_map = {}
+        for twr in tw_rows:
+            b_slug = twr["branch"]
+            wk_norm = twr["worker_key"].replace("-", "_")
+            if b_slug not in worker_usage_map:
+                worker_usage_map[b_slug] = {}
+            if wk_norm not in worker_usage_map[b_slug]:
+                worker_usage_map[b_slug][wk_norm] = {"win": 0, "wout": 0, "wtot": 0}
+            worker_usage_map[b_slug][wk_norm]["win"] += int(twr["win"])
+            worker_usage_map[b_slug][wk_norm]["wout"] += int(twr["wout"])
+            worker_usage_map[b_slug][wk_norm]["wtot"] += int(twr["wtot"])
+
         branch_breakdown = []
         for cb in CANONICAL_BRANCHES:
             b_info = tb_map.get(cb["id"])
@@ -277,13 +355,35 @@ def get_developer_monitoring_data() -> Dict[str, Any]:
             b_tot = int(b_info["ttot"]) if b_info else 0
             b_cost = round(((b_in / 1_000_000 * 2.5) + (b_out / 1_000_000 * 10.0)) * usd_rate)
 
+            # Susun daftar worker untuk cabang ini
+            branch_workers = []
+            for w_def in BRANCH_WORKERS_DEF.get(cb["id"], []):
+                w_norm_id = w_def["id"].replace("-", "_")
+                w_usage = worker_usage_map.get(cb["id"], {}).get(w_norm_id, {"win": 0, "wout": 0, "wtot": 0})
+                w_in = w_usage["win"]
+                w_out = w_usage["wout"]
+                w_tot = w_usage["wtot"]
+                w_cost = round(((w_in / 1_000_000 * 2.5) + (w_out / 1_000_000 * 10.0)) * usd_rate)
+                branch_workers.append({
+                    "workerId": w_def["id"],
+                    "workerName": w_def["name"],
+                    "role": w_def["role"],
+                    "inputTokens": w_in,
+                    "outputTokens": w_out,
+                    "totalTokens": w_tot,
+                    "costIdr": w_cost,
+                })
+
             branch_breakdown.append({
                 "branchId": cb["id"],
                 "branchName": cb["name"],
+                "managerName": cb.get("managerName", cb["name"] + " Orchestrator"),
+                "code": cb.get("code", cb["id"][:3].upper()),
                 "inputTokens": b_in,
                 "outputTokens": b_out,
                 "totalTokens": b_tot,
                 "costIdr": b_cost,
+                "workers": branch_workers,
             })
 
         tenants_list.append({
