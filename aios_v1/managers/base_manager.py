@@ -36,47 +36,68 @@ class BaseManager:
             return None
         return get_worker(self.branch["key"], worker_key)
 
-    def build_system_prompt(self, worker_def) -> str:
-        parts = [AIOS_ETHOS, self.manager_persona()]
+    def _build_worker_prompt(self, worker_def: dict) -> list:
+        """Menyusun identitas mandiri dan keahlian mendalam sub-agent spesialis."""
+        parts = [
+            AIOS_ETHOS,
+            f"IDENTITAS PERAN:\n"
+            f"Anda adalah {worker_def['jobRole']} di bidang {self.branch['name']} pada platform AIOS.\n"
+            f"Fokus tugas utama: {worker_def['description']}\n"
+            f"Batas data yang relevan dengan peran Anda: {', '.join(worker_def.get('relevantEntities', []))}.\n\n"
+            f"PEDOMAN IDENTITAS MANDIRI (MUTLAK):\n"
+            f"- Jawablah murni sebagai {worker_def['jobRole']}.\n"
+            f"- JANGAN mengaku sebagai AI Manager atau mengatakan Anda 'sedang berperan sebagai'.\n"
+            f"- Anda adalah staf ahli spesialis yang berinteraksi langsung dengan pengguna untuk menyelesaikan tugas di bidang Anda."
+        ]
 
-        if worker_def:
-            has_skill_depth = (
-                worker_def.get("personality") or
-                worker_def.get("priorities") or
-                worker_def.get("answerStructure") or
-                worker_def.get("antiPatterns")
-            )
-            if has_skill_depth:
-                skill_lines = ["[SKILL DEPTH & GAYA ANALISIS]"]
-                if worker_def.get("personality"):
-                    skill_lines.append(f"- Kepribadian: {worker_def['personality']}")
-                if worker_def.get("priorities"):
-                    skill_lines.append("- Prioritas utama saat menganalisis:")
-                    for i, p in enumerate(worker_def["priorities"], 1):
-                        skill_lines.append(f"  {i}. {p}")
-                if worker_def.get("answerStructure"):
-                    skill_lines.append(f"- Struktur jawaban: {' -> '.join(worker_def['answerStructure'])}.")
-                if worker_def.get("antiPatterns"):
-                    skill_lines.append("- JANGAN (Batasan Tegas):")
-                    for ap in worker_def["antiPatterns"]:
-                        skill_lines.append(f"  - {ap}")
-                parts.append("\n".join(skill_lines))
-            else:
-                parts.append(BASE_PERSONA)
+        has_skill_depth = (
+            worker_def.get("personality") or
+            worker_def.get("priorities") or
+            worker_def.get("answerStructure") or
+            worker_def.get("antiPatterns")
+        )
 
-            parts.append(
-                f"Saat ini Anda SEDANG BERPERAN SEBAGAI SUB-AGENT SPESIALIS: {worker_def['jobRole']}.\n"
-                f"Fokus tugas: {worker_def['description']}\n"
-                f"Batas data yang relevan dengan peran Anda: {', '.join(worker_def.get('relevantEntities', []))}."
-            )
+        if has_skill_depth:
+            skill_lines = ["[SKILL DEPTH & GAYA ANALISIS SPESIALIS]"]
+            if worker_def.get("personality"):
+                skill_lines.append(f"- Karakter Peran: {worker_def['personality']}")
+            if worker_def.get("priorities"):
+                skill_lines.append("- Prioritas Utama saat Menganalisis:")
+                for i, p in enumerate(worker_def["priorities"], 1):
+                    skill_lines.append(f"  {i}. {p}")
+            if worker_def.get("answerStructure"):
+                skill_lines.append(f"- Struktur Jawaban: {' -> '.join(worker_def['answerStructure'])}.")
+            if worker_def.get("antiPatterns"):
+                skill_lines.append("- Batasan Tegas (JANGAN LAKUKAN):")
+                for ap in worker_def["antiPatterns"]:
+                    skill_lines.append(f"  - {ap}")
+            parts.append("\n".join(skill_lines))
         else:
             parts.append(BASE_PERSONA)
-            parts.append(f"""Saat ini Anda SEDANG BERPERAN SEBAGAI: AI MANAGER (UMUM) bidang {self.branch['name']}.
-Fokus tugas: Mengoordinasikan seluruh operasional dan spesialis/worker di bidang {self.branch['name']}.
-PENTING: Jangan meniru atau melanjutkan peran sub-agent spesialis tertentu dari percakapan sebelumnya. Jawablah murni dari perspektif AI Manager umum yang bertugas memimpin cabang ini.""")
 
-        parts.append("""
-ATURAN JAWABAN (WAJIB):
+        return parts
+
+    def _build_manager_prompt(self) -> list:
+        """Menyusun identitas kepemimpinan dan orkestrator umum AI Manager."""
+        return [
+            AIOS_ETHOS,
+            self.manager_persona(),
+            BASE_PERSONA,
+            f"IDENTITAS & FOKUS KEPEMIMPINAN:\n"
+            f"Anda adalah AI MANAGER (UMUM) yang memimpin bidang {self.branch['name']} di AIOS.\n"
+            f"Fokus tugas: Memimpin operasional, mengoordinasikan, dan mengarahkan seluruh spesialis/worker di bidang {self.branch['name']}.\n\n"
+            f"PENTING:\n"
+            f"- Jangan meniru atau melanjutkan peran sub-agent spesialis tertentu dari riwayat percakapan lama.\n"
+            f"- Jawablah murni dari perspektif manajer umum yang bertugas memimpin cabang ini."
+        ]
+
+    def build_system_prompt(self, worker_def) -> str:
+        if worker_def:
+            parts = self._build_worker_prompt(worker_def)
+        else:
+            parts = self._build_manager_prompt()
+
+        parts.append("""ATURAN JAWABAN (WAJIB):
 1. Jawab dalam bahasa Indonesia, ramah, ringkas, terstruktur dan profesional.
 2. Anda adalah bagian dari AIOS (platform AI enterprise), bukan asisten publik umum.
 3. Bantu pengguna menganalisis data, memberikan rekomendasi operasional, dan menjawab pertanyaan terkait bidang Anda.""")
@@ -124,12 +145,20 @@ ATURAN JAWABAN (WAJIB):
         if worker_def is None:
             llm_messages.append({
                 "role": "system",
-                "content": f"[DIREKTIF PERAN AKTIF]: Anda adalah AI MANAGER {self.branch['name'].upper()} (UMUM). Anda BUKAN Budgeting Staff atau sub-agent lainnya. Jawablah tegas sebagai AI Manager umum yang mengoordinasikan seluruh sub-agent."
+                "content": (
+                    f"[DIREKTIF PERAN AKTIF]: Anda adalah AI MANAGER {self.branch['name'].upper()} (UMUM). "
+                    f"Jawablah tegas sebagai manajer umum yang mengoordinasikan seluruh sub-agent di bidang ini."
+                )
             })
         else:
             llm_messages.append({
                 "role": "system",
-                "content": f"[DIREKTIF PERAN AKTIF]: Anda saat ini sedang berbicara sebagai Sub-Agent Spesialis: {worker_def['jobRole']}. Terapkan keahlian mendalam peran {worker_def['jobRole']}."
+                "content": (
+                    f"[DIREKTIF PERAN AKTIF]: Anda adalah {worker_def['jobRole']} di bidang {self.branch['name']}. "
+                    f"Jawablah murni dan konsisten sebagai {worker_def['jobRole']}. "
+                    f"JANGAN mengaku sebagai AI Manager atau mengatakan Anda 'sedang berperan sebagai'. "
+                    f"Terapkan keahlian mendalam peran {worker_def['jobRole']}."
+                )
             })
 
         # Ambil konsep data canonical yang aktif dan tersedia untuk tenant ini
