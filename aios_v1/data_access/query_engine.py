@@ -141,7 +141,7 @@ def execute_canonical_query(tenant_id: int, query: Dict[str, Any]) -> Dict[str, 
     sql = f"SELECT {', '.join(select_parts)} FROM {q(main_table)}{where_sql}{order_by_sql} LIMIT {limit_val}"
 
     # Postgres placeholder translation if needed
-    if adapter.engine == "postgres":
+    if getattr(adapter, "engine", None) == "postgres":
         sql_parts = sql.split("?")
         new_sql = ""
         for idx, part in enumerate(sql_parts[:-1]):

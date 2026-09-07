@@ -179,6 +179,11 @@ ATURAN JAWABAN (WAJIB):
             full_reply += delta
             yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
 
+        # Pastikan full_reply tidak kosong agar tidak melanggar mandatory constraint Frappe
+        if not full_reply or not full_reply.strip():
+            full_reply = "Mohon maaf, tidak ada respon yang dapat dihasilkan atau koneksi terputus. Silakan coba ajukan pertanyaan kembali."
+            yield f"data: {json.dumps({'type': 'delta', 'text': full_reply})}\n\n"
+
         # Estimasi output tokens dari teks balasan AI
         est_output_tokens = max(1, int(len(full_reply) / 3.8))
 
