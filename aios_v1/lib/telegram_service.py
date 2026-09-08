@@ -2,11 +2,16 @@
 # For license information, please see license.txt
 
 import json
+import re
 import time
 import requests
 import frappe
 from frappe.utils import now_datetime
 from aios_v1.lib.llm_client import chat_stream
+from aios_v1.lib.order_service import (
+    get_active_catalog_prompt,
+    create_erpnext_sales_order
+)
 
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
@@ -333,6 +338,21 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
     except Exception as err:
         frappe.log_error(f"Gagal membaca setting persona chatbot: {str(err)}", "Telegram Service")
 
+    # Ambil katalog produk aktif untuk panduan AI
+    catalog_prompt = get_active_catalog_prompt()
+
+    order_detection_instruction = (
+        f"\n\n{catalog_prompt}\n\n"
+        "Panduan Khusus Pemesanan Produk:\n"
+        "- Jika pelanggan bertanya tentang ketersediaan atau harga barang, jawab berdasarkan katalog produk di atas.\n"
+        "- Jika pelanggan secara eksplisit menyatakan ingin membeli atau memesan barang (contoh: 'saya mau pesan 2 T-shirt' atau 'beli 1 Laptop dong'), "
+        "konfirmasikan pesanan tersebut dengan ramah, dan SERTAKAN tag tersembunyi persis di baris paling akhir balasan Anda dengan format JSON:\n"
+        "<!--ORDER: [{\"item_code\": \"KODE_BARANG\", \"qty\": JUMLAH}]-->\n"
+        "- Format tag wajib valid JSON di dalam komentar HTML tersebut.\n"
+        "- PENTING: Hanya keluarkan tag tersebut jika pelanggan BENAR-BENAR bermaksud membeli/memesan. "
+        "Jangan keluarkan tag jika pelanggan hanya sekadar bertanya info harga, spesifikasi, atau menyapa biasa."
+    )
+
     system_prompt = (
         "Anda adalah AIOS Client Assistant, asisten virtual customer support resmi untuk perusahaan klien di platform AIOS."
         f"{name_greeting}\n\n"
@@ -343,6 +363,7 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
         "- Jika pelanggan baru pertama kali menyapa atau bertanya, berikan sambutan hangat dan tanyakan apa yang bisa dibantu.\n"
         "- Hindari jawaban yang terlalu panjang atau bertele-tele agar nyaman dibaca di layar chat Telegram."
         f"{custom_instruction_text}"
+        f"{order_detection_instruction}"
     )
 
     messages = [{"role": "system", "content": system_prompt}]
@@ -405,30 +426,59 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
     t_start = time.time()
     print(f"[{time.strftime('%H:%M:%S')}] 🤖 Memanggil LLM AIOS untuk menyusun balasan...")
     display_name = user_info.get("first_name") or user_info.get("username") or ""
-    bot_reply = generate_bot_reply(session_name, message_text, user_name=display_name)
+    raw_bot_reply = generate_bot_reply(session_name, message_text, user_name=display_name)
     duration = round(time.time() - t_start, 2)
 
-    # 4. Kirim balasan ke Telegram
-    send_success = send_telegram_message(chat_id, bot_reply)
+    # 4. Deteksi tag pesanan <!--ORDER: [...]-->
+    clean_reply = raw_bot_reply
+    order_data = None
 
-    # 5. Simpan balasan bot ke database
+    order_match = re.search(r"<!--ORDER:\s*(\[.*?\])\s*-->", raw_bot_reply, re.DOTALL)
+    if order_match:
+        tag_json_str = order_match.group(1).strip()
+        # Bersihkan tag dari teks balasan agar pelanggan tidak melihat kode teknis
+        clean_reply = re.sub(r"<!--ORDER:\s*\[.*?\]\s*-->", "", raw_bot_reply, flags=re.DOTALL).strip()
+
+        try:
+            order_items = json.loads(tag_json_str)
+            if isinstance(order_items, list) and order_items:
+                order_result = create_erpnext_sales_order(session_name, order_items)
+                if order_result.get("success"):
+                    so_id = order_result["sales_order"]
+                    grand_total = order_result.get("grand_total") or 0.0
+                    order_data = order_result
+                    print(
+                        f"[{time.strftime('%H:%M:%S')}] 🛒 Pesanan terdeteksi dari {sender_name}! "
+                        f"Draf Sales Order dibuat: {so_id} (Rp {grand_total:,.0f})"
+                    )
+                else:
+                    err_msg = order_result.get("error", "Gagal memproses pesanan")
+                    print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Gagal membuat Sales Order ERPNext: {err_msg}")
+        except json.JSONDecodeError as json_err:
+            print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Format JSON pesanan tidak valid: {str(json_err)}")
+
+    # 5. Kirim balasan bersih ke Telegram
+    send_success = send_telegram_message(chat_id, clean_reply)
+
+    # 6. Simpan balasan bot ke database
     bot_msg = frappe.new_doc("AIOS Telegram Message")
     bot_msg.session = session_name
     bot_msg.chat_id = str(chat_id)
     bot_msg.sender = "bot"
-    bot_msg.message = bot_reply
+    bot_msg.message = clean_reply
     bot_msg.sent_at = now_datetime()
     bot_msg.insert(ignore_permissions=True)
     frappe.db.commit()
 
-    snippet = bot_reply[:75] + ("..." if len(bot_reply) > 75 else "")
+    snippet = clean_reply[:75] + ("..." if len(clean_reply) > 75 else "")
     print(f"[{time.strftime('%H:%M:%S')}] ✅ Balasan terkirim ke Telegram ({duration}s):")
     print(f"  └── \"{snippet}\"\n")
 
     return {
         "success": True,
         "session": session_name,
-        "reply": bot_reply,
+        "reply": clean_reply,
+        "order": order_data,
         "sent_to_telegram": send_success
     }
 
