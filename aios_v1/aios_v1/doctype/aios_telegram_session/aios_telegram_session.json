@@ -15,6 +15,7 @@
   "status",
   "last_interaction",
   "lead",
+  "sales_order",
   "last_message"
  ],
  "fields": [
@@ -64,6 +65,14 @@
    "in_list_view": 1,
    "label": "Lead",
    "options": "Lead"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order Terkait",
+   "options": "Sales Order",
+   "read_only": 1
   },
   {
    "fieldname": "last_message",

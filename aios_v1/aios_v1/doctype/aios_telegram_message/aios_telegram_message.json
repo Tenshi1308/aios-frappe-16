@@ -12,7 +12,8 @@
   "chat_id",
   "sender",
   "sent_at",
-  "message"
+  "message",
+  "sales_order"
  ],
  "fields": [
   {
@@ -50,6 +51,14 @@
    "in_list_view": 1,
    "label": "Message",
    "reqd": 1
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Sales Order Terkait",
+   "options": "Sales Order",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,

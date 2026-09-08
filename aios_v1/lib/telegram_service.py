@@ -467,6 +467,8 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
     bot_msg.sender = "bot"
     bot_msg.message = clean_reply
     bot_msg.sent_at = now_datetime()
+    if order_data and order_data.get("sales_order"):
+        bot_msg.sales_order = order_data["sales_order"]
     bot_msg.insert(ignore_permissions=True)
     frappe.db.commit()
 

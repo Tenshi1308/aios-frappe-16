@@ -1043,10 +1043,19 @@ def handle_api_request():
                 fields=[
                     "name", "chat_id", "first_name", "last_name",
                     "username", "status", "last_interaction",
-                    "lead", "last_message"
+                    "lead", "last_message", "sales_order"
                 ],
                 order_by="last_interaction desc"
             )
+
+            # Sertakan total nilai pesanan (order_total) jika ada sales_order
+            for s in sessions:
+                so_id = s.get("sales_order")
+                if so_id and frappe.db.exists("Sales Order", so_id):
+                    s["order_total"] = frappe.db.get_value("Sales Order", so_id, "grand_total") or 0.0
+                else:
+                    s["order_total"] = 0.0
+
             return json_response({"sessions": sessions})
 
         # GET /api/chatbot/messages?session_id=<id>
@@ -1058,9 +1067,22 @@ def handle_api_request():
             messages = frappe.get_all(
                 "AIOS Telegram Message",
                 filters={"session": session_id},
-                fields=["name", "session", "sender", "message", "sent_at"],
+                fields=["name", "session", "sender", "message", "sent_at", "sales_order"],
                 order_by="sent_at asc"
             )
+
+            # Jika ada pesan yang menghasilkan pesanan, sertakan objek order_info
+            for m in messages:
+                so_id = m.get("sales_order")
+                if so_id and frappe.db.exists("Sales Order", so_id):
+                    so_doc = frappe.get_doc("Sales Order", so_id)
+                    items_desc = ", ".join([f"{int(it.qty)}x {it.item_name}" for it in so_doc.items])
+                    m["order_info"] = {
+                        "sales_order": so_id,
+                        "grand_total": so_doc.grand_total or 0.0,
+                        "items_summary": items_desc
+                    }
+
             return json_response({"messages": messages})
 
         # GET /api/chatbot/settings
