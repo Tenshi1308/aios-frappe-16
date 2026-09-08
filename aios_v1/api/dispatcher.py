@@ -118,7 +118,7 @@ def add_cors_headers(res):
 
 def json_response(data, status=200, cookie_to_set=None, cookie_to_clear=None):
     res = Response(
-        json.dumps(data),
+        json.dumps(data, default=str),
         status=status,
         mimetype="application/json; charset=utf-8"
     )
@@ -216,7 +216,8 @@ def handle_api_request():
         "api/connection",
         "api/mapping",
         "api/monitoring",
-        "api/chat"
+        "api/chat",
+        "api/chatbot"
     )
     if not any(path.startswith(p) for p in aios_prefixes):
         return
@@ -1015,5 +1016,37 @@ def handle_api_request():
                 res.headers["Connection"] = "keep-alive"
                 add_cors_headers(res)
                 raise CustomAPIResponse(res)
+
+
+    # =========================================================================
+    # 8. CHATBOT MONITORING ROUTES
+    # =========================================================================
+    if path.startswith("api/chatbot"):
+        # GET /api/chatbot/sessions
+        if path == "api/chatbot/sessions" and method == "GET":
+            sessions = frappe.get_all(
+                "AIOS Telegram Session",
+                fields=[
+                    "name", "chat_id", "first_name", "last_name",
+                    "username", "status", "last_interaction",
+                    "lead", "last_message"
+                ],
+                order_by="last_interaction desc"
+            )
+            return json_response({"sessions": sessions})
+
+        # GET /api/chatbot/messages?session_id=<id>
+        if path == "api/chatbot/messages" and method == "GET":
+            session_id = frappe.request.args.get("session_id")
+            if not session_id:
+                return json_response({"error": "Parameter session_id wajib diisi"}, 400)
+
+            messages = frappe.get_all(
+                "AIOS Telegram Message",
+                filters={"session": session_id},
+                fields=["name", "session", "sender", "message", "sent_at"],
+                order_by="sent_at asc"
+            )
+            return json_response({"messages": messages})
 
     return json_response({"error": "Endpoint not found"}, 404)
