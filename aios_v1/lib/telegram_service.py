@@ -166,6 +166,93 @@ def get_or_create_session(chat_id: str | int, user_info: dict, last_message_text
     return doc.name
 
 
+def ensure_telegram_utm_source():
+    """
+    Memastikan nilai 'Telegram' tersedia di DocType 'UTM Source' ERPNext.
+    """
+    if frappe.db.exists("DocType", "UTM Source"):
+        if not frappe.db.exists("UTM Source", "Telegram"):
+            try:
+                u = frappe.new_doc("UTM Source")
+                u.name = "Telegram"
+                u.utm_source = "Telegram"
+                u.insert(ignore_permissions=True)
+                frappe.db.commit()
+            except Exception:
+                pass
+
+
+def create_or_link_erpnext_lead(session_name: str | int, user_info: dict, initial_message: str = "") -> str | None:
+    """
+    Menghubungkan atau membuat record Lead baru di modul CRM ERPNext
+    berdasarkan data calon customer Telegram.
+    Mengembalikan ID Lead yang tertaut (misal: 'CRM-LEAD-2026-00001').
+    """
+    try:
+        # 1. Pastikan DocType Lead dari ERPNext tersedia
+        if not frappe.db.exists("DocType", "Lead"):
+            return None
+
+        session_doc = frappe.get_doc("AIOS Telegram Session", session_name)
+        if session_doc.lead:
+            return session_doc.lead
+
+        # 2. Pastikan UTM Source 'Telegram' terdaftar
+        ensure_telegram_utm_source()
+
+        first_name = (user_info.get("first_name") or user_info.get("username") or "Telegram Customer").strip()
+        last_name = (user_info.get("last_name") or "").strip()
+        lead_name = f"{first_name} {last_name}".strip()
+
+        # 3. Buat record Lead baru di ERPNext
+        lead_doc = frappe.new_doc("Lead")
+        lead_doc.first_name = first_name
+        lead_doc.last_name = last_name
+        lead_doc.lead_name = lead_name
+        lead_doc.status = "Lead"
+        lead_doc.type = "Client"
+        lead_doc.utm_source = "Telegram"
+
+        lead_doc.insert(ignore_permissions=True)
+
+        # 4. Tautkan Lead ke sesi Telegram
+        session_doc.lead = lead_doc.name
+        session_doc.save(ignore_permissions=True)
+        frappe.db.commit()
+
+        return lead_doc.name
+
+    except Exception as e:
+        frappe.log_error(f"Gagal menyinkronkan Lead ERPNext: {str(e)}", "Telegram Service")
+        return None
+
+
+def sync_all_pending_leads() -> int:
+    """
+    Menyinkronkan semua sesi Telegram yang belum tertaut ke record Lead di ERPNext.
+    Berguna untuk backfill sesi lama.
+    """
+    sessions = frappe.get_all(
+        "AIOS Telegram Session",
+        filters={"lead": ("in", ["", None])},
+        fields=["name", "chat_id", "first_name", "last_name", "username", "last_message"]
+    )
+
+    count = 0
+    for s in sessions:
+        user_info = {
+            "first_name": s.first_name,
+            "last_name": s.last_name,
+            "username": s.username
+        }
+        lead_name = create_or_link_erpnext_lead(s.name, user_info, s.last_message)
+        if lead_name:
+            count += 1
+
+    return count
+
+
+
 def get_recent_messages(session_name: str, limit: int = 6) -> list:
     """
     Mengambil riwayat percakapan terkini untuk konteks LLM.
