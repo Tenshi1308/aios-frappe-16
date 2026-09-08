@@ -10,7 +10,9 @@ from frappe.utils import now_datetime
 from aios_v1.lib.llm_client import chat_stream
 from aios_v1.lib.order_service import (
     get_active_catalog_prompt,
-    create_erpnext_sales_order
+    create_erpnext_sales_order,
+    finalize_sales_order,
+    cancel_sales_order_draft
 )
 
 
@@ -91,9 +93,15 @@ def test_telegram_connection() -> dict:
         }
 
 
-def send_telegram_message(chat_id: str | int, text: str, parse_mode: str = None) -> bool:
+def send_telegram_message(
+    chat_id: str | int,
+    text: str,
+    parse_mode: str = None,
+    reply_markup: dict = None
+) -> bool:
     """
-    Mengirim pesan teks ke chat Telegram tertentu via Telegram Bot API.
+    Mengirim pesan teks ke chat Telegram tertentu via Telegram Bot API,
+    dengan dukungan tombol interaktif (reply_markup / inline keyboard).
     """
     config = get_telegram_setting()
     token = config.get("bot_token")
@@ -109,6 +117,8 @@ def send_telegram_message(chat_id: str | int, text: str, parse_mode: str = None)
     }
     if parse_mode:
         payload["parse_mode"] = parse_mode
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
 
     try:
         res = requests.post(url, json=payload, timeout=15)
@@ -126,6 +136,29 @@ def send_telegram_message(chat_id: str | int, text: str, parse_mode: str = None)
         return False
     except Exception as e:
         frappe.log_error(f"Error mengirim pesan Telegram ke {chat_id}: {str(e)}", "Telegram Service")
+        return False
+
+
+def answer_callback_query(callback_query_id: str, text: str = "") -> bool:
+    """
+    Menjawab callback_query dari tombol Inline Keyboard Telegram
+    agar spinner loading pada tombol segera berhenti.
+    """
+    config = get_telegram_setting()
+    token = config.get("bot_token")
+    if not token or not callback_query_id:
+        return False
+
+    url = f"{TELEGRAM_API_BASE}/bot{token}/answerCallbackQuery"
+    payload = {"callback_query_id": str(callback_query_id)}
+    if text:
+        payload["text"] = text
+
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        return res.json().get("ok", False)
+    except Exception as e:
+        frappe.log_error(f"Error menjawab callback query {callback_query_id}: {str(e)}", "Telegram Service")
         return False
 
 
@@ -353,10 +386,11 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
         "<!--ORDER: [{\"item_code\": \"KODE_BARANG\", \"qty\": JUMLAH}]-->\n"
         "- Jika sebelumnya pelanggan sudah memesan dan kemudian MENAMBAHKAN produk lagi (contoh: 'sama 1 Laptop ya' atau 'tambah 2 pcs Buku'), "
         "konfirmasikan penambahan tersebut dengan ramah, dan keluarkan tag <!--ORDER: [...]--> HANYA untuk barang tambahannya saja.\n"
-        "- Jika pelanggan menyatakan sudah selesai / cukup (contoh: 'udah itu aja', 'cukup', 'nggak ada lagi', 'itu saja dulu'), "
-        "konfirmasikan dengan ramah bahwa seluruh pesanan sudah tercatat dan siap diproses, dan JANGAN keluarkan tag <!--ORDER: [...]-->.\n"
-        "- Format tag wajib valid JSON di dalam komentar HTML tersebut.\n"
-        "- PENTING: Hanya keluarkan tag tersebut jika pelanggan BENAR-BENAR bermaksud membeli/memesan. "
+        "- Jika pelanggan menyatakan sudah selesai belanja atau tidak menambah barang lagi (contoh: 'udah itu aja', 'cukup', 'nggak ada lagi', 'itu saja dulu', 'g ad'), "
+        "konfirmasikan dengan ramah ringkasan seluruh pesanan dan total harganya, tanyakan persetujuan pelanggan, dan SERTAKAN tag konfirmasi tersembunyi di baris paling akhir balasan Anda dengan format:\n"
+        "<!--ORDER_CHECKOUT: true-->\n"
+        "- Format tag wajib valid di dalam komentar HTML tersebut.\n"
+        "- PENTING: Hanya keluarkan tag tersebut jika pelanggan BENAR-BENAR bermaksud membeli/memesan atau menyelesaikan pesanan. "
         "Jangan keluarkan tag jika pelanggan hanya sekadar bertanya info harga, spesifikasi, atau menyapa biasa."
     )
 
@@ -471,8 +505,32 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
         except json.JSONDecodeError as json_err:
             print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Format JSON pesanan tidak valid: {str(json_err)}")
 
-    # 5. Kirim balasan bersih ke Telegram
-    send_success = send_telegram_message(chat_id, clean_reply)
+    # 4b. Deteksi tag konfirmasi checkout <!--ORDER_CHECKOUT...-->
+    reply_markup = None
+    checkout_match = re.search(r"<!--ORDER_CHECKOUT.*?-->", clean_reply, re.DOTALL)
+    active_so = None
+
+    if checkout_match:
+        clean_reply = re.sub(r"<!--ORDER_CHECKOUT.*?-->", "", clean_reply, flags=re.DOTALL).strip()
+        if order_data and order_data.get("sales_order"):
+            active_so = order_data["sales_order"]
+        elif frappe.db.exists("AIOS Telegram Session", session_name):
+            active_so = frappe.db.get_value("AIOS Telegram Session", session_name, "sales_order")
+
+        if active_so and frappe.db.get_value("Sales Order", active_so, "docstatus") == 0:
+            # Tombol interaktif tanpa emoji sesuai instruksi user
+            reply_markup = {
+                "inline_keyboard": [
+                    [
+                        {"text": "Setujui Pesanan", "callback_data": f"order_approve:{active_so}"},
+                        {"text": "Batalkan Pesanan", "callback_data": f"order_cancel:{active_so}"}
+                    ]
+                ]
+            }
+            print(f"[{time.strftime('%H:%M:%S')}] 📋 Permintaan konfirmasi pesanan dikirim ke {sender_name} (Order: {active_so})")
+
+    # 5. Kirim balasan bersih ke Telegram (disertai tombol jika checkout)
+    send_success = send_telegram_message(chat_id, clean_reply, reply_markup=reply_markup)
 
     # 6. Simpan balasan bot ke database
     bot_msg = frappe.new_doc("AIOS Telegram Message")
@@ -483,6 +541,8 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
     bot_msg.sent_at = now_datetime()
     if order_data and order_data.get("sales_order"):
         bot_msg.sales_order = order_data["sales_order"]
+    elif checkout_match and active_so:
+        bot_msg.sales_order = active_so
     bot_msg.insert(ignore_permissions=True)
     frappe.db.commit()
 
@@ -497,6 +557,76 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
         "order": order_data,
         "sent_to_telegram": send_success
     }
+
+
+def process_callback_query(callback_query: dict) -> dict:
+    """
+    Menangani aksi tombol interaktif (Inline Keyboard) dari pelanggan Telegram.
+    Aksi:
+    - order_approve:<so_id> -> Menyetujui dan memfinalkan Sales Order
+    - order_cancel:<so_id> -> Membatalkan draf Sales Order
+    """
+    query_id = callback_query.get("id")
+    data = callback_query.get("data") or ""
+    from_user = callback_query.get("from", {})
+    chat_id = callback_query.get("message", {}).get("chat", {}).get("id") or from_user.get("id")
+    sender_name = from_user.get("first_name") or from_user.get("username") or "Customer"
+
+    # 1. Hentikan spinner loading pada tombol Telegram
+    answer_callback_query(query_id)
+
+    session_name = frappe.db.get_value("AIOS Telegram Session", {"chat_id": str(chat_id)}, "name")
+    if not session_name:
+        return {"success": False, "error": "Sesi tidak ditemukan"}
+
+    if data.startswith("order_approve:"):
+        so_id = data.split(":", 1)[1].strip()
+        print(f"[{time.strftime('%H:%M:%S')}] ✅ Pesanan DISETUJUI oleh {sender_name}! Order: {so_id}")
+
+        result = finalize_sales_order(session_name, so_id)
+        reply_text = (
+            f"Terima kasih, {sender_name}! Pesanan Anda ({so_id}) telah resmi disetujui "
+            f"dan dicatat ke sistem kami. Tim kami akan segera memprosesnya! 🙏"
+        )
+        send_telegram_message(chat_id, reply_text)
+
+        # Catat balasan bot ke database
+        bot_msg = frappe.new_doc("AIOS Telegram Message")
+        bot_msg.session = session_name
+        bot_msg.chat_id = str(chat_id)
+        bot_msg.sender = "bot"
+        bot_msg.message = reply_text
+        bot_msg.sent_at = now_datetime()
+        bot_msg.sales_order = so_id
+        bot_msg.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        return {"success": True, "action": "approve", "sales_order": so_id}
+
+    elif data.startswith("order_cancel:"):
+        so_id = data.split(":", 1)[1].strip()
+        print(f"[{time.strftime('%H:%M:%S')}] ❌ Pesanan DIBATALKAN oleh {sender_name}! Order: {so_id}")
+
+        result = cancel_sales_order_draft(session_name, so_id)
+        reply_text = (
+            f"Pesanan Anda ({so_id}) telah dibatalkan. "
+            f"Jika ada produk lain yang ingin dipesan, silakan chat kami kembali ya. 😊"
+        )
+        send_telegram_message(chat_id, reply_text)
+
+        # Catat balasan bot ke database
+        bot_msg = frappe.new_doc("AIOS Telegram Message")
+        bot_msg.session = session_name
+        bot_msg.chat_id = str(chat_id)
+        bot_msg.sender = "bot"
+        bot_msg.message = reply_text
+        bot_msg.sent_at = now_datetime()
+        bot_msg.insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        return {"success": True, "action": "cancel", "sales_order": so_id}
+
+    return {"success": False, "error": "Aksi tidak dikenal"}
 
 
 def poll_telegram_updates(limit: int = 10, timeout: int = 5, single_run: bool = True) -> int:
@@ -550,6 +680,15 @@ def poll_telegram_updates(limit: int = 10, timeout: int = 5, single_run: bool = 
 
                 for u in updates:
                     update_id = u.get("update_id")
+
+                    callback_query = u.get("callback_query")
+                    if callback_query:
+                        process_callback_query(callback_query)
+                        processed_count += 1
+                        if update_id and update_id > last_update_id:
+                            last_update_id = update_id
+                            frappe.cache.set_value(cache_key, last_update_id)
+                        continue
 
                     message = u.get("message")
                     if not message:

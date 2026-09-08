@@ -274,3 +274,69 @@ def create_or_update_erpnext_sales_order(session_name: str | int, order_items: l
 # Alias untuk backward compatibility
 create_erpnext_sales_order = create_or_update_erpnext_sales_order
 
+
+def finalize_sales_order(session_name: str | int, sales_order_id: str | None = None) -> dict:
+    """
+    Memfinalkan dokumen draf Sales Order di ERPNext (submit docstatus = 1)
+    dan mengunci sesi transaksi agar transaksi berikutnya menerbitkan order baru.
+    """
+    try:
+        so_id = sales_order_id
+        if not so_id and frappe.db.exists("AIOS Telegram Session", session_name):
+            so_id = frappe.db.get_value("AIOS Telegram Session", session_name, "sales_order")
+
+        if not so_id or not frappe.db.exists("Sales Order", so_id):
+            return {"success": False, "error": f"Sales Order {so_id} tidak ditemukan"}
+
+        so = frappe.get_doc("Sales Order", so_id)
+        if so.docstatus == 0:
+            so.submit()
+            frappe.db.commit()
+
+        return {
+            "success": True,
+            "sales_order": so.name,
+            "status": "Submitted",
+            "docstatus": so.docstatus
+        }
+    except Exception as e:
+        frappe.log_error(f"Gagal memfinalkan Sales Order {sales_order_id}: {str(e)}", "Order Service")
+        return {"success": False, "error": str(e)}
+
+
+def cancel_sales_order_draft(session_name: str | int, sales_order_id: str | None = None) -> dict:
+    """
+    Membatalkan / menghapus draf dokumen Sales Order yang dibatalkan oleh customer
+    dan melepaskan kaitan draf dari sesi.
+    """
+    try:
+        so_id = sales_order_id
+        if not so_id and frappe.db.exists("AIOS Telegram Session", session_name):
+            so_id = frappe.db.get_value("AIOS Telegram Session", session_name, "sales_order")
+
+        if so_id:
+            # Lepas relasi di AIOS Telegram Session dan Message terlebih dahulu
+            # agar tidak melanggar integrity check Link DocType saat delete
+            if frappe.db.exists("AIOS Telegram Session", session_name):
+                frappe.db.set_value("AIOS Telegram Session", session_name, "sales_order", None, update_modified=False)
+
+            frappe.db.sql("""
+                UPDATE `tabAIOS Telegram Message`
+                SET sales_order = NULL
+                WHERE sales_order = %s
+            """, (so_id,))
+            frappe.db.commit()
+
+            if frappe.db.exists("Sales Order", so_id):
+                so = frappe.get_doc("Sales Order", so_id)
+                if so.docstatus == 0:
+                    so.delete(ignore_permissions=True)
+                elif so.docstatus == 1:
+                    so.cancel()
+                frappe.db.commit()
+
+        return {"success": True, "cancelled_order": so_id}
+    except Exception as e:
+        frappe.log_error(f"Gagal membatalkan Sales Order {sales_order_id}: {str(e)}", "Order Service")
+        return {"success": False, "error": str(e)}
+
