@@ -2,7 +2,7 @@
 # For license information, please see license.txt
 
 import frappe
-from frappe.utils import add_days, nowdate
+from frappe.utils import add_days, getdate, nowdate
 
 
 def get_active_catalog_prompt() -> str:
@@ -94,10 +94,10 @@ def ensure_erpnext_customer(lead_name: str | None = None, full_name: str = "") -
     return doc.name
 
 
-def create_erpnext_sales_order(session_name: str | int, order_items: list) -> dict:
+def create_or_update_erpnext_sales_order(session_name: str | int, order_items: list) -> dict:
     """
-    Membuat draf dokumen Sales Order resmi di ERPNext (status 'Draft', docstatus 0)
-    berdasarkan item pesanan yang dikonfirmasi oleh customer.
+    Membuat draf dokumen Sales Order baru atau memperbarui (mengakumulasikan) item
+    pada draf Sales Order yang sedang terbuka (docstatus == 0) untuk sesi terkait.
     Mengembalikan ringkasan data transaksi.
     """
     if not order_items:
@@ -132,7 +132,7 @@ def create_erpnext_sales_order(session_name: str | int, order_items: list) -> di
         )
 
         # 4. Validasi dan siapkan item pesanan
-        delivery_date = add_days(nowdate(), 3)
+        default_delivery_date = getdate(add_days(nowdate(), 3))
         valid_items = []
 
         for item in order_items:
@@ -145,10 +145,19 @@ def create_erpnext_sales_order(session_name: str | int, order_items: list) -> di
             if not frappe.db.exists("Item", item_code):
                 continue
 
+            # Ambil harga jual resmi dari Item Price (Standard Selling) atau standard_rate
+            price_rate = frappe.db.get_value(
+                "Item Price",
+                {"item_code": item_code, "price_list": "Standard Selling", "selling": 1},
+                "price_list_rate"
+            )
+            if not price_rate:
+                price_rate = frappe.db.get_value("Item", item_code, "standard_rate") or 0.0
+
             valid_items.append({
                 "item_code": item_code,
                 "qty": qty,
-                "delivery_date": delivery_date
+                "rate": float(price_rate)
             })
 
         if not valid_items:
@@ -157,30 +166,78 @@ def create_erpnext_sales_order(session_name: str | int, order_items: list) -> di
                 "sales_order": None
             }
 
-        # 5. Buat dokumen Sales Order baru (status Draft secara default)
-        so = frappe.new_doc("Sales Order")
-        so.company = company
-        so.customer = customer_id
-        so.order_type = "Sales"
-        so.delivery_date = delivery_date
-
-        for item_data in valid_items:
-            so.append("items", item_data)
-
-        # Biarkan controller ERPNext mengisi detail harga resmi, pajak, dan kalkulasi total
-        so.run_method("set_missing_values")
-        so.run_method("calculate_taxes_and_totals")
-
-        so.insert(ignore_permissions=True)
-        frappe.db.commit()
-
-        # 6. Tautkan Sales Order ke Sesi Telegram jika field sudah tersedia
+        # 5. Cek apakah sesi ini sudah memiliki Sales Order aktif yang masih Draft (docstatus == 0)
+        existing_so_id = None
         if frappe.db.exists("AIOS Telegram Session", session_name):
-            session_doc = frappe.get_doc("AIOS Telegram Session", session_name)
-            if hasattr(session_doc, "sales_order") or "sales_order" in session_doc.as_dict():
-                session_doc.sales_order = so.name
-                session_doc.save(ignore_permissions=True)
-                frappe.db.commit()
+            existing_so_id = frappe.db.get_value("AIOS Telegram Session", session_name, "sales_order")
+
+        is_update = False
+        so = None
+
+        if existing_so_id and frappe.db.exists("Sales Order", existing_so_id):
+            status = frappe.db.get_value("Sales Order", existing_so_id, "docstatus")
+            if status == 0:  # 0 = Draft
+                so = frappe.get_doc("Sales Order", existing_so_id)
+                is_update = True
+
+        # 6. Update draf yang ada atau buat dokumen baru
+        if is_update and so:
+            target_delivery_date = so.delivery_date or default_delivery_date
+            # Akumulasikan item ke dokumen draf yang sedang terbuka
+            for item_data in valid_items:
+                matched_row = None
+                for row in so.items:
+                    if row.item_code == item_data["item_code"]:
+                        matched_row = row
+                        break
+
+                if matched_row:
+                    matched_row.qty += item_data["qty"]
+                    if not matched_row.rate and item_data["rate"]:
+                        matched_row.rate = item_data["rate"]
+                else:
+                    so.append("items", {
+                        "item_code": item_data["item_code"],
+                        "qty": item_data["qty"],
+                        "rate": item_data["rate"],
+                        "delivery_date": target_delivery_date
+                    })
+
+            # Hitung ulang harga dan total
+            so.run_method("set_missing_values")
+            so.run_method("calculate_taxes_and_totals")
+            so.save(ignore_permissions=True)
+            frappe.db.commit()
+
+        else:
+            # Buat dokumen Sales Order draf baru
+            so = frappe.new_doc("Sales Order")
+            so.company = company
+            so.customer = customer_id
+            so.order_type = "Sales"
+            so.delivery_date = default_delivery_date
+
+            for item_data in valid_items:
+                so.append("items", {
+                    "item_code": item_data["item_code"],
+                    "qty": item_data["qty"],
+                    "rate": item_data["rate"],
+                    "delivery_date": default_delivery_date
+                })
+
+            # Biarkan controller ERPNext mengisi detail harga resmi, pajak, dan kalkulasi total
+            so.run_method("set_missing_values")
+            so.run_method("calculate_taxes_and_totals")
+            so.insert(ignore_permissions=True)
+            frappe.db.commit()
+
+            # Tautkan Sales Order baru ke Sesi Telegram jika field sudah tersedia
+            if frappe.db.exists("AIOS Telegram Session", session_name):
+                session_doc = frappe.get_doc("AIOS Telegram Session", session_name)
+                if hasattr(session_doc, "sales_order") or "sales_order" in session_doc.as_dict():
+                    session_doc.sales_order = so.name
+                    session_doc.save(ignore_permissions=True)
+                    frappe.db.commit()
 
         # 7. Susun ringkasan item untuk dikembalikan
         items_summary = [
@@ -197,6 +254,7 @@ def create_erpnext_sales_order(session_name: str | int, order_items: list) -> di
         return {
             "success": True,
             "sales_order": so.name,
+            "is_update": is_update,
             "customer": so.customer,
             "grand_total": so.grand_total,
             "currency": so.currency or "IDR",
@@ -205,9 +263,14 @@ def create_erpnext_sales_order(session_name: str | int, order_items: list) -> di
         }
 
     except Exception as e:
-        frappe.log_error(f"Gagal membuat Sales Order ERPNext: {str(e)}", "Order Service")
+        frappe.log_error(f"Gagal memproses Sales Order ERPNext: {str(e)}", "Order Service")
         return {
             "success": False,
             "error": str(e),
             "sales_order": None
         }
+
+
+# Alias untuk backward compatibility
+create_erpnext_sales_order = create_or_update_erpnext_sales_order
+

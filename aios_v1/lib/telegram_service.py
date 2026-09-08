@@ -289,9 +289,12 @@ def get_recent_messages(session_name: str, limit: int = 6) -> list:
         "AIOS Telegram Message",
         filters={"session": session_name},
         fields=["sender", "message"],
-        order_by="sent_at asc",
+        order_by="sent_at desc",
         limit_page_length=limit
     )
+
+    # Balikkan urutan agar kronologis dari yang terlama ke terbaru
+    msgs.reverse()
 
     history = []
     for m in msgs:
@@ -348,6 +351,10 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
         "- Jika pelanggan secara eksplisit menyatakan ingin membeli atau memesan barang (contoh: 'saya mau pesan 2 T-shirt' atau 'beli 1 Laptop dong'), "
         "konfirmasikan pesanan tersebut dengan ramah, dan SERTAKAN tag tersembunyi persis di baris paling akhir balasan Anda dengan format JSON:\n"
         "<!--ORDER: [{\"item_code\": \"KODE_BARANG\", \"qty\": JUMLAH}]-->\n"
+        "- Jika sebelumnya pelanggan sudah memesan dan kemudian MENAMBAHKAN produk lagi (contoh: 'sama 1 Laptop ya' atau 'tambah 2 pcs Buku'), "
+        "konfirmasikan penambahan tersebut dengan ramah, dan keluarkan tag <!--ORDER: [...]--> HANYA untuk barang tambahannya saja.\n"
+        "- Jika pelanggan menyatakan sudah selesai / cukup (contoh: 'udah itu aja', 'cukup', 'nggak ada lagi', 'itu saja dulu'), "
+        "konfirmasikan dengan ramah bahwa seluruh pesanan sudah tercatat dan siap diproses, dan JANGAN keluarkan tag <!--ORDER: [...]-->.\n"
         "- Format tag wajib valid JSON di dalam komentar HTML tersebut.\n"
         "- PENTING: Hanya keluarkan tag tersebut jika pelanggan BENAR-BENAR bermaksud membeli/memesan. "
         "Jangan keluarkan tag jika pelanggan hanya sekadar bertanya info harga, spesifikasi, atau menyapa biasa."
@@ -446,14 +453,21 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
                 if order_result.get("success"):
                     so_id = order_result["sales_order"]
                     grand_total = order_result.get("grand_total") or 0.0
+                    is_update = order_result.get("is_update", False)
                     order_data = order_result
-                    print(
-                        f"[{time.strftime('%H:%M:%S')}] 🛒 Pesanan terdeteksi dari {sender_name}! "
-                        f"Draf Sales Order dibuat: {so_id} (Rp {grand_total:,.0f})"
-                    )
+                    if is_update:
+                        print(
+                            f"[{time.strftime('%H:%M:%S')}] ➕ Item ditambahkan ke Draf Sales Order dari {sender_name}! "
+                            f"Order: {so_id} (Total akumulasi baru: Rp {grand_total:,.0f})"
+                        )
+                    else:
+                        print(
+                            f"[{time.strftime('%H:%M:%S')}] 🛒 Pesanan baru terdeteksi dari {sender_name}! "
+                            f"Draf Sales Order dibuat: {so_id} (Rp {grand_total:,.0f})"
+                        )
                 else:
                     err_msg = order_result.get("error", "Gagal memproses pesanan")
-                    print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Gagal membuat Sales Order ERPNext: {err_msg}")
+                    print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Gagal memproses Sales Order ERPNext: {err_msg}")
         except json.JSONDecodeError as json_err:
             print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Format JSON pesanan tidak valid: {str(json_err)}")
 
