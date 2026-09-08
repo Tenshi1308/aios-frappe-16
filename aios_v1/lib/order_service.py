@@ -47,6 +47,73 @@ def get_active_catalog_prompt() -> str:
         return "Gagal memuat katalog produk dari sistem."
 
 
+def get_active_draft_order_summary(session_name: str | int) -> dict | None:
+    """
+    Mengambil rincian draf Sales Order aktif (docstatus == 0) untuk sesi Telegram tertentu.
+    Mengembalikan None jika tidak ada Sales Order atau pesanan sudah difinalkan (docstatus != 0).
+    """
+    try:
+        if not session_name or not frappe.db.exists("AIOS Telegram Session", session_name):
+            return None
+
+        so_id = frappe.db.get_value("AIOS Telegram Session", session_name, "sales_order")
+        if not so_id or not frappe.db.exists("Sales Order", so_id):
+            return None
+
+        docstatus = frappe.db.get_value("Sales Order", so_id, "docstatus")
+        if docstatus != 0:  # Hanya dokumen yang masih Draft
+            return None
+
+        so = frappe.get_doc("Sales Order", so_id)
+        items_detail = []
+        for itm in so.items:
+            items_detail.append({
+                "item_code": itm.item_code,
+                "item_name": itm.item_name,
+                "qty": itm.qty,
+                "rate": itm.rate,
+                "amount": itm.amount
+            })
+
+        return {
+            "sales_order": so.name,
+            "grand_total": so.grand_total,
+            "currency": so.currency or "IDR",
+            "items": items_detail
+        }
+    except Exception as e:
+        frappe.log_error(f"Gagal mengambil ringkasan draf pesanan sesi {session_name}: {str(e)}", "Order Service")
+        return None
+
+
+def get_active_draft_prompt(session_name: str | int) -> str:
+    """
+    Menyusun teks konteks pesanan aktif yang sedang berlangsung untuk diinjeksikan ke prompt LLM.
+    Jika tidak ada draf aktif, mengembalikan string kosong.
+    """
+    summary = get_active_draft_order_summary(session_name)
+    if not summary or not summary.get("items"):
+        return ""
+
+    lines = [
+        "[INFORMASI PESANAN AKTIF PELANGGAN DARI SISTEM]:",
+        f"Pelanggan ini sedang memiliki draf pesanan terbuka (Nomor Order: {summary['sales_order']}) dengan rincian:",
+    ]
+    for itm in summary["items"]:
+        formatted_rate = f"Rp {itm['rate']:,.0f}".replace(",", ".")
+        formatted_amt = f"Rp {itm['amount']:,.0f}".replace(",", ".")
+        qty_str = f"{int(itm['qty'])}" if hasattr(itm['qty'], 'is_integer') and itm['qty'].is_integer() else f"{itm['qty']}"
+        lines.append(f"- {qty_str}x {itm['item_name']} ({itm['item_code']}) @ {formatted_rate} = {formatted_amt}")
+
+    formatted_total = f"Rp {summary['grand_total']:,.0f}".replace(",", ".")
+    lines.append(f"Total Akumulasi Saat Ini: {formatted_total}")
+    lines.append(
+        "Pedoman Penggunaan: Gunakan data rincian resmi di atas jika pelanggan menanyakan total harga, rincian pesanan, atau konfirmasi akumulasi. Jangan mengira-ngira sendiri jika data resmi sudah tersedia."
+    )
+
+    return "\n".join(lines)
+
+
 def ensure_erpnext_customer(lead_name: str | None = None, full_name: str = "") -> str:
     """
     Memastikan ketersediaan entitas Customer resmi di ERPNext.

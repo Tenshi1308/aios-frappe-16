@@ -10,6 +10,7 @@ from frappe.utils import now_datetime
 from aios_v1.lib.llm_client import chat_stream
 from aios_v1.lib.order_service import (
     get_active_catalog_prompt,
+    get_active_draft_prompt,
     create_erpnext_sales_order,
     finalize_sales_order,
     cancel_sales_order_draft
@@ -314,7 +315,7 @@ def sync_all_pending_leads() -> int:
 
 
 
-def get_recent_messages(session_name: str, limit: int = 6) -> list:
+def get_recent_messages(session_name: str, limit: int = 10) -> list:
     """
     Mengambil riwayat percakapan terkini untuk konteks LLM.
     """
@@ -374,11 +375,14 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
     except Exception as err:
         frappe.log_error(f"Gagal membaca setting persona chatbot: {str(err)}", "Telegram Service")
 
-    # Ambil katalog produk aktif untuk panduan AI
+    # Ambil katalog produk aktif dan data pesanan aktif untuk panduan LLM
     catalog_prompt = get_active_catalog_prompt()
+    active_draft_prompt = get_active_draft_prompt(session_name)
+    draft_context_text = f"\n\n{active_draft_prompt}" if active_draft_prompt else ""
 
     order_detection_instruction = (
-        f"\n\n{catalog_prompt}\n\n"
+        f"\n\n{catalog_prompt}"
+        f"{draft_context_text}\n\n"
         "Panduan Khusus Pemesanan Produk:\n"
         "- Jika pelanggan bertanya tentang ketersediaan atau harga barang, jawab berdasarkan katalog produk di atas.\n"
         "- Jika pelanggan secara eksplisit menyatakan ingin membeli atau memesan barang (contoh: 'saya mau pesan 2 T-shirt' atau 'beli 1 Laptop dong'), "
@@ -386,8 +390,14 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
         "<!--ORDER: [{\"item_code\": \"KODE_BARANG\", \"qty\": JUMLAH}]-->\n"
         "- Jika sebelumnya pelanggan sudah memesan dan kemudian MENAMBAHKAN produk lagi (contoh: 'sama 1 Laptop ya' atau 'tambah 2 pcs Buku'), "
         "konfirmasikan penambahan tersebut dengan ramah, dan keluarkan tag <!--ORDER: [...]--> HANYA untuk barang tambahannya saja.\n"
-        "- Jika pelanggan menyatakan sudah selesai belanja atau tidak menambah barang lagi (contoh: 'udah itu aja', 'cukup', 'nggak ada lagi', 'itu saja dulu', 'g ad'), "
-        "konfirmasikan dengan ramah ringkasan seluruh pesanan dan total harganya, tanyakan persetujuan pelanggan, dan SERTAKAN tag konfirmasi tersembunyi di baris paling akhir balasan Anda dengan format:\n"
+        "- CATATAN PANDUAN PENUTUP: Setiap kali Anda mengonfirmasi pesanan barang atau menjawab rincian total belanja, "
+        "Anda WAJIB menyertakan kalimat penutup yang ramah di baris akhir balasan Anda yang mengarahkan pelanggan untuk mengetik kata 'selesai' jika sudah tidak ada tambahan: "
+        "(contoh: 'Ketik \"selesai\" jika pesanan Anda sudah cukup, atau beri tahu kami jika masih ada yang ingin ditambahkan ya! 😊').\n"
+        "- Jika pelanggan bertanya tentang total pesanan (contoh: 'totalnya berapa?', 'rekap dong', 'jadi berapa?'), "
+        "jawablah rincian total secara ramah berdasarkan data pesanan aktif di atas, lalu sertakan catatan panduan agar pelanggan mengetik 'selesai' jika sudah cukup. "
+        "JANGAN keluarkan tag <!--ORDER_CHECKOUT: true--> saat pelanggan hanya menanyakan total.\n"
+        "- HANYA JIKA pelanggan secara EKSPLISIT menyatakan sudah selesai belanja (contoh: 'selesai', 'udah selesai', 'cukup', 'udah itu aja', 'g ad'), "
+        "konfirmasikan ringkasan seluruh pesanan dan total harganya, tanyakan persetujuan pelanggan, dan SERTAKAN tag konfirmasi tersembunyi di baris paling akhir balasan Anda dengan format:\n"
         "<!--ORDER_CHECKOUT: true-->\n"
         "- Format tag wajib valid di dalam komentar HTML tersebut.\n"
         "- PENTING: Hanya keluarkan tag tersebut jika pelanggan BENAR-BENAR bermaksud membeli/memesan atau menyelesaikan pesanan. "
@@ -408,24 +418,32 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
     )
 
     messages = [{"role": "system", "content": system_prompt}]
-    recent_history = get_recent_messages(session_name, limit=4)
+    recent_history = get_recent_messages(session_name, limit=10)
     messages.extend(recent_history)
-    messages.append({"role": "user", "content": incoming_text})
 
-    try:
-        reply_chunks = []
-        for chunk in chat_stream(messages, max_tokens=600, timeout=25):
-            reply_chunks.append(chunk)
+    # Cegah duplikasi jika incoming_text sudah sempat tersimpan di database sebelum fungsi ini dipanggil
+    if not recent_history or recent_history[-1].get("content") != incoming_text or recent_history[-1].get("role") != "user":
+        messages.append({"role": "user", "content": incoming_text})
 
-        reply_text = "".join(reply_chunks).strip()
-        if not reply_text:
-            reply_text = "Halo! Terima kasih telah menghubungi kami. Ada yang bisa kami bantu hari ini?"
+    reply_text = ""
+    for attempt in range(2):
+        try:
+            reply_chunks = []
+            for chunk in chat_stream(messages, max_tokens=1500, timeout=35):
+                reply_chunks.append(chunk)
 
-        return reply_text
+            reply_text = "".join(reply_chunks).strip()
+            if reply_text:
+                break
+            time.sleep(0.5)
+        except Exception as e:
+            frappe.log_error(f"Gagal memanggil LLM untuk Telegram reply (percobaan {attempt + 1}): {str(e)}", "Telegram Service")
+            time.sleep(0.5)
 
-    except Exception as e:
-        frappe.log_error(f"Gagal memanggil LLM untuk Telegram reply: {str(e)}", "Telegram Service")
-        return "Halo! Terima kasih telah menghubungi kami. Saat ini asisten kami sedang memproses permintaan Anda, ada yang bisa kami bantu?"
+    if not reply_text:
+        reply_text = "Maaf, koneksi asisten sedang memuat respons. Boleh tolong ulangi pesan Anda?"
+
+    return reply_text
 
 
 def process_incoming_message(chat_id: str | int, user_info: dict, message_text: str) -> dict:
