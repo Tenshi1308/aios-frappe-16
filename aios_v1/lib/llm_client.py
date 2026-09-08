@@ -27,8 +27,9 @@ def get_llm_config():
             "timeout": 90.0
         }
 
-def chat_stream(messages, max_tokens=2048, temperature=None):
+def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None):
     cfg = get_llm_config()
+    req_timeout = timeout if timeout is not None else cfg["timeout"]
     url = f"{cfg['base_url']}/chat/completions"
     headers = {
         "Content-Type": "application/json",
@@ -47,7 +48,7 @@ def chat_stream(messages, max_tokens=2048, temperature=None):
 
     for attempt in range(1, max_attempts + 1):
         try:
-            res = requests.post(url, headers=headers, json=payload, stream=True, timeout=cfg["timeout"])
+            res = requests.post(url, headers=headers, json=payload, stream=True, timeout=req_timeout)
             if not res.ok:
                 raise Exception(f"HTTP {res.status_code}: {res.text[:200]}")
 

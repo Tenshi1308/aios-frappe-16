@@ -124,6 +124,29 @@ def send_telegram_message(chat_id: str | int, text: str, parse_mode: str = None)
         return False
 
 
+def send_chat_action(chat_id: str | int, action: str = "typing") -> bool:
+    """
+    Mengirimkan aksi chat (seperti 'typing') ke Telegram agar pengguna melihat status 'sedang mengetik...'.
+    """
+    config = get_telegram_setting()
+    token = config.get("bot_token")
+
+    if not token:
+        return False
+
+    url = f"{TELEGRAM_API_BASE}/bot{token}/sendChatAction"
+    payload = {
+        "chat_id": chat_id,
+        "action": action
+    }
+
+    try:
+        res = requests.post(url, json=payload, timeout=8)
+        return res.json().get("ok", False)
+    except Exception:
+        return False
+
+
 def get_or_create_session(chat_id: str | int, user_info: dict, last_message_text: str = "") -> str:
     """
     Mencari atau membuat sesi interaksi customer di DocType 'AIOS Telegram Session'.
@@ -329,7 +352,7 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
 
     try:
         reply_chunks = []
-        for chunk in chat_stream(messages, max_tokens=600):
+        for chunk in chat_stream(messages, max_tokens=600, timeout=25):
             reply_chunks.append(chunk)
 
         reply_text = "".join(reply_chunks).strip()
@@ -346,19 +369,29 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
 def process_incoming_message(chat_id: str | int, user_info: dict, message_text: str) -> dict:
     """
     Alur utama pemrosesan pesan masuk Telegram:
-    1. Amankan/buat sesi di AIOS Telegram Session
-    2. Simpan pesan pelanggan ke AIOS Telegram Message (sender='user')
-    3. Generate balasan AI
-    4. Kirim balasan ke Telegram
-    5. Simpan pesan balasan ke AIOS Telegram Message (sender='bot')
+    1. Kirim status 'typing...' ke Telegram seketika
+    2. Amankan/buat sesi di AIOS Telegram Session
+    3. Simpan pesan pelanggan ke AIOS Telegram Message (sender='user')
+    4. Generate balasan AI
+    5. Kirim balasan ke Telegram
+    6. Simpan pesan balasan ke AIOS Telegram Message (sender='bot')
     """
     if not message_text:
         return {"success": False, "reason": "Pesan kosong"}
 
-    # 1. Sesi
+    sender_name = user_info.get("first_name") or user_info.get("username") or str(chat_id)
+    now_str = time.strftime("%H:%M:%S")
+
+    print(f"\n[{now_str}] 📩 Pesan masuk dari {sender_name} (Chat ID: {chat_id}):")
+    print(f"  └── \"{message_text}\"")
+
+    # 1. Kirim status 'typing...' ke Telegram agar di HP pengguna muncul 'sedang mengetik...'
+    send_chat_action(chat_id, "typing")
+    print(f"[{time.strftime('%H:%M:%S')}] 💬 Mengirim status 'sedang mengetik...' ke Telegram")
+
+    # 2. Sesi & simpan pesan user ke database (langsung di-commit agar aman dari interupsi)
     session_name = get_or_create_session(chat_id, user_info, last_message_text=message_text)
 
-    # 2. Simpan pesan user
     user_msg = frappe.new_doc("AIOS Telegram Message")
     user_msg.session = session_name
     user_msg.chat_id = str(chat_id)
@@ -366,10 +399,14 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
     user_msg.message = message_text
     user_msg.sent_at = now_datetime()
     user_msg.insert(ignore_permissions=True)
+    frappe.db.commit()
 
-    # 3. Generate balasan
+    # 3. Generate balasan AI
+    t_start = time.time()
+    print(f"[{time.strftime('%H:%M:%S')}] 🤖 Memanggil LLM AIOS untuk menyusun balasan...")
     display_name = user_info.get("first_name") or user_info.get("username") or ""
     bot_reply = generate_bot_reply(session_name, message_text, user_name=display_name)
+    duration = round(time.time() - t_start, 2)
 
     # 4. Kirim balasan ke Telegram
     send_success = send_telegram_message(chat_id, bot_reply)
@@ -382,8 +419,11 @@ def process_incoming_message(chat_id: str | int, user_info: dict, message_text: 
     bot_msg.message = bot_reply
     bot_msg.sent_at = now_datetime()
     bot_msg.insert(ignore_permissions=True)
-
     frappe.db.commit()
+
+    snippet = bot_reply[:75] + ("..." if len(bot_reply) > 75 else "")
+    print(f"[{time.strftime('%H:%M:%S')}] ✅ Balasan terkirim ke Telegram ({duration}s):")
+    print(f"  └── \"{snippet}\"\n")
 
     return {
         "success": True,
@@ -397,70 +437,97 @@ def poll_telegram_updates(limit: int = 10, timeout: int = 5, single_run: bool = 
     """
     Mengambil pesan baru dari Telegram menggunakan metode Long-Polling (getUpdates).
     Mendukung single_run=True (sekali periksa) atau single_run=False (loop terus menerus).
+    Menggunakan requests.Session() persistent untuk koneksi stabil.
     """
     config = get_telegram_setting()
     token = config.get("bot_token")
 
     if not token or not config.get("is_active"):
+        print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Bot Telegram belum aktif atau token kosong.")
         return 0
 
     cache_key = "aios_telegram_last_update_id"
     last_update_id = frappe.cache.get_value(cache_key) or 0
 
     processed_count = 0
+    session = requests.Session()
 
-    while True:
-        offset = last_update_id + 1 if last_update_id else 0
-        url = f"{TELEGRAM_API_BASE}/bot{token}/getUpdates"
-        params = {
-            "offset": offset,
-            "limit": limit,
-            "timeout": timeout
-        }
+    try:
+        while True:
+            offset = last_update_id + 1 if last_update_id else 0
+            url = f"{TELEGRAM_API_BASE}/bot{token}/getUpdates"
+            params = {
+                "offset": offset,
+                "limit": limit,
+                "timeout": timeout
+            }
 
-        try:
-            res = requests.get(url, params=params, timeout=timeout + 5)
-            data = res.json()
+            try:
+                res = session.get(url, params=params, timeout=timeout + 10)
+                data = res.json()
 
-            if not data.get("ok"):
-                break
+                if not data.get("ok"):
+                    err_desc = data.get("description", "Unknown error")
+                    err_code = data.get("error_code")
+                    print(f"[{time.strftime('%H:%M:%S')}] ⚠️ Telegram API error ({err_code}): {err_desc}")
+                    if single_run:
+                        break
+                    time.sleep(3)
+                    continue
 
-            updates = data.get("result", [])
-            if not updates:
+                updates = data.get("result", [])
+                if not updates:
+                    if single_run:
+                        break
+                    time.sleep(1)
+                    continue
+
+                for u in updates:
+                    update_id = u.get("update_id")
+
+                    message = u.get("message")
+                    if not message:
+                        if update_id and update_id > last_update_id:
+                            last_update_id = update_id
+                            frappe.cache.set_value(cache_key, last_update_id)
+                        continue
+
+                    text = message.get("text")
+                    if not text:
+                        if update_id and update_id > last_update_id:
+                            last_update_id = update_id
+                            frappe.cache.set_value(cache_key, last_update_id)
+                        continue
+
+                    chat = message.get("chat", {})
+                    chat_id = chat.get("id")
+                    from_user = message.get("from", {})
+
+                    process_incoming_message(chat_id, from_user, text)
+                    processed_count += 1
+
+                    if update_id and update_id > last_update_id:
+                        last_update_id = update_id
+                        frappe.cache.set_value(cache_key, last_update_id)
+
                 if single_run:
                     break
-                time.sleep(1)
+
+            except requests.exceptions.Timeout:
+                # Long polling timeout wajar jika tidak ada pesan masuk dalam jeda waktu tersebut
+                if single_run:
+                    break
                 continue
 
-            for u in updates:
-                update_id = u.get("update_id")
-                if update_id and update_id > last_update_id:
-                    last_update_id = update_id
-                    frappe.cache.set_value(cache_key, last_update_id)
+            except Exception as e:
+                frappe.log_error(f"Error saat polling Telegram: {str(e)}", "Telegram Service")
+                print(f"[{time.strftime('%H:%M:%S')}] ❌ Error saat polling: {str(e)}")
+                if single_run:
+                    break
+                time.sleep(3)
 
-                message = u.get("message")
-                if not message:
-                    continue
-
-                text = message.get("text")
-                if not text:
-                    continue
-
-                chat = message.get("chat", {})
-                chat_id = chat.get("id")
-                from_user = message.get("from", {})
-
-                process_incoming_message(chat_id, from_user, text)
-                processed_count += 1
-
-            if single_run:
-                break
-
-        except Exception as e:
-            frappe.log_error(f"Error saat polling Telegram: {str(e)}", "Telegram Service")
-            if single_run:
-                break
-            time.sleep(3)
+    finally:
+        session.close()
 
     return processed_count
 
@@ -473,15 +540,20 @@ def start_polling():
     """
     status = test_telegram_connection()
     if not status.get("success"):
-        print(f"[Telegram Bot] Gagal memulai: {status.get('message')}")
+        print(f"[{time.strftime('%H:%M:%S')}] ❌ [Telegram Bot] Gagal memulai: {status.get('message')}")
         return
 
     bot_info = status.get("bot", {})
-    print(f"[Telegram Bot] Bot aktif: @{bot_info.get('username')} ({bot_info.get('first_name')})")
-    print("[Telegram Bot] Mendengarkan pesan masuk... (Tekan Ctrl+C untuk berhenti)")
+    print(f"\n========================================================")
+    print(f" 🤖 AIOS Telegram Bot Service (Live Listener)")
+    print(f" Bot Username : @{bot_info.get('username')}")
+    print(f" Bot Name     : {bot_info.get('first_name')}")
+    print(f" Status       : AKTIF & MENDENGARKAN PESAN...")
+    print(f"========================================================")
+    print("Tekan Ctrl+C kapan saja untuk menghentikan polling.\n")
 
     try:
-        poll_telegram_updates(limit=10, timeout=10, single_run=False)
+        poll_telegram_updates(limit=10, timeout=5, single_run=False)
     except KeyboardInterrupt:
-        print("\n[Telegram Bot] Polling dihentikan oleh pengguna.")
+        print(f"\n[{time.strftime('%H:%M:%S')}] 🛑 Polling dihentikan oleh pengguna.")
 
