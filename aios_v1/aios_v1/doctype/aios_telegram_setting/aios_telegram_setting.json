@@ -10,7 +10,9 @@
   "bot_token",
   "bot_username",
   "is_active",
-  "lead_source"
+  "lead_source",
+  "persona_tone",
+  "custom_instructions"
  ],
  "fields": [
   {
@@ -35,6 +37,18 @@
    "fieldname": "lead_source",
    "fieldtype": "Data",
    "label": "Lead Source"
+  },
+  {
+   "default": "Ramah & Kasual",
+   "fieldname": "persona_tone",
+   "fieldtype": "Select",
+   "label": "Persona Tone",
+   "options": "Ramah & Kasual\nFormal & Profesional\nRingkas & Solutif"
+  },
+  {
+   "fieldname": "custom_instructions",
+   "fieldtype": "Small Text",
+   "label": "Custom Instructions"
   }
  ],
  "grid_page_length": 50,

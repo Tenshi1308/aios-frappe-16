@@ -747,51 +747,50 @@ def handle_api_request():
 
     # 5. MONITORING ROUTES
     elif path.startswith("api/monitoring"):
-        parts = path.split("/")
         sess = get_current_session()
+        if not sess or sess.get("role") != "DEVELOPER":
+            return json_response({"error": "Akses ditolak"}, 403)
 
-        # GET /api/monitoring/insight (Panel Insight Kanan Client & Developer)
-        if len(parts) == 3 and parts[2] == "insight" and method == "GET":
-            try:
-                from aios_v1.lib.monitoring_service import get_company_insight, get_developer_monitoring_data
+        parts = path.split("/")
 
-                mode = frappe.request.args.get("mode") or ""
-                if mode == "developer" or (sess and sess.get("role") == "DEVELOPER"):
-                    dev_data = get_developer_monitoring_data()
-                    return json_response({
-                        "success": True,
-                        "mode": "developer",
-                        "distribution": dev_data.get("distribution", []),
-                        "topConsumer": dev_data.get("topConsumer", {}),
-                        "busiestWorker": dev_data.get("busiestWorker", {}),
-                        "databaseStatus": dev_data.get("databaseStatus", {})
-                    })
-                else:
-                    raw_cid = frappe.request.args.get("companyId") or (sess.get("companyId") if sess else 2) or 2
-                    try:
-                        company_id = int(raw_cid)
-                    except Exception:
-                        company_id = 2
-                    client_data = get_company_insight(company_id=company_id)
-                    return json_response(client_data)
+        # GET /api/monitoring/usage (Summary per client)
+        if len(parts) == 3 and parts[2] == "usage" and method == "GET":
+            tenants = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status"])
+            companies = []
+            for t in tenants:
+                c_id = int(t.name) if str(t.name).isdigit() else 1
+                convs = frappe.get_all("AIOS Conversation", filters={"tenant": str(t.name)}, fields=["name"])
+                conv_names = [c.name for c in convs]
+                total_in = 0
+                total_out = 0
+                if conv_names:
+                    msgs = frappe.get_all(
+                        "AIOS Message",
+                        filters={"conversation": ["in", conv_names]},
+                        fields=["input_tokens", "output_tokens"]
+                    )
+                    total_in = sum(int(m.get("input_tokens") or 0) for m in msgs)
+                    total_out = sum(int(m.get("output_tokens") or 0) for m in msgs)
 
-            except CustomAPIResponse:
-                raise
-            except Exception as e:
-                return json_response({"error": f"Gagal memuat insight: {str(e)}"}, 500)
+                cost_idr = round((total_in / 1000.0) * 50 + (total_out / 1000.0) * 150)
+                companies.append({
+                    "id": c_id,
+                    "name": t.tenant_name,
+                    "status": t.status,
+                    "conversations": len(convs),
+                    "inputTokens": total_in,
+                    "outputTokens": total_out,
+                    "costIdr": cost_idr
+                })
 
-        # GET /api/monitoring/usage atau /api/monitoring/tenants (Data Lengkap Portal Developer)
-        if len(parts) == 3 and parts[2] in ("usage", "tenants") and method == "GET":
-            try:
-                from aios_v1.lib.monitoring_service import get_developer_monitoring_data
-
-                dev_data = get_developer_monitoring_data()
-                return json_response(dev_data)
-
-            except CustomAPIResponse:
-                raise
-            except Exception as e:
-                return json_response({"error": f"Gagal memuat monitoring: {str(e)}"}, 500)
+            return json_response({
+                "pricing": {
+                    "per1kInputIdr": 50,
+                    "per1kOutputIdr": 150,
+                    "currency": "IDR"
+                },
+                "companies": companies
+            })
 
         # GET /api/monitoring/usage/<company_id> (Drill-down per branch)
         elif len(parts) == 4 and parts[2] == "usage" and method == "GET":
@@ -938,21 +937,36 @@ def handle_api_request():
                 }, 400)
 
             try:
-                from aios_v1.lib.pdf_extractor import extract_text_from_pdf
+                import io
+                from pypdf import PdfReader
 
-                result = extract_text_from_pdf(file_bytes, filename=filename)
+                reader = PdfReader(io.BytesIO(file_bytes), strict=False)
+                pages_text = []
+                total_pages = len(reader.pages)
 
-                return json_response({
-                    "success": result.get("success", True),
-                    "filename": result.get("filename", filename),
-                    "pages": result.get("pages", 1),
-                    "text": result.get("text", "")
-                })
+                for idx, page in enumerate(reader.pages):
+                    try:
+                        p_txt = page.extract_text() or ""
+                    except Exception:
+                        p_txt = ""
+                    if p_txt.strip():
+                        pages_text.append(f"--- [Halaman {idx + 1}] ---\n{p_txt.strip()}")
+
+                full_text = "\n\n".join(pages_text).strip()
+                if not full_text:
+                    full_text = f"Dokumen PDF '{filename}' ({total_pages} halaman) berhasil dibaca, namun tidak ditemukan teks langsung (kemungkinan formulir hasil pindaian/scan atau berbasis gambar)."
 
             except CustomAPIResponse:
                 raise
             except Exception as e:
                 return json_response({"error": f"Gagal membaca dokumen PDF: {str(e)}"}, 500)
+
+            return json_response({
+                "success": True,
+                "filename": filename,
+                "pages": total_pages,
+                "text": full_text
+            })
 
         parts = path.split("/")
         if len(parts) >= 3:
@@ -1048,5 +1062,49 @@ def handle_api_request():
                 order_by="sent_at asc"
             )
             return json_response({"messages": messages})
+
+        # GET /api/chatbot/settings
+        if path == "api/chatbot/settings" and method == "GET":
+            doc = frappe.get_single("AIOS Telegram Setting")
+            return json_response({
+                "persona_tone": getattr(doc, "persona_tone", None) or "Ramah & Kasual",
+                "custom_instructions": getattr(doc, "custom_instructions", None) or "",
+                "bot_username": getattr(doc, "bot_username", None) or "",
+                "is_active": bool(getattr(doc, "is_active", 1))
+            })
+
+        # POST /api/chatbot/settings
+        if path == "api/chatbot/settings" and method == "POST":
+            body = frappe.request.get_json(force=True, silent=True) or {}
+            if not body and frappe.request.data:
+                try:
+                    body = json.loads(frappe.request.data.decode("utf-8"))
+                except Exception:
+                    body = {}
+
+            persona_tone = body.get("persona_tone", "Ramah & Kasual")
+            custom_instructions = body.get("custom_instructions", "")
+
+            if len(custom_instructions) > 1000:
+                return json_response({"error": "Instruksi khusus maksimal 1.000 karakter"}, 400)
+
+            allowed_tones = ["Ramah & Kasual", "Formal & Profesional", "Ringkas & Solutif"]
+            if persona_tone not in allowed_tones:
+                persona_tone = "Ramah & Kasual"
+
+            doc = frappe.get_single("AIOS Telegram Setting")
+            doc.persona_tone = persona_tone
+            doc.custom_instructions = custom_instructions
+            doc.save(ignore_permissions=True)
+            frappe.db.commit()
+
+            return json_response({
+                "success": True,
+                "message": "Pengaturan chatbot berhasil disimpan",
+                "settings": {
+                    "persona_tone": doc.persona_tone,
+                    "custom_instructions": doc.custom_instructions
+                }
+            })
 
     return json_response({"error": "Endpoint not found"}, 404)

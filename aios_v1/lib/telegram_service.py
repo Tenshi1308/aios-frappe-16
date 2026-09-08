@@ -281,14 +281,45 @@ def generate_bot_reply(session_name: str, incoming_text: str, user_name: str = "
     Menghasilkan balasan AI yang cerdas, sopan, dan solutif menggunakan AIOS LLM.
     """
     name_greeting = f" Pelanggan bernama {user_name}." if user_name else ""
+
+    # Ambil konfigurasi persona dan instruksi khusus dari AIOS Telegram Setting
+    tone_instruction = "Gaya komunikasi: Ramah, santai, bersahabat, hangat, dan gunakan emotikon yang wajar dan menyenangkan."
+    custom_instruction_text = ""
+    try:
+        setting = frappe.get_single("AIOS Telegram Setting")
+        persona_tone = getattr(setting, "persona_tone", None) or "Ramah & Kasual"
+        custom_instructions = getattr(setting, "custom_instructions", None) or ""
+
+        if persona_tone == "Formal & Profesional":
+            tone_instruction = (
+                "Gaya komunikasi: Formal, baku, profesional, dan sopan seperti perwakilan korporat atau konsultan terpercaya. "
+                "Gunakan tata bahasa yang baik dan hindari emotikon berlebihan."
+            )
+        elif persona_tone == "Ringkas & Solutif":
+            tone_instruction = (
+                "Gaya komunikasi: Sangat ringkas, padat, langsung ke inti solusi (to the point), efektif, dan efisien. "
+                "Hindari basa-basi yang panjang."
+            )
+        else:
+            tone_instruction = (
+                "Gaya komunikasi: Ramah, santai, bersahabat, hangat, dan gunakan emotikon yang wajar dan menyenangkan."
+            )
+
+        if custom_instructions.strip():
+            custom_instruction_text = f"\n\nInstruksi Khusus Tambahan dari Manajemen Klien:\n{custom_instructions.strip()}"
+    except Exception as err:
+        frappe.log_error(f"Gagal membaca setting persona chatbot: {str(err)}", "Telegram Service")
+
     system_prompt = (
         "Anda adalah AIOS Client Assistant, asisten virtual customer support resmi untuk perusahaan klien di platform AIOS."
         f"{name_greeting}\n\n"
+        f"Panduan Nada Bicara:\n- {tone_instruction}\n\n"
         "Tugas utama Anda:\n"
-        "- Menyapa pelanggan dengan ramah, sopan, dan profesional dalam bahasa Indonesia.\n"
-        "- Menjawab pertanyaan seputar produk, layanan, atau konsultasi bisnis secara ringkas, jelas, dan membantu.\n"
+        "- Menyapa pelanggan dengan sopan dalam bahasa Indonesia.\n"
+        "- Menjawab pertanyaan seputar produk, layanan, atau konsultasi bisnis secara jelas dan membantu.\n"
         "- Jika pelanggan baru pertama kali menyapa atau bertanya, berikan sambutan hangat dan tanyakan apa yang bisa dibantu.\n"
         "- Hindari jawaban yang terlalu panjang atau bertele-tele agar nyaman dibaca di layar chat Telegram."
+        f"{custom_instruction_text}"
     )
 
     messages = [{"role": "system", "content": system_prompt}]
