@@ -8,7 +8,7 @@ def get_llm_config():
     try:
         setting = frappe.get_single("AIOS Setting")
         base_url = setting.base_url or "https://9router.nadif.dev/v1"
-        api_key = setting.get_password("api_key") or ""
+        api_key = setting.get_password("api_key", raise_exception=False) or ""
         model = setting.model_name or "wdb/deepseek-ai/DeepSeek-V4-Flash-0731"
         temperature = float(setting.temperature) if setting.temperature is not None else 0.3
         return {
