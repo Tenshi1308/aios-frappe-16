@@ -9,8 +9,11 @@ from typing import Dict, Any
 
 _ADAPT_JOBS: Dict[int, Dict[str, Any]] = {}
 
-def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, engine: str, body: dict):
-    frappe.init(site=site_name, sites_path="/home/samue/mybench/sites")
+def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, engine: str, body: dict, sites_path: str = None):
+    if sites_path:
+        frappe.init(site=site_name, sites_path=sites_path)
+    else:
+        frappe.init(site=site_name)
     frappe.connect()
     try:
         from aios_v1.data_access.factory import create_adapter
@@ -531,9 +534,10 @@ def handle_api_request():
             }
 
             site_name = getattr(frappe.local, "site", None) or "aios.localhost"
+            sites_path = getattr(frappe.local, "sites_path", None)
             t = threading.Thread(
                 target=_run_background_adaptation,
-                args=(site_name, tenant_id, conn_doc.name, engine, body),
+                args=(site_name, tenant_id, conn_doc.name, engine, body, sites_path),
                 daemon=True
             )
             t.start()
@@ -572,7 +576,8 @@ def handle_api_request():
         try:
             from aios_v1.data_access.factory import provision_sqlite_database
 
-            target_dir = os.path.expanduser("~/mybench/sites/aios.localhost/private/client_dbs")
+            target_dir = frappe.get_site_path("private", "client_dbs")
+            os.makedirs(target_dir, exist_ok=True)
             res = provision_sqlite_database(target_dir, f"{tenant_name}_{tenant_id}", mode, custom_tables)
 
             conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
@@ -1043,19 +1048,10 @@ def handle_api_request():
                 fields=[
                     "name", "chat_id", "first_name", "last_name",
                     "username", "status", "last_interaction",
-                    "lead", "last_message", "sales_order"
+                    "lead", "last_message"
                 ],
                 order_by="last_interaction desc"
             )
-
-            # Sertakan total nilai pesanan (order_total) jika ada sales_order
-            for s in sessions:
-                so_id = s.get("sales_order")
-                if so_id and frappe.db.exists("Sales Order", so_id):
-                    s["order_total"] = frappe.db.get_value("Sales Order", so_id, "grand_total") or 0.0
-                else:
-                    s["order_total"] = 0.0
-
             return json_response({"sessions": sessions})
 
         # GET /api/chatbot/messages?session_id=<id>
@@ -1067,22 +1063,9 @@ def handle_api_request():
             messages = frappe.get_all(
                 "AIOS Telegram Message",
                 filters={"session": session_id},
-                fields=["name", "session", "sender", "message", "sent_at", "sales_order"],
+                fields=["name", "session", "sender", "message", "sent_at"],
                 order_by="sent_at asc"
             )
-
-            # Jika ada pesan yang menghasilkan pesanan, sertakan objek order_info
-            for m in messages:
-                so_id = m.get("sales_order")
-                if so_id and frappe.db.exists("Sales Order", so_id):
-                    so_doc = frappe.get_doc("Sales Order", so_id)
-                    items_desc = ", ".join([f"{int(it.qty)}x {it.item_name}" for it in so_doc.items])
-                    m["order_info"] = {
-                        "sales_order": so_id,
-                        "grand_total": so_doc.grand_total or 0.0,
-                        "items_summary": items_desc
-                    }
-
             return json_response({"messages": messages})
 
         # GET /api/chatbot/settings
