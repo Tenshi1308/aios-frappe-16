@@ -200,7 +200,7 @@ def handle_api_request():
             body = {}
         email = (body.get("email") or "").strip().lower()
         password = body.get("password") or ""
-        portal = portal_from_request(frappe.request)
+        portal = portal_from_request(frappe.request, body)
 
         if not email or not password:
             return json_response({"error": "Email dan password wajib diisi"}, 400)

@@ -23,7 +23,10 @@ export default function DeveloperLoginPage() {
     setError("");
     setBusy(true);
     try {
-      await api("/auth/login", { method: "POST", body: JSON.stringify(form) });
+      await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ ...form, portal: "developer" }),
+      });
       router.push("/developer/dashboard");
     } catch (err) {
       setError((err as Error).message);
