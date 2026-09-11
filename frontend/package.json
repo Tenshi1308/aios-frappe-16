@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 4001",
+    "dev": "next dev",
     "build": "next build",
-    "build:frappe": "node scripts/build-to-frappe.mjs",
-    "start": "next start -p 4001"
+    "start": "next start -p 8084",
+    "lint": "next lint"
   },
   "dependencies": {
     "@types/three": "^0.185.4",
