@@ -262,9 +262,7 @@ def handle_api_request():
         is_valid_pw = False
         if tenant:
             is_valid_pw = verify_password(password, tenant.get("password_hash") or "")
-            if not is_valid_pw and password in ("client123", "password123", "developer123"):
-                is_valid_pw = True
-                
+
         if not tenant or not is_valid_pw:
             return json_response({"error": "Email atau password salah"}, 401)
 

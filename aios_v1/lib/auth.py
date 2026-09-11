@@ -4,9 +4,20 @@ import os
 import json
 import base64
 import time
+import frappe
 
-SESSION_SECRET = "aios-dev-secret"
 SESSION_COOKIE = "aios_session"
+
+def get_session_secret() -> str:
+    """
+    Mengambil kunci rahasia untuk menandatangani token sesi dari site_config.json.
+    Sesuai Prinsip Zero Hardcoding: Dilarang keras menaruh fallback default.
+    Jika encryption_key tidak tersedia, sistem melempar error.
+    """
+    secret = frappe.conf.get("encryption_key")
+    if not secret:
+        raise RuntimeError("Kunci 'encryption_key' tidak ditemukan di site_config.json site aktif!")
+    return str(secret)
 
 def hash_password(password: str) -> str:
     salt = os.urandom(16).hex()
@@ -34,7 +45,8 @@ def base64url_decode(data: str) -> bytes:
     return base64.urlsafe_b64decode((data + pad).encode('utf-8'))
 
 def sign(data: str) -> str:
-    h = hmac.new(SESSION_SECRET.encode('utf-8'), data.encode('utf-8'), hashlib.sha256).digest()
+    secret = get_session_secret()
+    h = hmac.new(secret.encode('utf-8'), data.encode('utf-8'), hashlib.sha256).digest()
     return base64url_encode(h)
 
 def create_session_token(payload: dict) -> str:

@@ -12,6 +12,7 @@
   "email",
   "role",
   "status",
+  "set_password",
   "password_hash"
  ],
  "fields": [
@@ -43,6 +44,11 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "PENDING_PAYMENT\nACTIVE"
+  },
+  {
+   "fieldname": "set_password",
+   "fieldtype": "Password",
+   "label": "Set Password"
   },
   {
    "fieldname": "password_hash",

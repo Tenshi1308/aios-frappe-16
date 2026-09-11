@@ -19,6 +19,16 @@ from aios_v1.lib.order_service import (
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 
+def _sanitize_error(err: Exception | str, token: str = "") -> str:
+    """
+    Menyensor bot token dari pesan error agar tidak bocor ke log atau layar terminal.
+    """
+    msg = str(err)
+    if token and token in msg:
+        msg = msg.replace(token, "[REDACTED]")
+    return msg
+
+
 
 def get_telegram_setting() -> dict:
     """
@@ -90,7 +100,7 @@ def test_telegram_connection() -> dict:
     except Exception as e:
         return {
             "success": False,
-            "message": f"Gagal menghubungi server Telegram: {str(e)}"
+            "message": f"Gagal menghubungi server Telegram: {_sanitize_error(e, token)}"
         }
 
 
@@ -136,7 +146,7 @@ def send_telegram_message(
 
         return False
     except Exception as e:
-        frappe.log_error(f"Error mengirim pesan Telegram ke {chat_id}: {str(e)}", "Telegram Service")
+        frappe.log_error(f"Error mengirim pesan Telegram ke {chat_id}: {_sanitize_error(e, token)}", "Telegram Service")
         return False
 
 
@@ -743,8 +753,9 @@ def poll_telegram_updates(limit: int = 10, timeout: int = 5, single_run: bool = 
                 continue
 
             except Exception as e:
-                frappe.log_error(f"Error saat polling Telegram: {str(e)}", "Telegram Service")
-                print(f"[{time.strftime('%H:%M:%S')}] ❌ Error saat polling: {str(e)}")
+                safe_err = _sanitize_error(e, token)
+                frappe.log_error(f"Error saat polling Telegram: {safe_err}", "Telegram Service")
+                print(f"[{time.strftime('%H:%M:%S')}] ❌ Error saat polling: {safe_err}")
                 if single_run:
                     break
                 time.sleep(3)
