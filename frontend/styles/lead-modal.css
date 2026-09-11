@@ -1,0 +1,560 @@
+/* ============================================================
+   AIOS Lead AI Generator Modal Stylesheet (Modular)
+   Menangani pop-up modal Lead Generator:
+   - Header & badge status deteksi internet
+   - List View calon customer (urutan terbaru di atas)
+   - Badge platform sumber (Instagram, Facebook, Forum)
+   - Smart timestamp formatting
+   - Detail View: akun kontak, platform asal, dan kutipan postingan asli
+   ============================================================ */
+
+.lead-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 18, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 16px;
+  animation: leadModalFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lead-modal-dialog {
+  width: 100%;
+  max-width: 680px;
+  height: 82vh;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 17, 34, 0.96);
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.85), 0 0 35px rgba(34, 211, 238, 0.14);
+  overflow: hidden;
+  animation: leadModalScaleIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Header Modal */
+.lead-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.16);
+  background: rgba(15, 23, 42, 0.7);
+  flex-shrink: 0;
+}
+
+.lead-modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lead-modal-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  color: #22d3ee;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.2);
+}
+
+.lead-modal-title-text h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #f1f5f9;
+  letter-spacing: -0.01em;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lead-modal-source-tag {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34d399;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lead-modal-source-tag .tag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.lead-modal-title-text p {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 2px 0 0 0;
+}
+
+.lead-modal-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.lead-modal-close-btn:hover {
+  background: rgba(244, 63, 94, 0.16);
+  border-color: rgba(244, 63, 94, 0.35);
+  color: #fb7185;
+}
+
+/* Modal Body */
+.lead-modal-body {
+  padding: 18px 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Custom Scrollbar untuk Modal Body */
+.lead-modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.lead-modal-body::-webkit-scrollbar-track {
+  background: rgba(10, 17, 34, 0.5);
+}
+.lead-modal-body::-webkit-scrollbar-thumb {
+  background: rgba(34, 211, 238, 0.25);
+  border-radius: 4px;
+}
+.lead-modal-body::-webkit-scrollbar-thumb:hover {
+  background: rgba(34, 211, 238, 0.45);
+}
+
+/* ============================================================
+   1. TAMPILAN LIST VIEW (DAFTAR PROSPEK)
+   ============================================================ */
+.lead-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 12px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 4px;
+}
+
+.lead-list-count {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.01em;
+}
+
+.lead-sort-control {
+  display: flex;
+  align-items: center;
+}
+
+.lead-sort-group {
+  display: inline-flex;
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  border-radius: 8px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.lead-sort-btn {
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lead-sort-btn:hover {
+  color: #f1f5f9;
+}
+
+.lead-sort-btn.active {
+  background: rgba(34, 211, 238, 0.18);
+  border-color: rgba(34, 211, 238, 0.45);
+  color: #38bdf8;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.22);
+}
+
+.lead-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lead-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+  width: 100%;
+}
+
+.lead-item:hover {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(34, 211, 238, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 16px rgba(34, 211, 238, 0.1);
+}
+
+.lead-item:active {
+  transform: translateY(0);
+}
+
+.lead-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding-right: 14px;
+}
+
+.lead-item-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lead-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.lead-item-preview {
+  font-size: 12.5px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.lead-item-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.lead-timestamp {
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lead-chevron {
+  color: #64748b;
+  transition: transform 0.15s ease, color 0.15s ease;
+}
+
+.lead-item:hover .lead-chevron {
+  color: #38bdf8;
+  transform: translateX(2px);
+}
+
+/* Logo Platform Sumber */
+.platform-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  vertical-align: middle;
+  transition: transform 0.15s ease;
+}
+
+.lead-item:hover .platform-logo-wrap {
+  transform: scale(1.08);
+}
+
+.platform-svg {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 5px;
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.45));
+}
+
+.platform-name-text {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.platform-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  letter-spacing: 0.02em;
+}
+
+.platform-badge.badge-instagram {
+  background: rgba(225, 48, 108, 0.15);
+  border: 1px solid rgba(225, 48, 108, 0.4);
+  color: #f472b6;
+}
+
+.platform-badge.badge-facebook {
+  background: rgba(24, 119, 242, 0.15);
+  border: 1px solid rgba(24, 119, 242, 0.4);
+  color: #60a5fa;
+}
+
+.platform-badge.badge-forum {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+/* ============================================================
+   2. TAMPILAN DETAIL VIEW (SAAT ITEM DIKLIK)
+   ============================================================ */
+.lead-detail-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: leadDetailFadeIn 0.2s ease-out;
+}
+
+.lead-detail-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+}
+
+.lead-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.lead-back-btn:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #7dd3fc;
+  transform: translateX(-2px);
+}
+
+.lead-detail-timestamp-top {
+  font-size: 11.5px;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Card Info Kontak & Platform */
+.lead-card-section {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lead-profile-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lead-profile-main h4 {
+  font-size: 17px;
+  font-weight: 600;
+  color: #f8fafc;
+  margin: 0 0 3px 0;
+}
+
+.lead-contact-handle {
+  font-size: 13px;
+  font-weight: 500;
+  color: #38bdf8;
+  font-family: monospace;
+  background: rgba(56, 189, 248, 0.08);
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.lead-platform-origin {
+  font-size: 12px;
+  color: #cbd5e1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.28);
+  padding: 10px 14px;
+  border-radius: 8px;
+  border-left: 3px solid #22d3ee;
+}
+
+.lead-platform-origin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.lead-source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #38bdf8;
+  font-size: 11.5px;
+  text-decoration: none;
+  word-break: break-all;
+  border-bottom: 1px dashed rgba(56, 189, 248, 0.35);
+  padding-bottom: 1px;
+  transition: all 0.15s ease;
+  width: fit-content;
+}
+
+.lead-source-link:hover {
+  color: #7dd3fc;
+  border-bottom-style: solid;
+  border-bottom-color: #38bdf8;
+}
+
+/* Card Kutipan Asli Postingan */
+.lead-quote-card {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(34, 211, 238, 0.22);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  overflow: hidden;
+}
+
+.lead-quote-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lead-quote-content {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #e2e8f0;
+  font-style: normal;
+  background: rgba(0, 3, 10, 0.35);
+  padding: 12px 14px;
+  border-radius: 8px;
+  border-left: 3px solid rgba(56, 189, 248, 0.6);
+}
+
+.lead-quote-footer {
+  font-size: 11.5px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Styling Khusus Tombol Lead di Control Bar (.zoom-ui) */
+.zoom-btn-lead {
+  color: #38bdf8;
+}
+
+.zoom-btn-lead:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.45);
+  color: #7dd3fc;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.35);
+}
+
+/* Keyframes Animasi */
+@keyframes leadModalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes leadModalScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes leadDetailFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

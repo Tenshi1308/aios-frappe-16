@@ -1,0 +1,306 @@
+/* ============================================================
+   Enterprise Automation Dropdown Module (Tahap 6K)
+   Dark Command Center Aesthetics with Lucide SVG Icons
+   ============================================================ */
+
+.wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Trigger Button */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(34, 211, 238, 0.08);
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  color: #67e8f9;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  height: 34px;
+}
+
+.trigger:hover {
+  background: rgba(34, 211, 238, 0.16);
+  border-color: rgba(34, 211, 238, 0.5);
+  color: #e0faff;
+  box-shadow: 0 0 12px rgba(34, 211, 238, 0.25);
+}
+
+.triggerActive {
+  background: rgba(34, 211, 238, 0.2);
+  border-color: #22d3ee;
+  color: #fff;
+  box-shadow: 0 0 14px rgba(34, 211, 238, 0.35);
+}
+
+.triggerIcon {
+  color: #22d3ee;
+  transition: transform 0.2s ease;
+}
+
+.trigger:hover .triggerIcon {
+  transform: scale(1.1);
+}
+
+.triggerLabel {
+  letter-spacing: 0.02em;
+}
+
+.chevron {
+  opacity: 0.7;
+  transition: transform 0.2s ease;
+}
+
+.chevronRotated {
+  transform: rotate(180deg);
+}
+
+/* Popover Modal */
+.popover {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  right: 0;
+  width: 360px;
+  max-width: 90vw;
+  background: rgba(8, 14, 28, 0.96);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(34, 211, 238, 0.24);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(0, 3, 12, 0.85), 0 0 24px rgba(34, 211, 238, 0.12);
+  z-index: 60;
+  overflow: hidden;
+  animation: popoverFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popoverFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Header Section */
+.header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(34, 211, 238, 0.12);
+  background: rgba(34, 211, 238, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.titleWrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sparkleIcon {
+  color: #22d3ee;
+}
+
+.title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #f1f7ff;
+  letter-spacing: 0.01em;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(34, 211, 238, 0.25);
+  padding: 2px 7px;
+  border-radius: 99px;
+}
+
+/* Search Bar */
+.searchWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.searchIcon {
+  position: absolute;
+  left: 9px;
+  color: #64748b;
+  pointer-events: none;
+}
+
+.searchInput {
+  width: 100%;
+  padding: 6px 26px 6px 28px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(51, 65, 85, 0.6);
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 11.5px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.searchInput:focus {
+  border-color: rgba(34, 211, 238, 0.6);
+}
+
+.searchInput::placeholder {
+  color: #64748b;
+}
+
+.clearSearch {
+  position: absolute;
+  right: 6px;
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* Category Filter Pills */
+.categoryFilters {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.catPill {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(51, 65, 85, 0.4);
+  color: #94a3b8;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.catPill:hover {
+  background: rgba(51, 65, 85, 0.6);
+  color: #f1f5f9;
+}
+
+.catPillActive {
+  background: rgba(34, 211, 238, 0.15);
+  border-color: rgba(34, 211, 238, 0.4);
+  color: #67e8f9;
+  font-weight: 600;
+}
+
+/* Items List */
+.list {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.item:hover {
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.2);
+  transform: translateX(2px);
+}
+
+.iconContainer {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: rgba(34, 211, 238, 0.1);
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.itemIcon {
+  color: #22d3ee;
+}
+
+.itemContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.itemTitle {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f1f7ff;
+  line-height: 1.3;
+}
+
+.arrowIcon {
+  color: #64748b;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+
+.item:hover .arrowIcon {
+  opacity: 1;
+  color: #22d3ee;
+  transform: translate(1px, -1px);
+}
+
+.itemDesc {
+  font-size: 11px;
+  color: #8b9cbb;
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #64748b;
+}

@@ -1,0 +1,118 @@
+"use client";
+
+// C1/C2: Registrasi & Login portal client — bahasa desain dari stylesheet
+// AIOS (surface card, field, btn) — tanpa hiasan generik.
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { api } from "@/lib/api";
+import SpaceBackdrop from "@/components/shared/SpaceBackdrop";
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [form, setForm] = useState({ name: "", email: "", password: "" });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hostname.startsWith("developer.")) {
+      router.replace("/developer/login");
+    }
+  }, [router]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    try {
+      if (mode === "register") {
+        await api("/auth/register", { method: "POST", body: JSON.stringify(form) });
+      }
+      await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: form.email, password: form.password }),
+      });
+      if (typeof window !== "undefined") {
+        sessionStorage.removeItem("aios:lead_auto_shown");
+      }
+      router.push("/payment");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <main className="page grid place-items-center px-4 py-10">
+      <SpaceBackdrop />
+      <div className="card card-pad w-full" style={{ maxWidth: 400 }}>
+        <div className="brand" style={{ justifyContent: "center", display: "flex", gap: 10, fontWeight: 800, fontSize: 20, color: "var(--primary)" }}>
+          <span className="dot" style={{ width: 10, height: 10, borderRadius: "50%", background: "linear-gradient(135deg, var(--primary), var(--accent))", display: "inline-block", boxShadow: "0 0 8px rgba(34,211,238,0.8)" }} />
+          AIOS
+        </div>
+        <div className="page-title" style={{ textAlign: "center", marginTop: 14 }}>
+          {mode === "login" ? "Masuk ke workspace" : "Daftarkan perusahaan"}
+        </div>
+        <p className="page-sub" style={{ textAlign: "center" }}>
+          Portal client — client.aios
+        </p>
+
+        <form onSubmit={submit} className="mt-6" style={{ display: "grid", gap: 14 }}>
+          {mode === "register" && (
+            <label className="field">
+              <span className="label">Nama perusahaan</span>
+              <input
+                className="input"
+                placeholder="PT Bintang Timur"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+            </label>
+          )}
+          <label className="field">
+            <span className="label">Email</span>
+            <input
+              type="email"
+              className="input"
+              placeholder="perusahaan@contoh.id"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              required
+            />
+          </label>
+          <label className="field">
+            <span className="label">Password</span>
+            <input
+              type="password"
+              className="input"
+              placeholder="minimal 6 karakter"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              required
+              minLength={6}
+            />
+          </label>
+
+          {error && <div className="alert alert-err">{error}</div>}
+
+          <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+            {busy ? "Memproses…" : mode === "login" ? "Masuk" : "Daftar & Masuk"}
+          </button>
+        </form>
+
+        <p className="mt-5" style={{ textAlign: "center", fontSize: 13.5, color: "var(--text-muted)" }}>
+          {mode === "login" ? "Belum punya akun? " : "Sudah terdaftar? "}
+          <button
+            type="button"
+            style={{ color: "var(--primary)", background: "none", border: "none", cursor: "pointer", font: "inherit" }}
+            onClick={() => setMode(mode === "login" ? "register" : "login")}
+          >
+            {mode === "login" ? "Daftar sekarang" : "Masuk"}
+          </button>
+        </p>
+      </div>
+    </main>
+  );
+}

@@ -1,0 +1,145 @@
+/* ============================================================
+   AIOS Onboarding & Semantic Database Mapping Stylesheet (Modular)
+   Menangani layout halaman portal, form koneksi DB client,
+   semantic mapping editor, tabel skema DB, pill status, dan widget statistik.
+   ============================================================ */
+
+/* Layout & Backdrop Halaman Portal (Onboarding, Settings, Developer, Mapping) */
+.page {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background-image:
+    radial-gradient(58% 44% at 16% 18%, rgba(139, 92, 246, 0.18), transparent 70%),
+    radial-gradient(50% 40% at 86% 22%, rgba(217, 70, 239, 0.11), transparent 70%),
+    radial-gradient(56% 44% at 74% 84%, rgba(34, 211, 238, 0.12), transparent 70%),
+    radial-gradient(44% 34% at 26% 88%, rgba(59, 76, 222, 0.15), transparent 70%),
+    radial-gradient(38% 30% at 55% 48%, rgba(99, 102, 241, 0.08), transparent 72%),
+    linear-gradient(180deg, #020409 0%, #060a18 52%, #020309 100%);
+  background-attachment: fixed;
+}
+
+/* Lapisan Bintang & Konstelasi Latar Belakang (Canvas SpaceBackdrop) */
+.space-backdrop {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+.page > :not(.space-backdrop):not(.page-topbar) {
+  position: relative;
+  z-index: 1;
+}
+
+.page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background: radial-gradient(120% 120% at 50% 42%, transparent 62%, rgba(1, 4, 14, 0.4) 100%);
+}
+
+.page-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: transparent;
+}
+.page-topbar .brand { font-weight: 800; font-size: 18px; color: var(--primary); display: flex; align-items: center; gap: 10px; }
+.page-topbar .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--accent)); display: inline-block; box-shadow: 0 0 8px rgba(34, 211, 238, 0.8); }
+
+/* Card & Container Glassmorphism */
+.card {
+  background: rgba(12, 19, 34, 0.66);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(34, 211, 238, 0.16);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(34, 211, 238, 0.04);
+}
+.card-pad { padding: 26px; }
+
+.page-title { font-size: 21px; font-weight: 800; letter-spacing: 0.2px; }
+.page-sub { color: var(--text-muted); font-size: 13.5px; margin-top: 4px; }
+
+/* Form Fields */
+.field { display: block; }
+.field .label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.field .input, .field select.input, .field textarea.input {
+  width: 100%;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0a1122;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field .input:focus, .field select.input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.16);
+}
+.field select.input option { background: #0c1322; }
+
+/* Alerts & Notifications */
+.alert {
+  border-radius: 10px;
+  padding: 10px 13px;
+  font-size: 13.5px;
+  border: 1px solid;
+}
+.alert-err { color: #fecaca; background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
+.alert-ok { color: #99f6e4; background: rgba(45, 212, 191, 0.10); border-color: rgba(45, 212, 191, 0.35); }
+.alert-warn { color: #fde68a; background: rgba(251, 191, 36, 0.10); border-color: rgba(251, 191, 36, 0.35); }
+
+/* Status Badges & Pills */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.pill-ok { color: var(--success); border-color: rgba(45, 212, 191, 0.4); background: rgba(45, 212, 191, 0.08); }
+.pill-warn { color: var(--warning); border-color: rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.08); }
+.pill-bad { color: var(--danger); border-color: rgba(251, 113, 133, 0.4); background: rgba(251, 113, 133, 0.08); }
+.pill-info { color: #67e8f9; border-color: rgba(34, 211, 238, 0.4); background: rgba(34, 211, 238, 0.08); }
+
+/* Semantic Mapping & Data Tables */
+.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th {
+  text-align: left;
+  padding: 9px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.tbl td { padding: 9px 12px; border-bottom: 1px solid rgba(27, 42, 74, 0.5); }
+.tbl tr:last-child td { border-bottom: none; }
+.tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+
