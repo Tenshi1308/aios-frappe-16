@@ -105,6 +105,9 @@ class BaseManager:
         return "\n\n".join(parts)
 
     def handle_stream(self, company_id: int, user_message: str, worker_key: str = None, conversation_id: int = None):
+        # 0. Flush initial buffer untuk bypass proxy/nginx buffering
+        yield f": {' ' * 1024}\n\n"
+
         if not conversation_id:
             conversation_id = self.ensure_conversation(company_id)
 

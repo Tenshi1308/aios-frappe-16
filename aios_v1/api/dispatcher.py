@@ -978,6 +978,7 @@ def handle_api_request():
                 res = Response(stream_generator, mimetype="text/event-stream; charset=utf-8")
                 res.headers["Cache-Control"] = "no-cache, no-transform"
                 res.headers["Connection"] = "keep-alive"
+                res.headers["X-Accel-Buffering"] = "no"
                 add_cors_headers(res)
                 raise CustomAPIResponse(res)
 

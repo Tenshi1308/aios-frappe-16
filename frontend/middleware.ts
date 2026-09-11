@@ -1,20 +1,24 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-// Portal terpisah via domain (architecture.md §8):
-//   client.localhost:4001    → halaman portal client
-//   developer.localhost:4001 → halaman portal monitoring Ekasa Developer
-// Di lokal, *.localhost otomatis resolve ke 127.0.0.1 di browser modern.
 export function middleware(req: NextRequest) {
-  const host = (req.headers.get("host") ?? "").toLowerCase();
-  const isDeveloper = host.startsWith("developer.");
+  const host = req.headers.get("host") ?? "";
+  const isDevPort = host.includes(":8085");
   const { pathname } = req.nextUrl;
 
-  if (isDeveloper && !pathname.startsWith("/developer")) {
-    return NextResponse.rewrite(new URL(`/developer${pathname === "/" ? "" : pathname}`, req.url));
+  // Jika pengunjung masuk lewat Port 8085 (Developer)
+  if (isDevPort) {
+    if (pathname === "/" || pathname === "/login") {
+      return NextResponse.redirect(new URL("/developer/login", req.url));
+    }
   }
-  if (!isDeveloper && pathname.startsWith("/developer")) {
-    return NextResponse.rewrite(new URL(pathname.replace(/^\/developer/, "") || "/", req.url));
+
+  // Jika pengunjung masuk lewat Port 8084 (Client)
+  if (!isDevPort) {
+    if (pathname.startsWith("/developer")) {
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
   }
+
   return NextResponse.next();
 }
 

@@ -75,11 +75,14 @@ def verify_session_token(token: str | None) -> dict | None:
     except Exception:
         return None
 
-def portal_from_request(req):
+def portal_from_request(req, body=None):
+    if body and isinstance(body, dict) and body.get("portal"):
+        return str(body["portal"]).lower()
     host = req.headers.get("host", "") or getattr(req, "host", "") or ""
     origin = req.headers.get("origin", "") or ""
-    x_portal = req.headers.get("x-portal-host", "") or ""
-    source = x_portal or origin or host
-    if "developer." in source:
+    referer = req.headers.get("referer", "") or ""
+    x_portal = req.headers.get("x-portal-host", "") or req.headers.get("x-portal", "") or ""
+    source = f"{x_portal} {origin} {host} {referer}".lower()
+    if "8085" in source or "developer" in source:
         return "developer"
     return "client"

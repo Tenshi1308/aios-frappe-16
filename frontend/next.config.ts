@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://127.0.0.1:8083/api/:path*', // Pastikan ini port Frappe kamu
+        destination: 'http://127.0.0.1:8083/api/:path*',
       },
     ];
   },
