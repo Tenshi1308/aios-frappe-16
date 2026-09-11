@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start:client": "next start -p 8084",
-    "start:developer": "next start -p 8085",
+    "start": "next start -p 8084",
     "lint": "next lint"
   },
   "dependencies": {
