@@ -144,38 +144,6 @@ def redirect_response(location):
     res.headers["Location"] = location
     raise CustomAPIResponse(res)
 
-def serve_static_nextjs(path):
-    if path.startswith("assets/"):
-        return
-
-    app_path = frappe.get_app_path("aios_v1")
-    frontend_dir = os.path.join(app_path, "public", "frontend")
-
-    possible_files = [
-        os.path.join(frontend_dir, path),
-        os.path.join(frontend_dir, path, "index.html"),
-        os.path.join(frontend_dir, path + ".html")
-    ]
-
-    file_found = None
-    for f in possible_files:
-        if os.path.isfile(f):
-            file_found = f
-            break
-
-    if not file_found:
-        file_found = os.path.join(frontend_dir, "404.html")
-
-    if not os.path.isfile(file_found):
-        res = Response("<h1>Page Not Found</h1>", status=404, mimetype="text/html; charset=utf-8")
-        raise CustomAPIResponse(res)
-
-    with open(file_found, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    res = Response(content, status=200, mimetype="text/html; charset=utf-8")
-    raise CustomAPIResponse(res)
-
 def get_current_session():
     token = frappe.request.cookies.get(SESSION_COOKIE)
     return verify_session_token(token)
@@ -185,28 +153,7 @@ def handle_api_request():
     path = frappe.request.path.strip("/")
 
     # =========================================================================
-    # 1. ROUTING HALAMAN WEB (FRONTEND NEXT.JS vs FRAPPE DESK)
-    # =========================================================================
-    if not path.startswith("api/"):
-        if host.startswith("developer."):
-            if not path:
-                return redirect_response("/developer")
-            if path == "login":
-                return redirect_response("/developer/login")
-            return serve_static_nextjs(path)
-
-        elif host.startswith("client."):
-            if not path or path.startswith("developer"):
-                return redirect_response("/login")
-            return serve_static_nextjs(path)
-
-        else:
-            if not path:
-                return redirect_response("/desk")
-            return
-
-    # =========================================================================
-    # 2. ROUTING API REST & SSE (AIOS BACKEND)
+    # ROUTING API REST & SSE (AIOS BACKEND)
     # =========================================================================
 
     if path.startswith("api/method/") or path.startswith("api/resource/") or path.startswith("api/v1/") or path.startswith("api/v2/"):

@@ -1,11 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  assetPrefix: "/assets/aios_v1/frontend",
+  // Baris "output: export" dan "assetPrefix" DIHAPUS (Penting! Biar CSS/JS-nya nggak hancur)
   images: {
     unoptimized: true,
+  },
+  // Tambahin proxy biar nembak Frappe
+  async rewrites() {
+    return [
+      {
+        source: '/api/:path*',
+        destination: 'http://127.0.0.1:8083/api/:path*', // Pastikan ini port Frappe kamu
+      },
+    ];
   },
 };
 
 export default nextConfig;
-
