@@ -5,27 +5,26 @@ import requests
 import frappe
 
 def get_llm_config():
-    try:
-        setting = frappe.get_single("AIOS Setting")
-        base_url = setting.base_url or "https://9router.nadif.dev/v1"
-        api_key = setting.get_password("api_key", raise_exception=False) or ""
-        model = setting.model_name or "wdb/deepseek-ai/DeepSeek-V4-Flash-0731"
-        temperature = float(setting.temperature) if setting.temperature is not None else 0.3
-        return {
-            "base_url": base_url.rstrip("/"),
-            "api_key": api_key,
-            "model": model,
-            "temperature": temperature,
-            "timeout": 90.0
-        }
-    except Exception:
-        return {
-            "base_url": "http://localhost:11434/v1",
-            "api_key": "ollama",
-            "model": "llama3",
-            "temperature": 0.3,
-            "timeout": 90.0
-        }
+    setting = frappe.get_single("AIOS Setting")
+    base_url = (setting.base_url or "").strip()
+    api_key = (setting.get_password("api_key", raise_exception=False) or "").strip()
+    model = (setting.model_name or "").strip()
+    temperature = float(setting.temperature) if setting.temperature is not None else 0.3
+
+    if not api_key:
+        frappe.throw("API Key belum diisi di AIOS Setting pada Frappe Desk.")
+    if not base_url:
+        frappe.throw("Base URL belum diisi di AIOS Setting pada Frappe Desk.")
+    if not model:
+        frappe.throw("Model Name belum diisi di AIOS Setting pada Frappe Desk.")
+
+    return {
+        "base_url": base_url.rstrip("/"),
+        "api_key": api_key,
+        "model": model,
+        "temperature": temperature,
+        "timeout": 90.0
+    }
 
 def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None):
     cfg = get_llm_config()

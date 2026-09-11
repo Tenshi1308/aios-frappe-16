@@ -53,9 +53,21 @@ def ask_intelligence(message: Optional[str] = None, context: Optional[str] = Non
             "error": "API Key belum diatur di AIOS Setting! Silakan isi terlebih dahulu di Desk."
         }
 
-    base_url = (settings.base_url or "https://api.openai.com/v1") if settings else "https://api.openai.com/v1"
-    model_name = (settings.model_name or "deepseek-chat") if settings else "deepseek-chat"
-    temperature = (settings.temperature or 0.2) if settings else 0.2
+    base_url = (settings.base_url or "").strip() if settings else ""
+    model_name = (settings.model_name or "").strip() if settings else ""
+    temperature = settings.temperature if (settings and settings.temperature is not None) else 0.2
+
+    if not base_url:
+        return {
+            "success": False,
+            "error": "Base URL belum diatur di AIOS Setting! Silakan isi terlebih dahulu di Desk."
+        }
+
+    if not model_name:
+        return {
+            "success": False,
+            "error": "Model Name belum diatur di AIOS Setting! Silakan isi terlebih dahulu di Desk."
+        }
     system_ethos = (settings.system_ethos or (
         "Kamu adalah Department Intelligence AI untuk sistem ERP perusahaan.\n"
         "1. Anti-halusinasi: Jangan mengarang data jika tidak tersedia.\n"
