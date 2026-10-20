@@ -4,7 +4,7 @@ authors = [
     { name = "Tenshi", email = "samuelkarel1308@gmail.com"}
 ]
 description = "AIOS Plugin SaaS"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
@@ -17,7 +17,12 @@ build-backend = "flit_core.buildapi"
 
 # These dependencies are only installed when developer mode is enabled
 [tool.bench.dev-dependencies]
-# package_name = "~=1.1.0"
+pytest = "~=9.1"
+ruff = "==0.17.1"
+
+[tool.pytest.ini_options]
+testpaths = ["aios_v1/tests"]
+xfail_strict = false
 
 # These apt dependencies will be installed from Ubuntu repositories when you host your app on Frappe Cloud
 [deploy.dependencies.apt]

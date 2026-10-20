@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install tooling (tanpa frappe/erpnext)
+        run: pip install "ruff==0.17.1" "pytest==9.1.1"
+      - name: Lint (ADVISORY — 746 error baseline, dibereskan #3)
+        run: ruff check --output-format=json . > ruff.json || true
+      - name: Test statis (BLOCKING)
+        run: pytest -q
