@@ -608,7 +608,8 @@ di-approve.
 
 - `bench --site aios-v16.localhost run-tests --app aios_v1 --module aios_v1.tests.test_authz_user_isolation` → **8/8 OK**: Alpha ditolak `403/404`, daftar Beta kosong, resource sendiri lolos, tanpa sesi `401`, `Administrator` lolos, draft Beta tidak bisa di-approve Alpha, draft baru terikat ke sesi.
 - Test P0/P1 modular: `test_authz_dispatcher` **5/5**, `test_authz_write` **6/6**, `test_conversation_manager` **3/3**, `test_draft_flow` **3/3**, `test_permissions_installer` **4/4** — semua OK.
-- `pytest -q` → **41 passed, 2 skipped, 10 xfailed, 1 xpassed** (xpass = doctype count 13, target #2; `strict=False`).
+- Test P2/P3: `test_connection_user` **2/2**, `test_monitoring_scope` **2/2**, `test_draft_manager` **4/4**, `test_ai_manager_tools` **4/4**, `test_self_register_pending_provisioning` **5/5**, `test_website_user_access` **4/4**, `test_login_flow` **10/10**, `test_lockout` **2/2** — semua OK.
+- `pytest -q` → **41 passed, 2 skipped, 9 xfailed, 2 xpassed** (xpass = doctype count 13 dan `test_no_db_commit_in_test_files`; `strict=False`).
 - `bench --site aios-v16.localhost migrate` → sukses; `Pending Action Draft` terdaftar; `Custom DocPerm` `AIOS Client`/`AIOS Admin` terpasang untuk 5 doctype.
 
 **Catatan regression-before-fix:** test lama di-`@unittest.skip` dan membuat field yang tidak ada (`datetime`, `connection_name`, `user` di Message), jadi kegagalannya dulu adalah kegagalan skema, bukan bukti izin. Bukti izin diambil dari test baru yang lulus + hook terpasang, bukan dari test lama.
@@ -909,6 +910,10 @@ README + tabel status jujur: apa yang jalan, apa yang belum tersambung (termasuk
 | Tahap C | `test_draft_flow.py` | approve/reject draft sendiri, `rejection_reason` tersimpan, Guest ditolak |
 | Tahap C | `test_permissions_installer.py` | `ensure_aios_permissions` idempoten; matriks `AIOS Client`/`AIOS Admin` |
 | Tahap C | `test_draft_contract.py` | `draft_manager` tanpa `allow_guest`, memakai `check_permission` (S1) |
+| Tahap C | `test_connection_user.py` | endpoint `connect`/`provision` menyimpan `user` dari sesi (bukan tenant) |
+| Tahap C | `test_monitoring_scope.py` | monitoring menghitung percakapan lewat `user` (bridge `tenant.email`) |
+| Tahap C | `test_draft_manager.py` | expire/approve/reject + status guard draft |
+| Tahap C | `test_ai_manager_tools.py` | 7 tool terdaftar + escalate membuat draft terikat `user` |
 | #1 | `test_register_enumeration.py` | respons tidak membedakan email terdaftar/tidak |
 | #1 | `test_payment_gate.py` | `ACTIVE` tidak hardcoded |
 | #1 | `test_db_connection_ssrf.py` | host/IP privat ditolak + tidak ada default `user="root"` (N5, S12) |
@@ -919,12 +924,12 @@ README + tabel status jujur: apa yang jalan, apa yang belum tersambung (termasuk
 | #4a | `test_message_scoping.py` | scoping Message/Mapping/Snapshot via join 1-hop & 2-hop berbasis `user` |
 | #4a | `test_get_doc_permission.py` | `get_doc(..., check_permission="read")` lintas user ditolak + `AIOS Setting` ditolak untuk `AIOS Client` |
 | #4b | `test_setup_hooks_schema.py` | `after_install` & `after_migrate` di `hooks.py` membuat Role (`AIOS Client` `desk_access=0`), Role Profile, `Custom DocPerm` (`read=1, report=1`), & ke-6 Custom Field di `User` via `create_custom_fields` (tanpa `fixtures`) |
-| #4b | `test_login_flow.py` | login via Frappe, guard 3 lapis `aios_status == "Active"` (`enabled`, `on_login`, `auth_hooks`), sesi `sid` + bootstrap `csrf_token` |
+| Tahap C | `test_login_flow.py` | login via Frappe, guard 3 lapis `aios_status == "Active"` (`enabled`, `on_login`, `auth_hooks`) |
 | #4b | `test_role_portal.py` | portal dari role (`AIOS Admin`/`AIOS Client`), bukan port |
-| #4b | `test_website_user_access.py` | `AIOS Client` bertipe `Website User` (`desk_access=0`) & bisa panggil whitelist |
+| Tahap C | `test_website_user_access.py` | `AIOS Client` bertipe `Website User` (`desk_access=0`) & bisa panggil whitelist |
 | #4b | `test_persona_per_user.py` | `User.aios_persona` & `User.aios_persona_context` ditambahkan ke prompt |
-| #4b | `test_lockout.py` | lockout Frappe aktif |
-| #4b | `test_self_register_pending_provisioning.py` | registrasi mandiri membuat `User` (`aios_status = "Pending Provisioning"`, `enabled = 0`, `send_welcome_email = 0`, tanpa `AIOS Tenant`) dan tidak bisa langsung masuk `/aios` |
+| Tahap C | `test_lockout.py` | lockout Frappe aktif |
+| Tahap C | `test_self_register_pending_provisioning.py` | registrasi mandiri membuat `User` (`aios_status = "Pending Provisioning"`, `enabled = 0`, `send_welcome_email = 0`, tanpa `AIOS Tenant`) |
 | #4c | `test_frontend_contract.py` | kontrak endpoint untuk UI (termasuk `csrf_token`) |
 | #5 | `test_site_user_quota.py` | user aktif ke-N+1 ditolak di 3 jalur + `User.aios_token_limit` mewarisi `AIOS Setting.default_user_token_limit` |
 | #6 | `test_no_hardcoded_env.py`, `test_pricing_constants.py` | tidak ada port/path literal |
