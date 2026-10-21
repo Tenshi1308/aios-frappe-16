@@ -5,6 +5,8 @@ Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 
 import json
 import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import frappe
 
@@ -107,3 +109,74 @@ class TestAIManagerTools(IntegrationTestCase):
         )
         self.assertEqual(result.get("status"), "DELEGATED")
         self.assertEqual(result.get("worker_key"), "treasurer")
+
+    def test_cross_branch_consultation_uses_context_tenant(self):
+        args = {
+            "task_id": "TSK-CTX-001",
+            "from_branch": "finance",
+            "to_branch": "sales",
+            "message_type": "consultation",
+            "payload": {"question": "cek piutang"},
+        }
+        router = MagicMock()
+        router.route_message.return_value = {"ok": True}
+        with patch(
+            "aios_v1.lib.ai_manager_tools.get_swarm_router", return_value=router
+        ) as get_router:
+            result = json.loads(
+                execute_tool(
+                    "cross_branch_consultation",
+                    json.dumps(args),
+                    context={**self.context, "tenant_id": 42},
+                )
+            )
+
+        get_router.assert_called_once_with(tenant_id=42)
+        self.assertEqual(result, {"ok": True})
+
+    def test_monitor_global_task_ledger_uses_context_tenant(self):
+        ledger = MagicMock()
+        ledger.get_task_chain.return_value = {"status": "IN_PROGRESS", "hops": []}
+        with patch(
+            "aios_v1.lib.ai_manager_tools.get_task_ledger", return_value=ledger
+        ) as get_ledger:
+            result = json.loads(
+                execute_tool(
+                    "monitor_global_task_ledger",
+                    json.dumps({"task_id": "TSK-CTX-002"}),
+                    context={**self.context, "tenant_id": 42},
+                )
+            )
+
+        get_ledger.assert_called_once_with(tenant_id=42)
+        self.assertEqual(result["status"], "FOUND")
+
+    def test_manager_tools_without_context_tenant_fail_loud(self):
+        cases = (
+            (
+                "cross_branch_consultation",
+                {
+                    "task_id": "TSK-NO-TENANT",
+                    "from_branch": "finance",
+                    "to_branch": "sales",
+                    "message_type": "consultation",
+                    "payload": {},
+                },
+            ),
+            ("monitor_global_task_ledger", {"task_id": "TSK-NO-TENANT"}),
+        )
+        for tool, args in cases:
+            with self.subTest(tool=tool), patch(
+                "aios_v1.lib.ai_manager_tools.frappe.log_error"
+            ) as log:
+                result = json.loads(
+                    execute_tool(tool, json.dumps(args), context=self.context)
+                )
+            self.assertIn("error", result)
+            log.assert_called()
+
+    def test_no_hardcoded_tenant_one_in_manager_tools(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "lib" / "ai_manager_tools.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("tenant_id=1", source)

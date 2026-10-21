@@ -8,9 +8,18 @@ import json
 import frappe
 from typing import Dict, Any, Optional, List
 from frappe.utils import add_to_date, now_datetime
-from aios_v1.lib.tool_registry import ai_tool
+from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 from aios_v1.lib.swarm_router import get_swarm_router
 from aios_v1.lib.task_ledger import get_task_ledger
+
+
+def _tenant_id_from_context() -> int:
+    """Tenant hanya dari context tepercaya; jangan fallback ke 1."""
+    tenant_id = get_tool_context().get("tenant_id")
+    if not tenant_id:
+        frappe.log_error("tenant_id tidak ada di context tool", "AIOS Tool Context")
+        frappe.throw("tenant_id tidak tersedia di context tool")
+    return int(tenant_id)
 
 # =========================================================================
 # 1. ORCHESTRATOR DELEGATE TO SUBAGENT
@@ -82,7 +91,7 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
     }
 )
 def cross_branch_consultation(task_id: str, from_branch: str, to_branch: str, message_type: str, payload: Dict[str, Any], priority: str = "NORMAL") -> Dict[str, Any]:
-    router = get_swarm_router(tenant_id=1)
+    router = get_swarm_router(tenant_id=_tenant_id_from_context())
     return router.route_message(
         task_id=task_id,
         from_branch=from_branch,
@@ -169,7 +178,7 @@ def escalate_to_human_approval(task_id: str, action_type: str, branch: str, crea
     }
 )
 def monitor_global_task_ledger(task_id: str) -> Dict[str, Any]:
-    ledger = get_task_ledger(tenant_id=1)
+    ledger = get_task_ledger(tenant_id=_tenant_id_from_context())
     chain = ledger.get_task_chain(task_id)
     if not chain:
         return {
