@@ -502,7 +502,7 @@ hilang** di #4. Yang toh dihapus #4b dan tidak bisa dieksekusi benar sekarang
 | Auth di `/api/chatbot/*` (N1) | `dispatcher.py:989-1050` | `test_endpoint_auth.py` |
 | **Tahap C —** Cek kepemilikan `conversationId` di `/stream` (N2) | `base_manager.py:107-129` | `test_authz_user_isolation.py` |
 | **S2 — pindah ke Tahap C:** Buat doctype `Pending Action Draft` jadi **file JSON di repo** (`aios_v1/aios_v1/doctype/pending_action_draft/`): 7 field dari `setup_tahap2.py:15-23` (`task_id`, `type`, `branch`, `created_by_agent`, `payload`, `status`, `expires_at`) **+ 2 field wajib yang hilang di skrip lama**: **`user` (`Link -> User`, `reqd=1`, `in_standard_filter=1`)** dan `rejection_reason` (`Small Text`). *(Dikerjakan di **Tahap C**, bukan #1. Langsung memakai `user -> Link(User)`, **bukan** `tenant -> Link(AIOS Tenant)`, agar skema tidak perlu dibongkar ulang di #4a karena `CustomField`/`DocField` menolak perubahan `Link` target)* | `draft_manager.py:8`, `setup_tahap2.py:15-23` | `test_doctype_exists.py` (Tahap C) |
-| **Tahap C —** Cabut `allow_guest` (S1) | `draft_manager.py:18,27,46` | `test_endpoint_auth.py` |
+| **Tahap C —** Cabut `allow_guest` (S1) | `draft_manager.py:18,27,46` | `test_draft_contract.py`, `test_draft_flow.py` |
 | **Tahap C —** Cek kepemilikan percakapan & mapping terhadap sesi aktif + **betulkan bug routing** (`:927` wajib `len(parts) == 4`; `:940` `len(parts) == 5` dengan `conv_id = parts[4]`, bukan `parts[3]`) + cek kepemilikan `entryId` terhadap `mapping` di `/api/mapping/validate` (`:662-677`) (S3) | `dispatcher.py:662-677, 927-950` | `test_authz_user_isolation.py` |
 | Hapus fallback `else 2` (S5) + `else 1` (N3) → wajib sesi | `dispatcher.py:928,954` | `test_endpoint_auth.py` |
 | Wajib sesi + batas ukuran file (S4) | `dispatcher.py:846` | `test_parse_pdf_guard.py` |
@@ -607,7 +607,8 @@ di-approve.
 **Bukti verifikasi (2026-10-21):**
 
 - `bench --site aios-v16.localhost run-tests --app aios_v1 --module aios_v1.tests.test_authz_user_isolation` → **8/8 OK**: Alpha ditolak `403/404`, daftar Beta kosong, resource sendiri lolos, tanpa sesi `401`, `Administrator` lolos, draft Beta tidak bisa di-approve Alpha, draft baru terikat ke sesi.
-- `pytest -q` → **38 passed, 2 skipped, 10 xfailed, 1 xpassed** (xpass = doctype count 13, target #2; `strict=False`).
+- Test P0/P1 modular: `test_authz_dispatcher` **5/5**, `test_authz_write` **6/6**, `test_conversation_manager` **3/3**, `test_draft_flow` **3/3**, `test_permissions_installer` **4/4** — semua OK.
+- `pytest -q` → **41 passed, 2 skipped, 10 xfailed, 1 xpassed** (xpass = doctype count 13, target #2; `strict=False`).
 - `bench --site aios-v16.localhost migrate` → sukses; `Pending Action Draft` terdaftar; `Custom DocPerm` `AIOS Client`/`AIOS Admin` terpasang untuk 5 doctype.
 
 **Catatan regression-before-fix:** test lama di-`@unittest.skip` dan membuat field yang tidak ada (`datetime`, `connection_name`, `user` di Message), jadi kegagalannya dulu adalah kegagalan skema, bukan bukti izin. Bukti izin diambil dari test baru yang lulus + hook terpasang, bukan dari test lama.
@@ -902,6 +903,12 @@ README + tabel status jujur: apa yang jalan, apa yang belum tersambung (termasuk
 | #1 | `test_authz_user_isolation.py` | cookie A → resource B → 403 (IDOR N2, S3 `parts[4]`, `mapping/validate` `entryId`) |
 | #1 | `test_parse_pdf_guard.py` | tanpa sesi ditolak; file >batas ditolak |
 | Tahap C | `test_doctype_exists.py` | `Pending Action Draft` ada di repo lengkap dengan field kepemilikan `user -> Link(User)` & `rejection_reason` (S2) |
+| Tahap C | `test_authz_dispatcher.py` | `/api/chat`: daftar hanya milik sendiri, detail & `/stream` `conversationId` user lain → 404, tanpa sesi → 401 (N2) |
+| Tahap C | `test_authz_write.py` | `AIOS Client` tidak bisa write/delete/create untuk user lain; `AIOS Admin` bisa read/write/delete |
+| Tahap C | `test_conversation_manager.py` | `ensure_conversation` membuat/mereuse percakapan milik user sesi, tidak mereuse milik user lain |
+| Tahap C | `test_draft_flow.py` | approve/reject draft sendiri, `rejection_reason` tersimpan, Guest ditolak |
+| Tahap C | `test_permissions_installer.py` | `ensure_aios_permissions` idempoten; matriks `AIOS Client`/`AIOS Admin` |
+| Tahap C | `test_draft_contract.py` | `draft_manager` tanpa `allow_guest`, memakai `check_permission` (S1) |
 | #1 | `test_register_enumeration.py` | respons tidak membedakan email terdaftar/tidak |
 | #1 | `test_payment_gate.py` | `ACTIVE` tidak hardcoded |
 | #1 | `test_db_connection_ssrf.py` | host/IP privat ditolak + tidak ada default `user="root"` (N5, S12) |
