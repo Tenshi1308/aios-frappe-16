@@ -23,10 +23,23 @@ export default function DeveloperLoginPage() {
     setError("");
     setBusy(true);
     try {
-      await api("/auth/login", {
+      await api("/method/login", {
         method: "POST",
-        body: JSON.stringify({ ...form, portal: "developer" }),
+        body: JSON.stringify({ usr: form.email, pwd: form.password }),
       });
+      const ctx = await api<{ roles: string[]; csrf_token: string }>(
+        "/method/aios_v1.setup.get_session_context"
+      );
+      if (typeof window !== "undefined") {
+        (window as any).csrf_token = ctx.csrf_token;
+      }
+      const isAdmin = (ctx.roles || []).some((r) =>
+        ["AIOS Admin", "System Manager", "Administrator"].includes(r)
+      );
+      if (!isAdmin) {
+        await api("/method/logout", { method: "POST" }).catch(() => {});
+        throw new Error("Akun ini bukan AIOS Admin.");
+      }
       router.push("/developer/dashboard");
     } catch (err) {
       setError((err as Error).message);

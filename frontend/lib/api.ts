@@ -1,4 +1,4 @@
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
   if (typeof window === "undefined") return null;
   const w = window as any;
   if (w.csrf_token) return w.csrf_token;

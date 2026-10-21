@@ -95,11 +95,7 @@ def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, e
     finally:
         frappe.destroy()
 
-from aios_v1.lib.auth import (
-    hash_password, verify_password,
-    create_session_token, verify_session_token,
-    SESSION_COOKIE, portal_from_request
-)
+from aios_v1.lib.auth import verify_session_token, SESSION_COOKIE
 from aios_v1.plugin_manager.registry import get_branches
 from aios_v1.managers import get_manager
 
@@ -229,90 +225,20 @@ def handle_api_request():
         })
 
     elif path == "api/auth/login" and method == "POST":
-        try:
-            body = frappe.request.get_json(force=True, silent=True) or {}
-            if not body and frappe.request.data:
-                body = json.loads(frappe.request.data.decode("utf-8"))
-        except Exception:
-            body = {}
-        email = (body.get("email") or "").strip().lower()
-        password = body.get("password") or ""
-        portal = portal_from_request(frappe.request, body)
-
-        if not email or not password:
-            return json_response({"error": "Email dan password wajib diisi"}, 400)
-
-        tenant = frappe.db.get_value("AIOS Tenant", {"email": email}, ["name", "tenant_name", "email", "role", "status", "password_hash"], as_dict=True)
-        is_valid_pw = False
-        if tenant:
-            is_valid_pw = verify_password(password, tenant.get("password_hash") or "")
-
-        if not tenant or not is_valid_pw:
-            return json_response({"error": "Email atau password salah"}, 401)
-
-        expected_role = "DEVELOPER" if portal == "developer" else "CLIENT"
-        if tenant.get("role") != expected_role:
-            return json_response({"error": f"Akun ini tidak berwenang masuk lewat portal {portal}"}, 403)
-
-        if tenant.get("status") != "ACTIVE":
-            return json_response({"error": "Akun belum aktif"}, 403)
-
-        company_id = int(tenant.get("name")) if str(tenant.get("name")).isdigit() else 1
-        token = create_session_token({
-            "companyId": company_id,
-            "role": tenant.get("role"),
-            "name": tenant.get("tenant_name"),
-            "user": tenant.get("email")
-        })
-
         return json_response({
-            "company": {
-                "id": company_id,
-                "name": tenant.get("tenant_name"),
-                "email": tenant.get("email"),
-                "role": tenant.get("role"),
-                "status": tenant.get("status")
-            }
-        }, cookie_to_set=token)
+            "error": "Login memakai POST /api/method/login (Frappe)."
+        }, 410)
 
     elif path == "api/auth/register" and method == "POST":
-        try:
-            body = frappe.request.get_json(force=True, silent=True) or {}
-            if not body and frappe.request.data:
-                body = json.loads(frappe.request.data.decode("utf-8"))
-        except Exception:
-            body = {}
-        name = (body.get("name") or "").strip()
-        email = (body.get("email") or "").strip().lower()
-        password = body.get("password") or ""
-        portal = portal_from_request(frappe.request)
-
-        if portal != "client":
-            return json_response({"error": "Registrasi hanya melalui portal client"}, 403)
-
-        if not name or not email or len(password) < 6:
-            return json_response({"error": "Nama perusahaan, email, dan password (min 6 karakter) wajib diisi"}, 400)
-
-        generic_response = {
-            "status": "PENDING_PROVISIONING",
-            "message": "Pendaftaran diterima. Jika email valid, tim kami akan menghubungi Anda."
-        }
-
-        if frappe.db.exists("AIOS Tenant", {"email": email}):
-            return json_response(generic_response)
-
-        doc = frappe.new_doc("AIOS Tenant")
-        doc.tenant_name = name
-        doc.email = email
-        doc.role = "CLIENT"
-        doc.status = "PENDING_PAYMENT"
-        doc.password_hash = hash_password(password)
-        doc.insert(ignore_permissions=True)
-        frappe.db.commit()
-
-        return json_response(generic_response)
+        return json_response({
+            "error": "Registrasi memakai POST /api/method/aios_v1.auth.register_account."
+        }, 410)
 
     elif path == "api/auth/logout" and method == "POST":
+        login_manager = getattr(frappe.local, "login_manager", None)
+        if login_manager and frappe.session.user not in ("", "Guest"):
+            login_manager.logout()
+            frappe.db.commit()
         return json_response({"ok": True}, cookie_to_clear=True)
 
     # 2. PAYMENT ROUTES

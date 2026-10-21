@@ -24,27 +24,8 @@ export default function HomePage() {
         return;
       }
 
-      // gerbang onboarding: bayar → koneksi → validasi mapping (C3/C4/C6).
-      // Selama analisis skema berjalan (C5 async), client tetap boleh masuk
-      // home — chat baru aktif setelah mapping divalidasi.
-      try {
-        const st = await api<{ payment: string; connected: boolean; mappingStatus: string; adapting: boolean }>("/connection/status");
-        if (st.payment !== "ACTIVE") {
-          router.replace("/payment");
-          return;
-        }
-        if (!st.connected || (st.mappingStatus === "NONE" && !st.adapting)) {
-          router.replace("/onboarding");
-          return;
-        }
-        if (st.mappingStatus === "NEEDS_REVIEW") {
-          router.replace("/onboarding/mapping");
-          return;
-        }
-      } catch {
-        router.replace("/login");
-        return;
-      }
+      // Gate payment/onboarding legacy dilepas: workspace langsung terbuka.
+      // Jalur PoC memakai ERPNext; onboarding DB tetap tersedia dari Settings.
 
       try {
         const d = await api<{ branches: { key: string; workers: WorkerInfo[] }[] }>("/branches");

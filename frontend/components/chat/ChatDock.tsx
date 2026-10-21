@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { api } from "@/lib/api";
+import { api, getCsrfToken } from "@/lib/api";
 import { accentOf, rgbaOf, type Branch } from "@/lib/branches";
 import type { WorkerInfo } from "@/lib/types";
 import { DraftCard } from "./DraftCard";
@@ -175,9 +175,13 @@ export default function ChatDock({ branch, workers, initialWorkerKey = "manager"
         attempts++;
         try {
           // Jalur utama: streaming (SSE)
+          const csrf = getCsrfToken();
           const res = await fetch(`/api/chat/${branch.id}/stream`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type": "application/json",
+              ...(csrf ? { "X-Frappe-CSRF-Token": csrf } : {}),
+            },
             body: JSON.stringify({ message: backendMessage, workerKey, conversationId }),
             signal: controller.signal,
           });
@@ -529,7 +533,12 @@ export default function ChatDock({ branch, workers, initialWorkerKey = "manager"
                 if (f.name.toLowerCase().endsWith('.pdf')) {
                   const fd = new FormData();
                   fd.append("file", f);
-                  const res = await fetch("/api/chat/parse-pdf", { method: "POST", body: fd });
+                  const csrf = getCsrfToken();
+                  const res = await fetch("/api/chat/parse-pdf", {
+                    method: "POST",
+                    headers: csrf ? { "X-Frappe-CSRF-Token": csrf } : {},
+                    body: fd,
+                  });
                   if (!res.ok) throw new Error(`Gagal parse PDF: ${f.name}`);
                   const json = await res.json();
                   return { name: f.name, content: json.text };

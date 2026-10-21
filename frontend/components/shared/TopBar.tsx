@@ -24,6 +24,14 @@ export default function TopBar() {
   }, [router]);
 
   useEffect(() => {
+    api<{ csrf_token: string }>("/method/aios_v1.setup.get_session_context")
+      .then((ctx) => {
+        if (typeof window !== "undefined") (window as any).csrf_token = ctx.csrf_token;
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     let alive = true;
     const tick = () =>
       api<{ adapting: boolean; mappingStatus: string; progress: { done: number; total: number } | null }>("/connection/status")
@@ -56,7 +64,7 @@ export default function TopBar() {
     if (typeof window !== "undefined") {
       sessionStorage.removeItem("aios:lead_auto_shown");
     }
-    await api("/auth/logout", { method: "POST" }).catch(() => {});
+    await api("/method/logout", { method: "POST" }).catch(() => {});
     router.replace("/login");
   };
 

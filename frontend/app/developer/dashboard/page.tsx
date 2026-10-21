@@ -34,6 +34,14 @@ export default function DeveloperDashboardPage() {
       .catch(() => router.replace("/developer/login"));
   }, [router]);
 
+  useEffect(() => {
+    api<{ csrf_token: string }>("/method/aios_v1.setup.get_session_context")
+      .then((ctx) => {
+        if (typeof window !== "undefined") (window as any).csrf_token = ctx.csrf_token;
+      })
+      .catch(() => {});
+  }, []);
+
   const toggleCompany = useCallback(
     async (c: UsageCompany) => {
       if (expandedCompany === c.id) {
@@ -77,7 +85,7 @@ export default function DeveloperDashboardPage() {
   const totalCost = companies.reduce((s, c) => s + c.costIdr, 0);
 
   const logout = async () => {
-    await api("/auth/logout", { method: "POST" }).catch(() => {});
+    await api("/method/logout", { method: "POST" }).catch(() => {});
     router.replace("/developer/login");
   };
 
