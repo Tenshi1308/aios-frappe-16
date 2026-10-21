@@ -3,7 +3,7 @@
 // C1/C2: Login & registrasi portal client memakai auth resmi Frappe.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, apiMethod } from "@/lib/api";
 import SpaceBackdrop from "@/components/shared/SpaceBackdrop";
 
 type SessionContext = { roles: string[]; csrf_token: string };
@@ -45,7 +45,7 @@ export default function LoginPage() {
         method: "POST",
         body: JSON.stringify({ usr: form.email, pwd: form.password }),
       });
-      const ctx = await api<SessionContext>("/method/aios_v1.setup.get_session_context");
+      const ctx = await apiMethod<SessionContext>("/method/aios_v1.setup.get_session_context");
       if (typeof window !== "undefined") {
         (window as any).csrf_token = ctx.csrf_token;
         sessionStorage.removeItem("aios:lead_auto_shown");

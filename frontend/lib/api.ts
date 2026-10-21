@@ -26,6 +26,12 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
   return data;
 }
 
+// Frappe membungkus return /api/method/* dalam { message: ... }.
+export async function apiMethod<T = unknown>(path: string, init?: RequestInit): Promise<T> {
+  const data = await api<{ message: T }>(path, init);
+  return data.message;
+}
+
 export function fmtNum(n: number | undefined | null): string {
   return (n ?? 0).toLocaleString("id-ID");
 }

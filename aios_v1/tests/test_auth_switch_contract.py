@@ -46,6 +46,7 @@ class TestFrontendAuthContract(unittest.TestCase):
     def test_client_login_uses_frappe(self):
         src = LOGIN.read_text(encoding="utf-8")
         self.assertIn('"/method/login"', src)
+        self.assertIn("apiMethod", src)
         self.assertIn('"/method/aios_v1.setup.get_session_context"', src)
         self.assertNotIn('"/auth/login"', src)
         self.assertNotIn('"/auth/register"', src)
@@ -54,7 +55,13 @@ class TestFrontendAuthContract(unittest.TestCase):
     def test_developer_login_uses_frappe(self):
         src = DEV_LOGIN.read_text(encoding="utf-8")
         self.assertIn('"/method/login"', src)
+        self.assertIn("apiMethod", src)
         self.assertNotIn('"/auth/login"', src)
+
+    def test_api_method_unwraps_message(self):
+        src = (REPO_ROOT / "frontend" / "lib" / "api.ts").read_text(encoding="utf-8")
+        self.assertIn("export async function apiMethod", src)
+        self.assertIn("data.message", src)
 
     def test_logout_uses_frappe(self):
         for path in (TOPBAR, DASHBOARD):

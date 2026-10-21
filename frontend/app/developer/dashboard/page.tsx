@@ -6,7 +6,7 @@
 // bidang yang diklik. Tanpa akses data bisnis/percakapan client.
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, fmtNum } from "@/lib/api";
+import { api, apiMethod, fmtNum } from "@/lib/api";
 import SpaceBackdrop from "@/components/shared/SpaceBackdrop";
 import type { UsageBranch, UsageCompany, UsageWorker } from "@/lib/types";
 
@@ -35,7 +35,7 @@ export default function DeveloperDashboardPage() {
   }, [router]);
 
   useEffect(() => {
-    api<{ csrf_token: string }>("/method/aios_v1.setup.get_session_context")
+    apiMethod<{ csrf_token: string }>("/method/aios_v1.setup.get_session_context")
       .then((ctx) => {
         if (typeof window !== "undefined") (window as any).csrf_token = ctx.csrf_token;
       })

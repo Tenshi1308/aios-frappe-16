@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, apiMethod } from "@/lib/api";
 
 export default function TopBar() {
   const router = useRouter();
@@ -24,7 +24,7 @@ export default function TopBar() {
   }, [router]);
 
   useEffect(() => {
-    api<{ csrf_token: string }>("/method/aios_v1.setup.get_session_context")
+    apiMethod<{ csrf_token: string }>("/method/aios_v1.setup.get_session_context")
       .then((ctx) => {
         if (typeof window !== "undefined") (window as any).csrf_token = ctx.csrf_token;
       })

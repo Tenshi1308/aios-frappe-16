@@ -3,7 +3,7 @@
 // C2: Login portal Ekasa Developer (developer.localhost) — bahasa desain AIOS.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, apiMethod } from "@/lib/api";
 import SpaceBackdrop from "@/components/shared/SpaceBackdrop";
 
 export default function DeveloperLoginPage() {
@@ -27,7 +27,7 @@ export default function DeveloperLoginPage() {
         method: "POST",
         body: JSON.stringify({ usr: form.email, pwd: form.password }),
       });
-      const ctx = await api<{ roles: string[]; csrf_token: string }>(
+      const ctx = await apiMethod<{ roles: string[]; csrf_token: string }>(
         "/method/aios_v1.setup.get_session_context"
       );
       if (typeof window !== "undefined") {
