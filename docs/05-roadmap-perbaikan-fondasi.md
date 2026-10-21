@@ -1,8 +1,8 @@
 # Roadmap Perbaikan AIOS V1
 
-**Status:** revisi 9 — **`#0` SELESAI & hijau di dua sisi** (§3k). Fase berikutnya: `#1` (`fix/security-baseline`). Dokumen telah diaudit lintas-dokumen, diverifikasi terhadap source Frappe 16 / ERPNext 16, dan baseline diukur ulang di bench env 2026-10-20
+**Status:** revisi 10 — **`#0` SELESAI**; `#1` berjalan di `fix/security-emergency` (tahap A + auth switch Frappe + guard `Administrator`). Sisa `S1/S2/N2/S3` dan ownership per `User` dikerjakan di **Tahap C** (lihat §#4a, sebelum #4a penuh). Dokumen telah diaudit lintas-dokumen dan diverifikasi terhadap source Frappe 16 / ERPNext 16.
 **Basis:** `develop` @ `ac98ca1` (2026-09-11)
-**Dibuat:** 2026-10-19 · **Direvisi:** 2026-10-20 (revisi 9 — penutupan `#0`; lihat §3i, §3j, §3k)
+**Dibuat:** 2026-10-19 · **Direvisi:** 2026-10-21 (revisi 10 — Tahap C disetujui; lihat §#4a)
 **Repo:** `git@github.com:Tenshi1308/aios-frappe-16.git` (origin) — upstream = `/home/samue/mybench/apps/aios_v1`
 
 > **Prinsip kerja:** setiap tahap dan setiap fitur **wajib punya script test**.
@@ -54,7 +54,7 @@ Target pasar: perusahaan bisnis.
 | `frappe.session` dipakai | **0 kali** | mesin otorisasi Frappe tidak aktif |
 | `ignore_permissions=True` | 103 kali | |
 | `frappe.get_all` vs `get_list` | 30 vs 1 | |
-| Doctype | **12 unik** di repo (+1 `Pending Action Draft` di #1 S2 → **13** di #4a) | 14 file JSON saat ini (2 duplikat luar-package), semuanya hanya permission `System Manager` |
+| Doctype | **12 unik** di repo (+1 `Pending Action Draft` di Tahap C → **13** di #4a) | 14 file JSON saat ini (2 duplikat luar-package), semuanya hanya permission `System Manager` |
 | CI | **tidak ada** | |
 | `ruff` di env | **tidak ada** (bisa di-install, terverifikasi) | |
 | Temuan keamanan | **12 → 18** | +6 dari review eksternal (N1–N6) |
@@ -350,7 +350,7 @@ seluruhnya `skipped` (2) atau `xfailed` (11), jadi **nol assertion dieksekusi**.
 | **N1** | `/api/chatbot/*` **tanpa autentikasi sama sekali**. `sessions`, `messages`, `settings` GET/POST tidak memanggil `get_current_session()`. Bocor data pelanggan Telegram **dan** siapa pun bisa mengubah `custom_instructions` bot (prompt injection) | `dispatcher.py:989-1050` | **Kritis** |
 | **N2** | **IDOR di `/stream`**. `conversationId` dari body dipakai apa adanya; pesan ditulis ke percakapan orang lain, dan riwayat 6 pesan terakhir milik tenant lain dikirim ke LLM | `managers/base_manager.py:107-129` | **Kritis** |
 | **S1** | Gerbang approval manusia `allow_guest=True` (3 fungsi) | `lib/draft_manager.py:18,27,46` | **Kritis** |
-| **S2** | Doctype `Pending Action Draft` **tidak ada di repo** — definisinya tersembunyi di `setup_tahap2.py:15-23` (yang akan dihapus di #2) dan **tidak punya field kepemilikan `user` maupun `rejection_reason`**. *(Owner tunggal pembuatan DocType JSON: **#1**, langsung memakai `user -> Link(User)` agar tidak perlu dibongkar ulang di #4a)* | `draft_manager.py:8`, `setup_tahap2.py:15-23`, `tools/logistic_tools.py:42`, `aios_manager_tools.py:133` | **Kritis** |
+| **S2** | Doctype `Pending Action Draft` **tidak ada di repo** — definisinya tersembunyi di `setup_tahap2.py:15-23` (yang akan dihapus di #2) dan **tidak punya field kepemilikan `user` maupun `rejection_reason`**. *(Owner tunggal pembuatan DocType JSON: **Tahap C**, langsung memakai `user -> Link(User)` agar tidak perlu dibongkar ulang di #4a)* | `draft_manager.py:8`, `setup_tahap2.py:15-23`, `tools/logistic_tools.py:42`, `aios_manager_tools.py:133` | **Kritis** |
 | **S3** | **IDOR + bug routing** — `get_doc` tanpa cek tenant; `msgs` difilter hanya `conv_id` → isi pesan ikut bocor. **Plus bug kode**: `:927` (`if action == "conversations"`) tidak cek `len(parts) == 4` sehingga blok `:940` unreachable, dan `:941` pakai `conv_id = parts[3]` (`"conversations"`) padahal `<id>` ada di **`parts[4]`** (`len(parts) == 5`). Juga di `/api/mapping/validate` (`:662-677`): update `AIOS Mapping Entry` via `entryId` dari body tanpa cek kepemilikan `mapping` milik tenant | `api/dispatcher.py:662-677, 927-950` | **Kritis** |
 | **S4** | `/api/chat/parse-pdf` **tanpa autentikasi**, tanpa batas ukuran file | `api/dispatcher.py:846` | **Kritis** |
 | **S5** | Fallback tenant salah di jalur **tulis** — request tanpa sesi menulis ke tenant 2 + bakar kuota LLM | `api/dispatcher.py:954` | **Kritis** |
@@ -425,7 +425,7 @@ Sandbox bukan opsional. Yang sudah ada harus diakui, yang kurang harus ditutup.
 | **L6** | Guard read-only lemah — hanya `startswith(("SELECT","WITH","EXPLAIN","PRAGMA"))` | ⚠️ **lemah** | `data_access/adapters/sqlite_adapter.py:127`, `data_access/adapters/postgres_adapter.py:96`, `data_access/adapters/mysql_adapter.py:96` |
 | **L7** | Tidak ada batas `User` & `Company` di lapisan tool (perlu resolusi `AIOS Setting.default_company` / `Global Defaults` via `get_single_value` di level site) | ❌ **belum** | `lib/tools/*`, `aios_setting.json` |
 | **L8** | Tidak ada kuota biaya/token per `User` + estimasi masih `len/3.8` (A12) + belum ada modul akuntansi atomik `aios_v1/services/usage.py` | ❌ **belum** | `managers/base_manager.py:201,220`, `lib/llm_client.py:56-70` |
-| **L9** | Operasi tulis butuh approval manusia — DocType JSON dibuat di **#1** (S2), penyambungan approval & 2 TODO dikerjakan di **#7** | ⚠️ **setengah** | `lib/ai_manager_tools.py:99-150`, `lib/draft_manager.py:42,60` |
+| **L9** | Operasi tulis butuh approval manusia — DocType JSON dibuat di **Tahap C** (S2), penyambungan approval & 2 TODO dikerjakan di **#7** | ⚠️ **setengah** | `lib/ai_manager_tools.py:99-150`, `lib/draft_manager.py:42,60` |
 | **L10** | Seed PoC ERPNext: skrip **sudah ditulis & syntax OK (560 baris), BELUM PERNAH dijalankan**. Backup site **sudah dibuat 2026-10-20 16:18** (`20261020_161847-aios-v16_localhost-database.sql.gz`, 997 KB — dipicu oleh insiden kredensial DB §3j). Menyalakan #8 tidak boleh mendahului seed ini | ⚠️ **seed belum dieksekusi**; backup ✅ | `aios_v1/setup_poc/seed_erpnext_demo.py` (#4d) |
 
 **L5 terverifikasi dapat dieksploitasi** (belum reachable):
@@ -477,7 +477,7 @@ branch berikutnya tidak punya cara membuktikan tidak merusak apa pun.
   - **Jangan hardcode `160` / `11`.** Denominator bergerak sendiri: `setup_poc/` (2 file) masih **untracked** ⇒ checkout bersih CI = **161 file / 160 modul unik**, lalu bertambah ketika #4d men-commit `setup_poc/` dan berkurang ketika #3 menghapus 25 `demo_tahap*`. Uji memakai **daftar modul `xfail` eksplisit** (11 modul: `aios_v1.lib.demo_tahap1`, `demo_tahap6m_2` … `demo_tahap6m_11`; penyebab seragam `ImportError: cannot import name 'chat_completion'`), **bukan** dengan mencocokkan jumlah kegagalan.
 - `aios_v1/tests/test_app_structure.py` → kontrak struktur app (lihat #2)
 - `pyproject.toml` → `[tool.pytest.ini_options]` dengan `testpaths = ["aios_v1/tests"]` (test hidup di **paket dalam**, pola `ekasa_logbook`) dan `norecursedirs = ["frontend", "node_modules", ".git"]`. Karena `testpaths` menunjuk paket, `pytest` otomatis tidak mengumpulkan 4 skrip `aios_v1/test_*.py` (**K3**) maupun 9 test `aios_v1/aios_v1/doctype/*/test_*.py`. Dev-dependency `pytest` + `ruff`, selaraskan metadata Python (**K7**: **naikkan** `requires-python` ke `>=3.14`)
-- Penanganan **K5** (18 file di `aios_v1/tests/`): pisahkan konfigurasi runner statis vs integrasi (`bench --site … run-tests`); selamatkan **4** unit test murni (`test_tool_registry`, `test_canonical_mapping`, `test_skills_engine`, `test_llm_client` — **keempatnya terverifikasi `IMPORT OK`** dan nol akses `frappe.db` di module level), dan tandai skip/tunda 13 test DB/tool mock lama sampai #1 (S2) & #8. *(Koreksi: revisi 6 menyebut `test_llm_client` gagal import; terverifikasi **tidak** — kalau ia gagal, itu saat eksekusi, bukan saat import.)* ⚠️ **`IMPORT OK` ≠ lulus** — dua test di `test_llm_client` **usang**; lihat §3i.
+- Penanganan **K5** (18 file di `aios_v1/tests/`): pisahkan konfigurasi runner statis vs integrasi (`bench --site … run-tests`); selamatkan **4** unit test murni (`test_tool_registry`, `test_canonical_mapping`, `test_skills_engine`, `test_llm_client` — **keempatnya terverifikasi `IMPORT OK`** dan nol akses `frappe.db` di module level), dan tandai skip/tunda 13 test DB/tool mock lama sampai Tahap C (S2) & #8. *(Koreksi: revisi 6 menyebut `test_llm_client` gagal import; terverifikasi **tidak** — kalau ia gagal, itu saat eksekusi, bukan saat import.)* ⚠️ **`IMPORT OK` ≠ lulus** — dua test di `test_llm_client` **usang**; lihat §3i.
 - Install `ruff==0.17.1` + `pytest==9.1.1` di bench env (**stable latest**, terverifikasi resolvable di Python 3.14). 0.14.10 dan 0.17.1 menghasilkan **746 error identik** (sudah diuji), jadi baseline tak berubah. ⚠️ `.pre-commit-config.yaml` masih mem-pin `ruff` `v0.14.10` — **bump-nya di #3** (`chore/repo-hygiene`) agar #0 tetap 6 file.
 
 **Test (script):** `aios_v1/tests/conftest.py`, `aios_v1/tests/test_import_smoke.py`, `aios_v1/tests/test_app_structure.py`, `aios_v1/tests/test_repo_hygiene.py`, `aios_v1/tests/test_authz_user_isolation.py`
@@ -500,10 +500,10 @@ hilang** di #4. Yang toh dihapus #4b dan tidak bisa dieksekusi benar sekarang
 | Aksi | Lokasi | Test |
 |---|---|---|
 | Auth di `/api/chatbot/*` (N1) | `dispatcher.py:989-1050` | `test_endpoint_auth.py` |
-| Cek kepemilikan `conversationId` di `/stream` (N2) | `base_manager.py:107-129` | `test_authz_user_isolation.py` |
-| **Owner tunggal S2:** Buat doctype `Pending Action Draft` jadi **file JSON di repo** (`aios_v1/aios_v1/doctype/pending_action_draft/`): 7 field dari `setup_tahap2.py:15-23` (`task_id`, `type`, `branch`, `created_by_agent`, `payload`, `status`, `expires_at`) **+ 2 field wajib yang hilang di skrip lama**: **`user` (`Link -> User`, `reqd=1`, `in_standard_filter=1`)** dan `rejection_reason` (`Small Text`). *(Langsung memakai `user -> Link(User)`, **bukan** `tenant -> Link(AIOS Tenant)`, agar skema tidak perlu dibongkar ulang di #4a karena `CustomField`/`DocField` menolak perubahan `Link` target)* | `draft_manager.py:8`, `setup_tahap2.py:15-23` | `test_doctype_exists.py` |
-| Cabut `allow_guest` (S1) | `draft_manager.py:18,27,46` | `test_endpoint_auth.py` |
-| Cek kepemilikan percakapan & mapping terhadap sesi aktif + **betulkan bug routing** (`:927` wajib `len(parts) == 4`; `:940` `len(parts) == 5` dengan `conv_id = parts[4]`, bukan `parts[3]`) + cek kepemilikan `entryId` terhadap `mapping` di `/api/mapping/validate` (`:662-677`) (S3) | `dispatcher.py:662-677, 927-950` | `test_authz_user_isolation.py` |
+| **Tahap C —** Cek kepemilikan `conversationId` di `/stream` (N2) | `base_manager.py:107-129` | `test_authz_user_isolation.py` |
+| **S2 — pindah ke Tahap C:** Buat doctype `Pending Action Draft` jadi **file JSON di repo** (`aios_v1/aios_v1/doctype/pending_action_draft/`): 7 field dari `setup_tahap2.py:15-23` (`task_id`, `type`, `branch`, `created_by_agent`, `payload`, `status`, `expires_at`) **+ 2 field wajib yang hilang di skrip lama**: **`user` (`Link -> User`, `reqd=1`, `in_standard_filter=1`)** dan `rejection_reason` (`Small Text`). *(Dikerjakan di **Tahap C**, bukan #1. Langsung memakai `user -> Link(User)`, **bukan** `tenant -> Link(AIOS Tenant)`, agar skema tidak perlu dibongkar ulang di #4a karena `CustomField`/`DocField` menolak perubahan `Link` target)* | `draft_manager.py:8`, `setup_tahap2.py:15-23` | `test_doctype_exists.py` (Tahap C) |
+| **Tahap C —** Cabut `allow_guest` (S1) | `draft_manager.py:18,27,46` | `test_endpoint_auth.py` |
+| **Tahap C —** Cek kepemilikan percakapan & mapping terhadap sesi aktif + **betulkan bug routing** (`:927` wajib `len(parts) == 4`; `:940` `len(parts) == 5` dengan `conv_id = parts[4]`, bukan `parts[3]`) + cek kepemilikan `entryId` terhadap `mapping` di `/api/mapping/validate` (`:662-677`) (S3) | `dispatcher.py:662-677, 927-950` | `test_authz_user_isolation.py` |
 | Hapus fallback `else 2` (S5) + `else 1` (N3) → wajib sesi | `dispatcher.py:928,954` | `test_endpoint_auth.py` |
 | Wajib sesi + batas ukuran file (S4) | `dispatcher.py:846` | `test_parse_pdf_guard.py` |
 | Hapus path `/mnt/g/...` (S11) | `data_access/adapters/sqlite_adapter.py:37-38` | `test_no_machine_paths.py` |
@@ -533,13 +533,13 @@ Memperbaiki akar "struktur folder ngaco".
 | Hapus `aios_v1/api.py` | tidak ada pemanggil setelah page dihapus (A3) |
 | Pindahkan/hapus `aios_v1/doctype/{aios_mapping,aios_mapping_entry}` | **terverifikasi identik** (SHA256) → hapus salinan luar (A4) |
 | Hapus 9 `managers/*.py` (0 byte) | A9 |
-| Hapus **16** skrip debug/test root package | lihat K3 (termasuk `test_dispatcher_direct.py` & `test_login_direct.py` yang mencetak `password_hash`, serta `setup_tahap2.py` setelah skema `Pending Action Draft` masuk repo di #1) |
+| Hapus **16** skrip debug/test root package | lihat K3 (termasuk `test_dispatcher_direct.py` & `test_login_direct.py` yang mencetak `password_hash`, serta `setup_tahap2.py` setelah skema `Pending Action Draft` masuk repo di Tahap C) |
 | Hapus `aios_v1/www/aios_web_handler.html` | XSS sink mati `{{ html_content \| safe }}` tanpa controller (A11) |
 
 **Test:** `aios_v1/tests/test_app_structure.py` — sekarang harus **HIJAU** (di #0 sengaja merah).
 Menguji: tidak ada `doctype/`/`page/` di luar package, tidak ada modul ter-shadow,
 tidak ada file 0 byte di `managers/`, tidak ada `www/aios_web_handler.html`,
-`bench migrate` tetap menemukan seluruh doctype dalam package (12 awal + `Pending Action Draft` dari #1 = 13 doctype).
+`bench migrate` tetap menemukan seluruh doctype dalam package (12 awal + `Pending Action Draft` dari Tahap C = 13 doctype).
 
 **Verifikasi:** `bench migrate` sukses, doctype terdeteksi, CI hijau.
 
@@ -568,6 +568,51 @@ tidak ada file 0 byte di `managers/`, tidak ada `www/aios_web_handler.html`,
 
 ---
 
+### Tahap C — Ownership per `User` (dikerjakan sebelum #4a penuh)
+
+**Status:** disetujui 2026-10-21 — scope **menengah**, bukan #4a penuh.
+Alasan: lubang IDOR harus ditutup sekarang, tetapi `AIOS DB Connection` belum bisa
+lepas `tenant` sampai injeksi `user_id` dari sesi selesai (#7 / L7).
+
+**Keputusan yang dikunci:**
+
+1. **`AIOS Conversation`, `AIOS Agent State`, `Pending Action Draft` → `user -> Link(User)`.**
+   Field `tenant` **dihapus** dari ketiganya di Tahap C — tanpa shim.
+2. **`AIOS DB Connection` → tambah `user`** (`Link -> User`, `reqd`, `in_standard_filter`);
+   `tenant` **tetap** sampai #4a. Ini satu-satunya kolom transisi yang tersisa, karena
+   `query_engine.get_mapping_lookup()` dan `data_access_agent` mencari koneksi lewat
+   `tenant` dan dipakai seluruh 9 modul tool. Pengganti amannya adalah `user_id` dari
+   sesi (#7 / L7), bukan argumen LLM.
+3. **`Pending Action Draft` dibuat sebagai file JSON di repo**
+   (`aios_v1/aios_v1/doctype/pending_action_draft/`) pada Tahap C, bukan #1 S2: 7 field
+   lama + `user` (`reqd=1`, `in_standard_filter=1`) + `rejection_reason`.
+   `escalate_to_human_approval` mengisi `user = frappe.session.user`;
+   `get_draft`/`approve_draft`/`reject_draft` mencabut `allow_guest` dan menolak
+   `doc.user != session.user` (kecuali `AIOS Admin`/`Administrator`).
+4. **Data lama:** `user = NULL`. Baris `NULL` hanya terlihat `AIOS Admin`/`Administrator`;
+   `permission_query_conditions` untuk `AIOS Client` menolak `NULL` eksplisit.
+5. **Hook:** `permission_query_conditions` + `has_permission` aktif di `hooks.py` untuk
+   `AIOS Conversation`, `AIOS DB Connection`, `AIOS Agent State`, `Pending Action Draft`;
+   `AIOS Message` lewat join `conversation`. `Administrator` tidak disentuh (bypass native).
+6. **Test:** `test_authz_user_isolation.py` ditulis ulang sesuai skema nyata — `AIOS Message`
+   tanpa `user`/`datetime`, `AIOS DB Connection` tanpa `connection_name`, memakai
+   `handle_api_request` (bukan `handle`). Tambah `test_doctype_exists.py` (S2) dan
+   cakupan kepemilikan draft.
+
+**Kriteria selesai:** Alpha tidak bisa `get_doc`/`get_list` resource Beta (403/404);
+baris `user=NULL` tidak terlihat `AIOS Client`; Alpha tetap bisa akses miliknya; tanpa
+sesi → 401; `Administrator`/`AIOS Admin` penuh; draft milik orang lain tidak bisa
+di-approve.
+
+**Deviasi transisi yang dicatat:** `AIOS DB Connection` sementara punya `tenant` + `user`.
+Dihapus di #4a setelah #7 menyediakan injeksi `user_id` dari sesi.
+
+**Non-scope Tahap C:** hapus `AIOS Tenant`, `AIOS Token Usage`, `AIOS Setting.default_company`,
+matriks `Custom DocPerm` ERPNext (#4b), audit 30 `get_all` → `get_list`, dan konversi
+`tenant_id` di 9 modul tool (232 titik — #4a/#7).
+
+---
+
 ### #4a — `refactor/frappe-identity-doctypes` 🏗️
 
 Bagian 1 dari 3 (dari saran reviewer: "#4 terlalu besar").
@@ -578,7 +623,7 @@ Bagian 1 dari 3 (dari saran reviewer: "#4 terlalu besar").
   - Tambah field `default_company` (`Link -> Company`), `company_context_persona` (`Small Text`), `default_user_token_limit` (`Int`), `site_token_limit` (`Int`), `site_tokens_used` (`Int`, `read_only=1`), `max_users` (`Int`), dan `default_max_tokens` (`Int`) pada Single DocType **`AIOS Setting`**.
   - Buat DocType **`AIOS Token Usage`** (`user -> Link(User)`, `conversation -> Link(AIOS Conversation)`, `branch`, `agent_key`, `provider`, `model_id`, `prompt_tokens`, `completion_tokens`, `total_tokens`, `estimated_cost_usd`).
   - **Atur permission role `AIOS Client` / `AIOS Admin` pada seluruh doctype AIOS & ERPNext sesuai klasifikasi relasi `User`:**
-    1. **Punya field langsung `user -> Link(User)` (5):** `AIOS Conversation`, `AIOS DB Connection`, `AIOS Agent State`, **`Pending Action Draft`** (dibuat di #1 S2; field kepemilikannya sudah `user -> Link(User)`), dan **`AIOS Token Usage`** (`read=1` saja untuk `AIOS Client`, insert via service backend).
+    1. **Punya field langsung `user -> Link(User)` (5):** `AIOS Conversation`, `AIOS DB Connection`, `AIOS Agent State`, **`Pending Action Draft`** (dibuat di Tahap C; field kepemilikannya sudah `user -> Link(User)`), dan **`AIOS Token Usage`** (`read=1` saja untuk `AIOS Client`, insert via service backend).
     2. **Terhubung lewat 1-hop join (tanpa field `user` langsung) (3):**
        - `AIOS Message` → via `conversation -> Link(AIOS Conversation)`
        - `AIOS Mapping` → via `connection -> Link(AIOS DB Connection)`
@@ -762,7 +807,7 @@ Status per lapisan ada di §4 🟣. Yang harus dikerjakan:
 | **L6** | Read-only berlapis di `data_access/adapters/{sqlite,postgres,mysql}_adapter.py`: (1) level koneksi/driver (`sqlite3.connect(f"file:{path}?mode=ro", uri=True)` + `PRAGMA query_only = ON`; Postgres `conn.set_session(readonly=True, autocommit=True)`; MySQL `SET SESSION TRANSACTION READ ONLY`); (2) validasi statement tunggal & blokir `INTO`/`ATTACH`/`OUTFILE`/stacked; (3) wajib `frappe.log_error` bila query gagal | `test_sql_readonly_guard.py` |
 | **L7** | Konteks `User` & `Company` di lapisan tool: `execute_tool` menyuntikkan `user_id = frappe.session.user` dari sesi server (mengabaikan klaim dari argumen LLM), lalu meresolusi `allowed_company` secara **100% dinamis dari Single DocType site** via `frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value("Global Defaults", "default_company")` (**dilarang memakai `frappe.db.get_default`** yang per-user, dan **dilarang keras hardcode nama company** di kode Python; bila kosong, catat `frappe.log_error` & tolak akses) | `test_tool_user_and_company_boundary.py` |
 | **L8** | Buat modul akuntansi token **`aios_v1/services/usage.py`** (`check_user_token_quota` & `record_token_usage`) untuk kuota token per `User` (`User.aios_tokens_used` vs `User.aios_token_limit`) & `AIOS Setting.site_token_limit` + **bereskan A12**: kirim `"stream_options": {"include_usage": True}` di `lib/llm_client.py:39-43` (dan ganti `except Exception: continue` di `:70` dengan `frappe.log_error`), akumulasikan `usage` di seluruh putaran loop `tool_calls` pada `managers/base_manager.py:201,220`, catat log ke `AIOS Token Usage`, dan **update `User.aios_tokens_used` secara atomik via SQL (`UPDATE \`tabUser\` SET aios_tokens_used = COALESCE(aios_tokens_used, 0) + %s WHERE name = %s`)** — dilarang memakai `user_doc.save()` yang rentan *race condition* & memicu `User.on_update` berat | `test_llm_cost_quota.py` |
-| **L9** | Selesaikan alur approval operasi tulis (DocType JSON `Pending Action Draft` sudah dibuat di **#1 S2**): wajibkan write-tool melewati `create_draft()` dengan `user = frappe.session.user` terisi + bereskan 2 TODO eksekusi/notifikasi di `lib/draft_manager.py:42,60` | `test_draft_approval_flow.py` |
+| **L9** | Selesaikan alur approval operasi tulis (DocType JSON `Pending Action Draft` sudah dibuat di **Tahap C**): wajibkan write-tool melewati `create_draft()` dengan `user = frappe.session.user` terisi + bereskan 2 TODO eksekusi/notifikasi di `lib/draft_manager.py:42,60` | `test_draft_approval_flow.py` |
 
 Sudah aman, **jangan diutak-atik**: L1–L4 (tidak ada SQL mentah, value
 parameterized, whitelist tool per worker, nol akses OS).
@@ -848,7 +893,7 @@ README + tabel status jujur: apa yang jalan, apa yang belum tersambung (termasuk
 | #1 | `test_endpoint_auth.py` | setiap endpoint AIOS tanpa sesi → 401 |
 | #1 | `test_authz_user_isolation.py` | cookie A → resource B → 403 (IDOR N2, S3 `parts[4]`, `mapping/validate` `entryId`) |
 | #1 | `test_parse_pdf_guard.py` | tanpa sesi ditolak; file >batas ditolak |
-| #1 | `test_doctype_exists.py` | `Pending Action Draft` ada di repo lengkap dengan field kepemilikan `user -> Link(User)` & `rejection_reason` (owner tunggal S2) |
+| Tahap C | `test_doctype_exists.py` | `Pending Action Draft` ada di repo lengkap dengan field kepemilikan `user -> Link(User)` & `rejection_reason` (S2) |
 | #1 | `test_register_enumeration.py` | respons tidak membedakan email terdaftar/tidak |
 | #1 | `test_payment_gate.py` | `ACTIVE` tidak hardcoded |
 | #1 | `test_db_connection_ssrf.py` | host/IP privat ditolak + tidak ada default `user="root"` (N5, S12) |
@@ -926,6 +971,13 @@ Permintaan reviewer, dan **paling penting**: ini mengubah klaim keamanan dari
 3. Coba akses setiap resource milik Beta (conversation, message, connection, draft)
 4. Assert **403/404**, bukan 200
 5. Ulangi **tanpa** cookie → assert 401
+
+> **Koreksi skema (Tahap C):** versi test saat ini membuat `AIOS Conversation` dengan
+> `datetime`, `AIOS Message` dengan `user`, dan `AIOS DB Connection` dengan
+> `connection_name` — ketiganya tidak ada di doctype, sehingga test gagal karena field,
+> bukan karena izin. Saat ditulis ulang: `AIOS Message` tanpa `user` (1-hop lewat
+> `conversation`), `AIOS Conversation` tanpa `datetime`, `AIOS DB Connection` tanpa
+> `connection_name`, dan impor `handle_api_request` (bukan `handle`).
 
 Jalankan **sebelum** #1 (harus merah) dan **sesudah** #1 (harus hijau). Itu buktinya.
 
@@ -1092,7 +1144,7 @@ Setelah **#0** dan **#1** selesai sebagai fondasi wajib (CI baseline + penutupan
 
 1. **Jalur Cepat PoC Produk (`#0 → #1 → #4d → #7 → #8`):**
    - Dipilih bila prioritas utama adalah mendemokan AIOS menganalisis data ERPNext nyata (cabang `finance`) ke atasan secepatnya, **tanpa** mengekspos eksekusi tool ERPNext ke request tanpa sesi (`S5`) atau IDOR (`N2`).
-   - **Prasyarat keras sebelum #8 (L10):** branch **#1** sudah menutup lubang auth/IDOR darurat (`N1, N2, S1–S5`), pemilik project **wajib** menjalankan backup site + `seed_erpnext_demo.run` (#4d) via `bench`, dan branch **#7** (`fix/llm-tool-sandbox`: whitelist `aggregate.fn` L5, guard read-only L6, injeksi konteks `user_id` sesi + resolusi `default_company` site L7, akuntansi token & kuota `User` L8/A12, alur approval `Pending Action Draft` L9) **wajib hijau lebih dulu**.
+   - **Prasyarat keras sebelum #8 (L10):** **Tahap C** sudah menutup lubang auth/IDOR darurat (`N1, N2, S1–S5`), pemilik project **wajib** menjalankan backup site + `seed_erpnext_demo.run` (#4d) via `bench`, dan branch **#7** (`fix/llm-tool-sandbox`: whitelist `aggregate.fn` L5, guard read-only L6, injeksi konteks `user_id` sesi + resolusi `default_company` site L7, akuntansi token & kuota `User` L8/A12, alur approval `Pending Action Draft` L9) **wajib hijau lebih dulu**.
 2. **Jalur Pembersihan & Fondasi SaaS (`#0 → #1 → #2 → #3 → #4a → #4b → #4c → #5 → #9`):**
    - Merapikan pohon doctype/page & 16 skrip root (#2), membersihkan 396 file artifact & 25 `demo_tahap*` (#3), menghapus `AIOS Tenant` & memindahkan atribut/kuota ke `User` + `AIOS Setting` via `create_custom_fields` di `after_install` & `after_migrate` (`#4a–#4b`, `#5`), mengatur alur *Self-Registration* (`Pending Provisioning`), serta merapikan router (#9).
 
@@ -1115,17 +1167,21 @@ Deliverable #0 (**semua terpenuhi**, lihat §3k untuk hasil terukur):
 
 ---
 
-### ⏭️ Aksi Berikutnya: Mulai `#1` (`fix/security-baseline`)
+### ⏭️ Aksi Berikutnya: Tahap C — Ownership per `User`
 
-Fondasi sudah aman: gate CI terpasang dan hijau, backup site ada, `docs/` = source of truth.
+`#1` tahap A sudah selesai di `fix/security-emergency` (penutupan endpoint auth, enumerasi
+register, path mesin, SSRF, auth switch Frappe, guard `Administrator`, pesan 401 generik).
+Sisa `S1/S2/N2/S3` dan ownership per `User` dikerjakan di **Tahap C** (§#4a).
 
-Sasaran `#1`: menutup lubang auth/IDOR **darurat** (`N1, N2, S1–S5`) dan menjadi **pemilik tunggal
-pembuatan DocType JSON** (`Pending Action Draft` dengan `user -> Link(User)`, §4 S2) agar tidak perlu
-dibongkar ulang di `#4a`.
+Sasaran Tahap C: `user -> Link(User)` pada `AIOS Conversation`, `AIOS Agent State`, dan
+`Pending Action Draft`; `AIOS DB Connection` dapat `user` dengan `tenant` sebagai kolom
+transisi; `permission_query_conditions` + `has_permission` aktif; `Pending Action Draft`
+jadi file JSON di repo.
 
-**Bukti keberhasilan `#1` yang tidak bisa dipalsukan:** `aios_v1/tests/test_authz_user_isolation.py`
-yang hari ini **sengaja MERAH** (3 test, di-`@unittest.skip` dengan alasan `baseline #1`) berubah
-**HIJAU** saat dijalankan lewat `bench --site aios-v16.localhost run-tests --app aios_v1`.
+**Bukti keberhasilan Tahap C yang tidak bisa dipalsukan:** `aios_v1/tests/test_authz_user_isolation.py`
+yang hari ini **sengaja MERAH** (`@unittest.skip`) berubah **HIJAU** lewat
+`bench --site aios-v16.localhost run-tests --app aios_v1`, setelah skemanya dibetulkan
+sesuai doctype nyata (§6c).
 
-**Nit yang ikut dibersihkan di `#1`:** docstring `test_authz_user_isolation.py:4` masih menulis
+**Nit yang ikut dibersihkan:** docstring `test_authz_user_isolation.py:4` masih menulis
 `auto-skip di CI` — sebenarnya dibuang dari collection oleh `conftest.py` (§3k).
