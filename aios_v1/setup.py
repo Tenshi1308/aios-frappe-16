@@ -107,10 +107,22 @@ def _ensure_role_profiles():
         profile.save(ignore_permissions=True)
 
 
+def _is_aios_user(user: str) -> bool:
+    roles = set(frappe.get_roles(user))
+    return bool({"AIOS Admin", "AIOS Client"} & roles)
+
+
 def sync_aios_status_enabled(doc, method=None):
-    """User.validate: `aios_status` adalah sumber kebenaran; `enabled` mengikuti."""
+    """User.validate: `aios_status` adalah sumber kebenaran; `enabled` mengikuti.
+
+    Hanya berlaku untuk user ber-role AIOS. User Frappe lain (Administrator,
+    System Manager, dsb.) tidak boleh ikut di-disable.
+    """
     status = doc.get("aios_status")
     if not status:
+        return
+    roles = {row.role for row in (doc.get("roles") or [])}
+    if not ({"AIOS Admin", "AIOS Client"} & roles):
         return
     doc.enabled = 1 if status == "Active" else 0
 
@@ -119,6 +131,8 @@ def on_login(login_manager):
     """Hook on_login: tolak user AIOS yang belum Active."""
     user = login_manager.user
     if not user or user == "Guest":
+        return
+    if not _is_aios_user(user):
         return
     status = frappe.db.get_value("User", user, "aios_status")
     if status and status != "Active":
@@ -129,6 +143,8 @@ def validate_aios_status():
     """Hook auth_hooks: tolak sesi AIOS yang statusnya bukan Active."""
     user = frappe.session.user
     if not user or user == "Guest":
+        return
+    if not _is_aios_user(user):
         return
     status = frappe.db.get_value("User", user, "aios_status")
     if status and status != "Active":

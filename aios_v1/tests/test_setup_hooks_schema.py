@@ -58,9 +58,11 @@ class TestSetupHooks(unittest.TestCase):
 
     def test_auth_guards(self):
         src = SETUP.read_text(encoding="utf-8")
+        self.assertIn("def _is_aios_user(user: str)", src)
         self.assertIn("def on_login(login_manager)", src)
         self.assertIn("def validate_aios_status()", src)
         self.assertIn("def sync_aios_status_enabled(doc, method=None)", src)
+        self.assertIn('{"AIOS Admin", "AIOS Client"}', src)
 
 
 if __name__ == "__main__":
