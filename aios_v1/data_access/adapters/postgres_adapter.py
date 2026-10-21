@@ -1,5 +1,14 @@
 from typing import Dict, Any, List, Optional
+
+import frappe
+
 from .base import BaseDatabaseAdapter
+from .sql_guard import validate_readonly_statement
+
+
+def _set_readonly_session(conn) -> None:
+    """Paksa sesi PostgreSQL read-only sebelum query pertama."""
+    conn.set_session(readonly=True, autocommit=True)
 
 class PostgresAdapter(BaseDatabaseAdapter):
     def __init__(self, config: Dict[str, Any]):
@@ -18,7 +27,7 @@ class PostgresAdapter(BaseDatabaseAdapter):
         try:
             import psycopg2
             import psycopg2.extras
-            return psycopg2.connect(
+            conn = psycopg2.connect(
                 host=self.host,
                 port=self.port,
                 user=self.user,
@@ -27,6 +36,12 @@ class PostgresAdapter(BaseDatabaseAdapter):
                 connect_timeout=5,
                 cursor_factory=psycopg2.extras.RealDictCursor
             )
+            try:
+                _set_readonly_session(conn)
+            except Exception:
+                conn.close()
+                raise
+            return conn
         except ImportError:
             raise ImportError("Driver psycopg2 belum terpasang di sistem untuk PostgreSQL")
 
@@ -97,15 +112,23 @@ class PostgresAdapter(BaseDatabaseAdapter):
 
     def execute_read_query(self, sql: str, params: Optional[List[Any]] = None, limit: int = 100) -> List[Dict[str, Any]]:
         clean_sql = sql.strip()
-        if not clean_sql.upper().startswith(("SELECT", "WITH", "EXPLAIN")):
-            raise ValueError("Hanya query SELECT/baca yang diizinkan")
+        try:
+            validate_readonly_statement(clean_sql, "postgres")
+        except ValueError as e:
+            frappe.log_error(f"Postgres read-only reject: {e}", "AIOS SQL Guard")
+            raise
 
         conn = self._get_connection()
-        with conn.cursor() as cur:
-            cur.execute(clean_sql, params or [])
-            rows = cur.fetchmany(limit)
-        conn.close()
-        return [dict(r) for r in rows]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(clean_sql, params or [])
+                rows = cur.fetchmany(limit)
+            return [dict(r) for r in rows]
+        except Exception as e:
+            frappe.log_error(f"Postgres read query gagal: {e}", "AIOS SQL Guard")
+            raise
+        finally:
+            conn.close()
 
     def quote_identifier(self, ident: str) -> str:
         escaped = ident.replace('"', '""')

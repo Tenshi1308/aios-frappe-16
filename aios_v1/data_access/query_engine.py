@@ -3,6 +3,7 @@ import frappe
 from typing import Dict, Any, List, Optional, Tuple
 
 MAX_LIMIT = 100
+ALLOWED_AGGREGATE_FNS = frozenset({"COUNT", "SUM", "AVG", "MIN", "MAX"})
 
 def get_mapping_lookup(tenant_id: int):
     conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
@@ -90,8 +91,22 @@ def execute_canonical_query(tenant_id: int, query: Dict[str, Any]) -> Dict[str, 
 
     aggregate = query.get("aggregate")
     if aggregate:
-        fn = (aggregate.get("fn") or "count").upper()
-        fld = (aggregate.get("field") or "").lower()
+        if not isinstance(aggregate, dict):
+            frappe.log_error("Format aggregate bukan object", "AIOS Query Guard")
+            return {"ok": False, "error": "Format aggregate tidak valid", "rows": [], "rowCount": 0}
+        fn_raw = aggregate.get("fn") or "count"
+        if not isinstance(fn_raw, str):
+            frappe.log_error("Tipe aggregate.fn bukan string", "AIOS Query Guard")
+            return {"ok": False, "error": "Fungsi agregat tidak valid", "rows": [], "rowCount": 0}
+        fn = fn_raw.upper()
+        if fn not in ALLOWED_AGGREGATE_FNS:
+            frappe.log_error(f"Fungsi agregat ditolak: {fn}", "AIOS Query Guard")
+            return {"ok": False, "error": "Fungsi agregat tidak diizinkan", "rows": [], "rowCount": 0}
+        fld_raw = aggregate.get("field") or ""
+        if not isinstance(fld_raw, str):
+            frappe.log_error("Tipe aggregate.field bukan string", "AIOS Query Guard")
+            return {"ok": False, "error": "Field agregat tidak valid", "rows": [], "rowCount": 0}
+        fld = fld_raw.lower()
         if fn == "COUNT" and not fld:
             select_parts.append("COUNT(*) AS value")
             out_columns.append("value")

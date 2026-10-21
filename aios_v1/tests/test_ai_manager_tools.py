@@ -45,6 +45,7 @@ class TestAIManagerTools(IntegrationTestCase):
         frappe.db.commit = lambda *a, **k: None
         _make_test_user(self.EMAIL, "_Test AI Manager")
         frappe.set_user(self.EMAIL)
+        self.context = {"user": self.EMAIL, "allowed_company": "_Test Company"}
 
     def tearDown(self):
         frappe.db.commit = self._orig_commit
@@ -79,7 +80,9 @@ class TestAIManagerTools(IntegrationTestCase):
             "payload": {"vendor": "PT Test Sukses", "amount": 50000},
             "reason": "Melebihi limit approval otomatis",
         }
-        result = json.loads(execute_tool("escalate_to_human_approval", json.dumps(args)))
+        result = json.loads(
+            execute_tool("escalate_to_human_approval", json.dumps(args), context=self.context)
+        )
         self.assertEqual(result.get("status"), "PENDING_HUMAN_APPROVAL")
         self.assertTrue(result.get("draft_id", "").startswith("DRF-"))
         self.assertIn("/draft/", result.get("card_markdown", ""))
@@ -100,7 +103,7 @@ class TestAIManagerTools(IntegrationTestCase):
             "task_instruction": "Cek rekonsiliasi bank hari ini",
         }
         result = json.loads(
-            execute_tool("orchestrator_delegate_to_subagent", json.dumps(args))
+            execute_tool("orchestrator_delegate_to_subagent", json.dumps(args), context=self.context)
         )
         self.assertEqual(result.get("status"), "DELEGATED")
         self.assertEqual(result.get("worker_key"), "treasurer")

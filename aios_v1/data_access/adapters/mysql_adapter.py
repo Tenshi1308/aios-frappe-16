@@ -1,6 +1,25 @@
 import pymysql
 from typing import Dict, Any, List, Optional
+
+import frappe
+
 from .base import BaseDatabaseAdapter
+from .sql_guard import validate_readonly_statement
+
+
+def _set_readonly_session(conn) -> None:
+    """Paksa sesi MariaDB/MySQL read-only; fallback untuk server lama."""
+    conn.autocommit(True)
+    cur = conn.cursor()
+    try:
+        try:
+            cur.execute("SET SESSION TRANSACTION READ ONLY")
+        except Exception:
+            cur.close()
+            cur = conn.cursor()
+            cur.execute("SET SESSION tx_read_only=1")
+    finally:
+        cur.close()
 
 class MySQLAdapter(BaseDatabaseAdapter):
     def __init__(self, config: Dict[str, Any]):
@@ -16,7 +35,7 @@ class MySQLAdapter(BaseDatabaseAdapter):
             raise ValueError("User database wajib diisi")
 
     def _get_connection(self):
-        return pymysql.connect(
+        conn = pymysql.connect(
             host=self.host,
             port=self.port,
             user=self.user,
@@ -26,6 +45,12 @@ class MySQLAdapter(BaseDatabaseAdapter):
             cursorclass=pymysql.cursors.DictCursor,
             connect_timeout=5
         )
+        try:
+            _set_readonly_session(conn)
+        except Exception:
+            conn.close()
+            raise
+        return conn
 
     def test_connection(self) -> Dict[str, Any]:
         try:
@@ -97,15 +122,23 @@ class MySQLAdapter(BaseDatabaseAdapter):
 
     def execute_read_query(self, sql: str, params: Optional[List[Any]] = None, limit: int = 100) -> List[Dict[str, Any]]:
         clean_sql = sql.strip()
-        if not clean_sql.upper().startswith(("SELECT", "WITH", "EXPLAIN")):
-            raise ValueError("Hanya query SELECT/baca yang diizinkan")
+        try:
+            validate_readonly_statement(clean_sql, "mysql")
+        except ValueError as e:
+            frappe.log_error(f"MySQL read-only reject: {e}", "AIOS SQL Guard")
+            raise
 
         conn = self._get_connection()
-        with conn.cursor() as cur:
-            cur.execute(clean_sql, params or [])
-            rows = cur.fetchmany(limit)
-        conn.close()
-        return rows
+        try:
+            with conn.cursor() as cur:
+                cur.execute(clean_sql, params or [])
+                rows = cur.fetchmany(limit)
+            return rows
+        except Exception as e:
+            frappe.log_error(f"MySQL read query gagal: {e}", "AIOS SQL Guard")
+            raise
+        finally:
+            conn.close()
 
     def quote_identifier(self, ident: str) -> str:
         escaped = ident.replace("`", "``")

@@ -2,7 +2,12 @@ import os
 import re
 import sqlite3
 from typing import Dict, Any, List, Optional
+from urllib.parse import quote
+
+import frappe
+
 from .base import BaseDatabaseAdapter
+from .sql_guard import validate_readonly_statement
 
 def normalize_sqlite_path(raw_path: str) -> str:
     if not raw_path:
@@ -54,8 +59,14 @@ class SQLiteAdapter(BaseDatabaseAdapter):
             raise ValueError("File path SQLite tidak boleh kosong")
         if not os.path.exists(self.file_path):
             raise FileNotFoundError(f"File database SQLite tidak ditemukan: {self.file_path}")
-        conn = sqlite3.connect(self.file_path)
+        uri = f"file:{quote(self.file_path, safe='/')}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA query_only = ON")
+        except Exception:
+            conn.close()
+            raise
         return conn
 
     def test_connection(self) -> Dict[str, Any]:
@@ -122,16 +133,23 @@ class SQLiteAdapter(BaseDatabaseAdapter):
 
     def execute_read_query(self, sql: str, params: Optional[List[Any]] = None, limit: int = 100) -> List[Dict[str, Any]]:
         clean_sql = sql.strip()
-        if not clean_sql.upper().startswith(("SELECT", "WITH", "EXPLAIN", "PRAGMA")):
-            raise ValueError("Hanya query SELECT/baca yang diizinkan")
-        
+        try:
+            validate_readonly_statement(clean_sql, "sqlite")
+        except ValueError as e:
+            frappe.log_error(f"SQLite read-only reject: {e}", "AIOS SQL Guard")
+            raise
+
         conn = self._get_connection()
-        cur = conn.cursor()
-        cur.execute(clean_sql, params or [])
-        rows = cur.fetchmany(limit)
-        res = [dict(r) for r in rows]
-        conn.close()
-        return res
+        try:
+            cur = conn.cursor()
+            cur.execute(clean_sql, params or [])
+            rows = cur.fetchmany(limit)
+            return [dict(r) for r in rows]
+        except Exception as e:
+            frappe.log_error(f"SQLite read query gagal: {e}", "AIOS SQL Guard")
+            raise
+        finally:
+            conn.close()
 
     def quote_identifier(self, ident: str) -> str:
         escaped = ident.replace('"', '""')
