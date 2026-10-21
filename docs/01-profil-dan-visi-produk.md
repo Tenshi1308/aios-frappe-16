@@ -63,21 +63,20 @@ Target utama AIOS adalah setiap cabang bekerja **seperti perusahaan mandiri yang
 
 ---
 
-## 4. Model Multi-Tenant (`1 Client = 1 Site`) & Dua Portal Berbasis Role
+## 4. Model Multi-Tenant (`1 Client = 1 Site`) & Peta Peran Lintas Site
 
 AIOS V1 menerapkan arsitektur **Site-Level Multi-Tenancy (`1 Client = 1 Site`)** menggunakan kemampuan native Frappe Bench (`dns_multitenant`):
 - Setiap perusahaan klien beroperasi di *site* Frappe tersendiri (dengan database MariaDB terpisah).
 - Di dalam setiap *site*, seluruh atribut pengguna dan kuota langsung melekat pada DocType **`User`** bawaan Frappe (tanpa membutuhkan DocType perantara `AIOS Tenant`).
-- Ketika ada calon klien melakukan **Self-Service Registration** di halaman Sign Up, akun dicatat dengan status **`Pending Provisioning`** karena pembuatan dan penyiapan *instance site* baru dilakukan secara asinkron (tidak langsung *auto-login* ke instance yang belum siap).
+- Pengelolaan lintas klien (provisioning *site*, persetujuan pendaftaran, undangan pengguna, kuota, monitoring) dilakukan dari satu **Developer Control Plane** — *site* Frappe khusus developer — yang berkomunikasi dengan tiap *site* klien lewat **Control API** (`docs/03` §1.4, `docs/04` Alur 6).
 
-Seluruh pengguna berinteraksi melalui antarmuka web modern (pengguna klien tidak pernah diarahkan ke halaman Frappe Desk). Aplikasi menyajikan dua portal berbeda berdasarkan **Role Frappe**:
+Pengguna berinteraksi melalui dua permukaan aplikasi (pengguna klien tidak pernah diarahkan ke halaman Frappe Desk):
 
-| Karakteristik | Portal `AIOS Admin` | Portal `AIOS Client` |
+| Karakteristik | Developer Control Plane (site developer) | Client Workspace (site klien) |
 |---|---|---|
-| **Target Pengguna** | Pengelola / Operator Site AIOS | Pebisnis / Direktur / Staf Perusahaan Klien |
-| **Cara Pembuatan Akun** | Dibuat oleh `Administrator` atau `AIOS Admin` | Dibuat/diaktifkan oleh `AIOS Admin` di site klien, atau melalui form **Self-Service Registration** (*status awal: `Pending Provisioning`*) |
-| **Role & Tipe User Frappe** | Role `AIOS Admin` (`AIOS Admin Profile`) | Role `AIOS Client` (`AIOS Client Profile`, tipe `Website User` dengan `desk_access = 0`) |
-| **Kewenangan Utama** | • Mengonfigurasi Provider LLM & pemetaan model untuk setiap Orchestrator dan Sub-Agent<br>• Mengelola & mengaktifkan/menonaktifkan Plugin / MCP Server<br>• Memonitor pemakaian token, biaya LLM, dan aktivitas seluruh `User` di site tersebut<br>• Mengatur kuota default di `AIOS Setting` serta menyesuaikan kuota token (`aios_token_limit`) dan status aktif (`aios_status`) per `User` | • Menggunakan workspace AI divisi Finance & Sales untuk perusahaan pada site tersebut<br>• Mengunggah dokumen bisnis untuk dianalisis<br>• Melihat visualisasi laporan, grafik, dan mengunduh file di *Artifact/Canvas Space*<br>• Menyetujui (**Approve**) atau menolak (**Reject**) draf transaksi bisnis sebelum masuk ke ERPNext |
+| **Target Pengguna** | `AIOS Admin` — operator AIOS (bukan `Administrator`) | Pebisnis / Direktur / Staf Perusahaan Klien |
+| **Role & Tipe User Frappe** | Role `AIOS Admin` (`AIOS Admin Profile`, target `desk_access = 0`); hanya ada di site developer | Role `AIOS Client` (`AIOS Client Profile`, tipe `Website User` dengan `desk_access = 0`); tidak ada role `AIOS Admin` di site klien |
+| **Kewenangan Utama** | • Mendaftarkan & mem-provision *site* klien baru (registry `AIOS Client Site`)<br>• Menyetujui pendaftaran mandiri & menerbitkan undangan pengguna (tautan set-password sekali pakai)<br>• Mengelola status (`aios_status`) & kuota (`aios_token_limit`) `User` lintas site<br>• Memonitor pemakaian token & kesehatan site klien<br>• UI pengaturan Provider LLM, Model Routing, dan Plugin/MCP — data tetap tersimpan di site klien | • Menggunakan workspace AI divisi Finance & Sales untuk perusahaan pada site tersebut<br>• Mengunggah dokumen bisnis untuk dianalisis<br>• Melihat visualisasi laporan, grafik, dan mengunduh file di *Artifact/Canvas Space*<br>• Menyetujui (**Approve**) atau menolak (**Reject**) draf transaksi bisnis sebelum masuk ke ERPNext |
 
 > **Peran Khusus `Administrator` (Root Frappe) & Pendaftaran Skema via Hooks:**
-> Akun `Administrator` bawaan Frappe digunakan untuk administrasi tingkat sistem/bench. Seluruh ekstensi skema AIOS pada DocType inti `User` (seperti `aios_persona`, `aios_status`, `aios_token_limit`, `aios_tokens_used`) serta pembuatan Role & Role Profile di-script secara otomatis di Python pada hook **`after_install` dan `after_migrate`** di `hooks.py` menggunakan fungsi resmi `create_custom_fields`.
+> Akun `Administrator` bawaan Frappe digunakan untuk administrasi tingkat sistem/bench dan **tidak pernah dimodifikasi atau dibatasi** — di luar itu seluruh operasi harian dijalankan `AIOS Admin` dari Developer Control Plane. Jalur programatik ke *site* klien memakai role layanan **`AIOS Control`** (bukan `AIOS Admin`, bukan `Administrator`). Seluruh ekstensi skema AIOS pada DocType inti `User` (seperti `aios_persona`, `aios_status`, `aios_token_limit`, `aios_tokens_used`) serta pembuatan Role & Role Profile di-script secara otomatis di Python pada hook **`after_install` dan `after_migrate`** di `hooks.py` menggunakan fungsi resmi `create_custom_fields`.

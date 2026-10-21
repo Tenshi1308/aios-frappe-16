@@ -1,7 +1,7 @@
 # 06 — Roadmap Pengembangan Business AI Harness (Fase Lanjutan Setelah Fondasi)
 
 **Status:** Spesifikasi & Rencana Eksekusi Fase 2 (Tanpa Duplikasi dengan Fase 1)
-**Prasyarat Wajib:** Fondasi Keamanan, Identitas `User`, & Higienitas di **[`05.1 — Roadmap Fondasi`](./05.1-roadmap-perbaikan-fondasi.md)** (`#0`, `#1`, `#2`, `#3`, `#4a–#4d`, `#5`, dan `#7`) selesai lebih dulu.
+**Prasyarat Wajib:** Fondasi Keamanan, Identitas `User`, & Higienitas di **[`05.1 — Roadmap Fondasi`](./05.1-roadmap-perbaikan-fondasi.md)** (`#0`, `#1`, `#2`, `#3`, `#4a-1`, `#4a-2`, `#4c`, `#5`, dan `#7`) selesai lebih dulu.
 **Basis:** arsitektur `docs/02`; skema `docs/03`; alur `docs/04`. Dokumen ini hanya delta fase 2 + test.
 
 > **Prinsip Utama:**
@@ -19,7 +19,7 @@
 flowchart LR
     F["05: Fondasi, Identitas User, &\nSandbox LLM (#0 - #8)"] --> H1["H1: Multi-Provider &\nPer-Agent Model Routing"]
     H1 --> H2["H2: Plugin & MCP Manager +\n7 Built-in Default Plugins"]
-    H2 --> H3["H3: UI Portal Admin (Manajemen\nUser, Provisioning, & Kuota)"]
+    H2 --> H3["H3: Developer Control Plane\n(Registry Site, Undangan, Kuota, Monitoring)"]
     H2 --> H4["H4: Deep Finance & Sales Agents +\nReal Delegation & Live Trace"]
     H3 --> H4
     H4 --> H5["H5: Isolated Workspace (Private File) &\n5-Tier Artifact/Canvas Space"]
@@ -43,8 +43,8 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 - **`aios_v1/lib/llm_client.py`:**
   - Fungsi `get_llm_config(branch_key: str, agent_key: str, user_id: str | None = None)` mencari rute spesifik `f"{branch_key}:{agent_key}:{user_id}"` lalu fallback ke rute global site `f"{branch_key}:{agent_key}:*"`.
   - **Fail Loudly:** Jika rute model untuk `(branch_key, agent_key)` belum diatur atau provider-nya `enabled = 0`, panggil `frappe.log_error` dan `frappe.throw(f"Model LLM untuk agen {branch_key}/{agent_key} belum dikonfigurasi oleh AIOS Admin.")` — **dilarang keras** memberi fallback model default di kode Python.
-- **UI Portal `AIOS Admin`:**
-  - Halaman **LLM Providers & Agent Model Routing**: tambah/edit/hapus provider, uji koneksi API Key, dan dropdown pemetaan model untuk setiap Orchestrator serta Sub-Agent.
+- **UI di Developer Control Plane (data di site klien):**
+  - Halaman **LLM Providers & Agent Model Routing** untuk *site* klien yang dipilih dari registry: tambah/edit/hapus provider, uji koneksi API Key, dan dropdown pemetaan model untuk setiap Orchestrator serta Sub-Agent. Penulisan lewat Control API (`AIOS Control`), bukan login Desk di site klien.
 
 ### 3. Script Test Wajib
 - `aios_v1/tests/test_agent_model_routing.py`:
@@ -69,8 +69,8 @@ Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas
 ### 2. Katalog Lengkap 7 *Built-in Default Plugins*
 Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; `AIOS Plugin Scope` membatasi akses per branch/worker; plugin eksternal MCP mengikuti §1.
 
-### 3. UI Portal `AIOS Admin`
-- Halaman **Plugin & MCP Registry**: daftar seluruh plugin bawaan dan eksternal, tombol toggle **On/Off**, tombol *Discover Tools / Health Check* untuk MCP eksternal, serta pengaturan izin akses (`AIOS Plugin Scope`) per cabang/sub-agent.
+### 3. UI di Developer Control Plane (data di site klien)
+- Halaman **Plugin & MCP Registry** untuk *site* klien terpilih: daftar seluruh plugin bawaan dan eksternal, tombol toggle **On/Off**, tombol *Discover Tools / Health Check* untuk MCP eksternal, serta pengaturan izin akses (`AIOS Plugin Scope`) per cabang/sub-agent.
 
 ### 4. Script Test Wajib
 - `aios_v1/tests/test_plugin_manager.py`:
@@ -80,22 +80,43 @@ Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plug
 
 ---
 
-## Tahap H3 — `feat/admin-portal-user-and-quota-ui`
+## Tahap H3 — `feat/developer-control-plane`
 
-Membangun antarmuka **Portal `AIOS Admin`** untuk mengelola siklus hidup pengguna (`Pending Provisioning` → `Active` → `Suspended`), kuota token hybrid, dan konfigurasi tingkat site di atas fondasi backend yang sudah selesai di `#4b`, `#5`, dan `#7` (**tanpa menduplikasi pembuatan Custom Field atau `usage.py`**).
+Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang menjalankan dashboard `AIOS Admin` untuk mengelola **banyak site klien lintas site** — registri site, persetujuan pendaftaran, undangan sekali pakai, kuota, dan monitoring agregat. Kontrak normatif: `docs/03` §1.4 dan `docs/04` Alur 6. Tahap ini **tidak menduplikasi** pembuatan Custom Field, `usage.py`, atau alur approval; ia hanya memakai ulang fondasi `#4b`, `#5`, `#7b`, dan `#8`.
 
-### 1. Lingkup UI & Endpoint Manajemen Admin
-1. **Dashboard Manajemen `User` & Aktivasi Provisioning:**
-   - Menampilkan daftar seluruh `User` di site beserta `aios_status` (`Pending Provisioning`, `Active`, `Suspended`), `aios_persona`, `aios_company_name`, dan bar pemakaian kuota (`aios_tokens_used / aios_token_limit`).
-   - Tombol aksi cepat bagi `AIOS Admin` untuk mengaktifkan akun (`aios_status = "Active"`, yang otomatis menyetel `User.enabled = 1`), membekukan akun (`Suspended`), mengubah `aios_persona`, atau menyesuaikan `aios_token_limit` spesifik user.
-2. **Panel Pengaturan Site (`AIOS Setting`):**
-   - Form UI untuk seluruh field site yang didefinisikan di `docs/03` §1.3.
-3. **Analitik Konsumsi Token (`AIOS Token Usage`):**
-   - Grafik dan tabel pemakaian token per user, per cabang (`finance` vs `sales`), dan per model/provider.
+**Dibagi dua fase:** §1–§3 = **Fase 1** (dashboard operasional), §4 = **Fase 2** (tombol **Buat Site**). Fase 2 dikerjakan setelah Fase 1 dan tidak boleh memblokir `#8`.
 
-### 2. Script Test Wajib
-- `aios_v1/tests/test_admin_user_quota_management.py`:
-  - Uji endpoint `AIOS Admin` mengubah `aios_status` dari `"Pending Provisioning"` menjadi `"Active"` (otomatis `enabled == 1`), mengubah `aios_token_limit` user tertentu, dan menolak akses jika dipanggil oleh role `AIOS Client` (`403 PermissionError`).
+### 1. Registri Site Klien (`AIOS Client Site`, hanya di site developer)
+1. Field mengikuti `docs/03` §1.4: `site_name` (unique), `base_url`, `company_name`, `contact_name`, `contact_email`, `api_credential` (`Password`), `status`, `last_seen`, `last_error`, `notes`.
+2. **Tanpa `plan`/billing/tiering.** Kuota tetap 3 lapis (`User.aios_token_limit`, `AIOS Setting.site_token_limit`, registry opsional).
+3. Validasi `base_url`: allowlist + wajib HTTPS di non-lokal, guard SSRF (RFC1918/loopback/link-local/cloud metadata, re-check redirect).
+
+### 2. Role `AIOS Control` & Control API di Site Klien
+1. Role layanan tanpa login manusia: **`read` pada `User` dan `AIOS Token Usage` saja**. Tidak ada akses `AIOS Setting`, tidak ada akses DocType bisnis/ERPNext.
+2. Dua tulis lifecycle (`aios_status`, `aios_token_limit`) lewat endpoint khusus yang hanya menyentuh dua field itu via `frappe.db.set_value` — **bukan `DocPerm write` pada `User`** (yang akan membuka password/role/`enabled`).
+3. Endpoint `/api/control/health`, `/users`, `/users/{user}/activate`, `/metrics`: validasi token `api_credential`, tolak sesi manusia, audit tiap panggilan, mask token di semua error/log. `/metrics` mengembalikan angka agregat saja, bukan isi dokumen.
+4. `AIOS Admin` **tidak dipasang di site klien**; `Administrator` tidak pernah dipakai jalur ini.
+
+### 3. Dashboard Control Plane (UI `AIOS Admin`)
+1. **Daftar Site & Kesehatan:** status, `last_seen`, `last_error`, aksi health check manual.
+2. **Antrean `Pending Provisioning` Lintas Site:** daftar user pending per site, aksi setujui/tolak, set `aios_persona` & `aios_token_limit`.
+3. **Undangan Sekali Pakai:** token set-password dibuat & divalidasi **di site klien** (expiry + sekali pakai); dashboard hanya menampilkan tautan + kode registrasi untuk dikirim manual. **Tanpa SMTP untuk PoC**; email otomatis menyusul lewat Email Queue Frappe tanpa mengubah kontrak tautan.
+4. **Monitoring Agregat:** token usage per site/user/cabang/model, jumlah user aktif, site down.
+
+### 4. Tombol "Buat Site" (provisioning otomatis)
+1. Form: nama site, nama perusahaan, email kontak → tombol **Buat Site**.
+2. Validasi nama site `^[a-z][a-z0-9-]{2,40}$` + cek duplikat; perintah dijalankan sebagai daftar argumen tanpa `shell=True`.
+3. Job `frappe.enqueue` di host: `bench new-site` → `install-app erpnext` → `install-app aios_v1` → `Administrator` isi `AIOS Setting` → buat token `AIOS Control`.
+4. Gagal di tengah → `bench drop-site --force` + hapus direktori; `status = gagal`, `last_error` pesan aman. Tidak boleh ada site setengah jadi.
+5. Progres per langkah di dashboard. Alamat memakai hostname (`nama.localhost` / `nama.<IP>.nip.io`), tanpa domain/sertifikat/nginx per site.
+
+### 5. Script Test Wajib
+- `aios_v1/tests/test_control_api_auth.py`: token salah/kosong → 401 + tercatat; sesi manusia ditolak; token tidak muncul di pesan error/log.
+- `aios_v1/tests/test_control_site_registry.py`: `site_name` unik, `base_url` non-allowlist ditolak.
+- `aios_v1/tests/test_control_ssrf_guard.py`: menolak `127.0.0.1`, `169.254.169.254`, IP privat, dan redirect ke host terlarang.
+- `aios_v1/tests/test_control_lifecycle.py`: setujui user pending → `aios_status = "Active"` + `enabled = 1`; ubah `aios_token_limit`; `AIOS Control` tidak bisa membaca `AIOS Setting` maupun dokumen bisnis; `Administrator` tidak tersentuh.
+- `aios_v1/tests/test_site_provisioning.py`: satu penekanan tombol menghasilkan site baru yang bisa dibuka; nama site tidak valid (huruf besar, spasi, `..`, `;`) ditolak.
+- `aios_v1/tests/test_site_provisioning_cleanup.py`: kegagalan di tengah job tidak meninggalkan site/database setengah jadi.
 
 ---
 

@@ -52,8 +52,10 @@ Semua hal berikut sudah ada di beberapa pemain, jadi **bukan pembeda** bila AIOS
 2. **Tulis dengan approval yang benar-benar posting.**
    Draft transaksi → Approve → menjadi dokumen resmi di ERPNext. Odoo standar read-only; Microsoft/Oracle punya approval, tetapi jarang transparan sampai detail tool dan payload.
 
-3. **Instance sendiri + model bebas.**
+3. **Instance sendiri + model bisa diganti.**
    `1 Client = 1 Site`, provider/model bisa diganti per agen, plugin/MCP terbuka. Ini kombinasi yang sulit ditandingi pemain global untuk klien yang peduli data residency dan vendor lock-in.
+
+   > **Batas yang perlu dipahami (bukan "user bebas pilih model"):** yang mengganti model adalah `AIOS Admin` (operator), bukan tiap user akhir. Pada tahap awal, pilihan model juga dibatasi kapasitas server — model besar belum tentu bisa dijalankan. Jadi klaim yang benar adalah **"tidak terkunci ke satu vendor"**, bukan **"bebas memilih model apa pun"**. Jangan menuliskan yang kedua di materi produk.
 
 4. **Kontrol biaya per user dan per agen.**
    Kuota token, routing model per agen, dan log pemakaian. Enterprise butuh angka biaya yang bisa dipertanggungjawabkan.
