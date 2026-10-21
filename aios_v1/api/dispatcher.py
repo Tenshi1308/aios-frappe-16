@@ -7,12 +7,12 @@ import threading
 import time
 from typing import Dict, Any
 
-_ADAPT_JOBS: Dict[int, Dict[str, Any]] = {}
+_ADAPT_JOBS: Dict[str, Dict[str, Any]] = {}
 
 # Batas ukuran file PDF yang boleh diproses (S4).
 MAX_PDF_BYTES = 5 * 1024 * 1024
 
-def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, engine: str, body: dict, sites_path: str = None):
+def _run_background_adaptation(site_name: str, job_key: str, conn_name: str, engine: str, body: dict, sites_path: str = None):
     if sites_path:
         frappe.init(site=site_name, sites_path=sites_path)
     else:
@@ -29,9 +29,9 @@ def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, e
         tables = schema.get("tables", [])
         total_tables = len(tables)
 
-        if tenant_id in _ADAPT_JOBS:
-            _ADAPT_JOBS[tenant_id]["total"] = total_tables
-            _ADAPT_JOBS[tenant_id]["done"] = 0
+        if job_key in _ADAPT_JOBS:
+            _ADAPT_JOBS[job_key]["total"] = total_tables
+            _ADAPT_JOBS[job_key]["done"] = 0
 
         # Snapshot skema
         snap = frappe.new_doc("AIOS Schema Snapshot")
@@ -45,10 +45,10 @@ def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, e
 
         # Callback progres granular per-tabel
         def on_prog(done, total, current_table=None):
-            if tenant_id in _ADAPT_JOBS:
-                _ADAPT_JOBS[tenant_id]["done"] = done
-                _ADAPT_JOBS[tenant_id]["total"] = total
-                _ADAPT_JOBS[tenant_id]["currentTable"] = current_table
+            if job_key in _ADAPT_JOBS:
+                _ADAPT_JOBS[job_key]["done"] = done
+                _ADAPT_JOBS[job_key]["total"] = total
+                _ADAPT_JOBS[job_key]["currentTable"] = current_table
             # Jeda 0.8s agar polling frontend menangkap transisi per-tabel
             time.sleep(0.8)
 
@@ -80,18 +80,18 @@ def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, e
 
         frappe.db.commit()
 
-        if tenant_id in _ADAPT_JOBS:
-            _ADAPT_JOBS[tenant_id]["done"] = total_tables
-            _ADAPT_JOBS[tenant_id]["status"] = "COMPLETED"
-            _ADAPT_JOBS[tenant_id]["adapting"] = False
+        if job_key in _ADAPT_JOBS:
+            _ADAPT_JOBS[job_key]["done"] = total_tables
+            _ADAPT_JOBS[job_key]["status"] = "COMPLETED"
+            _ADAPT_JOBS[job_key]["adapting"] = False
 
     except Exception as e:
         frappe.db.rollback()
         frappe.log_error(f"Error background adaptation: {e}", "AIOS Adaptation")
-        if tenant_id in _ADAPT_JOBS:
-            _ADAPT_JOBS[tenant_id]["status"] = "FAILED"
-            _ADAPT_JOBS[tenant_id]["error"] = str(e)
-            _ADAPT_JOBS[tenant_id]["adapting"] = False
+        if job_key in _ADAPT_JOBS:
+            _ADAPT_JOBS[job_key]["status"] = "FAILED"
+            _ADAPT_JOBS[job_key]["error"] = str(e)
+            _ADAPT_JOBS[job_key]["adapting"] = False
     finally:
         frappe.destroy()
 
@@ -175,6 +175,43 @@ def get_current_session():
         "role": role,
         "companyId": _legacy_company_id(user),
     }
+
+
+def resolve_session_connection(sess: dict | None) -> dict | None:
+    """Koneksi milik sesi: user-first, lalu legacy tenant-email (`user` NULL).
+
+    `companyId` sengaja tidak dipakai sebagai bukti kepemilikan. Admin tidak
+    otomatis mendapat koneksi; `/api/mapping/validate` menyelesaikannya dari
+    entry yang dikirim.
+    """
+    if not sess or not sess.get("user"):
+        return None
+
+    user = sess["user"]
+    own = frappe.get_all(
+        "AIOS DB Connection",
+        filters={"user": user},
+        fields=["name", "user", "tenant"],
+        order_by="creation asc",
+        limit=1,
+    )
+    if own:
+        return own[0]
+
+    tenants = frappe.get_all("AIOS Tenant", filters={"email": user}, pluck="name")
+    if not tenants:
+        return None
+
+    legacy = frappe.get_all(
+        "AIOS DB Connection",
+        filters={"tenant": ["in", tenants]},
+        fields=["name", "user", "tenant"],
+        order_by="creation asc",
+    )
+    for conn in legacy:
+        if not conn.get("user"):
+            return conn
+    return None
 
 
 def require_session(role: str | None = None) -> dict:
@@ -274,16 +311,12 @@ def handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        tenant_id = sess.get("companyId")
         tenant_status = None
         if sess.get("user"):
             tenant_status = frappe.db.get_value("AIOS Tenant", {"email": sess.get("user")}, "status")
 
-        conn_doc = None
-        if tenant_id:
-            conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
-            if conn_name:
-                conn_doc = frappe.get_doc("AIOS DB Connection", conn_name)
+        conn = resolve_session_connection(sess)
+        conn_doc = frappe.get_doc("AIOS DB Connection", conn["name"]) if conn else None
 
         if not conn_doc:
             return json_response({
@@ -298,7 +331,7 @@ def handle_api_request():
             })
 
         # Check background job
-        job = _ADAPT_JOBS.get(tenant_id)
+        job = _ADAPT_JOBS.get(str(conn_doc.name))
         if job and job.get("status") == "RUNNING":
             return json_response({
                 "payment": tenant_status or "UNKNOWN",
@@ -401,7 +434,6 @@ def handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        tenant_id = sess.get("companyId")
 
         try:
             body = frappe.request.get_json(force=True, silent=True) or {}
@@ -430,10 +462,13 @@ def handle_api_request():
             if not test_res.get("ok"):
                 return json_response({"error": test_res.get("error", "Gagal menghubungkan ke database client")}, 400)
 
-            conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
-            if conn_name:
-                conn_doc = frappe.get_doc("AIOS DB Connection", conn_name)
+            conn = resolve_session_connection(sess)
+            if conn:
+                conn_doc = frappe.get_doc("AIOS DB Connection", conn["name"])
             else:
+                tenant_id = sess.get("companyId")
+                if not tenant_id or not frappe.db.exists("AIOS Tenant", tenant_id):
+                    return json_response({"error": "Tenant belum tersedia"}, 400)
                 conn_doc = frappe.new_doc("AIOS DB Connection")
                 conn_doc.tenant = tenant_id
             conn_doc.user = sess.get("user")
@@ -452,8 +487,9 @@ def handle_api_request():
             conn_doc.save(ignore_permissions=True)
             frappe.db.commit()
 
-            # Inisialisasi job adaptasi di memori
-            _ADAPT_JOBS[tenant_id] = {
+            # Inisialisasi job adaptasi di memori (key = koneksi, bukan tenant)
+            job_key = str(conn_doc.name)
+            _ADAPT_JOBS[job_key] = {
                 "startedAt": frappe.utils.now_datetime().isoformat(),
                 "done": 0,
                 "total": 0,
@@ -467,7 +503,7 @@ def handle_api_request():
             sites_path = getattr(frappe.local, "sites_path", None)
             t = threading.Thread(
                 target=_run_background_adaptation,
-                args=(site_name, tenant_id, conn_doc.name, engine, body, sites_path),
+                args=(site_name, job_key, conn_doc.name, engine, body, sites_path),
                 daemon=True
             )
             t.start()
@@ -506,13 +542,16 @@ def handle_api_request():
         try:
             from aios_v1.data_access.factory import provision_sqlite_database
 
+            conn = resolve_session_connection(sess)
+            if not conn and (not tenant_id or not frappe.db.exists("AIOS Tenant", tenant_id)):
+                return json_response({"error": "Tenant belum tersedia"}, 400)
+
             target_dir = frappe.get_site_path("private", "client_dbs")
             os.makedirs(target_dir, exist_ok=True)
             res = provision_sqlite_database(target_dir, f"{tenant_name}_{tenant_id}", mode, custom_tables)
 
-            conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
-            if conn_name:
-                conn_doc = frappe.get_doc("AIOS DB Connection", conn_name)
+            if conn:
+                conn_doc = frappe.get_doc("AIOS DB Connection", conn["name"])
             else:
                 conn_doc = frappe.new_doc("AIOS DB Connection")
                 conn_doc.tenant = tenant_id
@@ -558,9 +597,9 @@ def handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        tenant_id = sess.get("companyId")
 
-        conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
+        conn = resolve_session_connection(sess)
+        conn_name = conn["name"] if conn else None
         if not conn_name:
             return json_response({"error": "Belum ada koneksi database"}, 404)
 
@@ -580,9 +619,9 @@ def handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        tenant_id = sess.get("companyId")
 
-        conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
+        conn = resolve_session_connection(sess)
+        conn_name = conn["name"] if conn else None
         if not conn_name:
             return json_response({"changed": False})
 
@@ -595,9 +634,9 @@ def handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        tenant_id = sess.get("companyId")
 
-        conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
+        conn = resolve_session_connection(sess)
+        conn_name = conn["name"] if conn else None
         if not conn_name:
             return json_response({"error": "Belum ada database yang terhubung"}, 400)
 
@@ -631,38 +670,92 @@ def handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        tenant_id = sess.get("companyId")
 
-        conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
-        if not conn_name:
-            return json_response({"error": "Belum ada database yang terhubung"}, 400)
+        is_admin = sess.get("role") == "DEVELOPER"
 
         try:
             body = frappe.request.get_json(force=True, silent=True) or {}
             if not body and frappe.request.data:
                 body = json.loads(frappe.request.data.decode("utf-8"))
-        except Exception:
+        except Exception as e:
+            frappe.log_error(f"Gagal parse body mapping validate: {e}", "AIOS Mapping Validate")
             body = {}
 
-        updates = body.get("updates", [])
+        updates = body.get("updates") if isinstance(body, dict) else None
+        if not isinstance(updates, list):
+            return json_response({"error": "Format updates tidak valid"}, 400)
+
+        normalized = []
+        entry_ids = []
         for u in updates:
+            if not isinstance(u, dict):
+                return json_response({"error": "Format updates tidak valid"}, 400)
             entry_id = u.get("entryId")
             if not entry_id:
                 continue
-            if frappe.db.exists("AIOS Mapping Entry", entry_id):
-                if u.get("action") == "edit" and u.get("sourceTable") and u.get("sourceColumn"):
-                    frappe.db.set_value("AIOS Mapping Entry", entry_id, {
-                        "source_table": u["sourceTable"],
-                        "source_column": u["sourceColumn"],
-                        "confidence": 1.0,
-                        "is_confirmed": 1,
-                        "notes": "Divalidasi manual oleh user"
-                    })
-                else:
-                    frappe.db.set_value("AIOS Mapping Entry", entry_id, "is_confirmed", 1)
+            if isinstance(entry_id, bool) or not isinstance(entry_id, (int, str)):
+                return json_response({"error": "Format entryId tidak valid"}, 400)
+            normalized.append(u)
+            entry_ids.append(entry_id)
 
-        mapping_name = frappe.db.get_value("AIOS Mapping", {"connection": conn_name}, "name", order_by="version desc")
-        if mapping_name:
+        if not entry_ids:
+            return json_response({"error": "Tidak ada entryId yang divalidasi"}, 400)
+
+        # Resolve entry -> mapping -> connection sebelum menulis apa pun.
+        entry_rows = frappe.get_all(
+            "AIOS Mapping Entry",
+            filters={"name": ["in", entry_ids]},
+            fields=["name", "mapping"],
+        )
+        entry_map = {str(row.name): row.mapping for row in entry_rows}
+        mapping_names = {str(row.mapping) for row in entry_rows if row.mapping}
+        mapping_rows = (
+            frappe.get_all(
+                "AIOS Mapping",
+                filters={"name": ["in", list(mapping_names)]},
+                fields=["name", "connection"],
+            )
+            if mapping_names
+            else []
+        )
+        mapping_conn = {str(row.name): row.connection for row in mapping_rows}
+
+        conn = None if is_admin else resolve_session_connection(sess)
+        if not is_admin and not conn:
+            return json_response({"error": "Akses ditolak"}, 403)
+
+        authorized = []
+        for u in normalized:
+            entry_id = str(u.get("entryId"))
+            if entry_id not in entry_map:
+                if is_admin:
+                    return json_response({"error": "Entry mapping tidak ditemukan"}, 404)
+                return json_response({"error": "Akses ditolak"}, 403)
+
+            mapping_name = entry_map[entry_id]
+            if not is_admin:
+                entry_conn = mapping_conn.get(str(mapping_name))
+                if str(entry_conn) != str(conn["name"]):
+                    return json_response({"error": "Akses ditolak"}, 403)
+            authorized.append((u, mapping_name))
+
+        # Fase tulis: hanya setelah semua entry lolos otorisasi.
+        touched_mappings = set()
+        for u, mapping_name in authorized:
+            entry_id = u.get("entryId")
+            if u.get("action") == "edit" and u.get("sourceTable") and u.get("sourceColumn"):
+                frappe.db.set_value("AIOS Mapping Entry", entry_id, {
+                    "source_table": u["sourceTable"],
+                    "source_column": u["sourceColumn"],
+                    "confidence": 1.0,
+                    "is_confirmed": 1,
+                    "notes": "Divalidasi manual oleh user"
+                })
+            else:
+                frappe.db.set_value("AIOS Mapping Entry", entry_id, "is_confirmed", 1)
+            touched_mappings.add(str(mapping_name))
+
+        for mapping_name in touched_mappings:
             frappe.db.set_value("AIOS Mapping", mapping_name, {
                 "status": "VALIDATED",
                 "validated_at": frappe.utils.now_datetime()
@@ -676,10 +769,9 @@ def handle_api_request():
         })
 
     elif path.startswith("api/mapping"):
-        return json_response({
-            "status": "VALIDATED",
-            "mappings": []
-        })
+        if not get_current_session():
+            return json_response({"error": "Belum login"}, 401)
+        return json_response({"error": "Endpoint not found"}, 404)
 
     # 5. MONITORING ROUTES
     elif path.startswith("api/monitoring"):

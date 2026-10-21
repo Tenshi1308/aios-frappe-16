@@ -68,6 +68,16 @@ class TestConnectionOwner(IntegrationTestCase):
                 "role": "CLIENT",
             }
         ).insert(ignore_permissions=True)
+        self.conn = frappe.get_doc(
+            {
+                "doctype": "AIOS DB Connection",
+                "tenant": self.tenant.name,
+                "user": self.EMAIL,
+                "engine": "sqlite",
+                "database_name": "owner.db",
+                "status": "ACTIVE",
+            }
+        ).insert(ignore_permissions=True)
         frappe.set_user(self.EMAIL)
         self.session = {
             "user": self.EMAIL,
@@ -149,8 +159,110 @@ class TestConnectionOwner(IntegrationTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            frappe.db.get_value(
-                "AIOS DB Connection", {"tenant": self.tenant.name}, "user"
-            ),
+            frappe.db.get_value("AIOS DB Connection", self.conn.name, "user"),
             self.EMAIL,
         )
+
+    def _other_connection(self):
+        email = "_test.conn.other@example.com"
+        _make_test_user(email, "_Test Conn Other")
+        tenant = frappe.get_doc(
+            {
+                "doctype": "AIOS Tenant",
+                "tenant_name": "_Test Conn Other Tenant",
+                "email": email,
+                "role": "CLIENT",
+            }
+        ).insert(ignore_permissions=True)
+        conn = frappe.get_doc(
+            {
+                "doctype": "AIOS DB Connection",
+                "tenant": tenant.name,
+                "user": email,
+                "engine": "sqlite",
+                "database_name": "other.db",
+                "status": "ACTIVE",
+            }
+        ).insert(ignore_permissions=True)
+        session = {
+            "user": email,
+            "companyId": int(self.tenant.name),
+            "role": "CLIENT",
+            "name": "_Test Conn Other",
+        }
+        return email, conn, session
+
+    def test_connect_does_not_overwrite_other_users_connection(self):
+        other_email, other_conn, other_session = self._other_connection()
+        with (
+            patch(
+                "aios_v1.api.dispatcher.get_current_session",
+                return_value=other_session,
+            ),
+            patch("aios_v1.data_access.guard.validate_external_db_config"),
+            patch(
+                "aios_v1.data_access.factory.create_adapter",
+                return_value=_FakeAdapter(),
+            ),
+            patch("aios_v1.api.dispatcher.threading.Thread", _NoopThread),
+        ):
+            response = self._post(
+                "/api/connection/connect",
+                {"engine": "sqlite", "path": "dummy.db"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            frappe.db.get_value("AIOS DB Connection", self.conn.name, "user"),
+            self.EMAIL,
+        )
+        self.assertEqual(
+            frappe.db.get_value("AIOS DB Connection", other_conn.name, "user"),
+            other_email,
+        )
+
+    def test_provision_does_not_overwrite_other_users_connection(self):
+        other_email, other_conn, other_session = self._other_connection()
+        fake_result = {
+            "database_name": "dummy.db",
+            "file_path": "/tmp/dummy.db",
+            "schema_hash": "dummy-hash",
+            "tables_count": 0,
+            "schema": {"tables": []},
+        }
+        with (
+            patch(
+                "aios_v1.api.dispatcher.get_current_session",
+                return_value=other_session,
+            ),
+            patch(
+                "aios_v1.data_access.factory.provision_sqlite_database",
+                return_value=fake_result,
+            ),
+        ):
+            response = self._post(
+                "/api/connection/provision",
+                {"mode": "template"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            frappe.db.get_value("AIOS DB Connection", self.conn.name, "user"),
+            self.EMAIL,
+        )
+        self.assertEqual(
+            frappe.db.get_value("AIOS DB Connection", other_conn.name, "user"),
+            other_email,
+        )
+
+    def test_connection_test_rejects_private_host(self):
+        with patch(
+            "aios_v1.api.dispatcher.get_current_session",
+            return_value=self.session,
+        ):
+            response = self._post(
+                "/api/connection/test",
+                {"engine": "mysql", "host": "127.0.0.1", "port": 3306},
+            )
+
+        self.assertEqual(response.status_code, 400)
