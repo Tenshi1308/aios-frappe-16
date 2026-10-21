@@ -108,6 +108,9 @@ def _ensure_role_profiles():
 
 
 def _is_aios_user(user: str) -> bool:
+    # Administrator adalah puncak tertinggi dan tidak pernah dibatasi AIOS.
+    if not user or user in ("Guest", "Administrator"):
+        return False
     roles = set(frappe.get_roles(user))
     return bool({"AIOS Admin", "AIOS Client"} & roles)
 
@@ -115,9 +118,11 @@ def _is_aios_user(user: str) -> bool:
 def sync_aios_status_enabled(doc, method=None):
     """User.validate: `aios_status` adalah sumber kebenaran; `enabled` mengikuti.
 
-    Hanya berlaku untuk user ber-role AIOS. User Frappe lain (Administrator,
-    System Manager, dsb.) tidak boleh ikut di-disable.
+    Hanya berlaku untuk user ber-role AIOS. Administrator dan user Frappe lain
+    tidak boleh ikut di-disable.
     """
+    if doc.name == "Administrator":
+        return
     status = doc.get("aios_status")
     if not status:
         return

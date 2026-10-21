@@ -56,6 +56,11 @@ class TestSetupHooks(unittest.TestCase):
         self.assertIn("AIOS Client Profile", src)
         self.assertIn("role.desk_access = desk_access", src)
 
+    def test_administrator_never_guarded(self):
+        src = SETUP.read_text(encoding="utf-8")
+        self.assertIn('user in ("Guest", "Administrator")', src)
+        self.assertIn('doc.name == "Administrator"', src)
+
     def test_auth_guards(self):
         src = SETUP.read_text(encoding="utf-8")
         self.assertIn("def _is_aios_user(user: str)", src)
