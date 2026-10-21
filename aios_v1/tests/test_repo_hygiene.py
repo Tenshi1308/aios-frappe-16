@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]  # apps/aios_v1/
 INNER_PKG = Path(__file__).resolve().parent.parent  # apps/aios_v1/aios_v1/
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
-# File frontend yang wajib bebas emoji (docs/05 #3)
+# File frontend yang wajib bebas emoji (docs/05.1 §3 #3)
 EMOJI_FREE_FILES = [
     FRONTEND_DIR / "lib" / "branches.ts",
     FRONTEND_DIR / "components" / "chat" / "ChatDock.tsx",
@@ -74,7 +74,7 @@ class TestRepoHygiene(unittest.TestCase):
         self.assertEqual(offenders, [], f"Except tanpa log_error/raise: {offenders}")
 
     def test_no_db_commit_in_test_files(self):
-        """Tidak ada frappe.db.commit() di file test_*.py (AST, docs/05 §6b.3)."""
+        """Tidak ada frappe.db.commit() di file test_*.py (AST, docs/05.2 §G)."""
         offenders = []
         for path in INNER_PKG.rglob("test_*.py"):
             if "__pycache__" in path.parts:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-# 16 skrip debug/test di root package (docs/05 K3) — dihapus #2
+# 16 skrip debug/test di root package (docs/05.2 §E, K3) — dihapus #2
 K3_SCRIPTS = [
     "check_db.py",
     "fix_perms.py",

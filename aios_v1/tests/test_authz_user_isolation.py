@@ -1,4 +1,4 @@
-"""Isolasi baris antar-`User` (docs/05 §6c, Tahap C).
+"""Isolasi baris antar-`User` (docs/05.1 §5, Tahap C).
 
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 Di CI statis file ini dibuang dari collection oleh `conftest.py` (import frappe).
@@ -42,7 +42,7 @@ class TestUserIsolation(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
-        # Penangkal db.commit() manual di kode AIOS lama (docs/05 §6b.3)
+        # Penangkal db.commit() manual di kode AIOS lama (docs/05.2 §G)
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
         _make_test_user(self.ALPHA, "_Test User Alpha")

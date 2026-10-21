@@ -1,4 +1,4 @@
-"""Isolasi baris per `User` (docs/03 §2.1, docs/05 Tahap C).
+"""Isolasi baris per `User` (docs/03 §2.1, docs/05.1 §3 Tahap C).
 
 `permission_query_conditions` memfilter daftar; `has_permission` menutup
 `frappe.get_doc`. `Administrator` tidak pernah dibatasi — bypass native Frappe.

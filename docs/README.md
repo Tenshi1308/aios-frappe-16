@@ -34,9 +34,10 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Alur 4:** Eksekusi tugas analitik, delegasi sub-agent (5 event SSE kanonik), kolaborasi lintas divisi (**Sales ↔ Finance**), dan pembuatan *Artifact/Canvas*.
    - **Alur 5:** Eskalasi aksi tulis ke **Pending Action Draft** (*Human-in-the-Loop Approval*) hingga eksekusi ke ERPNext.
 
-5. **[05 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fase 1 — Dikerjakan Pertama)](./05-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
-   - Audit menyeluruh basis kode awal beserta verifikasi `file:line`.
+5. **[05.1 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fase 1 — Dikerjakan Pertama)](./05.1-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
+   - **Checklist status** (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + urutan dependency + acceptance per item.
    - Rencana eksekusi **Branch `#0` s/d `#10`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
+   - **Lampiran arsip:** **[05.2 — Lampiran Roadmap Fondasi](./05.2-lampiran-roadmap-fondasi.md)** — *arsip/referensi*: temuan `file:line`, riwayat koreksi, baseline angka, detail rencana lama, strategi test, catatan lingkungan. **Bukan status terkini.**
 
 6. **[06 — Roadmap Pengembangan Business AI Harness (Fase 2 — Setelah Fondasi)](./06-roadmap-pengembangan-harness.md)** — *roadmap & status*
    - Rencana eksekusi bertahap (**Tahap `H1` s/d `H5`**, bebas duplikasi dengan Fase 1):
