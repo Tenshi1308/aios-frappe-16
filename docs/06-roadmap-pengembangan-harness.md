@@ -1,7 +1,8 @@
 # 06 — Roadmap Pengembangan Business AI Harness (Fase Lanjutan Setelah Fondasi)
 
 **Status:** Spesifikasi & Rencana Eksekusi Fase 2 (Tanpa Duplikasi dengan Fase 1)
-**Prasyarat Wajib:** Fondasi Keamanan, Identitas `User`, & Higienitas di **[`05-roadmap-perbaikan-fondasi.md`](./05-roadmap-perbaikan-fondasi.md)** (`#0`, `#1`, `#2`, `#3`, `#4a–#4d`, `#5`, dan `#7`) selesai lebih dulu.
+**Prasyarat Wajib:** Fondasi Keamanan, Identitas `User`, & Higienitas di **[`05.1 — Roadmap Fondasi`](./05.1-roadmap-perbaikan-fondasi.md)** (`#0`, `#1`, `#2`, `#3`, `#4a–#4d`, `#5`, dan `#7`) selesai lebih dulu.
+**Basis:** arsitektur `docs/02`; skema `docs/03`; alur `docs/04`. Dokumen ini hanya delta fase 2 + test.
 
 > **Prinsip Utama:**
 > 1. **Setiap tahap wajib memiliki script test otomatis** (`unittest.TestCase` / `frappe.tests.IntegrationTestCase` dengan entitas dummy `_Test ...` dan guard `monkeypatch` pada `frappe.db.commit`).
@@ -31,23 +32,12 @@ flowchart LR
 Menggantikan `AIOS Setting` lama (yang hanya mendukung 1 `base_url` dan 1 `model_name` untuk seluruh sistem) menjadi arsitektur konfigurasi **Multi-Provider & Per-Agent Model Routing** setara `opencode.jsonc`, tetapi dikelola penuh melalui UI oleh `AIOS Admin`.
 
 ### 1. Perubahan Skema DocType
-1. **`AIOS LLM Provider` (DocType Baru — Hanya `AIOS Admin`):**
-   - `provider_name` (`Data`, Unique, mis. `OpenRouter`, `Anthropic`, `OpenAI`, `Google Gemini`, `Local vLLM`)
-   - `enabled` (`Check`, default `1`)
-   - `base_url` (`Data`, Mandatory)
-   - `api_key` (`Password`, Mandatory — dienkripsi Frappe; memisahkan kredensial rahasia dari `AIOS Setting`)
-   - `available_models_json` (`Code` / Child Table daftar model beserta `input_cost_per_1m` & `output_cost_per_1m`)
-2. **`AIOS Agent Model Route` (DocType — Hanya `AIOS Admin`):**
-   - `route_key` (`Data`, **Unique**, Mandatory — di-generate otomatis di `validate()` dengan format `f"{branch_key}:{agent_key}:{user or '*'}"` untuk mencegah duplikasi rute)
-   - `branch_key` (`Data`, Mandatory: `finance`, `sales`, `global`)
-   - `agent_key` (`Data`, Mandatory: `manager` untuk Orchestrator, atau key sub-agent seperti `cfo`, `financial-analyst`, `treasurer`, `budgeting-staff`, `finance-staff`, `sales-representative`, `sales-data-analyst`, `customer-service`, `marketing-specialist` — **wajib divalidasi terhadap `registry.py` saat `validate()`** agar salah ketik langsung ditolak)
-   - `provider` (`Link -> AIOS LLM Provider`, Mandatory)
-   - `model_name` (`Data`, Mandatory)
-   - `temperature` (`Float`, Nullable — jika kosong mengacu ke konstanta bernama `DEFAULT_TEMPERATURE` di `lib/pricing.py`)
-   - `max_tokens` (`Int`, Nullable — jika kosong mengacu ke `AIOS Setting.default_max_tokens`)
-   - `user` (`Link -> User`, Optional — dikosongkan untuk konfigurasi Global Site oleh `AIOS Admin`; jika diisi, resolver memprioritaskan rute spesifik user sebelum jatuh ke rute global `*`)
-3. **Pembersihan Field Lama di `AIOS Setting`:**
-   - Hapus field legacy `base_url`, `api_key`, dan `model_name` dari `aios_setting.json` di branch yang sama agar hanya ada satu sumber kebenaran routing model.
+
+Basis skema & field: `docs/02` §1.1. Delta H1:
+
+1. **`AIOS LLM Provider`:** field mengikuti `docs/02` §1.1, ditambah `enabled` (`Check`, default `1`) dan `available_models_json` (`Code`/Child Table: model + `input_cost_per_1m` & `output_cost_per_1m`).
+2. **`AIOS Agent Model Route`:** `route_key` unik (format `f"{branch_key}:{agent_key}:{user or '*'}"`), `branch_key` (`finance`/`sales`/`global`), `agent_key` (wajib validasi ke `registry.py`), `provider` (`Link -> AIOS LLM Provider`), `model_name`, `temperature` (default `DEFAULT_TEMPERATURE` di `lib/pricing.py`), `max_tokens` (default `AIOS Setting.default_max_tokens`), `user` (`Link -> User`, opsional; resolver prioritaskan rute user sebelum `*`).
+3. **Pembersihan field lama di `AIOS Setting`:** hapus `base_url`, `api_key`, `model_name` agar hanya ada satu sumber routing.
 
 ### 2. Perubahan Backend & UI
 - **`aios_v1/lib/llm_client.py`:**
@@ -77,13 +67,7 @@ Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas
   - `endpoint_url` / `config_json` (`Data` / `Code` untuk plugin MCP eksternal)
 
 ### 2. Katalog Lengkap 7 *Built-in Default Plugins*
-1. **`erpnext-core-data` (Fondasi dibuat di `#8`, diintegrasikan ke `AIOS Plugin` di `H2`):** Pembacaan daftar & detail dokumen master dan transaksi ERPNext (`Sales Order`, `Sales Invoice`, `Delivery Note`, `Payment Entry`, `Journal Entry`, `GL Entry`, `Customer`, `Supplier`, `Item`) dengan injeksi paksa `filters={"company": allowed_company}` dari `frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value("Global Defaults", "default_company")` dan wajib memanggil `frappe.get_doc(doctype, name, check_permission="read")`.
-2. **`erpnext-financial-reports` (Fondasi dibuat di `#8`, diintegrasikan ke `AIOS Plugin` di `H2`):** Wrapper resmi pemanggil `frappe.desk.query_report.run` untuk laporan standar ERPNext (*General Ledger*, *Accounts Receivable Aging*, *Accounts Payable Aging*, *Trial Balance*, *Profit and Loss Statement*, *Balance Sheet*, *Cash Flow*, *Sales Analytics*), didukung oleh `Custom DocPerm` (`read=1, report=1`) untuk `AIOS Client` yang telah dipasang di `#4a/#4b`.
-3. **`erpnext-action-drafts`:** Pembuatan draf transaksi tulis (*Quotation*, *Sales Order*, *Sales Invoice*, *Payment Entry*, *Journal Entry*) ke doctype `Pending Action Draft` yang terikat ke `user = frappe.session.user`.
-4. **`quant-calculator`:** Mesin hitung finansial & statistik deterministik menggunakan Python stdlib (margin, delta MoM/YoY, pajak, bunga, variansi anggaran, rekonsiliasi selisih) tanpa dependency eksternal berat.
-5. **`document-intelligence`:** Ekstraksi teks dan tabel dari file PDF/CSV/XLSX (`pypdf`, `openpyxl`) yang diunggah klien.
-6. **`workspace-artifact-builder`:** Pembuatan file laporan kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) melalui Frappe Private `File` API (`save_file`) serta pengiriman payload visualisasi ke panel Canvas UI.
-7. **`web-market-research`:** Pencarian dan pembacaan referensi bisnis/regulasi eksternal dengan **checklist anti-SSRF ketat** (resolusi DNS → tolak IP privat RFC1918, loopback `127.0.0.0/8`, link-local `169.254.0.0/16` termasuk cloud metadata `169.254.169.254`, re-check IP pada setiap hop redirect, serta batas waktu & ukuran respons).
+Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; `AIOS Plugin Scope` membatasi akses per branch/worker; plugin eksternal MCP mengikuti §1.
 
 ### 3. UI Portal `AIOS Admin`
 - Halaman **Plugin & MCP Registry**: daftar seluruh plugin bawaan dan eksternal, tombol toggle **On/Off**, tombol *Discover Tools / Health Check* untuk MCP eksternal, serta pengaturan izin akses (`AIOS Plugin Scope`) per cabang/sub-agent.
@@ -105,7 +89,7 @@ Membangun antarmuka **Portal `AIOS Admin`** untuk mengelola siklus hidup penggun
    - Menampilkan daftar seluruh `User` di site beserta `aios_status` (`Pending Provisioning`, `Active`, `Suspended`), `aios_persona`, `aios_company_name`, dan bar pemakaian kuota (`aios_tokens_used / aios_token_limit`).
    - Tombol aksi cepat bagi `AIOS Admin` untuk mengaktifkan akun (`aios_status = "Active"`, yang otomatis menyetel `User.enabled = 1`), membekukan akun (`Suspended`), mengubah `aios_persona`, atau menyesuaikan `aios_token_limit` spesifik user.
 2. **Panel Pengaturan Site (`AIOS Setting`):**
-   - Form UI untuk mengatur `default_company`, `default_user_token_limit`, `site_token_limit`, `max_users`, dan `company_context_persona`.
+   - Form UI untuk seluruh field site yang didefinisikan di `docs/03` §1.3.
 3. **Analitik Konsumsi Token (`AIOS Token Usage`):**
    - Grafik dan tabel pemakaian token per user, per cabang (`finance` vs `sales`), dan per model/provider.
 
@@ -127,7 +111,7 @@ Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar pr
   - `orchestrator_delegate_to_subagent(branch, worker_key, task_instruction, context_data)` benar-benar memanggil eksekusi LLM Sub-Agent tujuan menggunakan model dari `AIOS Agent Model Route` beserta plugin/tool milik Sub-Agent tersebut.
   - Ubah konstruktor `SwarmRouter(user: str)` dan `TaskLedger`/`SafetyGuard` agar wajib menerima `user` (hapus default `tenant_id: int = 1`), daftarkan handler nyata untuk cabang `finance` dan `sales`, dan **hapus fallback handler mock** di `swarm_router.py:97-104` (jika handler cabang tidak terdaftar, wajib `frappe.log_error` + `frappe.throw`).
 - **Kontrak Tunggal 5 Event SSE *Live Agent Trace* (`aios_v1/shared/trace_events.py`):**
-  - Gunakan 1 modul konstanta terpusat untuk ke-5 event SSE kanonik:
+  - Nama & makna event mengikuti `docs/02` §3.1. Payload kanonik di modul konstanta:
     1. `trace_delegate_start`: `{"type": "trace_delegate_start", "from": ..., "to": ..., "instruction": ...}`
     2. `trace_subagent_prompt`: `{"type": "trace_subagent_prompt", "agent": ..., "system_prompt_summary": ..., "task_prompt": ...}`
     3. `trace_subagent_tool`: `{"type": "trace_subagent_tool", "agent": ..., "tool": ..., "args": ...}`
@@ -156,17 +140,9 @@ Menyediakan ruang kerja file terisolasi (*Isolated Workspace*) per sesi percakap
 - Tambahkan guard validasi nama file (*filename sanitization* & blokir `..` / path separator) sebelum memanggil `save_file`.
 
 ### 2. Implementasi 5-Tier Artifact / Canvas
-Panel Canvas di sisi kanan ruang chat merender 5 tipe artefak berdasarkan event SSE `{"type": "artifact_created", "artifact": {...}}`:
-1. **Tier 1 — Interactive Approval Card (`Pending Action Draft`):**
-   - Form/tabel rincian draf *Quotation*, *Sales Order*, *Sales Invoice*, *Payment Entry*, atau *Journal Entry* dengan tombol **Approve & Post to ERPNext** (yang mengeksekusi pembuatan dokumen resmi di ERPNext milik `Company` pada site tersebut) dan **Reject** (dengan alasan penolakan).
-2. **Tier 2 — Interactive Business Charts & Data Tables:**
-   - Render grafik interaktif (*Bar, Line, Area, Pie/Donut, Aging Breakdown*) dan tabel data yang dapat di-*sort* & *filter*.
-3. **Tier 3 — Structured Executive Documents & Mermaid Diagrams:**
-   - Dokumen laporan kaya format (Markdown + tabel + diagram **Mermaid**) dengan fitur ekspor/cetak ke PDF.
-4. **Tier 4 — Downloadable Spreadsheets (`.xlsx` / `.csv`):**
-   - Pratinjau tabel spreadsheet hasil olahan data ERPNext (dibuat via `openpyxl`) beserta tombol unduh Private File `.xlsx` / `.csv`.
-5. **Tier 5 — Static HTML Presentation Deck:**
-   - Pratinjau slide presentasi eksekutif ringkas dalam iframe sandboxed (`sandbox="allow-same-origin"` tanpa script eksternal) di dalam Canvas.
+Isi & urutan tier mengikuti `docs/02` §3.2. Delta implementasi H5:
+- Panel Canvas merender berdasarkan event SSE `{"type": "artifact_created", "artifact": {...}}`.
+- Tier 1 approval card memanggil alur approve/reject di `docs/04` Alur 5; Tier 5 dirender dalam iframe `sandbox="allow-same-origin"` tanpa script eksternal.
 
 ### 3. Script Test Wajib
 - `aios_v1/tests/test_workspace_isolation.py`:
