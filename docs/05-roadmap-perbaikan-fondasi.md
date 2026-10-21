@@ -116,10 +116,9 @@ swarm/ledger 365 LOC).
 4. **Custom Field & Role wajib di-script di `after_install` dan `after_migrate` (bukan `fixtures` dan bukan mutasi `tabDocField`).**
    - Jangan menaruh Custom Field di `fixtures` JSON, dan **dilarang keras** memutasi DocType inti via `frappe.get_doc("DocType", "User").append("fields", ...)` (`seed_auth.py:5-14`, `fix_perms.py:10-27`, `migrate_schema.py:8-15`).
    - Gunakan primitif resmi `create_custom_fields(custom_fields, update=True)` (`frappe/custom/doctype/custom_field/custom_field.py:322-350`) yang dipanggil otomatis pada `after_install` dan `after_migrate` di `hooks.py`.
-5. **Administrator tidak dibatasi.** Jangan tambahkan `Administrator` ke permission
-   role AIOS — dia sudah melewati semua cek (`permissions.py:108,306`).
-   `AIOS Admin` **bukan** Administrator: dia role biasa untuk operator, bukan pemegang
-   kunci skema.
+5. **Administrator tidak dibatasi; `AIOS Admin` bukan Administrator.** Jangan tambahkan
+   `Administrator` ke permission role AIOS. Aturan ini mengikat, dan versi normatifnya
+   ada di `docs/03` §2.1 — roadmap ini hanya merujuk, bukan asal aturannya.
 6. **Zero Silent Error — wajib `frappe.log_error` + Fail Loudly.** Dilarang keras
    menulis `except Exception: pass` / `continue` / `return None` demi "asal tidak crash".
    Setiap blok `except` yang menangkap error untuk mengembalikan JSON terstruktur

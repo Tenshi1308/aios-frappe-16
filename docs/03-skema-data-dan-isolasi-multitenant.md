@@ -84,6 +84,10 @@ Karena `has_permission` di Frappe hanya dapat **menolak (DENY)** dan tidak dapat
 | **DocType AIOS Log & Join (`1-hop` / `2-hop`)** | `AIOS Message`, `AIOS Token Usage`, `AIOS Mapping`, `AIOS Schema Snapshot`, `AIOS Mapping Entry` | `read = 1` (khusus miliknya via `permission_query_conditions` & `has_permission`) | Akses Penuh |
 | **DocType Konfigurasi & Rahasia Admin** | `AIOS Setting`, `AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin`, `AIOS Telegram Setting`, `AIOS Telegram Session`, `AIOS Telegram Message` | **Tidak ada akses (`read = 0`)** + ditolak eksplisit di `has_permission` | Akses Penuh (`read/write/create/delete`) |
 
+> **Batas peran `Administrator` (mengikat, berlaku saat izin dipasang):**
+> - **`Administrator` tidak dibatasi.** Di Frappe, `Administrator` sudah melewati seluruh cek izin (`frappe/permissions.py:108,306`). Maka **jangan** menambahkan `Administrator` ke permission role AIOS: baris izin seperti itu tidak memberi kemampuan apa pun (memang sudah ada) dan hanya menyesatkan pembaca berikutnya.
+> - **`AIOS Admin` bukan `Administrator`.** `AIOS Admin` adalah role Frappe biasa untuk operator site (dibuat oleh `Administrator` atau `AIOS Admin` lain), bukan pemegang kunci skema. `AIOS Client` ber-`desk_access = 0` (Website User) sehingga tidak menambah seat desk Frappe.
+
 ### 2.2. Empat Lapis Pertahanan Isolasi Data
 1. **Lapis 1 — Isolasi Database Penuh Antar-Klien (`1 Client = 1 Site`):**
    - Setiap perusahaan klien berada di database MariaDB dan direktori `sites/<site_name>/` yang terpisah secara fisik di level Frappe Bench (`dns_multitenant`).
