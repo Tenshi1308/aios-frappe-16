@@ -22,8 +22,19 @@ export async function api<T = unknown>(path: string, init?: RequestInit): Promis
     ...init,
   });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data?.error ?? `HTTP ${res.status}`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   return data;
+}
+
+// Pesan login yang aman: 401 selalu generik, tanpa membocorkan email mana yang terdaftar.
+export function friendlyAuthError(err: unknown): string {
+  const e = err as Error & { status?: number };
+  if (e?.status === 401) return "Email atau password salah.";
+  return e?.message ?? "Terjadi kesalahan.";
 }
 
 // Frappe membungkus return /api/method/* dalam { message: ... }.

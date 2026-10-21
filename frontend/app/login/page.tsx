@@ -3,7 +3,7 @@
 // C1/C2: Login & registrasi portal client memakai auth resmi Frappe.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, apiMethod } from "@/lib/api";
+import { api, apiMethod, friendlyAuthError } from "@/lib/api";
 import SpaceBackdrop from "@/components/shared/SpaceBackdrop";
 
 type SessionContext = { roles: string[]; csrf_token: string };
@@ -55,7 +55,7 @@ export default function LoginPage() {
       );
       router.push(isAdmin ? "/developer/dashboard" : "/home");
     } catch (err) {
-      setError((err as Error).message);
+      setError(friendlyAuthError(err));
     } finally {
       setBusy(false);
     }

@@ -3,7 +3,7 @@
 // C2: Login portal Ekasa Developer (developer.localhost) — bahasa desain AIOS.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, apiMethod } from "@/lib/api";
+import { api, apiMethod, friendlyAuthError } from "@/lib/api";
 import SpaceBackdrop from "@/components/shared/SpaceBackdrop";
 
 export default function DeveloperLoginPage() {
@@ -42,7 +42,7 @@ export default function DeveloperLoginPage() {
       }
       router.push("/developer/dashboard");
     } catch (err) {
-      setError((err as Error).message);
+      setError(friendlyAuthError(err));
     } finally {
       setBusy(false);
     }
