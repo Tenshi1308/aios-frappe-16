@@ -30,12 +30,10 @@ def normalize_sqlite_path(raw_path: str) -> str:
                 if os.path.exists(linux_path):
                     return linux_path
 
-    # 3. Cek Relative Path dari root project / folder dataset
+    # 3. Cek Relative Path dari working directory / home user
     p_unix = p.replace("\\", "/")
     if not os.path.isabs(p_unix):
         candidates = [
-            os.path.join("/mnt/g/AI-Agents/Eksperiment-AIOS-by-GLM", p_unix),
-            os.path.join("/mnt/g/AI-Agents/Eksperiment-AIOS-by-GLM/dataset", p_unix),
             os.path.join(os.getcwd(), p_unix),
             os.path.expanduser(p_unix)
         ]

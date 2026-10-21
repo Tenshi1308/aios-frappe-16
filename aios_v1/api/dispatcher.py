@@ -9,6 +9,9 @@ from typing import Dict, Any
 
 _ADAPT_JOBS: Dict[int, Dict[str, Any]] = {}
 
+# Batas ukuran file PDF yang boleh diproses (S4).
+MAX_PDF_BYTES = 5 * 1024 * 1024
+
 def _run_background_adaptation(site_name: str, tenant_id: int, conn_name: str, engine: str, body: dict, sites_path: str = None):
     if sites_path:
         frappe.init(site=site_name, sites_path=sites_path)
@@ -148,6 +151,16 @@ def get_current_session():
     token = frappe.request.cookies.get(SESSION_COOKIE)
     return verify_session_token(token)
 
+
+def require_session(role: str | None = None) -> dict:
+    """Wajib sesi login; menghentikan request dengan 401/403 bila tidak valid."""
+    sess = get_current_session()
+    if not sess:
+        json_response({"error": "Belum login"}, 401)
+    if role and sess.get("role") != role:
+        json_response({"error": "Akses ditolak"}, 403)
+    return sess
+
 def handle_api_request():
     host = frappe.request.host or ""
     path = frappe.request.path.strip("/")
@@ -188,7 +201,8 @@ def handle_api_request():
         return json_response({
             "companyId": sess.get("companyId"),
             "role": sess.get("role"),
-            "name": sess.get("name")
+            "name": sess.get("name"),
+            "user": sess.get("user")
         })
 
     elif path == "api/auth/login" and method == "POST":
@@ -217,11 +231,15 @@ def handle_api_request():
         if tenant.get("role") != expected_role:
             return json_response({"error": f"Akun ini tidak berwenang masuk lewat portal {portal}"}, 403)
 
+        if tenant.get("status") != "ACTIVE":
+            return json_response({"error": "Akun belum aktif"}, 403)
+
         company_id = int(tenant.get("name")) if str(tenant.get("name")).isdigit() else 1
         token = create_session_token({
             "companyId": company_id,
             "role": tenant.get("role"),
-            "name": tenant.get("tenant_name")
+            "name": tenant.get("tenant_name"),
+            "user": tenant.get("email")
         })
 
         return json_response({
@@ -252,56 +270,42 @@ def handle_api_request():
         if not name or not email or len(password) < 6:
             return json_response({"error": "Nama perusahaan, email, dan password (min 6 karakter) wajib diisi"}, 400)
 
+        generic_response = {
+            "status": "PENDING_PROVISIONING",
+            "message": "Pendaftaran diterima. Jika email valid, tim kami akan menghubungi Anda."
+        }
+
         if frappe.db.exists("AIOS Tenant", {"email": email}):
-            return json_response({"error": "Email sudah terdaftar"}, 409)
+            return json_response(generic_response)
 
         doc = frappe.new_doc("AIOS Tenant")
         doc.tenant_name = name
         doc.email = email
         doc.role = "CLIENT"
-        doc.status = "ACTIVE"
+        doc.status = "PENDING_PAYMENT"
         doc.password_hash = hash_password(password)
         doc.insert(ignore_permissions=True)
         frappe.db.commit()
 
-        company_id = int(doc.name) if str(doc.name).isdigit() else 1
-        token = create_session_token({
-            "companyId": company_id,
-            "role": doc.role,
-            "name": doc.tenant_name
-        })
-
-        return json_response({
-            "company": {
-                "id": company_id,
-                "name": doc.tenant_name,
-                "email": doc.email,
-                "role": doc.role,
-                "status": doc.status
-            }
-        }, status=201, cookie_to_set=token)
+        return json_response(generic_response)
 
     elif path == "api/auth/logout" and method == "POST":
         return json_response({"ok": True}, cookie_to_clear=True)
 
     # 2. PAYMENT ROUTES
     elif path == "api/payment/status":
-        sess = get_current_session()
-        if not sess:
-            return json_response({"error": "Belum login"}, 401)
+        sess = require_session()
+        tenant_status = None
+        if sess.get("user"):
+            tenant_status = frappe.db.get_value("AIOS Tenant", {"email": sess.get("user")}, "status")
         return json_response({
-            "companyStatus": "ACTIVE",
-            "lastPayment": {"id": 1, "status": "SUCCESS", "paidAt": "2026-08-30T10:00:00.000Z"}
+            "companyStatus": tenant_status or "UNKNOWN",
+            "lastPayment": None
         })
 
     elif path == "api/payment/checkout" and method == "POST":
-        sess = get_current_session()
-        if not sess:
-            return json_response({"error": "Belum login"}, 401)
-        return json_response({
-            "activated": True,
-            "message": "Pembayaran berhasil — akun aktif otomatis"
-        })
+        require_session()
+        return json_response({"error": "Pembayaran belum dikonfigurasi"}, 501)
 
     # 3. BRANCHES ROUTE
     elif path == "api/branches" and method == "GET":
@@ -316,7 +320,10 @@ def handle_api_request():
         if not sess:
             return json_response({"error": "Belum login"}, 401)
         tenant_id = sess.get("companyId")
-        
+        tenant_status = None
+        if sess.get("user"):
+            tenant_status = frappe.db.get_value("AIOS Tenant", {"email": sess.get("user")}, "status")
+
         conn_doc = None
         if tenant_id:
             conn_name = frappe.db.get_value("AIOS DB Connection", {"tenant": tenant_id}, "name")
@@ -325,7 +332,7 @@ def handle_api_request():
 
         if not conn_doc:
             return json_response({
-                "payment": "ACTIVE",
+                "payment": tenant_status or "UNKNOWN",
                 "connected": False,
                 "connection": None,
                 "mappingStatus": "NONE",
@@ -339,7 +346,7 @@ def handle_api_request():
         job = _ADAPT_JOBS.get(tenant_id)
         if job and job.get("status") == "RUNNING":
             return json_response({
-                "payment": "ACTIVE",
+                "payment": tenant_status or "UNKNOWN",
                 "connected": True,
                 "connection": {
                     "id": conn_doc.name,
@@ -375,7 +382,7 @@ def handle_api_request():
             mapping_status = m_status or "NEEDS_REVIEW"
 
         return json_response({
-            "payment": "ACTIVE",
+            "payment": tenant_status or "UNKNOWN",
             "connected": conn_doc.status == "ACTIVE",
             "connection": {
                 "id": conn_doc.name,
@@ -412,6 +419,17 @@ def handle_api_request():
             body = {}
         engine = body.get("engine") or "sqlite"
         try:
+            from aios_v1.data_access.guard import validate_external_db_config
+
+            validate_external_db_config(
+                engine,
+                body,
+                sqlite_root=frappe.get_site_path("private", "client_dbs"),
+            )
+        except ValueError as e:
+            return json_response({"ok": False, "error": str(e)}, 400)
+
+        try:
             from aios_v1.data_access.factory import create_adapter
             adapter = create_adapter(engine, body)
             res = adapter.test_connection()
@@ -437,6 +455,17 @@ def handle_api_request():
         except Exception:
             body = {}
         engine = (body.get("engine") or "sqlite").lower()
+
+        try:
+            from aios_v1.data_access.guard import validate_external_db_config
+
+            validate_external_db_config(
+                engine,
+                body,
+                sqlite_root=frappe.get_site_path("private", "client_dbs"),
+            )
+        except ValueError as e:
+            return json_response({"error": str(e)}, 400)
 
         try:
             from aios_v1.data_access.factory import create_adapter
@@ -844,6 +873,13 @@ def handle_api_request():
     elif path.startswith("api/chat"):
         # POST /api/chat/parse-pdf (Ekstrak isi teks dari file PDF)
         if path == "api/chat/parse-pdf" and method == "POST":
+            require_session()
+            content_length = getattr(frappe.request, "content_length", None) or 0
+            if content_length > MAX_PDF_BYTES:
+                return json_response({
+                    "error": f"Ukuran file melebihi batas {MAX_PDF_BYTES // (1024 * 1024)} MB"
+                }, 413)
+
             uploaded_file = None
             filename = "document.pdf"
             file_bytes = b""
@@ -886,6 +922,11 @@ def handle_api_request():
                     "files": list(frappe.request.files.keys()) if hasattr(frappe.request, "files") else []
                 }, 400)
 
+            if len(file_bytes) > MAX_PDF_BYTES:
+                return json_response({
+                    "error": f"Ukuran file melebihi batas {MAX_PDF_BYTES // (1024 * 1024)} MB"
+                }, 413)
+
             try:
                 import io
                 from pypdf import PdfReader
@@ -924,9 +965,11 @@ def handle_api_request():
             action = parts[3] if len(parts) > 3 else None
 
             # GET /api/chat/<branch>/conversations
-            if action == "conversations" and method == "GET":
-                sess = get_current_session()
-                company_id = sess.get("companyId", 1) if sess else 1
+            if action == "conversations" and method == "GET" and len(parts) == 4:
+                sess = require_session()
+                company_id = sess.get("companyId")
+                if not company_id:
+                    return json_response({"error": "Sesi tidak valid"}, 401)
                 convs = frappe.get_all(
                     "AIOS Conversation",
                     filters={"tenant": str(company_id), "branch": branch},
@@ -937,8 +980,9 @@ def handle_api_request():
                 return json_response({"conversations": convs})
 
             # GET /api/chat/<branch>/conversations/<id>
-            elif action == "conversations" and len(parts) >= 4 and method == "GET":
-                conv_id = parts[3]
+            elif action == "conversations" and method == "GET" and len(parts) == 5:
+                require_session()
+                conv_id = parts[4]
                 conv = frappe.get_doc("AIOS Conversation", conv_id)
                 msgs = frappe.get_all(
                     "AIOS Message",
@@ -950,8 +994,10 @@ def handle_api_request():
 
             # POST /api/chat/<branch>/stream
             if action == "stream" and method == "POST":
-                sess = get_current_session()
-                company_id = sess.get("companyId", 2) if sess else 2
+                sess = require_session()
+                company_id = sess.get("companyId")
+                if not company_id:
+                    return json_response({"error": "Sesi tidak valid"}, 401)
 
                 try:
                     body = frappe.request.get_json(force=True, silent=True) or {}
@@ -987,6 +1033,8 @@ def handle_api_request():
     # 8. CHATBOT MONITORING ROUTES
     # =========================================================================
     if path.startswith("api/chatbot"):
+        require_session(role="DEVELOPER")
+
         # GET /api/chatbot/sessions
         if path == "api/chatbot/sessions" and method == "GET":
             sessions = frappe.get_all(

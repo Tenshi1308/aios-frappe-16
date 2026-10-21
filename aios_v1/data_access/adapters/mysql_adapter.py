@@ -5,11 +5,15 @@ from .base import BaseDatabaseAdapter
 class MySQLAdapter(BaseDatabaseAdapter):
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
-        self.host = config.get("host", "127.0.0.1")
+        self.host = config.get("host")
         self.port = int(config.get("port") or 3306)
-        self.user = config.get("user") or config.get("username", "root")
+        self.user = config.get("user") or config.get("username")
         self.password = config.get("password", "")
         self.database = config.get("database") or config.get("database_name", "")
+        if not self.host:
+            raise ValueError("Host database wajib diisi")
+        if not self.user:
+            raise ValueError("User database wajib diisi")
 
     def _get_connection(self):
         return pymysql.connect(
