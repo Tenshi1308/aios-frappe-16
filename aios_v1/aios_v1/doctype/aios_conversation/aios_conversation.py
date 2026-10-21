@@ -16,8 +16,8 @@ class AIOSConversation(Document):
 
 		branch: DF.Data
 		name: DF.Int | None
-		tenant: DF.Link
 		title: DF.Data | None
+		user: DF.Link
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "AIOS Conversation"

@@ -12,11 +12,10 @@ class BaseManager:
     def manager_persona(self) -> str:
         return self.branch.get("manager_persona") or f"Anda adalah AI Manager bidang {self.branch['name']} di AIOS — manajer yang mengoordinasikan seluruh spesialis/worker di bidang ini."
 
-    def ensure_conversation(self, company_id: int) -> int:
-        tenant_name = str(company_id)
+    def ensure_conversation(self, user: str) -> int:
         existing = frappe.get_all(
             "AIOS Conversation",
-            filters={"tenant": tenant_name, "branch": self.branch["key"]},
+            filters={"user": user, "branch": self.branch["key"]},
             order_by="modified desc",
             limit=1
         )
@@ -24,7 +23,7 @@ class BaseManager:
             return int(existing[0].name)
 
         doc = frappe.new_doc("AIOS Conversation")
-        doc.tenant = tenant_name
+        doc.user = user
         doc.branch = self.branch["key"]
         doc.title = f"Sesi {self.branch['name']}"
         doc.insert(ignore_permissions=True)
@@ -104,12 +103,13 @@ class BaseManager:
 
         return "\n\n".join(parts)
 
-    def handle_stream(self, company_id: int, user_message: str, worker_key: str = None, conversation_id: int = None):
+    def handle_stream(self, company_id: int, user_message: str, worker_key: str = None, conversation_id: int = None, user: str = None):
+        user = user or frappe.session.user
         # 0. Flush initial buffer untuk bypass proxy/nginx buffering
         yield f": {' ' * 1024}\n\n"
 
         if not conversation_id:
-            conversation_id = self.ensure_conversation(company_id)
+            conversation_id = self.ensure_conversation(user)
 
         # 1. Kirim Meta Event
         yield f"data: {json.dumps({'type': 'meta', 'conversationId': conversation_id})}\n\n"

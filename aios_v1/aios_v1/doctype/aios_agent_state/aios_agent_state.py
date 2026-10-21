@@ -17,7 +17,7 @@ class AIOSAgentState(Document):
 		enabled: DF.Check
 		name: DF.Int | None
 		scope: DF.Data
-		tenant: DF.Link
+		user: DF.Link
 		value: DF.Code | None
 	# end: auto-generated types
 

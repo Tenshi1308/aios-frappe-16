@@ -80,7 +80,14 @@ def setup_aios_identity():
     frappe.db.updatedb("User")
     _ensure_roles()
     _ensure_role_profiles()
+    _ensure_aios_permissions()
     frappe.clear_cache()
+
+
+def _ensure_aios_permissions():
+    from aios_v1.permissions import ensure_aios_permissions
+
+    ensure_aios_permissions()
 
 
 def _ensure_roles():

@@ -27,6 +27,7 @@ class AIOSDBConnection(Document):
 		provision_mode: DF.Literal["template", "custom"]
 		status: DF.Literal["DISCONNECTED", "TESTING", "ACTIVE", "ERROR"]
 		tenant: DF.Link
+		user: DF.Link
 		username: DF.Data | None
 	# end: auto-generated types
 

@@ -8,18 +8,19 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "tenant",
+  "user",
   "scope",
   "enabled",
   "value"
  ],
  "fields": [
   {
-   "fieldname": "tenant",
+   "fieldname": "user",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Tenant",
-   "options": "AIOS Tenant",
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
    "reqd": 1
   },
   {
@@ -44,7 +45,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-30 16:21:49.234885",
+ "modified": "2026-10-21 15:30:00.000000",
  "modified_by": "Administrator",
  "module": "AIOS V1",
  "name": "AIOS Agent State",

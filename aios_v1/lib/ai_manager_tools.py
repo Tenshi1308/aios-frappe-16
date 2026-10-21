@@ -131,6 +131,7 @@ def escalate_to_human_approval(task_id: str, action_type: str, branch: str, crea
     
     doc = frappe.get_doc({
         "doctype": "Pending Action Draft",
+        "user": frappe.session.user,
         "task_id": task_id,
         "type": action_type,
         "branch": branch,

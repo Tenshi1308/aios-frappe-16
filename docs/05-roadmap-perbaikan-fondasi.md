@@ -1,8 +1,8 @@
 # Roadmap Perbaikan AIOS V1
 
-**Status:** revisi 10 — **`#0` SELESAI**; `#1` berjalan di `fix/security-emergency` (tahap A + auth switch Frappe + guard `Administrator`). Sisa `S1/S2/N2/S3` dan ownership per `User` dikerjakan di **Tahap C** (lihat §#4a, sebelum #4a penuh). Dokumen telah diaudit lintas-dokumen dan diverifikasi terhadap source Frappe 16 / ERPNext 16.
+**Status:** revisi 11 — **`#0` SELESAI**; **Tahap C SELESAI** (ownership per `User`, hook izin, `Pending Action Draft`; 8/8 test isolasi hijau). `#1` tahap A selesai di `fix/security-emergency`. Berikutnya: **#4a** (hapus `AIOS Tenant` + sisa relasi `tenant`). Dokumen telah diaudit lintas-dokumen dan diverifikasi terhadap source Frappe 16 / ERPNext 16.
 **Basis:** `develop` @ `ac98ca1` (2026-09-11)
-**Dibuat:** 2026-10-19 · **Direvisi:** 2026-10-21 (revisi 10 — Tahap C disetujui; lihat §#4a)
+**Dibuat:** 2026-10-19 · **Direvisi:** 2026-10-21 (revisi 11 — Tahap C selesai; lihat §#4a)
 **Repo:** `git@github.com:Tenshi1308/aios-frappe-16.git` (origin) — upstream = `/home/samue/mybench/apps/aios_v1`
 
 > **Prinsip kerja:** setiap tahap dan setiap fitur **wajib punya script test**.
@@ -54,7 +54,7 @@ Target pasar: perusahaan bisnis.
 | `frappe.session` dipakai | **0 kali** | mesin otorisasi Frappe tidak aktif |
 | `ignore_permissions=True` | 103 kali | |
 | `frappe.get_all` vs `get_list` | 30 vs 1 | |
-| Doctype | **12 unik** di repo (+1 `Pending Action Draft` di Tahap C → **13** di #4a) | 14 file JSON saat ini (2 duplikat luar-package), semuanya hanya permission `System Manager` |
+| Doctype | **13 unik** di repo (12 awal + `Pending Action Draft` Tahap C) | 14 file JSON saat ini (2 duplikat luar-package), semuanya hanya permission `System Manager` |
 | CI | **tidak ada** | |
 | `ruff` di env | **tidak ada** (bisa di-install, terverifikasi) | |
 | Temuan keamanan | **12 → 18** | +6 dari review eksternal (N1–N6) |
@@ -570,7 +570,7 @@ tidak ada file 0 byte di `managers/`, tidak ada `www/aios_web_handler.html`,
 
 ### Tahap C — Ownership per `User` (dikerjakan sebelum #4a penuh)
 
-**Status:** disetujui 2026-10-21 — scope **menengah**, bukan #4a penuh.
+**Status:** **SELESAI 2026-10-21** — scope **menengah**, bukan #4a penuh.
 Alasan: lubang IDOR harus ditutup sekarang, tetapi `AIOS DB Connection` belum bisa
 lepas `tenant` sampai injeksi `user_id` dari sesi selesai (#7 / L7).
 
@@ -603,6 +603,14 @@ lepas `tenant` sampai injeksi `user_id` dari sesi selesai (#7 / L7).
 baris `user=NULL` tidak terlihat `AIOS Client`; Alpha tetap bisa akses miliknya; tanpa
 sesi → 401; `Administrator`/`AIOS Admin` penuh; draft milik orang lain tidak bisa
 di-approve.
+
+**Bukti verifikasi (2026-10-21):**
+
+- `bench --site aios-v16.localhost run-tests --app aios_v1 --module aios_v1.tests.test_authz_user_isolation` → **8/8 OK**: Alpha ditolak `403/404`, daftar Beta kosong, resource sendiri lolos, tanpa sesi `401`, `Administrator` lolos, draft Beta tidak bisa di-approve Alpha, draft baru terikat ke sesi.
+- `pytest -q` → **38 passed, 2 skipped, 10 xfailed, 1 xpassed** (xpass = doctype count 13, target #2; `strict=False`).
+- `bench --site aios-v16.localhost migrate` → sukses; `Pending Action Draft` terdaftar; `Custom DocPerm` `AIOS Client`/`AIOS Admin` terpasang untuk 5 doctype.
+
+**Catatan regression-before-fix:** test lama di-`@unittest.skip` dan membuat field yang tidak ada (`datetime`, `connection_name`, `user` di Message), jadi kegagalannya dulu adalah kegagalan skema, bukan bukti izin. Bukti izin diambil dari test baru yang lulus + hook terpasang, bukan dari test lama.
 
 **Deviasi transisi yang dicatat:** `AIOS DB Connection` sementara punya `tenant` + `user`.
 Dihapus di #4a setelah #7 menyediakan injeksi `user_id` dari sesi.
@@ -1167,21 +1175,13 @@ Deliverable #0 (**semua terpenuhi**, lihat §3k untuk hasil terukur):
 
 ---
 
-### ⏭️ Aksi Berikutnya: Tahap C — Ownership per `User`
+### ⏭️ Aksi Berikutnya: `#4a` (`refactor/frappe-identity-doctypes`)
 
-`#1` tahap A sudah selesai di `fix/security-emergency` (penutupan endpoint auth, enumerasi
-register, path mesin, SSRF, auth switch Frappe, guard `Administrator`, pesan 401 generik).
-Sisa `S1/S2/N2/S3` dan ownership per `User` dikerjakan di **Tahap C** (§#4a).
+Tahap C selesai: ownership per `User` + hook izin + `Pending Action Draft` sudah terpasang
+(8/8 test isolasi hijau). Berikutnya #4a: hapus `AIOS Tenant`, tambah `AIOS Token Usage`,
+field site-level di `AIOS Setting`, matriks `Custom DocPerm` ERPNext (#4b), dan konversi
+`tenant_id` di 9 modul tool (232 titik) yang masih memakai `AIOS DB Connection.tenant`
+sebagai kolom transisi.
 
-Sasaran Tahap C: `user -> Link(User)` pada `AIOS Conversation`, `AIOS Agent State`, dan
-`Pending Action Draft`; `AIOS DB Connection` dapat `user` dengan `tenant` sebagai kolom
-transisi; `permission_query_conditions` + `has_permission` aktif; `Pending Action Draft`
-jadi file JSON di repo.
-
-**Bukti keberhasilan Tahap C yang tidak bisa dipalsukan:** `aios_v1/tests/test_authz_user_isolation.py`
-yang hari ini **sengaja MERAH** (`@unittest.skip`) berubah **HIJAU** lewat
-`bench --site aios-v16.localhost run-tests --app aios_v1`, setelah skemanya dibetulkan
-sesuai doctype nyata (§6c).
-
-**Nit yang ikut dibersihkan:** docstring `test_authz_user_isolation.py:4` masih menulis
-`auto-skip di CI` — sebenarnya dibuang dari collection oleh `conftest.py` (§3k).
+**Prasyarat:** #7 (injeksi `user_id` dari sesi) harus selesai sebelum
+`AIOS DB Connection.tenant` dihapus.

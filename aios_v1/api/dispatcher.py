@@ -107,8 +107,13 @@ class CustomAPIResponse(HTTPException):
     def get_response(self, environ=None):
         return self._custom_response
 
+def _current_request():
+    """Request aktif, atau None di luar konteks HTTP (mis. cron/test)."""
+    return getattr(frappe.local, "request", None)
+
 def add_cors_headers(res):
-    origin = frappe.request.headers.get("Origin")
+    request = _current_request()
+    origin = request.headers.get("Origin") if request is not None else None
     if origin:
         res.headers["Access-Control-Allow-Origin"] = origin
         res.headers["Access-Control-Allow-Credentials"] = "true"
@@ -149,7 +154,8 @@ def _legacy_company_id(user: str) -> int:
 
 
 def get_current_session():
-    token = frappe.request.cookies.get(SESSION_COOKIE)
+    request = _current_request()
+    token = request.cookies.get(SESSION_COOKIE) if request is not None else None
     sess = verify_session_token(token)
     if sess:
         return sess
@@ -430,6 +436,7 @@ def handle_api_request():
             else:
                 conn_doc = frappe.new_doc("AIOS DB Connection")
                 conn_doc.tenant = tenant_id
+            conn_doc.user = sess.get("user")
 
             conn_doc.engine = engine
             conn_doc.host = body.get("host")
@@ -509,6 +516,7 @@ def handle_api_request():
             else:
                 conn_doc = frappe.new_doc("AIOS DB Connection")
                 conn_doc.tenant = tenant_id
+            conn_doc.user = sess.get("user")
 
             conn_doc.engine = "sqlite"
             conn_doc.database_name = res["database_name"]
@@ -683,11 +691,11 @@ def handle_api_request():
 
         # GET /api/monitoring/usage (Summary per client)
         if len(parts) == 3 and parts[2] == "usage" and method == "GET":
-            tenants = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status"])
+            tenants = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status", "email"])
             companies = []
             for t in tenants:
                 c_id = int(t.name) if str(t.name).isdigit() else 1
-                convs = frappe.get_all("AIOS Conversation", filters={"tenant": str(t.name)}, fields=["name"])
+                convs = frappe.get_all("AIOS Conversation", filters={"user": t.email or "__no_user__"}, fields=["name"])
                 conv_names = [c.name for c in convs]
                 total_in = 0
                 total_out = 0
@@ -724,14 +732,14 @@ def handle_api_request():
         elif len(parts) == 4 and parts[2] == "usage" and method == "GET":
             company_id = parts[3]
             try:
-                tenant = frappe.db.get_value("AIOS Tenant", {"name": str(company_id)}, ["name", "tenant_name", "status"], as_dict=True)
+                tenant = frappe.db.get_value("AIOS Tenant", {"name": str(company_id)}, ["name", "tenant_name", "status", "email"], as_dict=True)
                 if not tenant:
-                    all_clients = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status"])
+                    all_clients = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status", "email"])
                     if all_clients:
                         tenant = all_clients[0]
 
-                tenant_id = tenant.name if tenant else company_id
-                convs = frappe.get_all("AIOS Conversation", filters={"tenant": str(tenant_id)}, fields=["name", "branch"])
+                conv_user = tenant.get("email") if tenant else None
+                convs = frappe.get_all("AIOS Conversation", filters={"user": conv_user or "__no_user__"}, fields=["name", "branch"])
 
                 branch_convs = {}
                 for c in convs:
@@ -777,10 +785,10 @@ def handle_api_request():
             company_id = parts[3]
             branch = parts[4]
             try:
-                tenant = frappe.db.get_value("AIOS Tenant", {"name": str(company_id)}, ["name"], as_dict=True)
-                tenant_id = tenant.name if tenant else company_id
+                tenant = frappe.db.get_value("AIOS Tenant", {"name": str(company_id)}, ["name", "email"], as_dict=True)
+                conv_user = tenant.get("email") if tenant else None
 
-                convs = frappe.get_all("AIOS Conversation", filters={"tenant": str(tenant_id), "branch": branch}, fields=["name"])
+                convs = frappe.get_all("AIOS Conversation", filters={"user": conv_user or "__no_user__", "branch": branch}, fields=["name"])
                 c_names = [c.name for c in convs]
                 workers_list = []
 
@@ -916,12 +924,9 @@ def handle_api_request():
             # GET /api/chat/<branch>/conversations
             if action == "conversations" and method == "GET" and len(parts) == 4:
                 sess = require_session()
-                company_id = sess.get("companyId")
-                if not company_id:
-                    return json_response({"error": "Sesi tidak valid"}, 401)
                 convs = frappe.get_all(
                     "AIOS Conversation",
-                    filters={"tenant": str(company_id), "branch": branch},
+                    filters={"user": sess["user"], "branch": branch},
                     fields=["name as id", "title", "modified as updatedAt"],
                     order_by="modified desc",
                     limit=20
@@ -932,7 +937,11 @@ def handle_api_request():
             elif action == "conversations" and method == "GET" and len(parts) == 5:
                 require_session()
                 conv_id = parts[4]
+                if not frappe.db.exists("AIOS Conversation", conv_id):
+                    return json_response({"error": "Percakapan tidak ditemukan"}, 404)
                 conv = frappe.get_doc("AIOS Conversation", conv_id)
+                if not frappe.has_permission("AIOS Conversation", "read", doc=conv):
+                    return json_response({"error": "Percakapan tidak ditemukan"}, 404)
                 msgs = frappe.get_all(
                     "AIOS Message",
                     filters={"conversation": conv_id},
@@ -962,12 +971,20 @@ def handle_api_request():
                 if not message:
                     return json_response({"error": "Pesan tidak boleh kosong"}, 400)
 
+                if conversation_id:
+                    if not frappe.db.exists("AIOS Conversation", conversation_id):
+                        return json_response({"error": "Percakapan tidak ditemukan"}, 404)
+                    conv = frappe.get_doc("AIOS Conversation", conversation_id)
+                    if not frappe.has_permission("AIOS Conversation", "read", doc=conv):
+                        return json_response({"error": "Percakapan tidak ditemukan"}, 404)
+
                 mgr = get_manager(branch)
                 stream_generator = mgr.handle_stream(
                     company_id=company_id,
                     user_message=message,
                     worker_key=worker_key,
-                    conversation_id=conversation_id
+                    conversation_id=conversation_id,
+                    user=sess["user"],
                 )
 
                 res = Response(stream_generator, mimetype="text/event-stream; charset=utf-8")
