@@ -16,6 +16,7 @@ if importlib.util.find_spec("frappe") is None:
         "test_import_smoke.py",
         "test_db_connection_guard.py",
         "test_security_baseline.py",
+        "test_setup_hooks_schema.py",
     }
     collect_ignore = [
         p.name for p in Path(__file__).parent.glob("test_*.py") if p.name not in STATIC

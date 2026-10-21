@@ -30,6 +30,9 @@ class TestEndpointAuthContract(unittest.TestCase):
         self.assertIn("require_session()", src[idx : idx + 700])
         self.assertIn("MAX_PDF_BYTES", src)
 
+    def test_session_supports_frappe_sid(self):
+        self.assertIn("frappe.session.user", _source())
+
     def test_stream_has_no_tenant_fallback(self):
         src = _source()
         self.assertNotIn('sess.get("companyId", 2) if sess else 2', src)

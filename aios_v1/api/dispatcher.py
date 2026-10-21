@@ -147,9 +147,32 @@ def redirect_response(location):
     res.headers["Location"] = location
     raise CustomAPIResponse(res)
 
+def _legacy_company_id(user: str) -> int:
+    tenant = frappe.db.get_value("AIOS Tenant", {"email": user}, "name")
+    return int(tenant) if tenant and str(tenant).isdigit() else 1
+
+
 def get_current_session():
     token = frappe.request.cookies.get(SESSION_COOKIE)
-    return verify_session_token(token)
+    sess = verify_session_token(token)
+    if sess:
+        return sess
+
+    # ponytail: jembatan transisi ke Frappe `sid`; custom aios_session tetap
+    # didukung sampai migrasi auth selesai. companyId legacy dihapus di Tahap C.
+    user = frappe.session.user
+    if not user or user == "Guest":
+        return None
+    roles = frappe.get_roles(user)
+    role = "DEVELOPER" if (
+        user == "Administrator" or "System Manager" in roles or "AIOS Admin" in roles
+    ) else "CLIENT"
+    return {
+        "user": user,
+        "name": frappe.db.get_value("User", user, "full_name") or user,
+        "role": role,
+        "companyId": _legacy_company_id(user),
+    }
 
 
 def require_session(role: str | None = None) -> dict:

@@ -9,6 +9,20 @@ app_license = "mit"
 # bodies instead of form-encoded, per-key JSON-stringified values.
 use_json_request_body = True
 
+# AIOS identity setup (Custom Field User, Role, Role Profile).
+after_install = "aios_v1.setup.after_install"
+after_migrate = "aios_v1.setup.after_migrate"
+
+# AIOS auth guard (Frappe login + every request).
+on_login = "aios_v1.setup.on_login"
+auth_hooks = ["aios_v1.setup.validate_aios_status"]
+
+doc_events = {
+    "User": {
+        "validate": "aios_v1.setup.sync_aios_status_enabled",
+    },
+}
+
 # Apps
 # ------------------
 
