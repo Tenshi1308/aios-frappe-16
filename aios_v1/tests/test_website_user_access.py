@@ -65,6 +65,11 @@ class TestWebsiteUserAccess(IntegrationTestCase):
         self.assertIn("AIOS Client", context["roles"])
         self.assertTrue(context["csrf_token"])
 
+    def test_client_method_is_really_whitelisted(self):
+        frappe.set_user(self.EMAIL)
+        # `is_whitelisted` melempar PermissionError kalau method tidak terdaftar.
+        self.assertFalse(frappe.is_whitelisted(get_session_context))
+
     def test_client_has_read_permission(self):
         frappe.set_user(self.EMAIL)
         self.assertTrue(frappe.has_permission("AIOS Conversation", "read"))

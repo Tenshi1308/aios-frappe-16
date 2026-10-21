@@ -30,6 +30,7 @@ def _make_test_user(email, first_name, status):
             "first_name": first_name,
             "enabled": 1 if status == "Active" else 0,
             "send_welcome_email": 0,
+            "new_password": "rahasia123",
             "user_type": "Website User",
             "aios_status": status,
             "roles": [{"role": "AIOS Client"}],
@@ -70,6 +71,28 @@ class TestLoginFlow(IntegrationTestCase):
 
     def test_on_login_ignores_administrator(self):
         on_login(SimpleNamespace(user="Administrator"))
+
+    def test_password_credentials_active(self):
+        """Password asli diverifikasi `User.find_by_credentials` (inti LoginManager)."""
+        from frappe.core.doctype.user.user import User
+
+        user = User.find_by_credentials(self.ACTIVE, "rahasia123")
+        self.assertTrue(user["is_authenticated"])
+        self.assertEqual(user["name"], self.ACTIVE)
+        self.assertEqual(user["enabled"], 1)
+
+    def test_password_credentials_wrong(self):
+        from frappe.core.doctype.user.user import User
+
+        user = User.find_by_credentials(self.ACTIVE, "password-salah")
+        self.assertFalse(user["is_authenticated"])
+
+    def test_pending_credentials_disabled(self):
+        from frappe.core.doctype.user.user import User
+
+        user = User.find_by_credentials(self.PENDING, "rahasia123")
+        self.assertTrue(user["is_authenticated"])
+        self.assertEqual(user["enabled"], 0)
 
     def test_auth_hook_blocks_pending_session(self):
         frappe.set_user(self.PENDING)

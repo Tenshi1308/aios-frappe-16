@@ -91,3 +91,11 @@ class TestDraftFlow(IntegrationTestCase):
         frappe.set_user("Guest")
         with self.assertRaises(frappe.PermissionError):
             approve_draft(draft.name)
+
+    def test_draft_methods_are_not_guest_whitelisted(self):
+        from aios_v1.lib.draft_manager import get_draft, reject_draft
+
+        frappe.set_user("Guest")
+        for method in (get_draft, approve_draft, reject_draft):
+            with self.assertRaises(frappe.PermissionError):
+                frappe.is_whitelisted(method)

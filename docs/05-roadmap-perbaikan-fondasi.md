@@ -607,12 +607,13 @@ di-approve.
 **Bukti verifikasi (2026-10-21):**
 
 - `bench --site aios-v16.localhost run-tests --app aios_v1 --module aios_v1.tests.test_authz_user_isolation` → **8/8 OK**: Alpha ditolak `403/404`, daftar Beta kosong, resource sendiri lolos, tanpa sesi `401`, `Administrator` lolos, draft Beta tidak bisa di-approve Alpha, draft baru terikat ke sesi.
-- Test P0/P1 modular: `test_authz_dispatcher` **5/5**, `test_authz_write` **6/6**, `test_conversation_manager` **3/3**, `test_draft_flow` **3/3**, `test_permissions_installer` **4/4** — semua OK.
-- Test P2/P3: `test_connection_user` **2/2**, `test_monitoring_scope` **2/2**, `test_draft_manager` **4/4**, `test_ai_manager_tools` **4/4**, `test_self_register_pending_provisioning` **5/5**, `test_website_user_access` **4/4**, `test_login_flow` **10/10**, `test_lockout` **2/2** — semua OK.
+- Test P0/P1 modular: `test_authz_dispatcher` **5/5**, `test_authz_write` **8/8**, `test_conversation_manager` **3/3**, `test_draft_flow` **4/4**, `test_permissions_installer` **5/5** — semua OK.
+- Test P2/P3: `test_connection_user` **2/2**, `test_monitoring_scope` **2/2**, `test_draft_manager` **4/4**, `test_ai_manager_tools` **4/4**, `test_self_register_pending_provisioning` **5/5**, `test_website_user_access` **5/5**, `test_login_flow` **13/13**, `test_lockout` **2/2** — semua OK.
+- **Mutation check (bukan sekadar hijau):** 5 mutasi sengaja — filter `user` di daftar percakapan, hook `has_permission`, `ensure_conversation`, filter monitoring, dan `user` di connection — semuanya membuat test **FAILED**; file direvert dan test kembali hijau.
 - `pytest -q` → **41 passed, 2 skipped, 9 xfailed, 2 xpassed** (xpass = doctype count 13 dan `test_no_db_commit_in_test_files`; `strict=False`).
 - `bench --site aios-v16.localhost migrate` → sukses; `Pending Action Draft` terdaftar; `Custom DocPerm` `AIOS Client`/`AIOS Admin` terpasang untuk 5 doctype.
 
-**Catatan regression-before-fix:** test lama di-`@unittest.skip` dan membuat field yang tidak ada (`datetime`, `connection_name`, `user` di Message), jadi kegagalannya dulu adalah kegagalan skema, bukan bukti izin. Bukti izin diambil dari test baru yang lulus + hook terpasang, bukan dari test lama.
+**Catatan regression-before-fix:** test lama di-`@unittest.skip` dan membuat field yang tidak ada (`datetime`, `connection_name`, `user` di Message), jadi kegagalannya dulu adalah kegagalan skema, bukan bukti izin. Bukti izin diambil dari test baru yang lulus + **mutation check** di atas (test terbukti merah saat kode dirusak), bukan dari test lama.
 
 **Deviasi transisi yang dicatat:** `AIOS DB Connection` sementara punya `tenant` + `user`.
 Dihapus di #4a setelah #7 menyediakan injeksi `user_id` dari sesi.

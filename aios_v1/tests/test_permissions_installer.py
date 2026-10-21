@@ -46,6 +46,24 @@ class TestPermissionInstaller(IntegrationTestCase):
         )
         self.assertEqual(count, 1)
 
+    def test_creates_perms_from_scratch(self):
+        """Jalur pembuatan (`add_permission`) benar-benar dieksekusi, bukan cuma idempoten."""
+        frappe.db.delete(
+            "Custom DocPerm",
+            {
+                "parent": "AIOS Conversation",
+                "role": ["in", ["AIOS Client", "AIOS Admin"]],
+            },
+        )
+        self.assertIsNone(self._perm("AIOS Conversation", "AIOS Client"))
+
+        ensure_aios_permissions()
+
+        for role in ("AIOS Client", "AIOS Admin"):
+            perm = self._perm("AIOS Conversation", role)
+            self.assertTrue(perm, role)
+            self.assertEqual(perm["read"], 1, role)
+
     def test_client_full_on_owned_doctype(self):
         perm = self._perm("AIOS Conversation", "AIOS Client")
         self.assertTrue(perm)

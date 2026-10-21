@@ -95,6 +95,37 @@ class TestWriteIsolation(IntegrationTestCase):
         ).insert()
         self.assertEqual(doc.user, self.ALPHA)
 
+    def test_alpha_can_write_own_conversation(self):
+        own = frappe.get_doc(
+            {
+                "doctype": "AIOS Conversation",
+                "user": self.ALPHA,
+                "branch": "sales",
+                "title": "_Test Alpha write own",
+            }
+        ).insert(ignore_permissions=True)
+        frappe.set_user(self.ALPHA)
+        doc = frappe.get_doc("AIOS Conversation", own.name)
+        doc.title = "judul baru"
+        doc.save()
+        self.assertEqual(
+            frappe.db.get_value("AIOS Conversation", own.name, "title"),
+            "judul baru",
+        )
+
+    def test_alpha_can_delete_own_conversation(self):
+        own = frappe.get_doc(
+            {
+                "doctype": "AIOS Conversation",
+                "user": self.ALPHA,
+                "branch": "sales",
+                "title": "_Test Alpha delete own",
+            }
+        ).insert(ignore_permissions=True)
+        frappe.set_user(self.ALPHA)
+        frappe.delete_doc("AIOS Conversation", own.name)
+        self.assertFalse(frappe.db.exists("AIOS Conversation", own.name))
+
     def test_aios_admin_can_read_and_write_beta(self):
         frappe.set_user(self.ADMIN)
         doc = frappe.get_doc(
