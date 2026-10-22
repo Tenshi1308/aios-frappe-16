@@ -122,6 +122,8 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 | 2026-10-22 | PoC satu model; config di `AIOS Setting`. UI provider/model nanti di `#11` (frontend baru), bukan `#4a-1`. |
 | 2026-10-22 | `AIOS Admin` `desk_access=0`, hanya site developer; site klien hanya `AIOS Client` + `AIOS Control` + `Administrator`. |
 | 2026-10-22 | `AIOS Token Usage` tanpa link `conversation`; field: `user`, `provider`, `model`, `branch`, `agent`, `input_tokens`, `output_tokens`, `total_tokens`, `cost`. |
+| 2026-10-22 | `AIOS Token Usage.cost` dalam IDR. |
+| 2026-10-22 | `AIOS Admin` tidak dibuat per client site; hanya control plane di `#11`. |
 | 2026-10-22 | `System Manager` tidak boleh write/create/delete `AIOS Setting`; hanya `Administrator`. |
 | 2026-10-22 | Antrean pending wajib filter role `AIOS Client`; `Guest`/`Administrator` tidak boleh muncul. |
 | 2026-10-22 | `User.aios_status` tidak punya default; registrasi mengisi eksplisit. |
@@ -132,14 +134,9 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 
 | Gap | Dampak |
 |---|---|
-| `AIOS Setting` JSON hanya punya 5 field lama | `default_company`, `default_user_token_limit`, `site_token_limit`, `site_tokens_used`, `max_users`, `company_context_persona` belum ada. |
-| `AIOS Token Usage` belum ada | `#7b`/H4 belum punya tempat mencatat biaya/token. |
-| `AIOS Control` belum ada; `AIOS Admin` ada dengan `desk_access=1` + DocPerm penuh | Bertentangan dengan docs/03 §1.4/§2.1; harus dibenerin di `#4a-1`/`#11`. |
-| `Custom DocPerm` ERPNext target = 0 | `AIOS Client` belum bisa baca/report ERPNext. |
-| `monitoring_service.py` dead code; `/api/monitoring` masih pakai `AIOS Tenant` | Hapus service di `#4a-1`; route lama sampai `#11`. |
-| 20 `frappe.get_all` di kode produksi | Audit `get_all` → `get_list` di `#4a-1`. |
-| `User.aios_status` masih punya default `Pending Provisioning` | Akun sistem ikut berlabel pending; hapus default di `#4a-1`. |
-| `test_permission_scoping.py` belum ada | Test matriks izin `#4a-1` belum ada. |
+| `AIOS Setting` JSON masih kurang `default_user_token_limit`, `max_users`, `company_context_persona` | Field site-level lain menyusul `#5`/`#8`. |
+| `AIOS Admin` role lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role control plane menyusul `#11`. |
+| `/api/monitoring` masih pakai `AIOS Tenant` | Route lama sampai `#11`; `monitoring_service.py` dead sudah dihapus. |
 
 ---
 
