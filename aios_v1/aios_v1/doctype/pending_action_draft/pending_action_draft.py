@@ -20,7 +20,7 @@ class PendingActionDraft(Document):
 		name: DF.Data | None
 		payload: DF.Code
 		rejection_reason: DF.SmallText | None
-		status: DF.Literal["PENDING_APPROVAL", "APPROVED", "REJECTED", "EXPIRED", "COMPLETED"]
+		status: DF.Literal["PENDING_APPROVAL", "APPROVED", "EXECUTED", "REJECTED", "EXPIRED"]
 		task_id: DF.Data
 		type: DF.Data
 		user: DF.Link

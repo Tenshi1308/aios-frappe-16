@@ -13,6 +13,8 @@ SITE_USED_FIELD = "site_tokens_used"
 
 def check_site_token_quota() -> bool:
 	"""True bila masih ada sisa kuota site; False bila plafon sudah terpakai."""
+	# ponytail: cek-lalu-jalan, bukan reservasi atomik; request bersamaan bisa
+	# overshoot sedikit. Upgrade ke reservasi atomik kalau plafon harus keras.
 	limit = frappe.db.get_single_value(SITE_DOCTYPE, "site_token_limit") or 0
 	used = frappe.db.get_single_value(SITE_DOCTYPE, SITE_USED_FIELD) or 0
 	return not (limit and used >= limit)

@@ -129,9 +129,9 @@ class TestLLMClient(unittest.TestCase):
         usage = {}
         result = list(chat_stream(messages, usage=usage))
         
-        # It should gracefully yield an error message string
-        self.assertTrue(len(result) == 1)
-        self.assertTrue("Mohon maaf" in result[0])
-        self.assertTrue("Connection Timeout" in result[0])
+        # Pesan aman ke pengguna; detail error hanya di Error Log.
+        self.assertEqual(len(result), 1)
+        self.assertIn("Mohon maaf", result[0])
+        self.assertNotIn("Connection Timeout", result[0])
         self.assertTrue(usage.get("failed"))
         mock_log_error.assert_called()

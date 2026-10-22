@@ -49,7 +49,6 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
     }
 
     max_attempts = 2
-    last_err = None
 
     for attempt in range(1, max_attempts + 1):
         try:
@@ -84,8 +83,7 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
 
             return
 
-        except Exception as e:
-            last_err = e
+        except Exception:
             frappe.log_error(frappe.get_traceback(), "AIOS LLM Request")
             if attempt < max_attempts:
                 time.sleep(1)
@@ -93,4 +91,4 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
 
     if usage is not None:
         usage["failed"] = True
-    yield f"Mohon maaf, server AI memerlukan waktu lebih lama dari biasanya ({str(last_err)}). Silakan coba ajukan pertanyaan kembali."
+    yield "Mohon maaf, server AI memerlukan waktu lebih lama dari biasanya. Silakan coba ajukan pertanyaan kembali."
