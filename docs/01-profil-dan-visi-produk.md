@@ -2,7 +2,7 @@
 
 ## 1. Esensi Produk: Apa Itu AIOS V1?
 
-**AIOS (Artificial Intelligence Operating System for Enterprise)** adalah platform SaaS **Business AI Harness** yang dibangun di atas **Frappe Framework v16 + ERPNext** dengan antarmuka web modern **Next.js**.
+**AIOS (Artificial Intelligence Operating System for Enterprise)** adalah platform SaaS **Business AI Harness** yang dibangun di atas **Frappe Framework v16 + ERPNext** dengan antarmuka desktop **Ekasa Desk** berbasis **Vue 3**.
 
 Berbeda dari asisten AI umum (yang hanya menjawab teks tanpa konteks operasional) dan berbeda pula dari *coding harness* (seperti Claude Code, OpenCode, atau Cline yang mengoperasikan kode sumber & terminal), **AIOS mengoperasikan proses bisnis perusahaan**. Setiap perusahaan klien yang berlangganan AIOS mendapatkan **1 dedicated site instance (`1 Client = 1 Site`)** berisi "organisasi staf ahli dan manajer AI virtual" yang terhubung langsung ke pembukuan dan operasional ERPNext perusahaan mereka sendiri.
 

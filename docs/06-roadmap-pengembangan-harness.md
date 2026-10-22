@@ -1,8 +1,8 @@
-# 06 — Roadmap Pengembangan Business AI Harness (Fase Lanjutan Setelah Fondasi)
+# 06 — Roadmap Pengembangan Business AI Harness (Bagian dari Target PoC)
 
-**Status:** Spesifikasi & Rencana Eksekusi Fase 2 (Tanpa Duplikasi dengan Fase 1)
-**Prasyarat Wajib:** Fondasi Keamanan, Identitas `User`, & Higienitas di **[`05.1 — Roadmap Fondasi`](./05.1-roadmap-perbaikan-fondasi.md)** (`#0`, `#1`, `#2`, `#3`, `#4a-1`, `#4a-2`, `#4c`, `#5`, dan `#7`) selesai lebih dulu.
-**Basis:** arsitektur `docs/02`; skema `docs/03`; alur `docs/04`. Dokumen ini hanya delta fase 2 + test.
+**Status:** detail tahap H1–H5. **H1 ditunda** untuk PoC; **H2–H5 wajib PoC**. H3 = `#11`; H4 = pendalaman `#8`. Lihat **[00 — Target PoC](./00-poc-target.md)**.
+**Prasyarat:** fondasi `docs/05.1` (`#13`, `#4a-1`, `#4a-2`, `#7b`, `#4d`, `#8`) selesai; H1 tidak dipakai di PoC.
+**Basis:** arsitektur `docs/02`; skema `docs/03`; alur `docs/04`. Dokumen ini detail tahap + test, bukan definisi target PoC.
 
 > **Prinsip Utama:**
 > 1. **Setiap tahap wajib memiliki script test otomatis** (`unittest.TestCase` / `frappe.tests.IntegrationTestCase` dengan entitas dummy `_Test ...` dan guard `monkeypatch` pada `frappe.db.commit`).
@@ -25,9 +25,13 @@ flowchart LR
     H4 --> H5["H5: Isolated Workspace (Private File) &\nArtefak sebagai Berkas/Jendela Desktop"]
 ```
 
+> **Alur PoC:** fondasi (`#13`–`#8`) → **H2 → H4 → H5**; **H3/`#11` paralel**; **H1 ditunda**. Diagram di atas adalah jalur lengkap, bukan urutan PoC.
+
 ---
 
-## Tahap H1 — `feat/multi-provider-model-routing`
+## Tahap H1 — `feat/multi-provider-model-routing` · ⏸ DITUNDA (PoC single model)
+
+> **Jangan dikerjakan untuk PoC.** PoC memakai satu model dari `AIOS Setting`; H1 masuk fase setelah PoC.
 
 Menggantikan `AIOS Setting` lama (yang hanya mendukung 1 `base_url` dan 1 `model_name` untuk seluruh sistem) menjadi arsitektur konfigurasi **Multi-Provider & Per-Agent Model Routing** setara `opencode.jsonc`, tetapi dikelola penuh melalui UI oleh `AIOS Admin`.
 
@@ -53,7 +57,9 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 
 ---
 
-## Tahap H2 — `feat/plugin-mcp-manager`
+## Tahap H2 — `feat/plugin-mcp-manager` · WAJIB PoC
+
+> **Wajib PoC.** Tanpa H2 agent cuma punya 3 plugin ERPNext dari `#8`; H2 melengkapi 7 plugin + scope.
 
 Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas fondasi plugin awal dari `#8` (`erpnext-core-data` & `erpnext-financial-reports`), melengkapinya menjadi 7 *Built-in Default Plugins*, dapat di-*toggle* On/Off melalui UI `AIOS Admin`, serta mendukung server MCP eksternal. Tiga plugin ERPNext adalah **wrapper tipis** di atas API ERPNext; skema tool-nya diadaptasi dari `@casys/mcp-erpnext` (MIT) — lihat `docs/02` §2.2.
 
@@ -80,7 +86,9 @@ Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plug
 
 ---
 
-## Tahap H3 — `feat/developer-control-plane`
+## Tahap H3 — `feat/developer-control-plane` · WAJIB PoC (= `#11`)
+
+> **Ini sama dengan `#11`.** Jangan dikerjakan dua kali; kontrak & acceptance ada di `docs/05.1` #11.
 
 Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang menjalankan dashboard `AIOS Admin` untuk mengelola **banyak site klien lintas site** — registri site, persetujuan pendaftaran, undangan sekali pakai, kuota, dan monitoring agregat. Kontrak normatif: `docs/03` §1.4 dan `docs/04` Alur 6. Tahap ini **tidak menduplikasi** pembuatan Custom Field, `usage.py`, atau alur approval; ia hanya memakai ulang fondasi `#4b`, `#5`, `#7b`, dan `#8`.
 
@@ -120,7 +128,9 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 
 ---
 
-## Tahap H4 — `feat/deep-finance-sales-agents`
+## Tahap H4 — `feat/deep-finance-sales-agents` · WAJIB PoC (= pendalaman `#8`)
+
+> **Ini pendalaman `#8`.** `#8` menyiapkan tool dasar; H4 memperdalam delegasi, trace, dan akumulasi token.
 
 Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar prompt statis menjadi organisasi agen yang dapat melakukan **delegasi nyata** dan **konsultasi lintas cabang** dengan transparansi visual di UI (*Live Agent Trace*).
 
@@ -152,7 +162,9 @@ Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar pr
 
 ---
 
-## Tahap H5 — `feat/isolated-workspace-and-artifacts`
+## Tahap H5 — `feat/isolated-workspace-and-artifacts` · WAJIB PoC (sandbox file/workspace)
+
+> **Wajib PoC.** Ini sandbox file/workspace agent, bukan sekadar demo artefak. Tanpa H5 agent tidak punya batas file yang jelas.
 
 Menyediakan ruang kerja file terisolasi (*Isolated Workspace*) per sesi percakapan menggunakan primitif Private `File` Frappe, dengan artefak tampil sebagai **berkas dan jendela di desktop** (`docs/08` §5).
 

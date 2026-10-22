@@ -1,6 +1,8 @@
 # Dokumentasi Proyek AIOS V1 (Enterprise Business AI Harness)
 
-Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Site-Level Multi-Tenancy* (`1 Client = 1 Site`), alur kerja *end-to-end*, roadmap eksekusi berurutan, serta referensi pasar/kompetitor untuk **AIOS V1** di atas **Frappe 16 + ERPNext** dan **Next.js**.
+Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Site-Level Multi-Tenancy* (`1 Client = 1 Site`), alur kerja *end-to-end*, roadmap eksekusi berurutan, serta referensi pasar/kompetitor untuk **AIOS V1** di atas **Frappe 16 + ERPNext** dengan frontend **Vue 3 (Ekasa Desk)**.
+
+> **Mulai dari [`00 — Target PoC`](./00-poc-target.md).** Dokumen itu yang menjawab “PoC selesai bila apa” dan “apa yang masuk/keluar PoC”. Dokumen lain adalah detail.
 
 ## Daftar Dokumen (Urutan Baca & Eksekusi)
 
@@ -8,6 +10,11 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 > - *Spesifikasi normatif* — apa yang harus benar. Bila kode ≠ dokumen, **yang diubah adalah kode**.
 > - *Roadmap & status* — rencana eksekusi + progres. Bila kode belum sesuai, artinya belum dikerjakan (atau salah); **yang diperbarui statusnya**, bukan kode yang diundur.
 > - *Referensi pasar* — konteks eksternal & positioning. Dipakai untuk keputusan produk, bukan aturan perilaku; bila berbeda dengan spesifikasi normatif, spesifikasi yang menang.
+> - *Kontrak scope PoC* — definisi target, scope masuk/keluar, acceptance end-to-end, glossary, decision log. **Acuan pertama** sebelum dokumen lain.
+
+0. **[00 — Target PoC AIOS V1](./00-poc-target.md)** — *kontrak scope PoC*
+   - Definisi “PoC selesai bila apa”, scope wajib/pendukung/di luar PoC, acceptance end-to-end, urutan, glossary, decision log, dan known gaps.
+   - **Baca ini dulu** sebelum `05.1` atau `06`.
 
 1. **[01 — Profil dan Visi Produk](./01-profil-dan-visi-produk.md)** — *spesifikasi normatif*
    - Esensi AIOS sebagai *Business AI Harness* (bukan chatbot tanya-jawab biasa dan bukan coding harness).
@@ -41,7 +48,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Alur 6:** Provisioning klien lintas site (termasuk tombol **Buat Site**), undangan sekali pakai, dan monitoring dari Developer Control Plane.
    - **Alur 7:** Membuka modul dan membaca data ERPNext dari desktop (baca saja, `company` dipaksa server).
 
-5. **[05.1 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fase 1 — Dikerjakan Pertama)](./05.1-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
+5. **[05.1 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fondasi — Dikerjakan Pertama)](./05.1-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
    - **Checklist status** (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + urutan dependency + acceptance per item.
    - Rencana eksekusi **Branch `#0` s/d `#13`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
    - **`#11 — Developer Control Plane`:** dua fase — (1) dashboard lintas site (registry `AIOS Client Site`, role `AIOS Control`, Control API, undangan sekali pakai, monitoring agregat); (2) tombol **Buat Site** untuk provisioning otomatis. Kontrak: `docs/03` §1.4 & `docs/04` Alur 6.
@@ -49,13 +56,13 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **`#13 — Hapus adapter DB eksternal`:** dikerjakan paling awal; memotong scope `#4a-1`, `#4a-2`, dan menggugurkan L5/L6 `#7a`.
    - **Lampiran arsip:** **[05.2 — Lampiran Roadmap Fondasi](./05.2-lampiran-roadmap-fondasi.md)** — *arsip/referensi*: temuan `file:line`, riwayat koreksi, baseline angka, detail rencana lama, strategi test, catatan lingkungan. **Bukan status terkini.**
 
-6. **[06 — Roadmap Pengembangan Business AI Harness (Fase 2 — Setelah Fondasi)](./06-roadmap-pengembangan-harness.md)** — *roadmap & status*
-   - Rencana eksekusi bertahap (**Tahap `H1` s/d `H5`**, bebas duplikasi dengan Fase 1):
-     - **H1:** Multi-Provider & Per-Agent Model Routing (`AIOS LLM Provider` & `AIOS Agent Model Route` + UI di Developer Control Plane).
-     - **H2:** Plugin & MCP Manager (`AIOS Plugin`) + Katalog Lengkap 7 *Built-in Default Plugins* (tiga di antaranya wrapper tipis + skema pinjaman MIT).
-     - **H3:** UI Developer Control Plane untuk Registry Site Klien, Manajemen User & Aktivasi Provisioning lintas site, serta Analitik Kuota Token.
-     - **H4:** *Deep Finance & Sales Autonomous Agents* + Delegasi Nyata (`MAX_DELEGATION_DEPTH = 2`) & *Live Agent Trace*.
-     - **H5:** *Isolated Workspace* (Frappe Private `File`) dengan artefak sebagai berkas/jendela di desktop.
+6. **[06 — Roadmap Pengembangan Business AI Harness (Bagian dari PoC)](./06-roadmap-pengembangan-harness.md)** — *roadmap & status*
+   - Detail tahap H1–H5. **H1 ditunda**; **H2–H5 wajib PoC**.
+     - **H1 — ditunda:** Multi-Provider & Per-Agent Model Routing; PoC cukup satu model di `AIOS Setting`.
+     - **H2 — wajib:** Plugin & MCP Manager (`AIOS Plugin`) + 7 *Built-in Default Plugins*.
+     - **H3 — wajib, = `#11`:** Developer Control Plane; jangan dikerjakan dua kali.
+     - **H4 — wajib, = pendalaman `#8`:** Deep Finance/Sales agents + delegasi nyata + Live Agent Trace.
+     - **H5 — wajib:** Isolated Workspace/artefak; ini **sandbox file** agent.
 
 7. **[07 — Referensi Kompetitor AI ERP & Posisi AIOS](./07-referensi-kompetitor-ai-erp.md)** — *referensi pasar*
    - Peta 7 platform AI ERP: Microsoft Dynamics 365, SAP Joule, Odoo 19, Oracle Fusion, HashMicro, Ukirama, dan Keysoft (Mr. Key), beserta pola UI masing-masing.
