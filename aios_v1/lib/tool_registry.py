@@ -129,9 +129,8 @@ def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = 
     return decorator
 
 def _ensure_tools_loaded():
-    """Memastikan seluruh tool modules (AI Manager + 9 cabang ERP) telah di-import & terdaftar."""
-    import aios_v1.lib.ai_manager_tools
-    import aios_v1.lib.tools
+    """Memastikan tool module yang tersisa (AI Manager) telah di-import & terdaftar."""
+    import aios_v1.lib.ai_manager_tools  # noqa: F401 - side effect: registrasi tool
 
 def get_all_tools_schema():
     """Returns list of all tools formatted for LLM API (OpenAI spec)."""
@@ -259,4 +258,5 @@ def get_current_time(timezone="Asia/Jakarta"):
         tz = pytz.timezone(timezone)
         return {"current_time": datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S"), "timezone": timezone}
     except Exception as e:
+        frappe.log_error(f"Invalid timezone: {e}", "AIOS Tool Error")
         return {"error": f"Invalid timezone: {timezone}"}

@@ -31,6 +31,7 @@ from aios_v1.lib.skills_loader import (
     get_skill_by_slug,
     get_skills_for_worker,
     validate_skill_dependencies,
+    is_skill_active,
     compose_worker_system_prompt,
     clear_skills_cache,
     _normalize_role_variants,
@@ -138,46 +139,38 @@ Analisis deret waktu.
     # =========================================================================
     # 4. TEST ROLE-CENTRIC RBAC DISCOVERY (LEAST PRIVILEGE OPSI C)
     # =========================================================================
-    def test_04_get_skills_for_worker_rbac_option_c(self):
-        """Menguji pemisahan hak akses peran mandiri (Role-Centric Strategic Planning & Multi-Branch)."""
-        # 1. BI Analyst (2 skills di planning/bi_analyst/)
-        bia_skills = get_skills_for_worker(branch="planning", worker_key="bi_analyst")
-        bia_slugs = [s["slug"] for s in bia_skills]
-        self.assertEqual(len(bia_slugs), 2)
-        self.assertIn("executive-kpi-dashboard-assembly", bia_slugs)
-        self.assertIn("time-series-trends-and-forecasting", bia_slugs)
-        self.assertNotIn("corporate-scenario-simulation", bia_slugs)
+    def test_04_get_skills_for_worker_active_only(self):
+        """Hanya skill aktif yang dimuat; skill divisi dormant tidak ikut."""
+        mgr_skills = get_skills_for_worker(branch="orchestrator", worker_key="manager")
+        slugs = sorted(s["slug"] for s in mgr_skills)
+        self.assertEqual(
+            slugs,
+            [
+                "cross-branch-collaboration",
+                "human-in-the-loop-governance",
+                "task-orchestration-and-delegation",
+            ],
+        )
+        self.assertTrue(all(s["branch"] == "orchestrator" for s in mgr_skills))
 
-        # 2. Report Developer (2 skills di planning/report_developer/)
-        rpt_skills = get_skills_for_worker(branch="planning", worker_key="report_developer")
-        rpt_slugs = [s["slug"] for s in rpt_skills]
-        self.assertEqual(len(rpt_slugs), 2)
-        self.assertIn("custom-report-template-design", rpt_slugs)
-        self.assertIn("executive-narrative-and-scheduling", rpt_slugs)
-
-        # 3. Data Steward (2 skills di planning/data_steward/)
-        dst_skills = get_skills_for_worker(branch="planning", worker_key="data_steward")
-        dst_slugs = [s["slug"] for s in dst_skills]
-        self.assertEqual(len(dst_slugs), 2)
-        self.assertIn("data-quality-audit-and-anomaly-detection", dst_slugs)
-        self.assertIn("data-dictionary-and-market-benchmarks", dst_slugs)
-
-        # 4. Planning Manager (8 skills Planning + 3 skills Orchestrator = 11 skills)
-        mgr_skills = get_skills_for_worker(branch="planning", worker_key="manager")
-        self.assertEqual(len(mgr_skills), 11)
+        # Semua skill planning masih dormant (tool-nya belum dibangun).
+        self.assertEqual(get_skills_for_worker(branch="planning", worker_key="bi_analyst"), [])
+        planning_mgr = get_skills_for_worker(branch="planning", worker_key="manager")
+        self.assertEqual(len(planning_mgr), 3)
+        self.assertTrue(all(s["branch"] == "orchestrator" for s in planning_mgr))
 
     # =========================================================================
     # 5. TEST CROSS-BRANCH ISOLATION
     # =========================================================================
-    def test_05_cross_branch_isolation(self):
-        """Memastikan peran di cabang Finance tidak menerima SOP cabang Sales, Logistics, atau Manufacturing."""
-        treasurer_skills = get_skills_for_worker(branch="finance", worker_key="treasurer")
-        treasurer_branches = set(s.get("branch") for s in treasurer_skills)
-        self.assertEqual(treasurer_branches, {"finance"})
+    def test_05_dormant_skills_not_loaded(self):
+        """Skill dengan tool hilang tidak dimuat ke worker mana pun."""
+        self.assertEqual(get_skills_for_worker(branch="finance", worker_key="treasurer"), [])
+        self.assertEqual(get_skills_for_worker(branch="logistics", worker_key="shipping_clerk"), [])
 
-        shipping_skills = get_skills_for_worker(branch="logistics", worker_key="shipping_clerk")
-        shipping_branches = set(s.get("branch") for s in shipping_skills)
-        self.assertEqual(shipping_branches, {"logistics"})
+        # Manager tetap mendapat skill orchestrator yang aktif, bukan skill dormant cabangnya.
+        for branch in ("finance", "sales", "planning"):
+            for skill in get_skills_for_worker(branch=branch, worker_key="manager"):
+                self.assertEqual(skill["branch"], "orchestrator")
 
     # =========================================================================
     # 6. TEST VALIDATE SKILL DEPENDENCIES
@@ -185,12 +178,13 @@ Analisis deret waktu.
     def test_06_validate_skill_dependencies(self):
         """Memastikan validasi dependensi tools_required mencocokkan ke _TOOL_REGISTRY."""
         valid_skill = {
-            "name": "Planning Test",
-            "slug": "test-valid-pln",
-            "tools_required": ["run_what_if_scenario", "generate_kpi_dashboard"]
+            "name": "Active Tool Test",
+            "slug": "test-valid-tool",
+            "tools_required": ["get_current_time", "orchestrator_delegate_to_subagent"]
         }
         res_valid = validate_skill_dependencies(valid_skill)
         self.assertTrue(res_valid["valid"])
+        self.assertTrue(is_skill_active(valid_skill))
         self.assertEqual(len(res_valid["missing_tools"]), 0)
 
         invalid_skill = {
@@ -200,6 +194,7 @@ Analisis deret waktu.
         }
         res_invalid = validate_skill_dependencies(invalid_skill)
         self.assertFalse(res_invalid["valid"])
+        self.assertFalse(is_skill_active(invalid_skill))
         self.assertIn("test-invalid-tool", res_invalid["missing_tools"])
         self.assertIn("non_existent_tool_12345", res_invalid["missing_tools"]["test-invalid-tool"])
 
@@ -227,22 +222,28 @@ Analisis deret waktu.
     # 8. TEST COMPOSE WORKER SYSTEM PROMPT
     # =========================================================================
     def test_08_compose_worker_system_prompt(self):
-        """Memastikan perakitan SOP ke dalam prompt berjalan rapi dan berisi struktur markdown."""
-        base_prompt = "Anda adalah Planning Manager berpengalaman."
-        composed = compose_worker_system_prompt(branch="planning", worker_key="planning_manager", base_prompt=base_prompt)
+        """Prompt hanya memuat SOP aktif; SOP dormant tidak disuntikkan."""
+        base_prompt = "Anda adalah AI Manager berpengalaman."
+        composed = compose_worker_system_prompt(
+            branch="orchestrator", worker_key="manager", base_prompt=base_prompt
+        )
 
-        self.assertIn("Anda adalah Planning Manager berpengalaman.", composed)
+        self.assertIn("Anda adalah AI Manager berpengalaman.", composed)
         self.assertIn("[STANDARD OPERATING PROCEDURES & WORKFLOW SKILLS]", composed)
-        self.assertIn("Corporate Scenario Simulation", composed)
-        self.assertIn("OKR Alignment and Variance Governance", composed)
+        self.assertIn("Task Orchestration and Delegation Workflow", composed)
+
+        dormant_only = compose_worker_system_prompt(
+            branch="planning", worker_key="planning_manager", base_prompt=base_prompt
+        )
+        self.assertNotIn("Corporate Scenario Simulation", dormant_only)
 
     # =========================================================================
     # 9. TEST REAL SKILLS INTEGRITY & UNIK SLUGS (86 SKILLS AKTIF)
     # =========================================================================
     def test_09_real_skills_integrity_and_uniqueness(self):
-        """Menguji integritas seluruh 86 file skill nyata, ketiadaan slug duplikat, dan 100% tools valid."""
+        """86 file utuh; skill AKTIF hanya merujuk tool terdaftar; dormant punya tool hilang."""
         all_skills = load_all_skills(force_reload=True)
-        
+
         # Total harus 86 skills (3 Orch + 11 Fin + 10 Sales + 10 Mat + 11 HR + 7 Mfg + 9 QA + 9 Log + 8 Mnt + 8 Pln)
         self.assertEqual(len(all_skills), 86, f"Ekspektasi 86 skills, ditemukan {len(all_skills)}: {list(all_skills.keys())}")
 
@@ -251,10 +252,26 @@ Analisis deret waktu.
         unique_slugs = set(slugs)
         self.assertEqual(len(slugs), len(unique_slugs), f"Ditemukan duplikasi slug pada skills: {slugs}")
 
-        # Pastikan seluruh tools_required (100% dari 86 skills) valid di _TOOL_REGISTRY
+        _ensure_tools_loaded()
+        available_tools = set(_TOOL_REGISTRY)
+        active = []
+        dormant = []
+        for skill in all_skills.values():
+            missing = [t for t in skill["tools_required"] if t not in available_tools]
+            if is_skill_active(skill, available_tools):
+                active.append(skill)
+                self.assertEqual(missing, [], f"Skill aktif {skill['slug']} merujuk tool hilang: {missing}")
+            else:
+                dormant.append(skill)
+                self.assertTrue(missing, f"Skill dormant {skill['slug']} tidak punya tool hilang")
+
+        self.assertEqual(len(active), 3)
+        self.assertEqual(len(dormant), 83)
+
         validation = validate_skill_dependencies()
-        self.assertTrue(validation["valid"], f"Ada missing tools pada skills: {validation.get('missing_tools')}")
-        self.assertEqual(len(validation["missing_tools"]), 0)
+        self.assertFalse(validation["valid"])
+        self.assertEqual(validation["total_skills_checked"], 86)
+        self.assertEqual(len(validation["missing_tools"]), len(dormant))
 
     # =========================================================================
     # 10. TEST PERFORMANCE & LATENCY BENCHMARK (< 50 ms)

@@ -25,7 +25,7 @@ K3_SCRIPTS = [
     "read_setting.py",
 ]
 
-EXPECTED_DOCTYPE_COUNT = 13  # 12 awal + Pending Action Draft (#1)
+EXPECTED_DOCTYPE_COUNT = 9  # 13 awal - 4 DocType adapter yang dihapus di #13
 
 # test file: apps/aios_v1/aios_v1/tests/test_app_structure.py
 REPO_ROOT = Path(__file__).resolve().parents[2]  # apps/aios_v1/
@@ -57,7 +57,7 @@ class TestAppStructure(unittest.TestCase):
         leftover = [s for s in K3_SCRIPTS if (OUTER_PKG / s).exists()]
         self.assertEqual(leftover, [], f"Skrip K3 masih ada: {leftover}")
 
-    def test_doctype_count_is_13(self):
+    def test_doctype_count_is_9(self):
         # doctype hidup di aios_v1/aios_v1/aios_v1/doctype/ (paket frappe yang di-walk bench migrate);
         # salinan lama aios_v1/aios_v1/doctype/{aios_mapping,aios_mapping_entry} dihapus di #2 (A4).
         pkg_doctype = Path(__file__).resolve().parents[1] / "aios_v1" / "doctype"

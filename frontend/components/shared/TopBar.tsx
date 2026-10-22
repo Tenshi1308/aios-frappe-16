@@ -12,10 +12,6 @@ export default function TopBar() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("…");
   const menuRef = useRef<HTMLDivElement>(null);
-  // Status adaptasi database (C5/C14) — tampil sebagai chip di kiri nama PT.
-  const [adapting, setAdapting] = useState(false);
-  const [needsReview, setNeedsReview] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
     api<{ name: string }>("/auth/me")
@@ -29,25 +25,6 @@ export default function TopBar() {
         if (typeof window !== "undefined") (window as any).csrf_token = ctx.csrf_token;
       })
       .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    let alive = true;
-    const tick = () =>
-      api<{ adapting: boolean; mappingStatus: string; progress: { done: number; total: number } | null }>("/connection/status")
-        .then((d) => {
-          if (!alive) return;
-          setAdapting(Boolean(d.adapting));
-          setNeedsReview(d.mappingStatus === "NEEDS_REVIEW");
-          setProgress(d.progress && d.progress.total > 0 ? d.progress : null);
-        })
-        .catch(() => {});
-    tick();
-    const id = setInterval(tick, 5000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
   }, []);
 
   useEffect(() => {
@@ -77,16 +54,6 @@ export default function TopBar() {
         AIOS
       </div>
       <div className="nav">
-        {adapting && (
-          <Link href="/onboarding" className="pill pill-warn" style={{ textDecoration: "none", whiteSpace: "nowrap" }}>
-            ⟳ Analisis database…{progress ? ` ${progress.done}/${progress.total}` : ""}
-          </Link>
-        )}
-        {!adapting && needsReview && (
-          <Link href="/onboarding/mapping" className="pill pill-ok" style={{ textDecoration: "none", whiteSpace: "nowrap" }}>
-            ✓ Analisis selesai — Lihat mapping
-          </Link>
-        )}
         <div className="user" ref={menuRef}>
           <button
             type="button"
@@ -104,7 +71,7 @@ export default function TopBar() {
               <div className="um-role">Client · Workspace</div>
             </div>
             <Link href="/settings" className="um-item" onClick={() => setOpen(false)}>
-              ⚙ Koneksi database
+              ⚙ Pengaturan
             </Link>
             <button type="button" className="um-item um-logout" onClick={logout}>
               ⏻ Keluar

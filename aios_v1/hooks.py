@@ -182,7 +182,6 @@ doc_events = {
 
 permission_query_conditions = {
 	"AIOS Conversation": "aios_v1.permissions.conversation_query_conditions",
-	"AIOS DB Connection": "aios_v1.permissions.db_connection_query_conditions",
 	"AIOS Agent State": "aios_v1.permissions.agent_state_query_conditions",
 	"Pending Action Draft": "aios_v1.permissions.draft_query_conditions",
 	"AIOS Message": "aios_v1.permissions.message_query_conditions",
@@ -190,7 +189,6 @@ permission_query_conditions = {
 
 has_permission = {
 	"AIOS Conversation": "aios_v1.permissions.has_permission",
-	"AIOS DB Connection": "aios_v1.permissions.has_permission",
 	"AIOS Agent State": "aios_v1.permissions.has_permission",
 	"Pending Action Draft": "aios_v1.permissions.has_permission",
 	"AIOS Message": "aios_v1.permissions.has_permission",

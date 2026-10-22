@@ -9,7 +9,6 @@ import frappe
 # DocType dengan field kepemilikan langsung `user -> Link(User)`.
 OWNED_DOCTYPES = (
 	"AIOS Conversation",
-	"AIOS DB Connection",
 	"AIOS Agent State",
 	"Pending Action Draft",
 )
@@ -18,7 +17,6 @@ OWNED_DOCTYPES = (
 # harus tetap ada (docs/03 §2.1). Matriks penuh menyusul di #4b.
 CLIENT_PERMS = {
 	"AIOS Conversation": ("read", "write", "create", "delete"),
-	"AIOS DB Connection": ("read", "write", "create", "delete"),
 	"AIOS Agent State": ("read", "write", "create", "delete"),
 	"Pending Action Draft": ("read", "write", "create", "delete"),
 	"AIOS Message": ("read",),
@@ -55,10 +53,6 @@ def _owned_condition(user: str, doctype: str) -> str:
 
 def conversation_query_conditions(user=None, doctype=None) -> str:
 	return _owned_condition(user, "AIOS Conversation")
-
-
-def db_connection_query_conditions(user=None, doctype=None) -> str:
-	return _owned_condition(user, "AIOS DB Connection")
 
 
 def agent_state_query_conditions(user=None, doctype=None) -> str:

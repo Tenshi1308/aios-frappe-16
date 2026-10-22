@@ -1,7 +1,7 @@
 """Saat `frappe` tidak tersedia (CI), hanya test murni-statis yang dikumpulkan.
 
-14 file di direktori ini meng-`import frappe` di module level. Tanpa frappe, pytest
-berhenti di fase collect (`Interrupted: ... errors during collection`, exit 2) —
+Sejumlah file di direktori ini meng-`import frappe` di module level. Tanpa frappe,
+pytest berhenti di fase collect (`Interrupted: ... errors during collection`, exit 2) —
 `@unittest.skip` tidak pernah dievaluasi. Karena itu suite integrasi dibuang dari
 collection, bukan di-skip.
 """
@@ -14,7 +14,7 @@ if importlib.util.find_spec("frappe") is None:
         "test_app_structure.py",
         "test_repo_hygiene.py",
         "test_import_smoke.py",
-        "test_db_connection_guard.py",
+        "test_no_adapter_refs.py",
         "test_security_baseline.py",
         "test_setup_hooks_schema.py",
         "test_auth_switch_contract.py",

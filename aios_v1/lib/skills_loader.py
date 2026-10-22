@@ -208,6 +208,29 @@ def get_skill_by_slug(slug: str) -> Optional[Dict[str, Any]]:
     return all_skills.get(slug)
 
 
+def _available_tool_names() -> set:
+    """Nama tool yang benar-benar terdaftar setelah modul tool dimuat."""
+    from aios_v1.lib.tool_registry import _TOOL_REGISTRY, _ensure_tools_loaded
+
+    _ensure_tools_loaded()
+    return set(_TOOL_REGISTRY)
+
+
+def is_skill_active(skill: Dict[str, Any], available_tools: Optional[set] = None) -> bool:
+    """Skill aktif hanya jika seluruh `tools_required`-nya terdaftar.
+
+    Skill yang merujuk tool hilang (divisi yang belum dibangun) tetap tersimpan
+    sebagai konten produk, tetapi tidak dimuat ke prompt agar agent tidak
+    memanggil tool hantu.
+    """
+    required = set(skill.get("tools_required") or [])
+    if not required:
+        return True
+    if available_tools is None:
+        available_tools = _available_tool_names()
+    return required.issubset(available_tools)
+
+
 def _normalize_role_variants(role_name: str) -> List[str]:
     """
     Menghasilkan variasi format nama peran (snake_case, kebab-case, space-case).
@@ -235,6 +258,7 @@ def get_skills_for_worker(branch: str, worker_key: str = "manager") -> List[Dict
        - Memeriksa kesesuaian role dengan variasi format (snake_case vs kebab-case).
     """
     all_skills = load_all_skills()
+    available_tools = _available_tool_names()
     matched_skills = []
 
     branch_norm = branch.strip().lower() if branch else ""
@@ -244,6 +268,9 @@ def get_skills_for_worker(branch: str, worker_key: str = "manager") -> List[Dict
     is_manager = worker_norm in ["manager", "ai_manager", f"{branch_norm}_manager"]
 
     for slug, skill in all_skills.items():
+        if not is_skill_active(skill, available_tools):
+            continue
+
         s_branch = skill.get("branch", "").lower()
         s_roles = skill.get("roles", [])
         s_roles_normalized = []
@@ -274,10 +301,7 @@ def validate_skill_dependencies(skill: Optional[Dict[str, Any]] = None) -> Dict[
     """
     Memvalidasi apakah seluruh tools di 'tools_required' terdaftar di _TOOL_REGISTRY sistem.
     """
-    from aios_v1.lib.tool_registry import _TOOL_REGISTRY, _ensure_tools_loaded
-    _ensure_tools_loaded()
-
-    available_tools = set(_TOOL_REGISTRY.keys())
+    available_tools = _available_tool_names()
     missing_tools: Dict[str, List[str]] = {}
 
     target_skills = [skill] if skill else list(load_all_skills().values())

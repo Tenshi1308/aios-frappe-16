@@ -43,8 +43,8 @@ def _has_log_error_or_raise(handler):
     return has_log or any(isinstance(n, ast.Raise) for n in ast.walk(handler))
 
 
-@pytest.mark.xfail(reason="target #3 (K1/K4/K8/K9)", strict=False)
 class TestRepoHygiene(unittest.TestCase):
+    @pytest.mark.xfail(reason="target #3 (K1/K4/K8/K9)", strict=False)
     def test_no_tracked_frontend_artifacts(self):
         self.assertEqual(_git_ls_files("aios_v1/public/frontend"), [], "K1: 396 file artifact ter-track")
 
@@ -52,6 +52,7 @@ class TestRepoHygiene(unittest.TestCase):
         demos = list((INNER_PKG / "lib").glob("demo_tahap*.py"))
         self.assertEqual(demos, [], f"K4: {len(demos)} demo_tahap* masih ada")
 
+    @pytest.mark.xfail(reason="target #3 (K1/K4/K8/K9)", strict=False)
     def test_no_emoji_in_frontend(self):
         emoji_chars = "📊💰📈🛒📦🏭📋👥🔧"
         offenders = []
@@ -60,6 +61,7 @@ class TestRepoHygiene(unittest.TestCase):
                 offenders.append(f.name)
         self.assertEqual(offenders, [], f"Emoji dekoratif di: {offenders}")
 
+    @pytest.mark.xfail(reason="target #3 (K1/K4/K8/K9)", strict=False)
     def test_no_silent_except_in_production_modules(self):
         """Setiap ExceptHandler memanggil frappe.log_error atau raise (AST)."""
         offenders = []

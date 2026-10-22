@@ -18,12 +18,8 @@ except Exception:
 
 import aios_v1  # dipakai untuk menentukan akar paket
 
-# 11 modul yang diketahui rusak (nama modul, bukan jumlah):
-# ImportError: cannot import name 'chat_completion' from 'aios_v1.lib.llm_client'
-KNOWN_BROKEN = frozenset(
-    f"aios_v1.lib.demo_tahap{i}"
-    for i in (["1"] + [f"6m_{n}" for n in range(2, 12)])
-)
+# Tidak ada modul yang diketahui rusak setelah 25 demo_tahap* dihapus di #13.
+KNOWN_BROKEN = frozenset()
 
 
 def iter_module_names():

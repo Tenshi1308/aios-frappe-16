@@ -4,8 +4,6 @@ Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
 import json
-import unittest
-from unittest.mock import patch
 
 import frappe
 from werkzeug.test import EnvironBuilder
@@ -36,44 +34,6 @@ def _make_test_user(email, first_name):
     )
     doc.insert(ignore_permissions=True)
     return doc
-
-
-def _make_tenant(email, tenant_name):
-    return frappe.get_doc(
-        {
-            "doctype": "AIOS Tenant",
-            "tenant_name": tenant_name,
-            "email": email,
-        }
-    ).insert(ignore_permissions=True)
-
-
-def _make_connection(tenant, user, suffix):
-    return frappe.get_doc(
-        {
-            "doctype": "AIOS DB Connection",
-            "tenant": tenant.name,
-            "user": user,
-            "engine": "sqlite",
-            "database_name": f"{suffix}.db",
-            "status": "ACTIVE",
-        }
-    ).insert(ignore_permissions=True)
-
-
-def _make_snapshot(connection, table_name):
-    return frappe.get_doc(
-        {
-            "doctype": "AIOS Schema Snapshot",
-            "connection": connection.name,
-            "hash": f"hash-{table_name}",
-            "tables_count": 1,
-            "schema_json": json.dumps(
-                {"tables": [{"name": table_name, "columns": [{"name": "id"}]}]}
-            ),
-            "extracted_at": frappe.utils.now_datetime(),
-        }
-    ).insert(ignore_permissions=True)
 
 
 def _call(path, method="GET", body=None):
@@ -171,12 +131,6 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             ("GET", "/api/chatbot/sessions", None),
             ("POST", "/api/chat/parse-pdf", {}),
             ("GET", "/api/chat/sales/conversations", None),
-            ("GET", "/api/mapping/review", None),
-            ("POST", "/api/mapping/validate", {}),
-            ("GET", "/api/mapping/validate", None),
-            ("GET", "/api/connection/status", None),
-            ("GET", "/api/connection/schema", None),
-            ("POST", "/api/connection/check-drift", {}),
         )
         for method, path, body in cases:
             with self.subTest(method=method, path=path):
@@ -202,38 +156,3 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             frappe.local.request = None
 
         self.assertEqual(response.status_code, 413)
-
-    def test_connection_read_endpoints_use_session_user(self):
-        tenant_a = _make_tenant(self.ALPHA, "_Test Endpoint Tenant A")
-        tenant_b = _make_tenant(self.BETA, "_Test Endpoint Tenant B")
-        conn_a = _make_connection(tenant_a, self.ALPHA, "endpoint_alpha")
-        conn_b = _make_connection(tenant_b, self.BETA, "endpoint_beta")
-        _make_snapshot(conn_a, "endpoint_alpha_table")
-        _make_snapshot(conn_b, "endpoint_beta_table")
-
-        fake = {
-            "user": self.ALPHA,
-            "name": "_Test Endpoint Alpha",
-            "role": "CLIENT",
-            "companyId": int(tenant_b.name),
-        }
-        frappe.set_user(self.ALPHA)
-        with patch("aios_v1.api.dispatcher.get_current_session", return_value=fake):
-            status = _call("/api/connection/status")
-            self.assertEqual(status.status_code, 200)
-            self.assertEqual(
-                int(json.loads(status.get_data(as_text=True))["connection"]["id"]),
-                int(conn_a.name),
-            )
-
-            schema = _call("/api/connection/schema")
-            self.assertEqual(schema.status_code, 200)
-            table_names = [
-                table["name"]
-                for table in json.loads(schema.get_data(as_text=True))["schema"]["tables"]
-            ]
-            self.assertIn("endpoint_alpha_table", table_names)
-            self.assertNotIn("endpoint_beta_table", table_names)
-
-            drift = _call("/api/connection/check-drift", "POST", {})
-            self.assertEqual(drift.status_code, 200)

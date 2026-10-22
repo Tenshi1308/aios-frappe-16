@@ -1,7 +1,6 @@
 "use client";
 
-// Home — port tata letak frontend/app/page.tsap lama (TopBar + HomeHub),
-// plus gerbang onboarding & popup perubahan skema (C14) versi implementasi.
+// Home — port tata letak frontend/app/page.tsap lama (TopBar + HomeHub).
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -12,7 +11,6 @@ import HomeHub from "@/components/home/HomeHub";
 export default function HomePage() {
   const router = useRouter();
   const [workersByBranch, setWorkersByBranch] = useState<Record<string, WorkerInfo[]>>({});
-  const [drift, setDrift] = useState<{ changed: boolean } | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -25,7 +23,7 @@ export default function HomePage() {
       }
 
       // Gate payment/onboarding legacy dilepas: workspace langsung terbuka.
-      // Jalur PoC memakai ERPNext; onboarding DB tetap tersedia dari Settings.
+      // Jalur PoC memakai ERPNext; adapter DB eksternal sudah dihapus di #13.
 
       try {
         const d = await api<{ branches: { key: string; workers: WorkerInfo[] }[] }>("/branches");
@@ -35,13 +33,6 @@ export default function HomePage() {
       } catch {
         /* peta tetap jalan dengan data statis; dock tanpa saran spesifik */
       }
-
-      // C14: cek perubahan skema → popup konfirmasi
-      api<{ changed: boolean }>("/connection/check-drift", { method: "POST" })
-        .then((d) => {
-          if (d.changed) setDrift(d);
-        })
-        .catch(() => {});
 
       setReady(true);
     })();
@@ -55,37 +46,6 @@ export default function HomePage() {
       ) : (
         <div className="grid flex-1 place-items-center" style={{ minHeight: "60vh" }}>
           <p className="muted">Menyiapkan jaringan AIOS…</p>
-        </div>
-      )}
-
-      {drift?.changed && (
-        <div
-          className="fixed inset-0 z-50 grid place-items-center"
-          style={{ background: "rgba(1, 4, 14, 0.72)" }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="card card-pad" style={{ width: "min(92vw, 440px)" }}>
-            <div className="page-title">Struktur database berubah</div>
-            <p className="page-sub" style={{ marginTop: 8 }}>
-              AIOS mendeteksi perubahan skema pada database perusahaan Anda dan sedang mempelajari ulang strukturnya di
-              background. Pantau statusnya di bagian atas layar — setelah selesai, mohon periksa pemetaan terbaru
-              sebelum lanjut menggunakan AI.
-            </p>
-            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ flex: 1 }}
-                onClick={() => router.push("/onboarding/mapping")}
-              >
-                Periksa &amp; Konfirmasi
-              </button>
-              <button type="button" className="btn btn-outline" onClick={() => setDrift(null)}>
-                Nanti
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </>

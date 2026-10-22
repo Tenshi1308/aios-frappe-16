@@ -23,6 +23,7 @@ except ImportError:  # frappe < 15 fallback
 
 
 PROBE = "_test_tool_context_probe"
+PROBE_BRANCH = "_test_tool_branch_probe"
 
 
 @ai_tool(
@@ -45,10 +46,31 @@ def _probe(value: str = "", tenant_id=None, user_id=None, allowed_company=None):
     }
 
 
+@ai_tool(
+    name=PROBE_BRANCH,
+    description="Probe schema cabang untuk test; tidak dipakai produksi.",
+    branch="finance",
+    parameters={
+        "department": {"type": "string", "description": "Departemen bisnis"},
+        "tenant_id": {"type": "integer", "description": "hidden"},
+        "user_id": {"type": "string", "description": "hidden"},
+        "allowed_company": {"type": "string", "description": "hidden"},
+    },
+)
+def _probe_branch(department: str = "", tenant_id=None, user_id=None, allowed_company=None):
+    return {
+        "department": department,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "allowed_company": allowed_company,
+    }
+
+
 class TestToolContextBoundary(IntegrationTestCase):
     @classmethod
     def tearDownClass(cls):
         _TOOL_REGISTRY.pop(PROBE, None)
+        _TOOL_REGISTRY.pop(PROBE_BRANCH, None)
 
     def setUp(self):
         super().setUp()
@@ -72,16 +94,17 @@ class TestToolContextBoundary(IntegrationTestCase):
         self.assertEqual(set(params["properties"]), {"value"})
         self.assertEqual(params["required"], ["value"])
 
-        finance_schema = next(
+        branch_schema = next(
             s for s in get_all_tools_schema()
-            if s["function"]["name"] == "check_department_budget"
+            if s["function"]["name"] == PROBE_BRANCH
         )
-        finance_params = finance_schema["function"]["parameters"]
-        self.assertNotIn("tenant_id", finance_params["properties"])
-        self.assertIn("department", finance_params["properties"])
-        self.assertNotIn("tenant_id", finance_params["required"])
+        branch_params = branch_schema["function"]["parameters"]
+        self.assertNotIn("tenant_id", branch_params["properties"])
+        self.assertIn("department", branch_params["properties"])
+        self.assertNotIn("tenant_id", branch_params["required"])
 
         worker_schemas = get_tools_schema_for_worker("finance", "manager")
+        self.assertIn(PROBE_BRANCH, [s["function"]["name"] for s in worker_schemas])
         for schema in worker_schemas:
             self.assertNotIn("tenant_id", schema["function"]["parameters"]["properties"])
             self.assertNotIn("user_id", schema["function"]["parameters"]["properties"])
@@ -193,35 +216,34 @@ class TestToolContextBoundary(IntegrationTestCase):
             meta.return_value.has_field.return_value = False
             self.assertEqual(_resolve_allowed_company(), "_Global Co")
 
-    def test_c6_finance_and_sales_read_tools_execute_with_context(self):
+    def test_c6_read_tools_execute_with_server_context(self):
         context = {
             "user": "_test.tool.reader@example.com",
             "allowed_company": "_Test Company",
+            "tenant_id": 42,
         }
-        finance = json.loads(
+        result = json.loads(
             execute_tool(
-                "check_department_budget",
-                json.dumps({"department": "Marketing"}),
+                PROBE,
+                json.dumps(
+                    {
+                        "value": "ok",
+                        "tenant_id": 999,
+                        "user_id": "llm-evil",
+                        "allowed_company": "LLM Evil Co",
+                    }
+                ),
                 context=context,
             )
         )
-        self.assertEqual(finance["status"], "SUCCESS")
+        self.assertEqual(result["value"], "ok")
+        self.assertEqual(result["user_id"], context["user"])
+        self.assertEqual(result["allowed_company"], context["allowed_company"])
+        self.assertEqual(result["tenant_id"], context["tenant_id"])
 
-        sales = json.loads(
-            execute_tool(
-                "check_customer_credit_limit",
-                json.dumps({"customer_id": "C1", "requested_order_amount": 1000}),
-                context=context,
-            )
-        )
-        self.assertEqual(sales["status"], "APPROVED")
-
-        finance_schema = next(
-            s for s in get_all_tools_schema()
-            if s["function"]["name"] == "check_department_budget"
-        )
-        self.assertIn("department", finance_schema["function"]["parameters"]["properties"])
-        self.assertNotIn("tenant_id", finance_schema["function"]["parameters"]["properties"])
+        probe_schema = next(s for s in get_all_tools_schema() if s["function"]["name"] == PROBE)
+        self.assertIn("value", probe_schema["function"]["parameters"]["properties"])
+        self.assertNotIn("tenant_id", probe_schema["function"]["parameters"]["properties"])
 
     def test_all_schemas_hide_owner_arguments(self):
         hidden = {"tenant_id", "user_id", "allowed_company"}

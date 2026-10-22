@@ -29,7 +29,7 @@ export default function PaymentPage() {
       });
       setIsErr(simulate === "fail");
       setMessage(res.message);
-      if (simulate === "success") setTimeout(() => router.push("/onboarding"), 1100);
+      if (simulate === "success") setTimeout(() => router.push("/home"), 1100);
     } catch (err) {
       setIsErr(true);
       setMessage((err as Error).message);

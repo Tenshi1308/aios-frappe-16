@@ -4,8 +4,6 @@ Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 Di CI statis file ini dibuang dari collection oleh `conftest.py` (import frappe).
 """
 
-import unittest
-
 import frappe
 
 try:
@@ -56,14 +54,6 @@ class TestUserIsolation(IntegrationTestCase):
         """Kembalikan (doctype, name) milik Beta untuk tiap resource."""
         from frappe.utils import add_to_date, now_datetime
 
-        tenant = frappe.get_doc(
-            {
-                "doctype": "AIOS Tenant",
-                "tenant_name": "_Test Tenant",
-                "email": "_test.tenant@example.com",
-            }
-        ).insert(ignore_permissions=True)
-
         resources = []
         conv = frappe.get_doc(
             {
@@ -84,16 +74,6 @@ class TestUserIsolation(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
         resources.append(("AIOS Message", msg.name))
-
-        conn = frappe.get_doc(
-            {
-                "doctype": "AIOS DB Connection",
-                "tenant": tenant.name,
-                "user": self.BETA,
-                "engine": "sqlite",
-            }
-        ).insert(ignore_permissions=True)
-        resources.append(("AIOS DB Connection", conn.name))
 
         draft = frappe.get_doc(
             {
@@ -123,7 +103,6 @@ class TestUserIsolation(IntegrationTestCase):
         for doctype in (
             "AIOS Conversation",
             "AIOS Message",
-            "AIOS DB Connection",
             "Pending Action Draft",
         ):
             names = frappe.get_list(doctype, pluck="name")

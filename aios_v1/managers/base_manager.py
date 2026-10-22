@@ -3,7 +3,7 @@ import frappe
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
 from aios_v1.lib.llm_client import chat_stream
-from aios_v1.plugin_manager.registry import get_branches, get_worker
+from aios_v1.plugin_manager.registry import get_worker
 
 class BaseManager:
     def __init__(self, branch_def):
@@ -164,35 +164,7 @@ class BaseManager:
                 )
             })
 
-        # Ambil konsep data canonical yang aktif dan tersedia untuk tenant ini
-        try:
-            from aios_v1.data_access.query_engine import get_available_concepts
-            available_concepts = get_available_concepts(company_id)
-            if available_concepts:
-                concepts_summary = "\n".join([f"- {ent}: {', '.join(fields)}" for ent, fields in available_concepts.items()])
-                llm_messages.append({
-                    "role": "system",
-                    "content": (
-                        "[STATUS KONEKSI & KONSEP DATA AKTIF]:\n"
-                        "Sistem AIOS Anda saat ini TERHUBUNG AKTIF ke database perusahaan client.\n"
-                        "Berikut adalah konsep data bisnis yang berhasil dipetakan dan dapat diakses:\n"
-                        f"{concepts_summary}\n\n"
-                        "Pedoman: Jika pengguna menanyakan apakah database terdeteksi atau menanyakan struktur/tabel/data apa saja yang Anda miliki, "
-                        "tegaskan bahwa sistem terhubung ke konsep-konsep data di atas tanpa mengarang atau meminta pengguna melampirkan file dokumen secara manual."
-                    )
-                })
-        except Exception as e:
-            frappe.log_error(f"Error fetching available concepts: {e}", "AIOS Concepts Context")
-
-        # Ambil data faktual dari database client via Safe Query Engine
         data_used = []
-        try:
-            from aios_v1.data_access.query_engine import get_relevant_business_data
-            data_context, data_used = get_relevant_business_data(company_id, user_message, self.branch["key"], worker_def)
-            if data_context:
-                llm_messages.append({"role": "system", "content": data_context})
-        except Exception as e:
-            frappe.log_error(f"Error fetching business data in manager: {e}", "AIOS Data Query")
 
         llm_messages.append({"role": "user", "content": user_message})
 

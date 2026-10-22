@@ -35,11 +35,6 @@ class TestTahapCDoctypes(unittest.TestCase):
             self.assertIn("user", fields, doctype)
             self.assertNotIn("tenant", fields, doctype)
 
-    def test_db_connection_has_user_and_tenant_transition(self):
-        fields = _fields("aios_db_connection")
-        self.assertIn("user", fields)
-        self.assertIn("tenant", fields)
-
     def test_message_has_no_user(self):
         self.assertNotIn("user", _fields("aios_message"))
 
@@ -49,7 +44,6 @@ class TestTahapCDoctypes(unittest.TestCase):
         self.assertIn("has_permission = {", src)
         for doctype in (
             "AIOS Conversation",
-            "AIOS DB Connection",
             "AIOS Agent State",
             "Pending Action Draft",
             "AIOS Message",
