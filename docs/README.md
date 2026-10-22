@@ -49,7 +49,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Alur 7:** Membuka modul dan membaca data ERPNext dari desktop (baca saja, `company` dipaksa server).
 
 5. **[05.1 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fondasi — Dikerjakan Pertama)](./05.1-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
-   - **Checklist status** (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + urutan dependency + acceptance per item.
+   - **Peta Tahap 1–8** (urutan baca: semua item `#n` disusun per tahap) + checklist status (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + dependency + acceptance per item.
    - Rencana eksekusi **Branch `#0` s/d `#13`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
    - **`#11 — Developer Control Plane`:** dua fase — (1) dashboard lintas site (registry `AIOS Client Site`, role `AIOS Control`, Control API, undangan sekali pakai, monitoring agregat); (2) tombol **Buat Site** untuk provisioning otomatis. Kontrak: `docs/03` §1.4 & `docs/04` Alur 6.
    - **`#12 — Frontend Vue Desktop`:** Ekasa Desk dalam Vue; `desk/` → `frontend/` setelah paritas.
