@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Kontrak kerja AI coding assistant, **AIOS V1** — backend Frappe/ERPNext, frontend Next.js. Stack & versi: `docs/README.md`, `pyproject.toml`, `frontend/package.json`. Isi file ini: **aturan & jalan kerja** — tanpa angka, status implementasi, atau nama field/file; detail ada di `docs/`.
+Kontrak kerja AI coding assistant, **AIOS V1** — backend Frappe/ERPNext, frontend Vue 3 (Ekasa Desk); `frontend/` lama masih Next.js selama migrasi. Stack & versi: `docs/README.md`, `pyproject.toml`, `frontend/package.json`. Isi file ini: **aturan & jalan kerja** — tanpa angka, status implementasi, atau nama field/file; detail ada di `docs/`.
 
 ## 1. Context Routing
 
-Mulai dari `docs/README.md` — indeks, urutan baca, dan klasifikasi tiap dokumen (spesifikasi normatif vs roadmap & status). Skill/SOP dan layer tool/agent adalah isi produk; dokumentasi engineering keduanya ada di `docs/02`. Perubahan perilaku bot, prompt, atau narasi: baca alur terkait di `docs/04`, lalu telusuri implementasinya di kode.
+Mulai dari `docs/00-poc-target.md` — target, scope, dan acceptance PoC; lalu `docs/README.md` — indeks, urutan baca, dan klasifikasi tiap dokumen (spesifikasi normatif vs roadmap & status vs kontrak scope PoC). Untuk pertanyaan "ini masuk PoC atau bukan", `docs/00-poc-target.md` adalah acuan; `docs/06` hanya detail tahap. Skill/SOP dan layer tool/agent adalah isi produk; dokumentasi engineering keduanya ada di `docs/02`. Perubahan perilaku bot, prompt, atau narasi: baca alur terkait di `docs/04`, lalu telusuri implementasinya di kode.
 
 Bug/error: mulai dari file, symbol, test, trace, atau output yang disebut; perluas lewat hubungan konkret (caller, import, route/hook, contract, DocType, config, test), bukan membaca seluruh repo.
 
@@ -14,7 +14,7 @@ Klaim selalu bertanda: `KNOWN` (terlihat langsung; sebut `file::symbol`, test, a
 
 Diagnosis: baca utuh function/component/test yang menentukan behavior sebelum menyimpulkan. Laporan SIGNIFICANT memuat `Dibaca: <file::symbol>` dan `Belum dibaca: <caller/test/consumer relevan>` atau `tidak ada`. Yang berada di jalur klaim root cause dibuka lebih dulu; sisanya cukup dicatat. Membaca ulang file yang isinya tidak berubah bukan evidence baru.
 
-**Source of truth ada di `docs/`, tapi tidak semuanya norma.** Cek klasifikasi di `docs/README.md`: di *spesifikasi normatif*, kode menyesuaikan dokumen; di *roadmap & status*, kode boleh belum dikerjakan atau sudah lebih jauh — yang diperbarui **statusnya**. Angka kondisi sekarang = deskripsi, bukan target yang dipertahankan.
+**Source of truth ada di `docs/`, tapi tidak semuanya norma.** Cek klasifikasi di `docs/README.md`: di *spesifikasi normatif*, kode menyesuaikan dokumen; di *roadmap & status*, kode boleh belum dikerjakan atau sudah lebih jauh — yang diperbarui **statusnya**; di *kontrak scope PoC* (`docs/00-poc-target.md`), scope yang ditetapkan menang atas detail tahap di `docs/06`. Angka kondisi sekarang = deskripsi, bukan target yang dipertahankan.
 
 Jika docs, code, dan runtime berbeda, pisahkan `expected`, `current`, `historical`; konflik yang butuh keputusan dibahas, bukan diselesaikan sepihak.
 
@@ -40,7 +40,7 @@ Tripwire SMALL: menyentuh file/symbol di luar deklarasi, hipotesis pertama gagal
 
 `SIGNIFICANT`: salah satu: diagnosis non-trivial/ambigu; lintas layer (frontend **dan** backend); security/auth/permission; DB/data/schema/migration; dependency; architecture; API contract; config/environment; prompt/AI; hasil yang dilihat user atau data tersimpan berubah; acceptance criteria belum jelas; risiko regresi nyata; sulit direvert; SMALL tidak dapat dibuktikan. Bug lokal tetap perlu pengujian klasifikasi, bukan asumsi otomatis.
 
-Untuk AIOS, area berikut **selalu SIGNIFICANT** (satu saja sudah cukup): skema, identitas, tenant site-level (`docs/03`); provider, model routing, plugin/MCP, workspace & canvas (`docs/02`, tahap H1/H2 di `docs/06`); kuota token, sandbox LLM, guard prompt (`docs/02`); jalur tulis ke ERPNext & approval (Alur 4–5 di `docs/04`); autentikasi, aktivasi, registrasi mandiri (Alur 1 & 3 di `docs/04`).
+Untuk AIOS, area berikut **selalu SIGNIFICANT** (satu saja sudah cukup): skema, identitas, tenant site-level (`docs/03`); provider, model routing, plugin/MCP, workspace & canvas (`docs/02`, tahap H1–H5 di `docs/06`); kuota token, sandbox LLM, guard prompt (`docs/02`); jalur tulis ke ERPNext & approval (Alur 4–5 di `docs/04`); autentikasi, aktivasi, registrasi mandiri (Alur 1 & 3 di `docs/04`).
 
 ## 5. Approval Gate
 
@@ -85,7 +85,7 @@ Perintah — isi `<bench-root>` dan `<site>` dari environment kerja (site AIOS a
 
 Test discipline: data uji memakai dummy sehingga data nyata tetap utuh; test PoC 100% read-only; `db.commit` dimonkeypatch jadi no-op dan `rollback()` jalan di `tearDown`; file `test_*.py` tidak memanggil `db.commit()` secara langsung. Status tiap aturan dan target implementasinya ada di bagian status `docs/05.1`. Hijau di CI dibaca sebagai sinyal, bukan bukti aturan terpenuhi — verifikasi tetap per kriteria.
 
-Konvensi: kode/identifier English; Python file/folder `snake_case`; frontend React/Next komponen `PascalCase.tsx`, folder route/component `lowercase`; docs dan skill markdown `snake_case` (kecuali file existing). Docs diperbarui saat source-of-truth berubah, dan pembaruan itu masuk ke rencana yang disetujui — pemetaannya ada di `docs/README.md`; docs yang tidak relevan dibiarkan. Commit lokal setelah verification selesai dan tidak ada `NOT VERIFIED` yang menunggu uji user; `git diff` diperiksa lebih dulu.
+Konvensi: kode/identifier English; Python file/folder `snake_case`; frontend Vue komponen `PascalCase.vue`, folder route/component `lowercase`; konvensi React/Next `PascalCase.tsx` hanya untuk `frontend/` lama selama migrasi; docs dan skill markdown `snake_case` (kecuali file existing). Docs diperbarui saat source-of-truth berubah, dan pembaruan itu masuk ke rencana yang disetujui — pemetaannya ada di `docs/README.md`; docs yang tidak relevan dibiarkan. Commit lokal setelah verification selesai dan tidak ada `NOT VERIFIED` yang menunggu uji user; `git diff` diperiksa lebih dulu.
 
 ## 9. Komunikasi, Restraint & Integritas
 
