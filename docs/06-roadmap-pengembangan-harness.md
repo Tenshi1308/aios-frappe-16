@@ -22,7 +22,7 @@ flowchart LR
     H2 --> H3["H3: Developer Control Plane\n(Registry Site, Undangan, Kuota, Monitoring)"]
     H2 --> H4["H4: Deep Finance & Sales Agents +\nReal Delegation & Live Trace"]
     H3 --> H4
-    H4 --> H5["H5: Isolated Workspace (Private File) &\n5-Tier Artifact/Canvas Space"]
+    H4 --> H5["H5: Isolated Workspace (Private File) &\nArtefak sebagai Berkas/Jendela Desktop"]
 ```
 
 ---
@@ -55,7 +55,7 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 
 ## Tahap H2 — `feat/plugin-mcp-manager`
 
-Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas fondasi 2 plugin awal dari `#8` (`erpnext-core-data` & `erpnext-financial-reports`), melengkapinya menjadi 7 *Built-in Default Plugins*, dapat di-*toggle* On/Off melalui UI `AIOS Admin`, serta mendukung server MCP eksternal.
+Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas fondasi plugin awal dari `#8` (`erpnext-core-data` & `erpnext-financial-reports`), melengkapinya menjadi 7 *Built-in Default Plugins*, dapat di-*toggle* On/Off melalui UI `AIOS Admin`, serta mendukung server MCP eksternal. Tiga plugin ERPNext adalah **wrapper tipis** di atas API ERPNext; skema tool-nya diadaptasi dari `@casys/mcp-erpnext` (MIT) — lihat `docs/02` §2.2.
 
 ### 1. Skema DocType `AIOS Plugin` & Child Table `AIOS Plugin Scope` (Hanya `AIOS Admin`)
 - **`AIOS Plugin`:**
@@ -132,7 +132,7 @@ Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar pr
   - `orchestrator_delegate_to_subagent(branch, worker_key, task_instruction, context_data)` benar-benar memanggil eksekusi LLM Sub-Agent tujuan menggunakan model dari `AIOS Agent Model Route` beserta plugin/tool milik Sub-Agent tersebut.
   - Ubah konstruktor `SwarmRouter(user: str)` dan `TaskLedger`/`SafetyGuard` agar wajib menerima `user` (hapus default `tenant_id: int = 1`), daftarkan handler nyata untuk cabang `finance` dan `sales`, dan **hapus fallback handler mock** di `swarm_router.py:97-104` (jika handler cabang tidak terdaftar, wajib `frappe.log_error` + `frappe.throw`).
 - **Kontrak Tunggal 5 Event SSE *Live Agent Trace* (`aios_v1/shared/trace_events.py`):**
-  - Nama & makna event mengikuti `docs/02` §3.1. Payload kanonik di modul konstanta:
+  - Nama & makna event mengikuti `docs/02` §3.1; tata letak tampilan mengikuti `docs/08` §3. Payload kanonik di modul konstanta:
     1. `trace_delegate_start`: `{"type": "trace_delegate_start", "from": ..., "to": ..., "instruction": ...}`
     2. `trace_subagent_prompt`: `{"type": "trace_subagent_prompt", "agent": ..., "system_prompt_summary": ..., "task_prompt": ...}`
     3. `trace_subagent_tool`: `{"type": "trace_subagent_tool", "agent": ..., "tool": ..., "args": ...}`
@@ -152,21 +152,21 @@ Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar pr
 
 ---
 
-## Tahap H5 — `feat/isolated-workspace-and-canvas`
+## Tahap H5 — `feat/isolated-workspace-and-artifacts`
 
-Menyediakan ruang kerja file terisolasi (*Isolated Workspace*) per sesi percakapan menggunakan primitif Private `File` Frappe dan panel **Artifact / Canvas Space** di sebelah kanan layar chat.
+Menyediakan ruang kerja file terisolasi (*Isolated Workspace*) per sesi percakapan menggunakan primitif Private `File` Frappe, dengan artefak tampil sebagai **berkas dan jendela di desktop** (`docs/08` §5).
 
 ### 1. Isolated Workspace Backend (Berbasis Frappe Private `File` DocType)
 - Gunakan `frappe.core.doctype.file.utils.save_file(..., is_private=1, dt="AIOS Conversation", dn=conversation_id)` sehingga setiap file kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) tercatat resmi di DocType `File` dengan kepemilikan `owner = frappe.session.user` dan dilindungi oleh `File.validate_file_access` + `has_permission` pada `AIOS Conversation`.
 - Tambahkan guard validasi nama file (*filename sanitization* & blokir `..` / path separator) sebelum memanggil `save_file`.
 
-### 2. Implementasi 5-Tier Artifact / Canvas
-Isi & urutan tier mengikuti `docs/02` §3.2. Delta implementasi H5:
-- Panel Canvas merender berdasarkan event SSE `{"type": "artifact_created", "artifact": {...}}`.
+### 2. Implementasi Artefak Desktop
+Jenis artefak mengikuti `docs/02` §3.2; bentuk tampilan mengikuti `docs/08` §5. Delta implementasi H5:
+- Artefak dibuka sebagai berkas/jendela desktop berdasarkan event SSE `{"type": "artifact_created", "artifact": {...}}` (`docs/08` §5).
 - Tier 1 approval card memanggil alur approve/reject di `docs/04` Alur 5; Tier 5 dirender dalam iframe `sandbox="allow-same-origin"` tanpa script eksternal.
 
 ### 3. Script Test Wajib
 - `aios_v1/tests/test_workspace_isolation.py`:
   - Uji pembuatan Private `File` `.xlsx` / `.csv` / `.md` yang terikat ke `AIOS Conversation` User A; pastikan usaha akses oleh User B atau usaha injeksi nama file (`../../`) ditolak keras (`403` / `ValidationError`).
-- `aios_v1/tests/test_canvas_draft_to_erpnext.py`:
+- `aios_v1/tests/test_artifact_draft_to_erpnext.py`:
   - Uji siklus penuh: agen membuat `Pending Action Draft` *Sales Order* pada Company dummy `_Test Company AIOS` → pengguna menekan Approve → dokumen `Sales Order` resmi terbentuk di ERPNext dengan nilai yang persis sama.

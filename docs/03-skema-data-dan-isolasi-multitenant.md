@@ -81,7 +81,9 @@ Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane*
 
 ## 2. Peta Doctype AIOS & Matriks Permission (Site Klien: `AIOS Client` / `AIOS Control`)
 
-Seluruh DocType operasional AIOS berelasi langsung ke **`User`** (`user -> Link(User)`) — kecuali registry `AIOS Client Site` yang hanya ada di *site developer* (`docs/03` §1.4):
+Seluruh DocType operasional AIOS berelasi langsung ke **`User`** (`user -> Link(User)`) — kecuali registry `AIOS Client Site` yang hanya ada di *site developer* (`docs/03` §1.4).
+
+> **DocType adapter DB eksternal dihapus:** `AIOS DB Connection`, `AIOS Mapping`, `AIOS Mapping Entry`, dan `AIOS Schema Snapshot` tidak lagi bagian dari skema. PoC bersifat **ERPNext-first** — data bisnis dibaca langsung dari ERPNext site klien, bukan dari database luar. Alasannya: pemetaan kolom tetap tidak mampu menangani variasi skema klien (jumlah kolom, tipe data, penamaan), sehingga modelnya tidak dapat dipertahankan.
 
 ```mermaid
 erDiagram
@@ -90,12 +92,8 @@ erDiagram
     USER ||--o{ AIOS_CONVERSATION : "user (Link -> User)"
     USER ||--o{ PENDING_ACTION_DRAFT : "user (Link -> User)"
     USER ||--o{ AIOS_AGENT_STATE : "user (Link -> User)"
-    USER ||--o{ AIOS_DB_CONNECTION : "user (Link -> User)"
     USER ||--o{ AIOS_TOKEN_USAGE : "user (Link -> User)"
     AIOS_CONVERSATION ||--o{ AIOS_MESSAGE : "conversation (1-hop)"
-    AIOS_DB_CONNECTION ||--o{ AIOS_MAPPING : "connection (1-hop)"
-    AIOS_DB_CONNECTION ||--o{ AIOS_SCHEMA_SNAPSHOT : "connection (1-hop)"
-    AIOS_MAPPING ||--o{ AIOS_MAPPING_ENTRY : "mapping (2-hop)"
     AIOS_SETTING ||--o{ AIOS_LLM_PROVIDER : "konfigurasi provider LLM"
     AIOS_SETTING ||--o{ AIOS_AGENT_MODEL_ROUTE : "routing model per agen"
     AIOS_SETTING ||--o{ AIOS_PLUGIN : "manajemen plugin & MCP"
@@ -109,8 +107,8 @@ Matriks ini berlaku di **site klien**. Di site developer, `AIOS Admin` bekerja l
 | Kelompok DocType | Daftar DocType | Izin `AIOS Client` (`desk_access=0`) | Izin `AIOS Control` (service) | Izin `AIOS Admin` (hanya site developer) |
 |---|---|---|---|---|
 | **DocType ERPNext Target (via `add_permission` / `Custom DocPerm` di `setup.py`)** | `Sales Order`, `Sales Invoice`, `Delivery Note`, `Payment Entry`, `Journal Entry`, `GL Entry`, `Customer`, `Supplier`, `Item`, `Company`, `Account` | **`read = 1, report = 1`**, `create/write/delete = 0` (aksi tulis wajib lewat `Pending Action Draft`) | **`—`** (tidak ada akses data bisnis) | — (tidak ada di site klien) |
-| **DocType AIOS Kepemilikan Langsung (`user -> Link(User)`)** | `AIOS Conversation`, `Pending Action Draft`, `AIOS DB Connection`, `AIOS Agent State` | `read = 1, write = 1, create = 1, delete = 1` (dibatasi `user = session.user` via `permission_query_conditions` & `has_permission`) | **`—`** | — (tidak ada di site klien) |
-| **DocType AIOS Log & Join (`1-hop` / `2-hop`)** | `AIOS Message`, `AIOS Token Usage`, `AIOS Mapping`, `AIOS Schema Snapshot`, `AIOS Mapping Entry` | `read = 1` (khusus miliknya via `permission_query_conditions` & `has_permission`) | `read = 1` **hanya pada `AIOS Token Usage`**; lainnya `—` | — (tidak ada di site klien) |
+| **DocType AIOS Kepemilikan Langsung (`user -> Link(User)`)** | `AIOS Conversation`, `Pending Action Draft`, `AIOS Agent State` | `read = 1, write = 1, create = 1, delete = 1` (dibatasi `user = session.user` via `permission_query_conditions` & `has_permission`) | **`—`** | — (tidak ada di site klien) |
+| **DocType AIOS Log & Join (`1-hop`)** | `AIOS Message`, `AIOS Token Usage` | `read = 1` (khusus miliknya via `permission_query_conditions` & `has_permission`) | `read = 1` **hanya pada `AIOS Token Usage`**; lainnya `—` | — (tidak ada di site klien) |
 | **DocType Konfigurasi & Rahasia Admin** | `AIOS Setting`, `AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin`, `AIOS Telegram Setting`, `AIOS Telegram Session`, `AIOS Telegram Message` | **Tidak ada akses (`read = 0`)** + ditolak eksplisit di `has_permission` | **`—`** (termasuk `AIOS Setting`; dua tulis lifecycle lewat endpoint khusus, bukan `DocPerm`) | — (tidak ada di site klien) |
 
 > **Batas peran `Administrator` (mengikat, berlaku saat izin dipasang):**

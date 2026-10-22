@@ -60,6 +60,9 @@ Semua hal berikut sudah ada di beberapa pemain, jadi **bukan pembeda** bila AIOS
 4. **Kontrol biaya per user dan per agen.**
    Kuota token, routing model per agen, dan log pemakaian. Enterprise butuh angka biaya yang bisa dipertanggungjawabkan.
 
+5. **Antarmuka desktop OS, bukan halaman web biasa.**
+   Ekasa Desk (`docs/08`): boot, sign-in, taskbar, jendela modul, panel agent, dan artefak yang muncul sebagai berkas. Pola ini membedakan AIOS dari copilot yang menempel di dalam form ERP. **Trace tetap terlihat** di panel agent — transparansi tidak dikorbankan demi tampilan.
+
 ---
 
 ## 5. Pola UI/UX yang Layak Ditiru
@@ -82,7 +85,7 @@ Semua hal berikut sudah ada di beberapa pemain, jadi **bukan pembeda** bila AIOS
 1. **Chatbot yang hanya bisa menjawab.** Kalau tidak bisa bertindak (dengan approval), ia akan terlihat seperti copilot biasa.
 2. **Memamerkan 9 divisi setara.** Lebih baik satu alur Sales↔Finance yang utuh daripada sembilan divisi yang dangkal.
 3. **Bahasa marketing "AI ajaib".** Pembeli enterprise mencari kontrol, audit, isolasi data, dan biaya yang jelas.
-4. **UI chat-only tanpa canvas/artefak.** Approval card, tabel, laporan, dan file adalah bagian dari nilai produk.
+4. **UI chat-only tanpa artefak.** Approval card, tabel, laporan, dan file yang muncul sebagai jendela adalah bagian dari nilai produk.
 
 ---
 
@@ -120,6 +123,7 @@ Sembilan divisi tetap ditampilkan sebagai **peta kemampuan**, tetapi kedalaman i
 ## 9. Batasan
 
 - Sumber utama adalah halaman resmi/marketing; **bukan** hasil uji coba produk.
+- **MCP untuk ERPNext sudah ada di pasar** dan sempat diuji pada 2026-10-22: `@casys/mcp-erpnext` v3.3.0 (MIT, 127 tool, satu API key) dan Frappe Assistant Core (AGPL-3.0, 24 tool, OAuth per user). Keduanya **tidak dipakai sebagai server**; skema tool casys dipinjam. Alasan lengkap: `docs/02` §2.3.
 - Tanggal rilis dan kronologi versi yang disebut dalam brief awal **belum diverifikasi** di dokumen ini.
 - Perbandingan harga, paket, dan kedalaman implementasi lokal belum dilakukan.
 - Klaim kompetitor bisa berubah; perbarui dokumen ini bila ada informasi baru yang material.

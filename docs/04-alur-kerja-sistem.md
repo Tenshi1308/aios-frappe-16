@@ -1,6 +1,6 @@
 # 04 — Alur Kerja Sistem (End-to-End Workflows)
 
-Dokumen ini menggambarkan 6 alur kerja utama di dalam AIOS V1 dari awal pendaftaran pengguna hingga eksekusi kolaborasi agen, persetujuan transaksi di ERPNext, dan pengelolaan lintas site dari Developer Control Plane. Setiap alur disajikan dalam bentuk diagram **Mermaid** sekaligus **rincian langkah teknis bernomor** agar mudah dibaca manusia maupun diproses oleh AI agent.
+Dokumen ini menggambarkan 7 alur kerja utama di dalam AIOS V1 dari awal pendaftaran pengguna hingga eksekusi kolaborasi agen, persetujuan transaksi di ERPNext, pengelolaan lintas site dari Developer Control Plane, dan pembacaan modul di desktop. Setiap alur disajikan dalam bentuk diagram **Mermaid** sekaligus **rincian langkah teknis bernomor** agar mudah dibaca manusia maupun diproses oleh AI agent.
 
 ---
 
@@ -101,7 +101,7 @@ sequenceDiagram
         alt Role == AIOS Admin (site developer saja)
             UI-->>User: Render Developer Control Plane (Registry Site, Undangan, Kuota, Monitoring)
         else Role == AIOS Client
-            UI-->>User: Render Workspace Bisnis (Divisi Finance & Sales + Canvas Panel)
+            UI-->>User: Render Ekasa Desk (desktop OS: taskbar, panel agent, jendela modul)
         end
     end
 ```
@@ -114,20 +114,20 @@ sequenceDiagram
 3. **Bootstrap Sesi & Token CSRF (`get_session_context`):** Frontend memanggil endpoint `@frappe.whitelist()` `get_session_context()` yang mengeksekusi `frappe.sessions.get_csrf_token()` untuk men-generate token di Redis sekaligus mengembalikannya ke frontend bersama informasi `roles`, `aios_persona`, `aios_token_limit`, `aios_tokens_used`, dan `default_company` site.
 4. **Pemisahan Peran Berbasis Role:**
    - Jika pengguna memiliki role `AIOS Admin` (hanya ada di *site developer*), aplikasi mengarahkan ke **Developer Control Plane**.
-   - Jika pengguna memiliki role `AIOS Client`, aplikasi mengarahkan ke **Workspace Bisnis (Finance & Sales)**.
+   - Jika pengguna memiliki role `AIOS Client`, aplikasi mengarahkan ke **Ekasa Desk** — desktop OS dengan panel agent dan jendela modul (`docs/08`).
    - Role `AIOS Control` **tidak pernah login sebagai manusia**; ia hanya dipakai endpoint Control API dengan token layanan.
 5. **Penegakan CSRF:** Seluruh request tulis (`POST`/`PUT`/`DELETE`) berikutnya dari frontend wajib menyertakan header `X-Frappe-CSRF-Token`.
 
 ---
 
-## Alur 4 — Eksekusi Tugas, Delegasi Agen (*Live Agent Trace*), Kolaborasi Lintas Divisi, & Render *Artifact/Canvas*
+## Alur 4 — Eksekusi Tugas, Delegasi Agen (*Live Agent Trace*), Kolaborasi Lintas Divisi, & Artefak Desktop
 
 Alur ini terjadi ketika pengguna klien meminta analisis atau pekerjaan lintas peran (misalnya meminta evaluasi pesanan pelanggan sekaligus analisis arus kas dan pembuatan laporan Excel/grafik).
 
 ```mermaid
 sequenceDiagram
     actor Client as AIOS Client (Pebisnis)
-    participant UI as Workspace UI (Trace + Canvas)
+    participant UI as Ekasa Desk (panel agent + jendela)
     participant Orch as Orchestrator (Finance / Sales Manager)
     participant Sub as Sub-Agent Spesialis (mis. Treasurer / Sales Analyst)
     participant Swarm as Swarm Router (Lintas Divisi Sales <-> Finance)
@@ -160,9 +160,9 @@ sequenceDiagram
         Swarm-->>Orch: Kembalikan Hasil Konsultasi + Catat di Task Ledger
     end
 
-    opt Pembuatan Artifact / Visualisasi di Canvas Space
+    opt Pembuatan Artefak
         Orch->>Tool: Panggil workspace-artifact-builder (Buat Chart / Laporan / Private File .xlsx)
-        Tool-->>UI: SSE Event [artifact_created] (Render Chart/Dokumen/File di Panel Canvas Kanan)
+        Tool-->>UI: SSE Event [artifact_created] (Artefak muncul sebagai berkas/jendela di desktop)
     end
 
     Orch-->>UI: Stream Jawaban Sintesis Akhir + Atomic SQL Increment User.aios_tokens_used & Insert AIOS Token Usage
@@ -172,7 +172,7 @@ sequenceDiagram
 1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token user (`User.aios_tokens_used < User.aios_token_limit`), dan mengambil konfigurasi model dari `AIOS Agent Model Route`.
 2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context`) dan hanya menyertakan skema tool dari plugin yang aktif (`enabled = 1`) serta diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas).
 3. **Delegasi Sub-Agent Nyata & 5 Event Kanonik *Live Agent Trace*:**
-   - Bila Orchestrator memanggil `orchestrator_delegate_to_subagent`, backend mengirimkan event SSE kanonik (`trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch`) ke kolom kiri UI (**Live Agent Trace** tanpa emoji).
+   - Bila Orchestrator memanggil `orchestrator_delegate_to_subagent`, backend mengirimkan event SSE kanonik (`trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch`) ke **Live Agent Trace** di panel agent (`docs/08` §3), tanpa emoji.
    - Sub-Agent yang ditunjuk benar-benar dieksekusi dengan model dan daftar tool spesifik miliknya.
 4. **Injeksi Paksa Konteks `Company` Site-Level & Izin Baca ERPNext:**
    - Setiap kali Sub-Agent atau Orchestrator memanggil plugin (`erpnext-core-data`, `erpnext-financial-reports`, dll.), `execute_tool` mengabaikan klaim company dari argumen LLM dan menyuntikkan `allowed_company` yang dibaca secara site-level dari `frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value("Global Defaults", "default_company")`.
@@ -180,8 +180,8 @@ sequenceDiagram
    - Perhitungan angka finansial/statistik dilakukan secara deterministik melalui plugin `quant-calculator`.
 5. **Kolaborasi Lintas Divisi (`Sales ↔ Finance`):**
    - Melalui `SwarmRouter(user=frappe.session.user)` (tanpa fallback default `1` dan tanpa fallback handler mock), divisi Sales berkonsultasi secara otonom ke divisi Finance untuk memeriksa plafon kredit dan piutang jatuh tempo di ERPNext sebelum pesanan baru dibuat.
-6. **Pembuatan File & Visualisasi di *Artifact/Canvas Space*:**
-   - File kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) disimpan menggunakan DocType `File` Frappe (`is_private=1`, terikat ke `AIOS Conversation` milik user) dan sistem mengirim event `artifact_created` sehingga panel **Canvas** di sebelah kanan layar langsung merender hasilnya.
+6. **Pembuatan Artefak sebagai Berkas di Desktop:**
+   - File kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) disimpan menggunakan DocType `File` Frappe (`is_private=1`, terikat ke `AIOS Conversation` milik user) dan sistem mengirim event `artifact_created` sehingga artefak muncul sebagai berkas/jendela di desktop (`docs/08` §5).
 7. **Sintesis Jawaban & Akuntansi Token Atomik (`usage.py`):** Orchestrator menyusun jawaban akhir untuk pengguna, mencatat rincian ke DocType `AIOS Token Usage`, dan meng-update `User.aios_tokens_used` secara atomik menggunakan SQL (`SET aios_tokens_used = aios_tokens_used + %s`) tanpa memanggil `user_doc.save()`.
 
 ---
@@ -193,7 +193,7 @@ AIOS memegang prinsip keselamatan mutlak untuk data keuangan dan transaksi: **ag
 ```mermaid
 sequenceDiagram
     actor Client as AIOS Client (Pebisnis)
-    participant UI as Workspace Canvas (Tier 1 Approval Card)
+    participant UI as Ekasa Desk (jendela Approval Card)
     participant Agent as Agen Finance / Sales
     participant DraftMgr as Draft Manager (Pending Action Draft)
     participant ERP as ERPNext (Sales Order / Invoice / Journal Entry)
@@ -202,7 +202,7 @@ sequenceDiagram
     Agent->>DraftMgr: Panggil Plugin erpnext-action-drafts (create_draft)
     DraftMgr->>DraftMgr: Validasi kelengkapan field & ikat ke user = frappe.session.user
     DraftMgr->>DraftMgr: Simpan DocType "Pending Action Draft" (status = PENDING_APPROVAL)
-    DraftMgr-->>UI: Kirim Event [artifact_created: APPROVAL_CARD] ke Canvas Panel Kanan
+    DraftMgr-->>UI: Kirim Event [artifact_created: APPROVAL_CARD] → jendela Approval Card di desktop
     UI-->>Client: Tampilkan Rincian Transaksi (Tabel Item/Akun, Nominal, Tombol Approve / Reject)
 
     alt Klien Klik "Approve & Post to ERPNext"
@@ -224,7 +224,7 @@ sequenceDiagram
 ### Rincian Langkah Alur 5:
 1. **Permintaan atau Rekomendasi Aksi Tulis:** Pengguna meminta pembuatan dokumen transaksi baru (mis. *Quotation*, *Sales Order*, *Sales Invoice*, *Payment Entry*, atau *Journal Entry*) atau agen mengusulkan tindak lanjut transaksi dari hasil analisis.
 2. **Pembuatan `Pending Action Draft`:** Agen memanggil plugin `erpnext-action-drafts` yang memvalidasi struktur payload dan menyimpannya ke doctype `Pending Action Draft` dengan `status = "PENDING_APPROVAL"`, terikat ketat ke `user = frappe.session.user`, dan memiliki batas waktu kedaluwarsa (`expires_at`).
-3. **Render *Tier 1 Interactive Approval Card* di Canvas:** Panel Canvas di sebelah kanan ruang chat menampilkan kartu persetujuan berisi tabel rincian item/akun, nominal, justifikasi bisnis, serta tombol aksi **Approve & Post to ERPNext** dan **Reject**.
+3. **Render Approval Card sebagai Jendela Desktop:** Jendela kartu persetujuan (`docs/08` §5) menampilkan tabel rincian item/akun, nominal, justifikasi bisnis, serta tombol aksi **Approve & Post to ERPNext** dan **Reject**.
 4. **Eksekusi Saat Disetujui (**Approve**):**
    - Pengguna menekan tombol **Approve**.
    - Backend (`approve_and_execute_draft`) memverifikasi autentikasi sesi, token CSRF, dan memastikan `draft.user == frappe.session.user` (atau user memiliki role `AIOS Admin`).
@@ -331,3 +331,37 @@ sequenceDiagram
 5. **Pengiriman Undangan:** Untuk PoC tidak ada ketergantungan SMTP. `AIOS Admin` menyalin tautan undangan (dan kode registrasi) lalu mengirimkannya lewat kanal yang sudah dipakai (WhatsApp/Telegram/email sendiri). Integrasi email otomatis (Email Queue Frappe → SMTP/Email Account) menyusul tanpa mengubah kontrak tautan.
 6. **Monitoring Lintas Site:** Control plane menarik agregat (`AIOS Token Usage`, `User.aios_tokens_used`, jumlah user aktif, status site) lewat `GET /api/control/metrics`. Data mentah tetap di site klien; control plane hanya menyimpan ringkasan yang diperlukan dashboard.
 7. **Audit & Pemisahan Wewenang:** Setiap panggilan Control API dicatat (user pelaku, site target, operasi, hasil). `AIOS Control` hanya boleh operasi lifecycle & agregat monitoring — bukan menulis dokumen bisnis ERPNext. `Administrator` di site klien tidak pernah dipakai jalur ini.
+
+---
+
+## Alur 7 — Membuka Modul & Membaca Data ERPNext dari Desktop
+
+Modul adalah halaman data di Ekasa Desk: daftar dokumen dan kartu angka. Alur ini **tidak memakai LLM** — murni pembacaan ERPNext dengan izin user yang sedang login.
+
+```mermaid
+sequenceDiagram
+    actor Client as AIOS Client
+    participant Desk as Ekasa Desk (jendela modul)
+    participant API as Desktop API (aios_v1)
+    participant ERP as ERPNext (site klien)
+
+    Client->>Desk: Buka modul Accounting / klik kartu "Receivables"
+    Desk->>API: GET desktop.module?module=accounting
+    API->>API: Cek sesi + role AIOS Client + aios_status == "Active"
+    API->>API: Paksa company = default_company site (abaikan klaim klien)
+    API->>ERP: frappe.get_list + agregat (izin user berlaku)
+    ERP-->>API: Baris dokumen + angka agregat
+    API-->>Desk: { cards[], doctypes[], rows[] }
+    Desk-->>Client: Render jendela modul
+
+    Note over Client,Desk: Agent juga bisa membuka modul:<br/>"buka Sales Invoice" → artifact_created / open_module
+```
+
+### Rincian Langkah Alur 7:
+1. **Pembukaan Modul:** Pengguna membuka modul dari taskbar atau pencarian, **atau** agent membukanya atas permintaan ("buka Sales Invoice", "lihat piutang jatuh tempo").
+2. **Verifikasi Sesi & Status:** Endpoint desktop memastikan `frappe.session.user != "Guest"` dan `User.aios_status == "Active"` — sama seperti jalur lain (`docs/03` §2.2).
+3. **Pemaksaan `Company`:** `company` diambil dari `AIOS Setting.default_company` (fallback `Global Defaults`) di sisi server. Argumen dari klien **diabaikan**, sehingga tidak ada cara membaca company lain lewat modul.
+4. **Pembacaan Data:** Daftar dokumen memakai `frappe.get_list` dengan `check_permission` yang berlaku; kartu angka dihitung sebagai agregat di server (`SUM`, `COUNT`), bukan di browser.
+5. **Izin Tetap Berlaku:** Karena query berjalan dengan sesi user, `AIOS Client` hanya melihat dokumen yang diizinkan `Custom DocPerm` (`read = 1, report = 1`, `docs/03` §2.1).
+6. **Modul Bersifat Baca Saja:** Tidak ada tombol tulis di modul. Semua perubahan tetap lewat `Pending Action Draft` dan persetujuan manusia (Alur 5).
+7. **Agen Membuka Modul:** Saat agent membuka modul, UI menerima event dan membuka jendela yang sama — bukan jalur data terpisah, sehingga aturan izin dan `company` tetap satu.

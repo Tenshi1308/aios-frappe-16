@@ -12,7 +12,7 @@ Berbeda dari asisten AI umum (yang hanya menjawab teks tanpa konteks operasional
 | **Objek yang Dioperasikan** | File kode sumber, Git repository, Shell/Terminal | Dokumen transaksi ERP (`Sales Order`, `Sales Invoice`, `GL Entry`), Laporan Keuangan, Dokumen Bisnis |
 | **Struktur Agen** | Planner, Coder, Reviewer, Researcher | **AI Manager (Orchestrator Divisi)** + **Sub-Agents Spesialis Jabatan** |
 | **Sistem Ekstensi** | Konfigurasi `jsonc`, MCP Server, CLI Plugins | **UI-driven Provider/Model Routing** + **Built-in & External Business Plugins/MCP** |
-| **Ruang Kerja Output** | Diff kode, file proyek lokal | **Isolated Workspace & Business Canvas** (Approval Card, Chart Keuangan, Laporan PDF/Excel) |
+| **Ruang Kerja Output** | Diff kode, file proyek lokal | **Ekasa Desk** — artefak muncul sebagai file & jendela di desktop (Approval Card, Chart Keuangan, Laporan PDF/Excel) |
 | **Gerbang Keamanan** | Sandbox terminal & izin eksekusi perintah | Isolasi Database per Site (`1 Client = 1 Site`) + Isolasi Sesi `User` + **Human-in-the-Loop Draft Approval** |
 
 ---
@@ -72,11 +72,12 @@ AIOS V1 menerapkan arsitektur **Site-Level Multi-Tenancy (`1 Client = 1 Site`)**
 
 Pengguna berinteraksi melalui dua permukaan aplikasi (pengguna klien tidak pernah diarahkan ke halaman Frappe Desk):
 
-| Karakteristik | Developer Control Plane (site developer) | Client Workspace (site klien) |
+| Karakteristik | Developer Control Plane (site developer) | Ekasa Desk (site klien) |
 |---|---|---|
+| **Bentuk** | Dashboard operasional berbasis halaman | **Desktop OS** — boot, sign-in, taskbar, jendela, panel agent (`docs/08`) |
 | **Target Pengguna** | `AIOS Admin` — operator AIOS (bukan `Administrator`) | Pebisnis / Direktur / Staf Perusahaan Klien |
 | **Role & Tipe User Frappe** | Role `AIOS Admin` (`AIOS Admin Profile`, target `desk_access = 0`); hanya ada di site developer | Role `AIOS Client` (`AIOS Client Profile`, tipe `Website User` dengan `desk_access = 0`); tidak ada role `AIOS Admin` di site klien |
-| **Kewenangan Utama** | • Mendaftarkan & mem-provision *site* klien baru (registry `AIOS Client Site`)<br>• Menyetujui pendaftaran mandiri & menerbitkan undangan pengguna (tautan set-password sekali pakai)<br>• Mengelola status (`aios_status`) & kuota (`aios_token_limit`) `User` lintas site<br>• Memonitor pemakaian token & kesehatan site klien<br>• UI pengaturan Provider LLM, Model Routing, dan Plugin/MCP — data tetap tersimpan di site klien | • Menggunakan workspace AI divisi Finance & Sales untuk perusahaan pada site tersebut<br>• Mengunggah dokumen bisnis untuk dianalisis<br>• Melihat visualisasi laporan, grafik, dan mengunduh file di *Artifact/Canvas Space*<br>• Menyetujui (**Approve**) atau menolak (**Reject**) draf transaksi bisnis sebelum masuk ke ERPNext |
+| **Kewenangan Utama** | • Mendaftarkan & mem-provision *site* klien baru (registry `AIOS Client Site`)<br>• Menyetujui pendaftaran mandiri & menerbitkan undangan pengguna (tautan set-password sekali pakai)<br>• Mengelola status (`aios_status`) & kuota (`aios_token_limit`) `User` lintas site<br>• Memonitor pemakaian token & kesehatan site klien<br>• UI pengaturan Provider LLM, Model Routing, dan Plugin/MCP — data tetap tersimpan di site klien | • Bekerja di desktop: membuka modul Finance & Sales, melihat daftar dokumen dan kartu angka dari ERPNext<br>• Berdialog dengan agent di panel samping, dan membuka **Live Agent Trace** untuk melihat langkah, tool, dan hasilnya<br>• Membuka artefak (laporan, grafik, spreadsheet) sebagai jendela di desktop<br>• Menyetujui (**Approve**) atau menolak (**Reject**) draf transaksi bisnis sebelum masuk ke ERPNext |
 
 > **Peran Khusus `Administrator` (Root Frappe) & Pendaftaran Skema via Hooks:**
 > Akun `Administrator` bawaan Frappe digunakan untuk administrasi tingkat sistem/bench dan **tidak pernah dimodifikasi atau dibatasi** — di luar itu seluruh operasi harian dijalankan `AIOS Admin` dari Developer Control Plane. Jalur programatik ke *site* klien memakai role layanan **`AIOS Control`** (bukan `AIOS Admin`, bukan `Administrator`). Seluruh ekstensi skema AIOS pada DocType inti `User` (seperti `aios_persona`, `aios_status`, `aios_token_limit`, `aios_tokens_used`) serta pembuatan Role & Role Profile di-script secara otomatis di Python pada hook **`after_install` dan `after_migrate`** di `hooks.py` menggunakan fungsi resmi `create_custom_fields`.

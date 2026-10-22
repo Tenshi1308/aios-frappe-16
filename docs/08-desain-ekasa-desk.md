@@ -1,0 +1,199 @@
+# 08 — Desain Ekasa Desk (Antarmuka Desktop OS)
+
+Dokumen ini menetapkan desain antarmuka klien AIOS: **Ekasa Desk**, sebuah *desktop OS* di browser. Sifatnya **normatif** — kode menyesuaikan dokumen ini.
+
+Kontrak harness (trace, tool, approval) ada di `docs/02` §3 dan `docs/04` Alur 5. Dokumen ini hanya mengatur **permukaan dan tata letaknya**.
+
+---
+
+## 1. Konsep & Prinsip
+
+1. **OS, bukan halaman web.** Pengguna masuk lewat layar boot dan sign-in, lalu bekerja di desktop dengan taskbar, jendela, dan panel samping — bukan deretan menu.
+2. **Agent adalah warga utama.** Panel agent selalu ada. Modul dan artefak muncul sebagai jendela di desktop.
+3. **Modul tetap ada.** Daftar dokumen dan kartu angka adalah nilai jual: pengguna bisa melihat data ERPNext langsung tanpa bertanya ke AI. Agent juga bisa membukakan modul.
+4. **Tanpa emoji dekoratif.** Ikon garis vektor dan badge tipografi saja.
+5. **Nol hardcoded.** Nama agent, nama modul, doctype, company, kuota, dan prompt saran **tidak boleh** ditulis di berkas komponen — semuanya dari backend (§7).
+
+---
+
+## 2. Struktur Layar
+
+### 2.1. Boot
+
+Layar gelap penuh dengan progres bertahap: menyambung ke site, memulihkan sesi, mengambil `frappe.boot`, memuat workspace & izin, mendaftarkan agent, membuka kanal realtime, menyiapkan desktop. Progres harus mencerminkan langkah nyata, bukan animasi palsu.
+
+### 2.2. Sign-In
+
+Form email + password, ditambah tautan ke pendaftaran mandiri. Kegagalan menampilkan pesan aman (tanpa detail internal). Setelah sukses, lanjut ke desktop sesuai peran.
+
+### 2.3. Desktop
+
+- **Taskbar** di bawah: tombol mulai, pencarian, daftar agent, jam, indikator status koneksi.
+- **Area desktop**: jendela-jendela yang bisa dibuka, dipindah, diperkecil, dan ditutup.
+- **Flyout**: pencarian (`Ctrl+K`) dan daftar agent (`Ctrl+J`). `Esc` menutup.
+- **Tema**: terang dan gelap, mengikuti preferensi sistem, bisa dipaksa lewat atribut tema.
+
+### 2.4. Panel Agent
+
+Menempel di sisi kanan. Berisi riwayat percakapan, composer, pemilih agent, dan **Live Agent Trace** (§3). Panel bisa dilebarkan, tidak bisa ditutup total — agent adalah inti produk.
+
+---
+
+## 3. *Live Agent Trace* di Panel Agent
+
+Kontrak event ada di `docs/02` §3.1. Tata letaknya:
+
+1. Di bawah setiap jawaban agent ada baris ringkas: **jumlah langkah · token · durasi**, dengan tombol **Lihat detail**.
+2. Menekan baris tersebut mekarkan daftar langkah (delegasi, panggilan tool, hasil).
+3. Menekan satu langkah membuka isi lengkapnya: instruksi tugas, nama tool, **argumen asli**, dan hasil.
+4. **Lihat detail** membuka jendela penuh di desktop.
+
+**Wajib:** instruksi tugas, argumen tool, dan hasil terlihat apa adanya.
+**Dilarang:** menampilkan *system prompt* internal AIOS (ETHOS, guard, instruksi dasar).
+
+---
+
+## 4. Agent
+
+Daftar agent berasal dari backend (`registry.py`), bukan dari berkas komponen. Setiap agent punya nama, deskripsi singkat, warna aksen, dan saran pertanyaan — semuanya dari API.
+
+Agent dapat membuka modul dan membuat artefak. Aksi tulis **tidak pernah** langsung ke ERPNext: selalu lewat `Pending Action Draft` dan persetujuan manusia (`docs/04` Alur 5).
+
+---
+
+## 5. Artefak sebagai File & Jendela
+
+Artefak yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**:
+
+| Jenis | Tampilan |
+|---|---|
+| Approval Card | Jendela kartu persetujuan (prioritas tertinggi) |
+| Tabel & grafik | Jendela data interaktif |
+| Dokumen eksekutif + Mermaid | Jendela dokumen, bisa cetak/ekspor PDF |
+| Spreadsheet `.xlsx` / `.csv` | Jendela preview + unduh |
+| Presentasi HTML | Jendela slide terisolasi |
+
+Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut.
+
+---
+
+## 6. Modul
+
+Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya dibaca langsung dari ERPNext site klien dengan izin user yang sedang login — tidak ada database perantara.
+
+- Modul dibuka dari taskbar/pencarian, **atau** oleh agent saat diminta ("buka Sales Invoice").
+- Daftar modul, ikon, warna, dan doctype-nya berasal dari backend (§7).
+- Modul bersifat **baca saja**. Penulisan tetap lewat approval.
+- Angka pada kartu adalah agregat yang dihitung server, bukan dihitung di browser.
+
+---
+
+## 7. Aturan *Zero Hardcoded*
+
+| Data | Sumber |
+|---|---|
+| Daftar agent, nama, deskripsi, saran prompt | Backend (`registry.py`) |
+| Daftar modul, ikon, warna, doctype | Backend |
+| Company aktif, mata uang | `AIOS Setting` |
+| Kuota & pemakaian token | `User.aios_token_limit`, `User.aios_tokens_used` |
+| Versi & URL API | `frappe.boot` / environment |
+
+**Aturan yang bisa diuji:** tidak ada nama agent, nama modul, atau nama doctype yang ditulis sebagai teks di berkas komponen. Data contoh hanya boleh hidup di lapisan `api/mock/` dan tidak pernah diimpor jalur produksi.
+
+**Aturan yang sama berlaku untuk gaya:** komponen dilarang menulis warna, font, bayangan, atau radius secara langsung. Semua lewat token (§8).
+
+---
+
+## 8. Token Visual & CSS
+
+Dua lapis token di `styles/tokens.css`:
+
+1. **Primitives** — nilai mentah (hex, px, font). Hanya boleh dipakai di berkas token.
+2. **Semantic** — `--surface`, `--text`, `--accent`, `--ok`, `--warn`, `--bad`, `--shadow`, `--radius`. Inilah yang dipakai komponen.
+
+Yang dijadikan token: warna, font family/ukuran/weight, radius, bayangan, blur, skala spasi, z-index, durasi animasi, tinggi taskbar, lebar panel.
+
+Yang **tidak** perlu token: nilai sekali pakai seperti lebar kolom tabel di satu tempat.
+
+**Pemeriksaan otomatis:** `grep -rE "#[0-9a-fA-F]{3,6}|rgba?\(" src/components/ src/views/` harus kosong.
+
+**Gaya penulisan:** CSS *scoped* per komponen. **Tailwind tidak dipakai** — desain sudah final dan efek visualnya (glass, gradient, shadow berlapis) lebih tepat ditulis langsung.
+
+**Aset lokal:** font dan Vue di-*bundle* sendiri. Aplikasi harus jalan tanpa internet.
+
+---
+
+## 9. Stack & Struktur Folder
+
+| Bagian | Pilihan |
+|---|---|
+| Build | Vite |
+| Framework | Vue 3 |
+| Bahasa | TypeScript |
+| Router | Vue Router |
+| State | Pinia |
+| CSS | CSS variables + scoped (tanpa Tailwind) |
+
+```
+desk/
+├── index.html
+├── vite.config.ts
+├── tsconfig.json
+└── src/
+    ├── main.ts
+    ├── App.vue
+    ├── router/index.ts
+    ├── stores/          session · agents · modules · conversations
+    ├── api/
+    │   ├── client.ts    frappe.call + CSRF
+    │   ├── desktop.ts   bootstrap · module · list · search
+    │   ├── agent.ts     chat stream (SSE)
+    │   └── mock/        data contoh, tidak masuk jalur produksi
+    ├── components/
+    │   ├── base/        Icon · Button · Card · Badge · Table · Flyout · Window
+    │   ├── shell/       BootScreen · SignIn · Taskbar · Clock · Desktop
+    │   ├── agent/       AgentPanel · AgentMessage · AgentTrace · AgentComposer
+    │   └── module/      ModuleWindow · ModuleCards · DocList
+    ├── views/           LoginView · RegisterView · PendingView · DesktopView
+    ├── styles/          tokens.css · base.css
+    └── types/index.ts
+```
+
+Folder kerja bernama `desk/` selama migrasi. Setelah paritas, `frontend/` (Next.js) dihapus dan `desk/` di-*rename* menjadi `frontend/`.
+
+---
+
+## 10. Kontrak API Desktop
+
+| Endpoint | Isi |
+|---|---|
+| `desktop.bootstrap` | `user`, `company`, `agents[]`, `modules[]`, `csrf_token` |
+| `desktop.module` | kartu agregat + daftar doctype satu modul |
+| `desktop.list` | baris dokumen (paging, filter) |
+| `desktop.search` | hasil pencarian `Ctrl+K` |
+| `desktop.chat` | stream SSE; memakai ulang dispatcher `/stream` |
+
+Semua endpoint memakai sesi Frappe yang sedang login dan tunduk pada `docs/03` §2.2. Tidak ada kredensial layanan di jalur ini.
+
+---
+
+## 11. Halaman yang Diport
+
+| Halaman lama | Nasib |
+|---|---|
+| Login | Diport |
+| Register (pendaftaran mandiri) | Diport |
+| Pending provisioning | Diport |
+| Workspace (`/home`) | Diganti desktop |
+| Settings (kuota, persona, status) | **Masuk desktop** sebagai jendela Pengaturan |
+| Onboarding koneksi DB | **Tidak diport** — adapter DB eksternal dihapus (`docs/03` §2) |
+| Payment | **Tidak diport** — sudah mati |
+| Dashboard developer | **Diport setelah `#11`**, bukan sekarang |
+
+---
+
+## 12. Batasan yang Diakui
+
+1. **Belum ada isolasi level OS.** UI berjalan di browser; keamanan tetap di lapisan server (`docs/02` §2.3).
+2. **Modul belum punya penulisan.** Semua aksi tulis lewat approval.
+3. **Dashboard developer belum dibangun** — menunggu backend `#11`.

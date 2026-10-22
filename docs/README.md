@@ -13,19 +13,22 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - Esensi AIOS sebagai *Business AI Harness* (bukan chatbot tanya-jawab biasa dan bukan coding harness).
    - Strategi *Depth over Breadth*: fokus kedalaman penuh pada divisi **Finance** dan **Sales** (*Order-to-Cash* & pelaporan akuntansi) sebagai fondasi pembuktian produk.
    - Struktur organisasi agen bisnis (Orchestrator / AI Manager & Sub-Agents spesialis) yang bekerja layaknya perusahaan mandiri.
-   - Model SaaS **1 Client = 1 Site** dengan **Developer Control Plane** (site developer, role `AIOS Admin`) + **Client Workspace** (site klien, role `AIOS Client`).
+   - Model SaaS **1 Client = 1 Site** dengan **Developer Control Plane** (site developer, role `AIOS Admin`) + **Ekasa Desk** (site klien, role `AIOS Client`, antarmuka desktop OS — `docs/08`).
 
-2. **[02 — Arsitektur Harness, Model Routing, Plugin/MCP, & Workspace Canvas](./02-arsitektur-harness-dan-plugin.md)** — *spesifikasi normatif*
+2. **[02 — Arsitektur Harness, Model Routing, Plugin/MCP, & Kontrak Trace](./02-arsitektur-harness-dan-plugin.md)** — *spesifikasi normatif*
    - Konfigurasi Provider LLM & pemetaan model per Orchestrator/Sub-Agent berbasis UI & DocType (`AIOS LLM Provider` & `AIOS Agent Model Route` dengan `route_key` unik dan validasi ke `registry.py`, *Zero Hardcode*). **UI di Developer Control Plane, data di site klien.**
    - Arsitektur **Plugin & MCP Manager (`AIOS Plugin`)**: katalog 7 *Built-in Default Plugins* (didukung `Custom DocPerm` `read=1, report=1` untuk `AIOS Client`) dan dukungan External MCP Server.
    - **Batas Eksekusi Agen (§2.3):** agen tanpa shell, tanpa akses file server di luar `File` Frappe, tanpa jaringan bebas, identitas tak bisa dipalsukan; isolasi level OS sengaja ditunda.
+   - **Kontrak trace & artefak (§3):** 5 event SSE; system prompt internal tidak pernah ditampilkan.
+   - **Plugin ERPNext = wrapper tipis** di atas API ERPNext; skema tool diadaptasi dari `@casys/mcp-erpnext` (MIT). Server MCP eksternal dievaluasi dan **tidak dipakai** (§2.3).
    - Desain **Live Agent Trace** (5 event SSE kanonik termasuk `trace_subagent_prompt`, batas rekursi `MAX_DELEGATION_DEPTH = 2`, tanpa emoji dekoratif).
-   - Arsitektur **Isolated Workspace (Frappe Private `File`) & 5-Tier Artifact/Canvas Space**.
+   - Arsitektur **Isolated Workspace (Frappe Private `File`)**; artefak tampil sebagai berkas/jendela desktop (`docs/08`).
 
 3. **[03 — Skema Data, Identitas Frappe (`User`), & Arsitektur `1 Client = 1 Site`](./03-skema-data-dan-isolasi-multitenant.md)** — *spesifikasi normatif*
    - Konsep **1 Client = 1 Site (`dns_multitenant`)**: setiap klien memiliki *site* dan database MariaDB terpisah, sehingga DocType `AIOS Tenant` dihapus sepenuhnya.
    - Pemusatan atribut operasional & kuota langsung pada DocType **`User`** bawaan Frappe (`aios_persona`, `aios_persona_context`, `aios_status`, `aios_company_name`, `aios_token_limit`, `aios_tokens_used`) dengan update kuota atomik via SQL dan nilai *default* tingkat site di **`AIOS Setting`**.
    - **Developer Control Plane (§1.4):** registry `AIOS Client Site` di site developer, role layanan `AIOS Control`, Control API per site klien, dan batas wewenang lintas site.
+   - **Adapter DB eksternal dihapus (§2):** `AIOS DB Connection`, `AIOS Mapping`, `AIOS Mapping Entry`, `AIOS Schema Snapshot` tidak lagi bagian dari skema — PoC ERPNext-first.
    - Matriks otoritatif `User.aios_status` × `User.enabled` beserta pertahanan 3 lapis (`send_welcome_email = 0` + `no_welcome_mail = True`, sinkronisasi `enabled = 0`, serta hook `on_login` & `auth_hooks`).
    - Pendaftaran skema Custom Field, Role, Role Profile, dan `Custom DocPerm` secara terprogram pada hook **`after_install` dan `after_migrate`** di `hooks.py` (**tanpa `fixtures` JSON**).
 
@@ -33,26 +36,36 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Alur 1:** *Self-Registration* calon klien (`Pending Provisioning`, `enabled = 0`, tanpa email reset password) & aktivasi `User` dari Developer Control Plane.
    - **Alur 2:** Pengelolaan Provider LLM, Model Routing per agen, Kuota Token `User`, dan Plugin/MCP oleh `AIOS Admin` — UI di control plane, data di site klien.
    - **Alur 3:** Autentikasi Frappe, guard 3 lapis `aios_status == "Active"`, bootstrap `csrf_token`, dan penentuan portal berbasis Role.
-   - **Alur 4:** Eksekusi tugas analitik, delegasi sub-agent (5 event SSE kanonik), kolaborasi lintas divisi (**Sales ↔ Finance**), dan pembuatan *Artifact/Canvas*.
+   - **Alur 4:** Eksekusi tugas analitik, delegasi sub-agent (5 event SSE kanonik), kolaborasi lintas divisi (**Sales ↔ Finance**), dan pembuatan artefak sebagai berkas/jendela desktop.
    - **Alur 5:** Eskalasi aksi tulis ke **Pending Action Draft** (*Human-in-the-Loop Approval*) hingga eksekusi ke ERPNext; jenis aksi `CREATE` / `UPDATE_DRAFT` / `CANCEL_AND_AMEND` dan batas **draft vs submitted**.
    - **Alur 6:** Provisioning klien lintas site (termasuk tombol **Buat Site**), undangan sekali pakai, dan monitoring dari Developer Control Plane.
+   - **Alur 7:** Membuka modul dan membaca data ERPNext dari desktop (baca saja, `company` dipaksa server).
 
 5. **[05.1 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fase 1 — Dikerjakan Pertama)](./05.1-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
    - **Checklist status** (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + urutan dependency + acceptance per item.
-   - Rencana eksekusi **Branch `#0` s/d `#11`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
+   - Rencana eksekusi **Branch `#0` s/d `#13`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
    - **`#11 — Developer Control Plane`:** dua fase — (1) dashboard lintas site (registry `AIOS Client Site`, role `AIOS Control`, Control API, undangan sekali pakai, monitoring agregat); (2) tombol **Buat Site** untuk provisioning otomatis. Kontrak: `docs/03` §1.4 & `docs/04` Alur 6.
+   - **`#12 — Frontend Vue Desktop`:** Ekasa Desk dalam Vue; `desk/` → `frontend/` setelah paritas.
+   - **`#13 — Hapus adapter DB eksternal`:** dikerjakan paling awal; memotong scope `#4a-1`, `#4a-2`, dan menggugurkan L5/L6 `#7a`.
    - **Lampiran arsip:** **[05.2 — Lampiran Roadmap Fondasi](./05.2-lampiran-roadmap-fondasi.md)** — *arsip/referensi*: temuan `file:line`, riwayat koreksi, baseline angka, detail rencana lama, strategi test, catatan lingkungan. **Bukan status terkini.**
 
 6. **[06 — Roadmap Pengembangan Business AI Harness (Fase 2 — Setelah Fondasi)](./06-roadmap-pengembangan-harness.md)** — *roadmap & status*
    - Rencana eksekusi bertahap (**Tahap `H1` s/d `H5`**, bebas duplikasi dengan Fase 1):
      - **H1:** Multi-Provider & Per-Agent Model Routing (`AIOS LLM Provider` & `AIOS Agent Model Route` + UI di Developer Control Plane).
-     - **H2:** Plugin & MCP Manager (`AIOS Plugin`) + Katalog Lengkap 7 *Built-in Default Plugins*.
+     - **H2:** Plugin & MCP Manager (`AIOS Plugin`) + Katalog Lengkap 7 *Built-in Default Plugins* (tiga di antaranya wrapper tipis + skema pinjaman MIT).
      - **H3:** UI Developer Control Plane untuk Registry Site Klien, Manajemen User & Aktivasi Provisioning lintas site, serta Analitik Kuota Token.
      - **H4:** *Deep Finance & Sales Autonomous Agents* + Delegasi Nyata (`MAX_DELEGATION_DEPTH = 2`) & *Live Agent Trace*.
-     - **H5:** *Isolated Workspace* (Frappe Private `File`) & *5-Tier Artifact/Canvas Space*.
+     - **H5:** *Isolated Workspace* (Frappe Private `File`) dengan artefak sebagai berkas/jendela di desktop.
 
 7. **[07 — Referensi Kompetitor AI ERP & Posisi AIOS](./07-referensi-kompetitor-ai-erp.md)** — *referensi pasar*
    - Peta 7 platform AI ERP: Microsoft Dynamics 365, SAP Joule, Odoo 19, Oracle Fusion, HashMicro, Ukirama, dan Keysoft (Mr. Key), beserta pola UI masing-masing.
    - Pemisahan **table-stakes** (tanya-jawab ERP, ringkasan, forecasting, human review, trace, admin) dari **celah pembeda** (tim agen nyata, approval tulis yang benar-benar posting, instance sendiri + model bebas, kontrol biaya per user/agen).
    - Pola UI/UX yang layak ditiru dan yang harus dihindari.
    - Implikasi untuk AIOS: fokus **depth Sales & Finance** pada satu alur *Order-to-Cash* utuh, dengan 9 divisi sebagai peta kemampuan — bukan sembilan divisi yang dangkal.
+
+8. **[08 — Desain Ekasa Desk (Antarmuka Desktop OS)](./08-desain-ekasa-desk.md)** — *spesifikasi normatif*
+   - Konsep desktop OS: boot → sign-in → desktop, taskbar, flyout (`Ctrl+K`, `Ctrl+J`), panel agent.
+   - **Live Agent Trace** di panel agent (langkah bisa dimekarkan) — instruksi tugas & argumen tool terlihat, *system prompt* internal tidak.
+   - Artefak sebagai berkas/jendela desktop; modul sebagai jendela baca-saja.
+   - **Zero hardcoded** untuk agent, modul, doctype, company, kuota; token CSS dua lapis (primitives → semantic); komponen dilarang menulis warna/font/shadow langsung.
+   - Stack Vite + Vue 3 + TypeScript + Router + Pinia; struktur `desk/`; kontrak API desktop; halaman yang diport.
