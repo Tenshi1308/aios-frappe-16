@@ -15,7 +15,6 @@ const fmtRp = (n: number) => "Rp " + fmtNum(Math.round(n));
 export default function DeveloperDashboardPage() {
   const router = useRouter();
   const [companies, setCompanies] = useState<UsageCompany[]>([]);
-  const [pricing, setPricing] = useState<{ per1kInputIdr: number; per1kOutputIdr: number } | null>(null);
   const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
   const [branches, setBranches] = useState<Record<string, UsageBranch[]>>({});
   const [expandedBranchKey, setExpandedBranchKey] = useState<string | null>(null);
@@ -25,11 +24,10 @@ export default function DeveloperDashboardPage() {
   useEffect(() => {
     api("/auth/me")
       .then(() =>
-        api<{ companies: UsageCompany[]; pricing: { per1kInputIdr: number; per1kOutputIdr: number } }>("/monitoring/usage"),
+        api<{ companies: UsageCompany[] }>("/monitoring/usage"),
       )
       .then((d) => {
         setCompanies(d.companies);
-        setPricing(d.pricing);
       })
       .catch(() => router.replace("/developer/login"));
   }, [router]);
@@ -107,10 +105,7 @@ export default function DeveloperDashboardPage() {
       <div className="mx-auto w-full py-8" style={{ maxWidth: 1024, flex: 1 }}>
         <div className="page-title">Monitoring pemakaian token</div>
         <p className="page-sub">
-          Ringkasan per perusahaan — klik baris untuk membuka rincian bidang tepat di bawahnya; klik bidang untuk rincian worker.
-          {pricing && (
-            <> Estimasi biaya: {fmtRp(pricing.per1kInputIdr)}/1k token input · {fmtRp(pricing.per1kOutputIdr)}/1k token output.</>
-          )}
+          Ringkasan per user client — klik baris untuk membuka rincian bidang tepat di bawahnya; klik bidang untuk rincian worker.
         </p>
 
         <div className="mt-5 grid gap-3 sm:grid-cols-4">
@@ -127,7 +122,7 @@ export default function DeveloperDashboardPage() {
             <div className="v violet">{fmtNum(totalOut)}</div>
           </div>
           <div className="stat">
-            <div className="k">Estimasi biaya total</div>
+            <div className="k">Biaya total</div>
             <div className="v">{fmtRp(totalCost)}</div>
           </div>
         </div>
@@ -145,7 +140,7 @@ export default function DeveloperDashboardPage() {
                   <th className="num">Percakapan</th>
                   <th className="num">Input token</th>
                   <th className="num">Consumed token</th>
-                  <th className="num">Estimasi biaya</th>
+                  <th className="num">Biaya</th>
                 </tr>
               </thead>
               <tbody>
@@ -220,7 +215,7 @@ export default function DeveloperDashboardPage() {
                                               <th className="num">Input</th>
                                               <th className="num">Consumed</th>
                                               <th className="num">Panggilan</th>
-                                              <th className="num">Estimasi biaya</th>
+                                              <th className="num">Biaya</th>
                                             </tr>
                                           </thead>
                                           <tbody>

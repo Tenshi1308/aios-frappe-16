@@ -228,14 +228,7 @@ def handle_api_request():
                     "outputTokens": total_out,
                     "costIdr": round(total_cost),
                 })
-            return json_response({
-                "pricing": {
-                    "per1kInputIdr": 50,
-                    "per1kOutputIdr": 150,
-                    "currency": "IDR",
-                },
-                "companies": companies,
-            })
+            return json_response({"companies": companies})
 
         # GET /api/monitoring/usage/<user> (Drill-down per branch)
         elif len(parts) == 4 and parts[2] == "usage" and method == "GET":
