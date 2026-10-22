@@ -79,18 +79,7 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 
 ## 4. Urutan pengerjaan
 
-Urutan lengkap per tahap ada di `docs/05.1` §1. Ringkasnya:
-
-| Tahap | Item (urut) | Status |
-|---|---|---|
-| 1 | `#0` → `#1` → `C` | ✅ |
-| 2 | `#13` → `#4a-1` → `#4a-2` | ✅ |
-| 3 | `#7a` → `#7b` | 🟡 |
-| 4 | `#4d` → `#8` → H2 → H4 → H5 | ⬜ |
-| 5 | `#11` (H3) — paralel sejak `#4a-2`, tidak memblokir `#8` | ⬜ |
-| 6 | `#12` — shell setelah `#7b`; wiring agent setelah `#8` | ⬜ |
-| 7 | `#4b` → `#4c` → `#5` → `#9` | 🟡 |
-| 8 | `#2` → `#3` → `#6` → `#10` | ⬜ |
+Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan-fondasi.md).
 
 ---
 
