@@ -99,8 +99,11 @@ def _resolve_company_name(company: str | None = None) -> str:
     if conf_company and str(conf_company).strip():
         return str(conf_company).strip()
     default_comp = frappe.defaults.get_global_default("company")
-    if default_comp and not str(default_comp).endswith("(Demo)"):
-        return str(default_comp).strip()
+    if default_comp:
+        name = str(default_comp).strip()
+        if name.endswith(" (Demo)"):
+            name = name[: -len(" (Demo)")].strip()
+        return name
     return DEFAULT_BASE_COMPANY
 
 
@@ -138,7 +141,8 @@ def _resolve_country_and_currency(
     resolved_currency = (
         (currency or "").strip()
         or frappe.conf.get("aios_poc_currency")
-        or frappe.db.get_value("Country", resolved_country, "default_currency")
+        or frappe.db.get_single_value("Global Defaults", "default_currency")
+        or frappe.db.get_value("Company", {}, "default_currency")
     )
     if not resolved_currency or not frappe.db.exists("Currency", resolved_currency):
         frappe.throw(
@@ -209,7 +213,7 @@ def status(company: str | None = None) -> dict:
 
     _log("=== STATUS SITE ===")
     _log(f"site      : {frappe.local.site}")
-    _log(f"company   : {frappe.defaults.get_default('company') or '(belum diset)'}")
+    _log(f"company   : {frappe.defaults.get_global_default('company') or '(belum diset)'}")
     _log(f"fiscal yr : {_active_fiscal_years() or '(tidak ada yang aktif)'}")
     _log("")
 
@@ -495,7 +499,7 @@ def run(
     _log("")
     _log("=== RINGKASAN ===")
     _log(f"Company demo : {demo_company}")
-    _log(f"Company aktif: {frappe.defaults.get_default('company')}")
+    _log(f"Company aktif: {frappe.defaults.get_global_default('company')}")
 
     item = frappe.db.count("Item")
     cust = frappe.db.count("Customer")
