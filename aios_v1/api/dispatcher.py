@@ -420,7 +420,7 @@ def handle_api_request():
             # GET /api/chat/<branch>/conversations
             if action == "conversations" and method == "GET" and len(parts) == 4:
                 sess = require_session()
-                convs = frappe.get_all(
+                convs = frappe.get_list(
                     "AIOS Conversation",
                     filters={"user": sess["user"], "branch": branch},
                     fields=["name as id", "title", "modified as updatedAt"],
@@ -438,7 +438,7 @@ def handle_api_request():
                 conv = frappe.get_doc("AIOS Conversation", conv_id)
                 if not frappe.has_permission("AIOS Conversation", "read", doc=conv):
                     return json_response({"error": "Percakapan tidak ditemukan"}, 404)
-                msgs = frappe.get_all(
+                msgs = frappe.get_list(
                     "AIOS Message",
                     filters={"conversation": conv_id},
                     fields=["name as id", "role", "worker_key as workerKey", "content", "creation as createdAt"],

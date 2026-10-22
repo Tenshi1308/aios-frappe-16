@@ -3,11 +3,9 @@
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
-import unittest
-
 import frappe
 
-from aios_v1.permissions import ensure_aios_permissions
+from aios_v1.permissions import ERP_CLIENT_DOCTYPES, ensure_aios_permissions
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -24,11 +22,11 @@ class TestPermissionInstaller(IntegrationTestCase):
         frappe.set_user("Administrator")
         frappe.db.rollback()
 
-    def _perm(self, doctype, role):
+    def _perm(self, doctype, role, table="Custom DocPerm"):
         return frappe.db.get_value(
-            "Custom DocPerm",
+            table,
             {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0},
-            ["read", "write", "create", "delete"],
+            ["read", "write", "create", "delete", "report"],
             as_dict=True,
         )
 
@@ -59,10 +57,10 @@ class TestPermissionInstaller(IntegrationTestCase):
 
         ensure_aios_permissions()
 
-        for role in ("AIOS Client", "AIOS Admin"):
-            perm = self._perm("AIOS Conversation", role)
-            self.assertTrue(perm, role)
-            self.assertEqual(perm["read"], 1, role)
+        perm = self._perm("AIOS Conversation", "AIOS Client")
+        self.assertTrue(perm)
+        self.assertEqual(perm["read"], 1)
+        self.assertIsNone(self._perm("AIOS Conversation", "AIOS Admin"))
 
     def test_client_full_on_owned_doctype(self):
         perm = self._perm("AIOS Conversation", "AIOS Client")
@@ -78,8 +76,49 @@ class TestPermissionInstaller(IntegrationTestCase):
         self.assertEqual(perm["create"], 0)
         self.assertEqual(perm["delete"], 0)
 
-    def test_admin_full_on_owned_doctype(self):
-        perm = self._perm("Pending Action Draft", "AIOS Admin")
+    def test_client_read_only_on_token_usage(self):
+        perm = self._perm("AIOS Token Usage", "AIOS Client")
         self.assertTrue(perm)
-        for ptype in ("read", "write", "create", "delete"):
-            self.assertEqual(perm[ptype], 1, ptype)
+        self.assertEqual(perm["read"], 1)
+        self.assertEqual(perm["write"], 0)
+        self.assertEqual(perm["create"], 0)
+        self.assertEqual(perm["delete"], 0)
+
+    def test_control_reads_user_and_token_usage(self):
+        user_perm = self._perm("User", "AIOS Control")
+        self.assertTrue(user_perm)
+        self.assertEqual(user_perm["read"], 1)
+        self.assertEqual(user_perm["write"], 0)
+
+        token_perm = self._perm("AIOS Token Usage", "AIOS Control")
+        self.assertTrue(token_perm)
+        self.assertEqual(token_perm["read"], 1)
+        self.assertEqual(token_perm["write"], 0)
+
+    def test_control_has_no_setting_or_erpnext(self):
+        self.assertIsNone(self._perm("AIOS Setting", "AIOS Control"))
+        self.assertIsNone(self._perm("Sales Order", "AIOS Control"))
+
+    def test_no_admin_perms(self):
+        ensure_aios_permissions()
+        for doctype in ("AIOS Conversation", "Pending Action Draft", "AIOS Token Usage"):
+            self.assertIsNone(self._perm(doctype, "AIOS Admin"), doctype)
+        self.assertIsNone(self._perm("Sales Order", "AIOS Admin"))
+
+    def test_client_erpnext_read_report(self):
+        for doctype in ERP_CLIENT_DOCTYPES:
+            perm = self._perm(doctype, "AIOS Client")
+            self.assertTrue(perm, doctype)
+            self.assertEqual(perm["read"], 1, doctype)
+            self.assertEqual(perm["report"], 1, doctype)
+            self.assertEqual(perm["write"], 0, doctype)
+            self.assertEqual(perm["create"], 0, doctype)
+            self.assertEqual(perm["delete"], 0, doctype)
+
+    def test_system_manager_setting_read_only(self):
+        perm = self._perm("AIOS Setting", "System Manager", table="DocPerm")
+        self.assertTrue(perm)
+        self.assertEqual(perm["read"], 1)
+        self.assertEqual(perm["write"], 0)
+        self.assertEqual(perm["create"], 0)
+        self.assertEqual(perm["delete"], 0)

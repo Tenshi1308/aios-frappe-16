@@ -5,8 +5,9 @@ def expire_old_drafts():
     """Cron job: Ubah status draft yang melewati batas expires_at jadi EXPIRED."""
     now = now_datetime()
     drafts = frappe.get_all(
-        "Pending Action Draft", 
-        filters={"status": "PENDING_APPROVAL", "expires_at": ["<", now]}
+        "Pending Action Draft",
+        filters={"status": "PENDING_APPROVAL", "expires_at": ["<", now]},
+        limit_page_length=0,
     )
     for d in drafts:
         frappe.db.set_value("Pending Action Draft", d.name, "status", "EXPIRED")

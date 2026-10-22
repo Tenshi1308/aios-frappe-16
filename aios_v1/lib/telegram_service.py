@@ -307,7 +307,8 @@ def sync_all_pending_leads() -> int:
     sessions = frappe.get_all(
         "AIOS Telegram Session",
         filters={"lead": ("in", ["", None])},
-        fields=["name", "chat_id", "first_name", "last_name", "username", "last_message"]
+        fields=["name", "chat_id", "first_name", "last_name", "username", "last_message"],
+        limit_page_length=0,
     )
 
     count = 0

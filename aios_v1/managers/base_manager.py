@@ -13,7 +13,7 @@ class BaseManager:
         return self.branch.get("manager_persona") or f"Anda adalah AI Manager bidang {self.branch['name']} di AIOS — manajer yang mengoordinasikan seluruh spesialis/worker di bidang ini."
 
     def ensure_conversation(self, user: str) -> int:
-        existing = frappe.get_all(
+        existing = frappe.get_list(
             "AIOS Conversation",
             filters={"user": user, "branch": self.branch["key"]},
             order_by="modified desc",
@@ -124,7 +124,7 @@ class BaseManager:
         frappe.db.commit()
 
         # 3. Ambil Riwayat Percakapan
-        recent_messages = frappe.get_all(
+        recent_messages = frappe.get_list(
             "AIOS Message",
             filters={"conversation": str(conversation_id)},
             fields=["role", "worker_key", "content"],

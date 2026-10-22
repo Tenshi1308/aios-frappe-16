@@ -50,11 +50,17 @@ class TestSetupHooks(unittest.TestCase):
 
     def test_roles_and_profiles(self):
         src = SETUP.read_text(encoding="utf-8")
-        self.assertIn('"AIOS Admin": 1', src)
+        self.assertIn('"AIOS Control": 0', src)
         self.assertIn('"AIOS Client": 0', src)
-        self.assertIn("AIOS Admin Profile", src)
+        self.assertNotIn('"AIOS Admin": 1', src)
+        self.assertNotIn('"AIOS Admin Profile"', src)
         self.assertIn("AIOS Client Profile", src)
         self.assertIn("role.desk_access = desk_access", src)
+
+    def test_aios_status_has_no_default(self):
+        src = SETUP.read_text(encoding="utf-8")
+        self.assertNotIn('"default": "Pending Provisioning"', src)
+        self.assertIn('"default": None', src)
 
     def test_administrator_never_guarded(self):
         src = SETUP.read_text(encoding="utf-8")

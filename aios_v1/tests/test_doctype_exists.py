@@ -38,6 +38,32 @@ class TestTahapCDoctypes(unittest.TestCase):
     def test_message_has_no_user(self):
         self.assertNotIn("user", _fields("aios_message"))
 
+    def test_token_usage_has_no_conversation(self):
+        fields = _fields("aios_token_usage")
+        for name in (
+            "user",
+            "provider",
+            "model",
+            "branch",
+            "agent",
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "cost",
+        ):
+            self.assertIn(name, fields, name)
+        self.assertNotIn("conversation", fields)
+        self.assertEqual(fields["user"]["fieldtype"], "Link")
+        self.assertEqual(fields["user"]["options"], "User")
+        self.assertTrue(fields["user"].get("reqd"))
+
+    def test_setting_has_site_quota_fields(self):
+        fields = _fields("aios_setting")
+        self.assertIn("default_company", fields)
+        self.assertIn("site_token_limit", fields)
+        self.assertIn("site_tokens_used", fields)
+        self.assertTrue(fields["site_tokens_used"].get("read_only"))
+
     def test_permission_hooks_registered(self):
         src = HOOKS.read_text(encoding="utf-8")
         self.assertIn("permission_query_conditions = {", src)
@@ -47,6 +73,7 @@ class TestTahapCDoctypes(unittest.TestCase):
             "AIOS Agent State",
             "Pending Action Draft",
             "AIOS Message",
+            "AIOS Token Usage",
         ):
             self.assertIn(doctype, src)
         self.assertIn("aios_v1.permissions.set_draft_user", src)

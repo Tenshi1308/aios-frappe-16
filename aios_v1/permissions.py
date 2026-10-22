@@ -11,17 +11,41 @@ OWNED_DOCTYPES = (
 	"AIOS Conversation",
 	"AIOS Agent State",
 	"Pending Action Draft",
+	"AIOS Token Usage",
 )
 
 # DocPerm dasar per role. `has_permission` hanya bisa MENOLAK, jadi izin dasar
-# harus tetap ada (docs/03 §2.1). Matriks penuh menyusul di #4b.
+# harus tetap ada (docs/03 §2.1).
 CLIENT_PERMS = {
 	"AIOS Conversation": ("read", "write", "create", "delete"),
 	"AIOS Agent State": ("read", "write", "create", "delete"),
 	"Pending Action Draft": ("read", "write", "create", "delete"),
 	"AIOS Message": ("read",),
+	"AIOS Token Usage": ("read",),
 }
-ADMIN_PERMS = ("read", "write", "create", "delete")
+
+# Role layanan control plane: hanya baca User dan log token.
+CONTROL_PERMS = {
+	"User": ("read",),
+	"AIOS Token Usage": ("read",),
+}
+
+# DocType ERPNext target untuk plugin baca/laporan. `AIOS Client` hanya
+# read + report; tulis tetap lewat Pending Action Draft.
+ERP_CLIENT_DOCTYPES = (
+	"Sales Order",
+	"Sales Invoice",
+	"Delivery Note",
+	"Payment Entry",
+	"Journal Entry",
+	"GL Entry",
+	"Customer",
+	"Supplier",
+	"Item",
+	"Company",
+	"Account",
+)
+ERP_CLIENT_PERMS = ("read", "report")
 
 
 def _roles(user: str) -> set:
@@ -61,6 +85,10 @@ def agent_state_query_conditions(user=None, doctype=None) -> str:
 
 def draft_query_conditions(user=None, doctype=None) -> str:
 	return _owned_condition(user, "Pending Action Draft")
+
+
+def token_usage_query_conditions(user=None, doctype=None) -> str:
+	return _owned_condition(user, "AIOS Token Usage")
 
 
 def message_query_conditions(user=None, doctype=None) -> str:
@@ -118,10 +146,40 @@ def _ensure_role_perm(doctype: str, role: str, ptypes) -> None:
 		update_permission_property(doctype, role, 0, ptype, 1, validate=False)
 
 
+def _remove_role_perm(doctype: str, role: str) -> None:
+	"""Hapus sisa DocPerm role dari site klien (idempoten)."""
+	if not frappe.db.exists("DocType", doctype):
+		return
+	if not frappe.db.exists(
+		"Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0}
+	):
+		return
+	frappe.db.delete(
+		"Custom DocPerm",
+		{"parent": doctype, "role": role, "permlevel": 0, "if_owner": 0},
+	)
+	frappe.clear_cache(doctype=doctype)
+
+
 def ensure_aios_permissions() -> None:
-	"""Pasang DocPerm dasar `AIOS Client`/`AIOS Admin` (idempoten)."""
+	"""Pasang matriks DocPerm dasar `AIOS Client`/`AIOS Control` (idempoten)."""
 	for doctype, ptypes in CLIENT_PERMS.items():
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		_ensure_role_perm(doctype, "AIOS Client", ptypes)
-		_ensure_role_perm(doctype, "AIOS Admin", ADMIN_PERMS)
+
+	for doctype in ERP_CLIENT_DOCTYPES:
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		_ensure_role_perm(doctype, "AIOS Client", ERP_CLIENT_PERMS)
+
+	for doctype, ptypes in CONTROL_PERMS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		_ensure_role_perm(doctype, "AIOS Control", ptypes)
+
+	# AIOS Admin tidak dipasang di site klien. Bersihkan sisa baris lama.
+	for doctype in set(CLIENT_PERMS) | set(ERP_CLIENT_DOCTYPES):
+		_remove_role_perm(doctype, "AIOS Admin")
+
+	frappe.clear_cache()

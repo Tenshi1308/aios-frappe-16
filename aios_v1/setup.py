@@ -30,7 +30,7 @@ USER_CUSTOM_FIELDS = {
             "fieldtype": "Select",
             "label": "AIOS Status",
             "options": "\nPending Provisioning\nActive\nSuspended",
-            "default": "Pending Provisioning",
+            "default": None,
             "insert_after": "aios_persona_context",
         },
         {
@@ -56,12 +56,11 @@ USER_CUSTOM_FIELDS = {
 }
 
 AIOS_ROLES = {
-    "AIOS Admin": 1,
+    "AIOS Control": 0,
     "AIOS Client": 0,
 }
 
 AIOS_ROLE_PROFILES = {
-    "AIOS Admin Profile": ["AIOS Admin"],
     "AIOS Client Profile": ["AIOS Client"],
 }
 
@@ -99,6 +98,11 @@ def _ensure_roles():
             role.role_name = role_name
         role.desk_access = desk_access
         role.save(ignore_permissions=True)
+
+    # Role lama dari site yang pernah memakai AIOS Admin: jangan biarkan
+    # punya akses Desk. Role ini hanya untuk control plane di #11.
+    if frappe.db.exists("Role", "AIOS Admin"):
+        frappe.db.set_value("Role", "AIOS Admin", "desk_access", 0)
 
 
 def _ensure_role_profiles():
