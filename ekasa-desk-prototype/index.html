@@ -1,0 +1,1091 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<title>Ekasa Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-screen OS shell — desktop area over a centred, Windows-11-style taskbar; flyouts rise from the taskbar, agent panel docks right. */
+:root{
+  --font-ui:'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --wall-base:#dce6ea; --wall-1:#f2c27f; --wall-2:#86c7c1; --wall-3:#b8cbe4;
+  --glass:rgba(246,248,250,.74); --glass-strong:rgba(249,250,251,.9); --glass-line:rgba(20,32,44,.10);
+  --surface:#ffffff; --surface-2:#f2f5f7; --line:#e0e6eb;
+  --fg:#14202c; --muted:#56687a; --faint:#8696a5;
+  --accent:#c97d12; --accent-strong:#a8650a; --accent-soft:rgba(201,125,18,.13); --on-accent:#1b1206;
+  --ok:#1d8656; --ok-soft:rgba(29,134,86,.12); --warn:#b26f08; --warn-soft:rgba(178,111,8,.13); --bad:#c23a49; --bad-soft:rgba(194,58,73,.11);
+  --hover:rgba(20,32,44,.06); --press:rgba(20,32,44,.1);
+  --shadow:0 22px 60px -14px rgba(16,28,40,.38), 0 2px 8px rgba(16,28,40,.08);
+  --shadow-sm:0 6px 20px -8px rgba(16,28,40,.3);
+  --taskbar-h:52px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --wall-base:#0b131b; --wall-1:#6e430f; --wall-2:#0d5552; --wall-3:#1b2c4b;
+  --glass:rgba(20,28,38,.72); --glass-strong:rgba(22,30,40,.9); --glass-line:rgba(255,255,255,.08);
+  --surface:#16202a; --surface-2:#1d2833; --line:#283643;
+  --fg:#e7edf2; --muted:#9bacba; --faint:#6b7d8c;
+  --accent:#f0a43a; --accent-strong:#f6bb63; --accent-soft:rgba(240,164,58,.16); --on-accent:#1b1206;
+  --ok:#43c08a; --ok-soft:rgba(67,192,138,.14); --warn:#f0b443; --warn-soft:rgba(240,180,67,.14); --bad:#f2727e; --bad-soft:rgba(242,114,126,.14);
+  --hover:rgba(255,255,255,.07); --press:rgba(255,255,255,.12);
+  --shadow:0 24px 70px -14px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.4);
+  --shadow-sm:0 8px 24px -8px rgba(0,0,0,.6);
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --wall-base:#0b131b; --wall-1:#6e430f; --wall-2:#0d5552; --wall-3:#1b2c4b;
+  --glass:rgba(20,28,38,.72); --glass-strong:rgba(22,30,40,.9); --glass-line:rgba(255,255,255,.08);
+  --surface:#16202a; --surface-2:#1d2833; --line:#283643;
+  --fg:#e7edf2; --muted:#9bacba; --faint:#6b7d8c;
+  --accent:#f0a43a; --accent-strong:#f6bb63; --accent-soft:rgba(240,164,58,.16); --on-accent:#1b1206;
+  --ok:#43c08a; --ok-soft:rgba(67,192,138,.14); --warn:#f0b443; --warn-soft:rgba(240,180,67,.14); --bad:#f2727e; --bad-soft:rgba(242,114,126,.14);
+  --hover:rgba(255,255,255,.07); --press:rgba(255,255,255,.12);
+  --shadow:0 24px 70px -14px rgba(0,0,0,.7), 0 2px 8px rgba(0,0,0,.4);
+  --shadow-sm:0 8px 24px -8px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--wall-base);color:var(--fg);font-family:var(--font-ui);font-size:14px;-webkit-font-smoothing:antialiased}
+#os{height:100%}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.os{height:100%;position:relative;overflow:hidden}
+
+/* ---------- BOOT (deliberately always dark, like a real firmware screen) ---------- */
+.boot{position:absolute;inset:0;background:#000;color:#e6ebef;display:grid;place-items:center;cursor:default;user-select:none}
+.boot-center{display:flex;flex-direction:column;align-items:center;gap:18px;transform:translateY(-4vh)}
+.boot-mark{color:#e6ebef;animation:breathe 2.4s ease-in-out infinite}
+.boot-word{font-weight:800;font-size:30px;letter-spacing:-.02em}
+.boot-word span{font-weight:500;color:#f0a43a;margin-left:6px}
+.boot-bar{width:min(280px,70vw);height:4px;border-radius:4px;background:#1c232a;overflow:hidden}
+.boot-bar i{display:block;height:100%;background:linear-gradient(90deg,#f0a43a,#f6c779);border-radius:4px;transition:width .12s linear}
+.boot-status{font-family:var(--font-mono);font-size:12px;color:#8d9aa6;min-height:16px}
+.boot-log{position:absolute;left:max(16px,4vw);bottom:56px;margin:0;padding:0;list-style:none;font-family:var(--font-mono);font-size:11.5px;line-height:1.75;color:#5f6c78;max-width:calc(100% - 32px)}
+.boot-log b{color:#43c08a;font-weight:500}
+.boot-skip{position:absolute;bottom:22px;left:0;right:0;text-align:center;font-size:12px;color:#4d5964}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
+
+/* ---------- WALLPAPER ---------- */
+.wall{background:
+  radial-gradient(60% 70% at 12% 92%, var(--wall-1) 0%, transparent 62%),
+  radial-gradient(55% 65% at 88% 12%, var(--wall-2) 0%, transparent 62%),
+  radial-gradient(70% 60% at 62% 95%, var(--wall-3) 0%, transparent 66%),
+  var(--wall-base)}
+
+/* ---------- LOCK ---------- */
+.lock{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:10vh 16px 28px;animation:fade .5s ease}
+.lock-clock{text-align:center}
+.lock-clock .t{font-size:clamp(64px,12vw,112px);font-weight:700;letter-spacing:-.04em;line-height:1;font-variant-numeric:tabular-nums}
+.lock-clock .d{font-size:18px;font-weight:500;margin-top:10px;color:var(--muted)}
+.lock-card{width:min(340px,100%);display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 24px 20px;border-radius:20px;background:var(--glass);backdrop-filter:blur(24px) saturate(1.3);-webkit-backdrop-filter:blur(24px) saturate(1.3);border:1px solid var(--glass-line);box-shadow:var(--shadow)}
+.lock-name{font-size:20px;font-weight:700;margin-top:8px}
+.lock-mail{font-size:13px;color:var(--muted);margin-bottom:12px}
+.lock-field{display:flex;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.lock-field input{flex:1;min-width:0;border:0;background:transparent;padding:11px 12px;font:inherit;color:var(--fg)}
+.lock-field input:focus{outline:none}
+.lock-field:focus-within{border-color:var(--accent)}
+.lock-go{width:44px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent)}
+.lock-hint{font-size:12px;color:var(--faint);margin-top:6px}
+.lock-foot{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:8px;text-align:center}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+
+/* ---------- AVATAR / TILES / CHIPS ---------- */
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;background:var(--accent);color:var(--on-accent);flex:none}
+.avatar.xl{width:84px;height:84px;font-size:30px}
+.tile{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;color:#fff;flex:none;box-shadow:inset 0 -2px 0 rgba(0,0,0,.14)}
+.tile.sm{width:22px;height:22px;border-radius:6px}
+.tile.lg{width:44px;height:44px;border-radius:12px}
+.tile.xl{width:48px;height:48px;border-radius:13px}
+.agent-dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:700;font-size:12px;flex:none}
+.agent-dot.xs{width:18px;height:18px;font-size:10px}
+.agent-dot.lg{width:36px;height:36px;font-size:15px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:12.5px;font-weight:500;color:var(--fg);text-align:left}
+.chip:hover{border-color:var(--accent);background:var(--accent-soft)}
+.chip.on{background:var(--fg);color:var(--surface);border-color:var(--fg)}
+.chip.act{border-color:var(--accent);color:var(--accent-strong);font-weight:600}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;font-weight:600;font-size:13px}
+.btn.ghost{border:1px solid var(--line);background:var(--surface)}
+.btn.ghost:hover{background:var(--hover)}
+.btn.agent{background:var(--accent);color:var(--on-accent)}
+.btn.agent:hover{background:var(--accent-strong)}
+.icon-btn{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--muted)}
+.icon-btn:hover{background:var(--hover);color:var(--fg)}
+kbd{font-family:var(--font-mono);font-size:11px;padding:2px 6px;border-radius:5px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted)}
+.grow{flex:1}
+
+/* ---------- DESKTOP ---------- */
+.desktop{position:absolute;inset:0;display:grid;grid-template-rows:1fr var(--taskbar-h);animation:fade .45s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.desk-area{position:relative;overflow:hidden}
+.desk-icons{position:absolute;top:14px;left:10px;display:grid;grid-auto-flow:row;gap:6px;width:88px}
+.desk-icon{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px 4px;border-radius:8px;font-size:12px;font-weight:600;text-align:center;color:var(--fg);border:1px solid transparent}
+.desk-icon span:last-child{text-shadow:0 1px 2px var(--glass)}
+.desk-icon:hover{background:var(--glass);border-color:var(--glass-line)}
+.desk-icon.sel{background:var(--accent-soft);border-color:var(--accent)}
+.desk-hint{position:absolute;right:18px;bottom:14px;font-size:12px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;justify-content:flex-end}
+.desk-hint span{display:flex;align-items:center;gap:6px}
+
+/* ---------- WINDOWS ---------- */
+.win-layer{position:absolute;inset:0;z-index:1;pointer-events:none}
+.win{pointer-events:auto;position:absolute;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);overflow:hidden;animation:winIn .18s ease-out}
+.win:not(.active){box-shadow:var(--shadow-sm)}
+.win.max{border-radius:0;border-width:0}
+@keyframes winIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+.win-title{height:40px;display:flex;align-items:center;gap:10px;padding-left:12px;background:var(--surface-2);border-bottom:1px solid var(--line);cursor:default;touch-action:none;user-select:none;flex:none}
+.win:not(.active) .win-title{color:var(--muted)}
+.win-name{font-weight:600;font-size:13px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win-ctrls{display:flex;height:100%}
+.win-ctrls button{width:44px;height:100%;display:grid;place-items:center;color:var(--muted)}
+.win-ctrls button:hover{background:var(--hover);color:var(--fg)}
+.win-ctrls button.close:hover{background:#c42b1c;color:#fff}
+.win-tools{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap;flex:none}
+.crumbs{display:flex;align-items:center;gap:4px;font-weight:600;color:var(--muted);min-width:0}
+.crumbs button{padding:4px 6px;border-radius:6px;font-weight:600}
+.crumbs button:hover{background:var(--hover);color:var(--fg)}
+.crumbs span{color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.win-body{flex:1;overflow:auto;padding:18px 18px 24px;min-height:0}
+.resize{position:absolute;right:0;bottom:0;width:16px;height:16px;cursor:nwse-resize;touch-action:none}
+.win.max .resize{display:none}
+
+.ws{display:flex;flex-direction:column;gap:14px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.card{padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.card-l{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.card-v{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
+.card-d{font-size:12px;font-weight:600;margin-top:4px}
+.card-d span{font-weight:400;color:var(--faint)}
+.card-d.up{color:var(--ok)} .card-d.down{color:var(--bad)}
+.sec{margin:6px 0 0;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.shortcuts{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.shortcut{display:flex;align-items:center;gap:10px;padding:11px 12px;border-radius:9px;border:1px solid var(--line);text-align:left;font-weight:600;font-size:13px}
+.shortcut:hover{border-color:var(--accent);background:var(--accent-soft)}
+.shortcut svg{color:var(--muted);flex:none}
+.shortcut span{flex:1;min-width:0}
+.shortcut em{font-style:normal;font-size:12px;color:var(--faint);font-weight:500;font-variant-numeric:tabular-nums}
+.ask-card{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;background:var(--accent-soft);border:1px dashed var(--accent)}
+.ask-card > div{flex:1;min-width:180px;font-size:13px}
+
+.list{display:flex;flex-direction:column;gap:12px}
+.filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.filters .count{margin-left:auto;font-size:12px;color:var(--muted)}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th{text-align:left;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:var(--surface-2);padding:9px 12px;white-space:nowrap}
+td{padding:10px 12px;border-top:1px solid var(--line);white-space:nowrap}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.id{font-family:var(--font-mono);font-size:12px;color:var(--accent-strong)}
+tbody tr:hover{background:var(--hover);cursor:pointer}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;background:var(--hover);color:var(--muted)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.bad{background:var(--bad-soft);color:var(--bad)}
+
+/* ---------- TASKBAR ---------- */
+.taskbar{position:relative;z-index:50;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;padding:0 8px;background:var(--glass-strong);backdrop-filter:blur(26px) saturate(1.4);-webkit-backdrop-filter:blur(26px) saturate(1.4);border-top:1px solid var(--glass-line)}
+.tb-left,.tb-right{display:flex;align-items:center;min-width:0}
+.tb-right{justify-content:flex-end;gap:2px}
+.tb-center{display:flex;align-items:center;gap:4px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.tb-center::-webkit-scrollbar{display:none}
+.tb-btn{position:relative;width:42px;height:42px;border-radius:8px;display:grid;place-items:center;flex:none;color:var(--fg)}
+.tb-btn:hover,.tb-btn.on{background:var(--hover)}
+.tb-btn:active{background:var(--press)}
+.tb-btn.start{color:var(--fg)}
+.tb-btn.agent-btn{color:var(--accent-strong)}
+.tb-btn.app::after{content:"";position:absolute;bottom:3px;left:50%;width:0;height:3px;border-radius:3px;background:var(--faint);transform:translateX(-50%);transition:width .15s}
+.tb-btn.app.running::after{width:6px}
+.tb-btn.app.active::after{width:16px;background:var(--accent)}
+.tb-btn.app.active{background:var(--hover)}
+.tb-search{display:flex;align-items:center;gap:8px;height:34px;width:240px;padding:0 12px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:13px;flex:none;margin:0 4px}
+.tb-search:hover{border-color:var(--faint)}
+.tb-sep{width:1px;height:24px;background:var(--line);margin:0 4px;flex:none}
+.tb-site{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;font-size:12px;text-align:left;min-width:0}
+.tb-site:hover{background:var(--hover)}
+.tb-site b{display:block;font-weight:700;font-size:12.5px}
+.tb-site small{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tray{display:flex;align-items:center;gap:10px;height:42px;padding:0 10px;border-radius:8px;color:var(--fg)}
+.tray:hover,.clock:hover{background:var(--hover)}
+.tray .lang{font-size:12px;font-weight:600}
+.bell{position:relative;display:grid}
+.bell i{position:absolute;top:-6px;right:-8px;min-width:16px;height:16px;border-radius:8px;background:var(--accent);color:var(--on-accent);font-size:10px;font-style:normal;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.clock{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;height:42px;padding:0 10px;border-radius:8px;font-size:12px;line-height:1.35;font-variant-numeric:tabular-nums}
+
+/* ---------- FLYOUTS ---------- */
+.flyout{position:absolute;z-index:60;bottom:calc(var(--taskbar-h) + 10px);left:50%;transform:translateX(-50%);width:min(660px,calc(100% - 16px));max-height:calc(100% - var(--taskbar-h) - 20px);display:flex;flex-direction:column;background:var(--glass-strong);backdrop-filter:blur(30px) saturate(1.4);-webkit-backdrop-filter:blur(30px) saturate(1.4);border:1px solid var(--glass-line);border-radius:14px;box-shadow:var(--shadow);animation:rise .2s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{opacity:0;transform:translate(-50%,14px)}to{opacity:1;transform:translate(-50%,0)}}
+.flyout.right{left:auto;right:10px;transform:none;width:min(380px,calc(100% - 20px));animation:riseR .2s cubic-bezier(.2,.8,.2,1)}
+@keyframes riseR{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.fl-scroll{overflow-y:auto;padding:20px 24px 8px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.fl-search{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted);text-align:left;width:100%}
+.fl-search span{flex:1}
+.fl-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:6px}
+.fl-head h4{margin:0;font-size:13px;font-weight:700}
+.fl-head span{font-size:12px;color:var(--muted)}
+.mod-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.mod{display:flex;flex-direction:column;align-items:center;gap:7px;padding:10px 2px;border-radius:8px;font-size:12px;font-weight:600;text-align:center;line-height:1.2}
+.mod:hover{background:var(--hover)}
+.agent-row{display:flex;gap:6px;flex-wrap:wrap}
+.agent-pill{display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;font-weight:600}
+.agent-pill:hover{border-color:var(--accent)}
+.recent{display:grid;grid-template-columns:1fr 1fr;gap:4px}
+.recent button,.notif-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;text-align:left;min-width:0}
+.recent button:hover,.notif-item:hover{background:var(--hover)}
+.r-main{display:flex;flex-direction:column;min-width:0}
+.r-main b{font-size:12.5px;font-weight:600;font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r-main small{font-size:12px;color:var(--muted)}
+.start-foot{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-top:1px solid var(--line);background:var(--hover);border-radius:0 0 14px 14px;margin-top:8px}
+.me{display:flex;align-items:center;gap:10px}
+.me b{display:block;font-size:13px}
+.me small{display:block;font-size:12px;color:var(--muted)}
+.power-wrap{position:relative}
+.power-menu{position:absolute;right:0;bottom:48px;min-width:160px;padding:6px;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column}
+.power-menu button{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;text-align:left;font-size:13px}
+.power-menu button:hover{background:var(--hover)}
+
+.fl-input{display:flex;align-items:center;gap:10px;padding:0 16px;height:46px;border-radius:999px;background:var(--surface);border:1px solid var(--accent);color:var(--muted)}
+.fl-input input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:15px;color:var(--fg)}
+.fl-input input:focus{outline:none}
+.sr-group h5{margin:4px 0 6px;font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.sr-item{display:flex;align-items:center;gap:12px;width:100%;padding:8px 10px;border-radius:8px;text-align:left}
+.sr-item:hover,.sr-item.first{background:var(--hover)}
+.sr-item .t{flex:1;min-width:0;font-weight:600}
+.sr-item small{color:var(--muted);font-size:12px;font-weight:500}
+.sr-item .id{font-family:var(--font-mono);font-size:12.5px}
+.sr-empty{display:flex;flex-wrap:wrap;gap:6px}
+
+.notif-item{width:100%;align-items:flex-start}
+.notif-item .r-main b{font-family:var(--font-ui);white-space:normal}
+.notif-item .when{margin-left:auto;font-size:11.5px;color:var(--faint);white-space:nowrap;flex:none}
+
+/* ---------- AGENT PANEL ---------- */
+.agent-panel{position:absolute;z-index:55;top:10px;right:10px;bottom:calc(var(--taskbar-h) + 10px);width:min(410px,calc(100% - 20px));display:flex;flex-direction:column;background:var(--glass-strong);backdrop-filter:blur(30px) saturate(1.4);-webkit-backdrop-filter:blur(30px) saturate(1.4);border:1px solid var(--glass-line);border-radius:14px;box-shadow:var(--shadow);animation:slideIn .22s cubic-bezier(.2,.8,.2,1);overflow:hidden}
+@keyframes slideIn{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+.ap-head{display:flex;align-items:center;gap:10px;padding:14px 12px 10px 16px}
+.ap-title{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.ap-title b{display:block;font-size:14.5px}
+.ap-title small{display:block;font-size:12px;color:var(--muted)}
+.ap-tabs{display:flex;gap:4px;padding:0 12px 10px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line)}
+.ap-tabs::-webkit-scrollbar{display:none}
+.ap-tabs button{display:flex;align-items:center;gap:6px;padding:5px 10px 5px 5px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap;color:var(--muted);border:1px solid transparent}
+.ap-tabs button:hover{background:var(--hover);color:var(--fg)}
+.ap-tabs button.on{background:var(--surface);border-color:var(--line);color:var(--fg)}
+.ap-thread{flex:1;overflow-y:auto;padding:14px 14px 6px;display:flex;flex-direction:column;gap:12px;min-height:0}
+.msg{display:flex;flex-direction:column;gap:5px;max-width:92%}
+.msg.user{align-self:flex-end}
+.msg.agent{align-self:flex-start}
+.msg-who{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;color:var(--muted)}
+.bubble{padding:10px 13px;border-radius:14px;background:var(--surface);border:1px solid var(--line);font-size:13.5px;line-height:1.5;min-width:0}
+.bubble p{margin:0}
+.msg.user .bubble{background:var(--accent);color:var(--on-accent);border-color:transparent;border-bottom-right-radius:4px}
+.msg.agent .bubble{border-top-left-radius:4px}
+.mini-table{margin-top:10px;overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.mini-table table{font-size:12px}
+.mini-table th{font-size:10.5px;padding:6px 8px}
+.mini-table td{padding:6px 8px}
+.msg-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.routed{align-self:center;font-size:11.5px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;background:var(--hover)}
+.typing{display:flex;gap:4px;padding:13px 14px}
+.typing i{width:6px;height:6px;border-radius:50%;background:var(--faint);animation:blink 1.1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes blink{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.ap-prompts{display:flex;gap:6px;flex-wrap:wrap;padding:6px 14px 8px}
+.ap-ctx{display:flex;align-items:center;gap:6px;margin:0 14px 6px;font-size:12px;color:var(--muted)}
+.ap-ctx .chip{padding:3px 6px 3px 10px;font-size:11.5px}
+.ap-input{display:flex;align-items:flex-end;gap:8px;margin:0 12px;padding:6px 6px 6px 14px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.ap-input:focus-within{border-color:var(--accent)}
+.ap-input textarea{flex:1;min-width:0;resize:none;border:0;background:transparent;font:inherit;font-size:13.5px;color:var(--fg);padding:7px 0;max-height:120px;line-height:1.4}
+.ap-input textarea:focus{outline:none}
+.send{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:var(--accent);color:var(--on-accent);flex:none}
+.send:disabled{background:var(--hover);color:var(--faint);cursor:default}
+.ap-foot{font-size:11px;color:var(--faint);padding:8px 14px 12px;text-align:center}
+.ap-foot code{font-family:var(--font-mono);font-size:10.5px}
+
+/* ---------- TOASTS ---------- */
+.toasts{position:absolute;z-index:70;left:50%;transform:translateX(-50%);bottom:calc(var(--taskbar-h) + 14px);display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;width:calc(100% - 32px)}
+.toast{pointer-events:auto;max-width:440px;padding:10px 16px;border-radius:10px;background:var(--fg);color:var(--surface);font-size:13px;font-weight:500;box-shadow:var(--shadow-sm);animation:rise2 .2s ease-out}
+@keyframes rise2{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.only-narrow{display:none}
+
+/* ---------- NARROW (phone / small tablet) ---------- */
+.os.narrow .desk-icons{position:static;width:auto;grid-template-columns:repeat(4,1fr);padding:14px 12px}
+.os.narrow .desk-hint{display:none}
+.os.narrow .tb-search,.os.narrow .tb-left{display:none}
+.os.narrow .only-narrow{display:grid}
+.os.narrow .taskbar{grid-template-columns:1fr auto}
+.os.narrow .tb-center{justify-content:flex-start}
+.os.narrow .tray .lang,.os.narrow .tray>svg{display:none}
+.os.narrow .clock span:last-child{display:none}
+.os.narrow .mod-grid{grid-template-columns:repeat(4,1fr)}
+.os.narrow .recent{grid-template-columns:1fr}
+.os.narrow .fl-scroll{padding:16px 14px 8px}
+.os.narrow .start-foot{padding:12px 14px}
+.os.narrow .agent-panel{top:0;right:0;left:0;bottom:var(--taskbar-h);width:auto;border-radius:0;border-width:0}
+.os.narrow .flyout.right{right:8px;width:calc(100% - 16px)}
+.os.narrow .win-body{padding:14px 12px 20px}
+.os.narrow .win-tools{padding:8px 12px}
+
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+</style>
+
+<div id="os"></div>
+
+<script type="text/x-template" id="tpl-app">
+<div class="os" :class="{narrow: isNarrow}">
+
+  <!-- ===== BOOT ===== -->
+  <section v-if="phase==='boot'" class="boot" @click="skipBoot">
+    <div class="boot-center">
+      <ekasa-mark :size="64" class="boot-mark" accent="#f0a43a"></ekasa-mark>
+      <div class="boot-word">Ekasa<span>OS</span></div>
+      <div class="boot-bar" role="progressbar" aria-label="Loading" :aria-valuenow="Math.round(boot.progress)" aria-valuemin="0" aria-valuemax="100"><i :style="{width: boot.progress + '%'}"></i></div>
+      <div class="boot-status">{{ bootStatus }}</div>
+    </div>
+    <ol class="boot-log"><li v-for="(l,i) in boot.log" :key="i"><b>[  ok  ]</b> {{ l }}</li></ol>
+    <div class="boot-skip">Press any key or click to skip</div>
+  </section>
+
+  <!-- ===== LOCK / SIGN-IN ===== -->
+  <section v-else-if="phase==='lock'" class="lock wall">
+    <div class="lock-clock"><div class="t">{{ timeStr }}</div><div class="d">{{ longDate }}</div></div>
+    <form class="lock-card" @submit.prevent="signIn">
+      <div class="avatar xl">OU</div>
+      <div class="lock-name">Oscar Utomo</div>
+      <div class="lock-mail">oscarutomo@ekasatech.com</div>
+      <div class="lock-field">
+        <input id="pw" ref="pwInput" type="password" v-model="password" placeholder="Password" autocomplete="current-password" aria-label="Password">
+        <button class="lock-go" type="submit" aria-label="Sign in"><icon name="arrow-right" :size="18"></icon></button>
+      </div>
+      <div class="lock-hint">Prototype: any password works, or just press Enter</div>
+    </form>
+    <div class="lock-foot"><span class="dot ok"></span> ekasatech.local · Frappe v15 · ERPNext · HRMS</div>
+  </section>
+
+  <!-- ===== DESKTOP ===== -->
+  <section v-else class="desktop wall">
+    <div class="desk-area" ref="desk" @pointerdown.self="closeFlyouts">
+      <div class="desk-icons" @pointerdown.self="closeFlyouts">
+        <button v-for="d in desktopIcons" :key="d.id" class="desk-icon" :class="{sel: selIcon===d.id}"
+          @click="iconClick(d)" @dblclick="d.run()" @keydown.enter.prevent="d.run()">
+          <span class="tile xl" :style="{background: d.color}"><icon :name="d.icon" :size="24"></icon></span>
+          <span>{{ d.label }}</span>
+        </button>
+      </div>
+
+      <div class="desk-hint">
+        <span><kbd>Ctrl K</kbd> Search</span>
+        <span><kbd>Ctrl J</kbd> AI agents</span>
+        <span>Double-click an icon to open</span>
+      </div>
+
+      <!-- windows -->
+      <div class="win-layer">
+      <div v-for="w in windows" :key="w.id" v-show="!w.min" class="win"
+           :class="{active: w.id===activeId, max: w.max || isNarrow}" :style="winStyle(w)"
+           @pointerdown="focusWin(w)">
+        <header class="win-title" @pointerdown="startDrag($event, w)" @dblclick="toggleMax(w)">
+          <span class="tile sm" :style="{background: mod(w.module).color}"><icon :name="mod(w.module).icon" :size="13"></icon></span>
+          <span class="win-name">{{ mod(w.module).name }}<template v-if="w.doctype"> — {{ w.doctype }}</template></span>
+          <div class="win-ctrls">
+            <button @click.stop="minimize(w)" aria-label="Minimize"><icon name="minus" :size="15"></icon></button>
+            <button v-if="!isNarrow" @click.stop="toggleMax(w)" :aria-label="w.max ? 'Restore' : 'Maximize'"><icon :name="w.max ? 'restore' : 'square'" :size="13"></icon></button>
+            <button class="close" @click.stop="closeWin(w)" aria-label="Close"><icon name="x" :size="15"></icon></button>
+          </div>
+        </header>
+        <div class="win-tools">
+          <nav class="crumbs">
+            <button @click="w.doctype = null">{{ mod(w.module).name }}</button>
+            <template v-if="w.doctype"><icon name="chevron-right" :size="14"></icon><span>{{ w.doctype }}</span></template>
+          </nav>
+          <div class="grow"></div>
+          <button v-if="w.doctype" class="btn ghost" @click="toast('New ' + w.doctype + ' form would open here (frappe.new_doc)')"><icon name="plus" :size="15"></icon> New</button>
+          <button class="btn agent" @click="openAgent(mod(w.module).agent, w)"><icon name="sparkle" :size="15"></icon> Ask {{ agents[mod(w.module).agent].short }}</button>
+        </div>
+        <div class="win-body">
+          <!-- workspace view -->
+          <div v-if="!w.doctype" class="ws">
+            <div class="cards">
+              <div v-for="c in mod(w.module).cards" :key="c[0]" class="card">
+                <div class="card-l">{{ c[0] }}</div>
+                <div class="card-v">{{ c[1] }}</div>
+                <div class="card-d" :class="c[3] ? 'up' : 'down'">{{ c[2] }} <span>vs last month</span></div>
+              </div>
+            </div>
+            <h3 class="sec">Shortcuts</h3>
+            <div class="shortcuts">
+              <button v-for="dt in mod(w.module).doctypes" :key="dt" class="shortcut" @click="w.doctype = dt">
+                <icon name="file" :size="16"></icon><span>{{ dt }}</span><em>{{ countFor(dt) }}</em>
+              </button>
+            </div>
+            <div class="ask-card">
+              <span class="agent-dot" :style="{background: agents[mod(w.module).agent].color}">{{ agents[mod(w.module).agent].initial }}</span>
+              <div><b>{{ agents[mod(w.module).agent].name }}</b> knows this workspace. Try:</div>
+              <button v-for="p in agents[mod(w.module).agent].prompts.slice(0,2)" :key="p" class="chip" @click="askFrom(mod(w.module).agent, p, w)">{{ p }}</button>
+            </div>
+          </div>
+          <!-- list view -->
+          <div v-else class="list">
+            <div class="filters">
+              <span class="chip on">All</span><span class="chip">Assigned to me</span><span class="chip">Created this month</span>
+              <span class="count">{{ listFor(w.doctype).rows.length }} of {{ countFor(w.doctype) }}</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th v-for="(c,i) in listFor(w.doctype).cols" :key="c" :class="{num: isNumCol(w.doctype,i)}">{{ c }}</th></tr></thead>
+                <tbody>
+                  <tr v-for="r in listFor(w.doctype).rows" :key="r[0]" @click="toast('Opens ' + r[0] + ' (/app/' + slug(w.doctype) + '/' + r[0] + ')')">
+                    <td v-for="(v,i) in r" :key="i" :class="{id: i===0, num: typeof v === 'number'}">
+                      <span v-if="isStatus(v)" class="pill" :class="statusClass(v)">{{ v }}</span>
+                      <template v-else>{{ typeof v === 'number' ? idr(v) : v }}</template>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="resize" @pointerdown.stop="startResize($event, w)"></div>
+      </div>
+      </div>
+
+      <!-- start menu (main menu) -->
+      <div v-if="flyout==='start'" class="flyout" role="dialog" aria-label="Start menu">
+        <div class="fl-scroll">
+          <button class="fl-search" @click="openSearch"><icon name="search" :size="17"></icon><span>Search modules, records, or ask an agent</span><kbd>Ctrl K</kbd></button>
+          <div class="fl-head"><h4>Modules</h4><span>{{ modules.length }} workspaces · frappe, erpnext, hrms</span></div>
+          <div class="mod-grid">
+            <button v-for="m in modules" :key="m.id" class="mod" @click="openApp(m.id)">
+              <span class="tile lg" :style="{background: m.color}"><icon :name="m.icon" :size="22"></icon></span><span>{{ m.name }}</span>
+            </button>
+          </div>
+          <div class="fl-head"><h4>AI agents</h4><span>Each agent only sees the modules its role allows</span></div>
+          <div class="agent-row">
+            <button v-for="a in agentList" :key="a.id" class="agent-pill" @click="openAgent(a.id)">
+              <span class="agent-dot" :style="{background: a.color}">{{ a.initial }}</span>{{ a.name }}
+            </button>
+          </div>
+          <div class="fl-head"><h4>Recent</h4></div>
+          <div class="recent">
+            <button v-for="r in recent" :key="r.name" @click="openApp(r.module, r.doctype)">
+              <span class="tile" :style="{background: mod(r.module).color}"><icon :name="mod(r.module).icon" :size="15"></icon></span>
+              <span class="r-main"><b>{{ r.name }}</b><small>{{ r.doctype }} · {{ r.when }}</small></span>
+            </button>
+          </div>
+        </div>
+        <div class="start-foot">
+          <div class="me"><span class="avatar">OU</span><div><b>Oscar Utomo</b><small>System Manager · Ekasatech</small></div></div>
+          <div class="power-wrap">
+            <button class="tb-btn" :class="{on: powerOpen}" @click="powerOpen = !powerOpen" aria-label="Power options"><icon name="power" :size="18"></icon></button>
+            <div v-if="powerOpen" class="power-menu">
+              <button @click="lock"><icon name="lock" :size="16"></icon> Lock</button>
+              <button @click="restart"><icon name="refresh" :size="16"></icon> Restart</button>
+              <button @click="lock"><icon name="power" :size="16"></icon> Sign out</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- search -->
+      <div v-if="flyout==='search'" class="flyout" role="dialog" aria-label="Search">
+        <div class="fl-scroll">
+          <label class="fl-input"><icon name="search" :size="18"></icon>
+            <input id="search-q" ref="searchInput" v-model="query" placeholder="Search modules, records, or ask an agent" @keydown.enter="searchEnter" aria-label="Search">
+          </label>
+          <template v-if="!query.trim()">
+            <div class="sr-group"><h5>Jump to</h5>
+              <div class="sr-empty"><button v-for="m in modules.slice(0,6)" :key="m.id" class="chip" @click="openApp(m.id)">{{ m.name }}</button></div>
+            </div>
+            <div class="sr-group"><h5>Or ask</h5>
+              <div class="sr-empty"><button v-for="p in agents.general.prompts" :key="p" class="chip" @click="askFrom('general', p)">{{ p }}</button></div>
+            </div>
+          </template>
+          <template v-else>
+            <div v-if="results.modules.length" class="sr-group"><h5>Modules</h5>
+              <button v-for="(m,i) in results.modules" :key="m.id" class="sr-item" :class="{first: i===0}" @click="openApp(m.id)">
+                <span class="tile" :style="{background: m.color}"><icon :name="m.icon" :size="15"></icon></span><span class="t">{{ m.name }}</span><small>Workspace</small>
+              </button>
+            </div>
+            <div v-if="results.doctypes.length" class="sr-group"><h5>Pages</h5>
+              <button v-for="d in results.doctypes" :key="d.module + d.doctype" class="sr-item" :class="{first: !results.modules.length && d === results.doctypes[0]}" @click="openApp(d.module, d.doctype)">
+                <span class="tile" :style="{background: mod(d.module).color}"><icon name="file" :size="15"></icon></span><span class="t">{{ d.doctype }}</span><small>in {{ mod(d.module).name }}</small>
+              </button>
+            </div>
+            <div v-if="results.records.length" class="sr-group"><h5>Records</h5>
+              <button v-for="r in results.records" :key="r.name" class="sr-item" @click="openApp(r.module, r.doctype)">
+                <span class="tile" :style="{background: mod(r.module).color}"><icon :name="mod(r.module).icon" :size="15"></icon></span><span class="t id">{{ r.name }}</span><small>{{ r.label }}</small>
+              </button>
+            </div>
+            <div class="sr-group"><h5>Ask an agent</h5>
+              <button class="sr-item" :class="{first: !results.modules.length && !results.doctypes.length}" @click="askFrom('general', query)">
+                <span class="agent-dot" :style="{background: agents.general.color}">{{ agents.general.initial }}</span>
+                <span class="t">Ask Ekasa Assistant: “{{ query }}”</span><small>Enter</small>
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- notifications -->
+      <div v-if="flyout==='notif'" class="flyout right" role="dialog" aria-label="Notifications">
+        <div class="fl-scroll">
+          <div class="fl-head" style="margin-top:0"><h4>Notifications</h4><button class="chip" @click="notifs = []; toast('Notifications cleared')">Clear all</button></div>
+          <div v-if="!notifs.length" style="color:var(--muted);font-size:13px;padding:8px 2px 14px">You're all caught up.</div>
+          <button v-for="n in notifs" :key="n.title" class="notif-item" @click="openNotif(n)">
+            <span v-if="n.agent" class="agent-dot" :style="{background: agents[n.agent].color}">{{ agents[n.agent].initial }}</span>
+            <span v-else class="tile" :style="{background: mod(n.module).color}"><icon :name="mod(n.module).icon" :size="15"></icon></span>
+            <span class="r-main"><b>{{ n.title }}</b><small>{{ n.sub }}</small></span>
+            <span class="when">{{ n.when }}</span>
+          </button>
+          <div class="fl-head"><h4>{{ longDate }}</h4><span>{{ timeStr }} WIB</span></div>
+          <div style="height:6px"></div>
+        </div>
+      </div>
+
+      <!-- agent panel -->
+      <aside v-if="agentOpen" class="agent-panel" aria-label="AI agents">
+        <header class="ap-head">
+          <div class="ap-title">
+            <span class="agent-dot lg" :style="{background: cur.color}">{{ cur.initial }}</span>
+            <div><b>{{ cur.name }}</b><small>{{ cur.desc }}</small></div>
+          </div>
+          <button class="icon-btn" @click="agentOpen = false" aria-label="Close agents"><icon name="x" :size="18"></icon></button>
+        </header>
+        <nav class="ap-tabs">
+          <button v-for="a in agentList" :key="a.id" :class="{on: a.id===agentId}" @click="switchAgent(a.id)">
+            <span class="agent-dot xs" :style="{background: a.color}">{{ a.initial }}</span>{{ a.short }}
+          </button>
+        </nav>
+        <div class="ap-thread" ref="thread">
+          <template v-for="(m,i) in threads[agentId]" :key="i">
+            <div v-if="m.role==='system'" class="routed"><icon name="route" :size="13"></icon>{{ m.text }}</div>
+            <div v-else class="msg" :class="m.role">
+              <div v-if="m.role==='agent'" class="msg-who"><span class="agent-dot xs" :style="{background: agents[m.agent].color}">{{ agents[m.agent].initial }}</span>{{ agents[m.agent].name }}</div>
+              <div class="bubble">
+                <p v-html="fmt(m.text)"></p>
+                <div v-if="m.table" class="mini-table"><table>
+                  <thead><tr><th v-for="(c,ci) in m.table.cols" :key="c" :class="{num: m.table.rows[0] && typeof m.table.rows[0][ci]==='number'}">{{ c }}</th></tr></thead>
+                  <tbody><tr v-for="(r,ri) in m.table.rows" :key="ri"><td v-for="(v,vi) in r" :key="vi" :class="{num: typeof v==='number'}">{{ typeof v==='number' ? (m.table.plain ? v : idr(v)) : v }}</td></tr></tbody>
+                </table></div>
+                <div v-if="m.actions" class="msg-actions"><button v-for="a in m.actions" :key="a.label" class="chip act" @click="runAction(a)">{{ a.label }}</button></div>
+              </div>
+            </div>
+          </template>
+          <div v-if="typing===agentId" class="msg agent"><div class="bubble typing"><i></i><i></i><i></i></div></div>
+        </div>
+        <div v-if="threads[agentId].length < 3" class="ap-prompts">
+          <button v-for="p in cur.prompts" :key="p" class="chip" @click="send(p)">{{ p }}</button>
+        </div>
+        <div v-if="agentContext" class="ap-ctx">Context:
+          <span class="chip">{{ agentContext }} <button class="icon-btn" style="width:20px;height:20px" @click="agentContext = ''" aria-label="Remove context"><icon name="x" :size="12"></icon></button></span>
+        </div>
+        <form class="ap-input" @submit.prevent="send()">
+          <textarea id="agent-input" ref="agentInput" v-model="draft" rows="1" :placeholder="'Message ' + cur.name" @keydown.enter.exact.prevent="send()" aria-label="Message"></textarea>
+          <button class="send" type="submit" :disabled="!draft.trim()" aria-label="Send"><icon name="send" :size="16"></icon></button>
+        </form>
+        <div class="ap-foot">Prototype · replies are simulated. Production calls <code>ekasa.api.agent.chat</code></div>
+      </aside>
+
+      <div class="toasts"><div v-for="t in toasts" :key="t.id" class="toast">{{ t.text }}</div></div>
+    </div>
+
+    <!-- taskbar -->
+    <footer class="taskbar">
+      <div class="tb-left">
+        <button class="tb-site" @click="toast('Connected to ekasatech.local · all background jobs healthy')">
+          <span class="dot ok"></span><span style="min-width:0"><b>Ekasatech</b><small>ERPNext v15 · online</small></span>
+        </button>
+      </div>
+      <div class="tb-center">
+        <button class="tb-btn start" :class="{on: flyout==='start'}" @click="toggle('start')" aria-label="Start menu"><ekasa-mark :size="22"></ekasa-mark></button>
+        <button class="tb-search" @click="openSearch" aria-label="Search"><icon name="search" :size="16"></icon><span>Search</span></button>
+        <button class="tb-btn only-narrow" :class="{on: flyout==='search'}" @click="openSearch" aria-label="Search"><icon name="search" :size="19"></icon></button>
+        <button class="tb-btn agent-btn" :class="{on: agentOpen}" @click="toggleAgent()" aria-label="AI agents" title="AI agents (Ctrl J)"><icon name="sparkle" :size="21"></icon></button>
+        <span class="tb-sep"></span>
+        <button v-for="t in taskItems" :key="t.mod.id" class="tb-btn app" :class="{running: !!t.win, active: t.win && t.win.id===activeId && !t.win.min}" @click="taskClick(t)" :title="t.mod.name" :aria-label="t.mod.name">
+          <span class="tile" :style="{background: t.mod.color}"><icon :name="t.mod.icon" :size="15"></icon></span>
+        </button>
+      </div>
+      <div class="tb-right">
+        <button class="tray" @click="toggle('notif')" aria-label="Notifications">
+          <icon name="wifi" :size="16"></icon><span class="lang">EN</span>
+          <span class="bell"><icon name="bell" :size="17"></icon><i v-if="notifs.length">{{ notifs.length }}</i></span>
+        </button>
+        <button class="clock" @click="toggle('notif')"><span>{{ timeStr }}</span><span>{{ shortDate }}</span></button>
+      </div>
+    </footer>
+  </section>
+</div>
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js"></script>
+<script>
+const { createApp, reactive, ref, computed, nextTick, onMounted, watch } = Vue;
+
+/* ---------- icons (stroke, 24px grid) ---------- */
+const ICONS = {
+  search:['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z','M21 21l-4.3-4.3'],
+  sparkle:['M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z','M19 15l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z'],
+  bell:['M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9','M10.3 21a1.94 1.94 0 0 0 3.4 0'],
+  wifi:['M5 12.55a11 11 0 0 1 14 0','M8.5 16.1a6 6 0 0 1 7 0','M2 8.82a15 15 0 0 1 20 0','M12 20h.01'],
+  x:['M18 6L6 18','M6 6l12 12'], minus:['M5 12h14'], square:['M5 5h14v14H5z'], restore:['M8 8h11v11H8z','M5 16V5h11'],
+  send:['M22 2L11 13','M22 2l-7 20-4-9-9-4z'], power:['M12 2v10','M18.4 6.6a9 9 0 1 1-12.8 0'],
+  lock:['M5 11h14v10H5z','M8 11V7a4 4 0 0 1 8 0v4'], 'arrow-right':['M5 12h14','M12 5l7 7-7 7'],
+  'chevron-right':['M9 18l6-6-6-6'], plus:['M12 5v14','M5 12h14'], refresh:['M21 12a9 9 0 1 1-3-6.7L21 8','M21 3v5h-5'],
+  file:['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z','M14 2v6h6'],
+  route:['M6 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z','M18 9a2 2 0 1 0 0-4 2 2 0 0 0 0 4z','M8 17h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8'],
+  calc:['M5 3h14v18H5z','M8 7h8','M8.5 12h.01','M12 12h.01','M15.5 12h.01','M8.5 16h.01','M12 16h.01','M15.5 16h.01'],
+  users:['M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2','M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8z','M22 21v-2a4 4 0 0 0-3-3.87','M16 3.13a4 4 0 0 1 0 7.75'],
+  tag:['M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z','M7 7h.01'],
+  cart:['M6 6h15l-1.5 9h-12z','M6 6L5 3H2','M9 20h.01','M18 20h.01'],
+  box:['M21 8l-9-5-9 5v8l9 5 9-5z','M3 8l9 5 9-5','M12 13v8'],
+  factory:['M2 20V9l6 4V9l6 4V5h4l2 15z','M2 20h20'],
+  kanban:['M3 3h18v18H3z','M8 7v7','M12 7v4','M16 7v9'],
+  target:['M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z','M12 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z','M12 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4z'],
+  building:['M4 21V3h10v18','M14 9h6v12','M8 7h2','M8 11h2','M8 15h2','M2 21h20'],
+  headset:['M3 14v-2a9 9 0 0 1 18 0v2','M3 14h4v6H3z','M17 14h4v6h-4z'],
+  wallet:['M3 7h18v13H3z','M3 7l3-4h12l3 4','M16 13h2'],
+  shield:['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z','M9 12l2 2 4-4'],
+  chart:['M3 3v18h18','M7 15l4-4 3 3 5-6'],
+  gear:['M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z','M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z'],
+  desk:['M3 4h18v12H3z','M8 20h8','M12 16v4'],
+};
+const Icon = {
+  props:{ name:String, size:{ type:[Number,String], default:18 } },
+  computed:{ paths(){ return ICONS[this.name] || []; } },
+  template:`<svg :width="size" :height="size" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path v-for="(d,i) in paths" :key="i" :d="d"/></svg>`
+};
+const EkasaMark = {
+  props:{ size:{ type:Number, default:22 }, accent:{ type:String, default:'var(--accent)' } },
+  template:`<svg :width="size" :height="size" viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="2" y="2" width="9" height="9" rx="2.4" :fill="accent"/>
+    <rect x="13" y="2" width="9" height="9" rx="2.4" fill="currentColor" opacity=".88"/>
+    <rect x="2" y="13" width="9" height="9" rx="2.4" fill="currentColor" opacity=".62"/>
+    <rect x="13" y="13" width="9" height="9" rx="4.5" fill="currentColor" opacity=".36"/></svg>`
+};
+
+/* ---------- ERPNext / HRMS workspaces ---------- */
+const MODULES = [
+  { id:'accounting', name:'Accounting', icon:'calc', color:'#1F8A70', agent:'finance',
+    doctypes:['Sales Invoice','Purchase Invoice','Payment Entry','Journal Entry','Chart of Accounts','General Ledger'],
+    cards:[['Receivables','Rp 1,84 M','+6.2%',false],['Payables','Rp 912 jt','-3.1%',true],['Cash & bank','Rp 2,37 M','+1.4%',true],['Overdue invoices','14','+3',false]] },
+  { id:'selling', name:'Selling', icon:'tag', color:'#D9772B', agent:'sales',
+    doctypes:['Quotation','Sales Order','Delivery Note','Customer','Sales Analytics'],
+    cards:[['Sales this month','Rp 4,21 M','+11.8%',true],['Open orders','37','+5',true],['Quotations expiring','6','+2',false],['Avg. order value','Rp 113 jt','+4.0%',true]] },
+  { id:'buying', name:'Buying', icon:'cart', color:'#3D7BD9', agent:'procurement',
+    doctypes:['Material Request','Request for Quotation','Purchase Order','Purchase Receipt','Supplier'],
+    cards:[['Purchases this month','Rp 1,67 M','+2.3%',true],['POs to receive','18','-4',true],['Pending material requests','9','+3',false],['Active suppliers','64','+2',true]] },
+  { id:'stock', name:'Stock', icon:'box', color:'#7C5CC4', agent:'inventory',
+    doctypes:['Item','Stock Entry','Warehouse','Stock Ledger','Stock Reconciliation'],
+    cards:[['Stock value','Rp 6,08 M','-1.2%',false],['Items below reorder','5','+2',false],['Warehouses','4','0',true],['Stock entries today','23','+6',true]] },
+  { id:'manufacturing', name:'Manufacturing', icon:'factory', color:'#5E6B7D', agent:'inventory',
+    doctypes:['BOM','Work Order','Job Card','Workstation','Production Plan'],
+    cards:[['Work orders in progress','11','+1',true],['Completed this week','26','+8',true],['Delayed','2','+1',false],['Capacity used','78%','+5%',true]] },
+  { id:'projects', name:'Projects', icon:'kanban', color:'#C2457A', agent:'general',
+    doctypes:['Project','Task','Timesheet','Project Template'],
+    cards:[['Active projects','12','+1',true],['Overdue tasks','17','-6',true],['Hours logged (week)','642','+9%',true],['Billable ratio','71%','+3%',true]] },
+  { id:'crm', name:'CRM', icon:'target', color:'#C9921B', agent:'sales',
+    doctypes:['Lead','Opportunity','Contact','Campaign'],
+    cards:[['New leads','48','+12',true],['Open opportunities','29','+4',true],['Pipeline value','Rp 7,9 M','+15%',true],['Win rate','34%','-2%',false]] },
+  { id:'assets', name:'Assets', icon:'building', color:'#3F8597', agent:'finance',
+    doctypes:['Asset','Asset Category','Asset Maintenance','Asset Movement'],
+    cards:[['Asset value','Rp 3,4 M','-0.8%',false],['Due for maintenance','4','+1',false],['Depreciation (month)','Rp 58 jt','0%',true],['Assets','212','+3',true]] },
+  { id:'support', name:'Support', icon:'headset', color:'#2E8F8F', agent:'general',
+    doctypes:['Issue','Warranty Claim','Service Level Agreement'],
+    cards:[['Open issues','21','-5',true],['SLA breached','2','-1',true],['Avg. first response','1 j 12 m','-14%',true],['CSAT','4.6 / 5','+0.1',true]] },
+  { id:'quality', name:'Quality', icon:'shield', color:'#5F8233', agent:'general',
+    doctypes:['Quality Inspection','Quality Goal','Non Conformance','Quality Review'],
+    cards:[['Inspections (month)','134','+9',true],['Rejected','3.1%','-0.4%',true],['Open non-conformances','5','+1',false],['Goals on track','8 / 9','0',true]] },
+  { id:'hr', name:'HR', icon:'users', color:'#C9404F', agent:'hr',
+    doctypes:['Employee','Leave Application','Attendance','Job Opening','Appraisal','Expense Claim'],
+    cards:[['Headcount','168','+4',true],['On leave today','9','+2',false],['Pending approvals','4','+1',false],['Open positions','5','+1',true]] },
+  { id:'payroll', name:'Payroll', icon:'wallet', color:'#A85F1F', agent:'hr',
+    doctypes:['Payroll Entry','Salary Slip','Salary Structure','Income Tax Slab'],
+    cards:[['October payroll','Rp 3,12 M','+2.1%',false],['Slips drafted','168','+4',true],['Missing attendance','3','-2',true],['PPh 21 withheld','Rp 287 jt','+1.8%',false]] },
+  { id:'reports', name:'Reports', icon:'chart', color:'#2F6CB3', agent:'general',
+    doctypes:['General Ledger','Accounts Receivable','Profit and Loss','Stock Balance','Sales Analytics'],
+    cards:[['Saved reports','38','+2',true],['Scheduled','7','0',true],['Run today','52','+11',true],['Shared with me','9','+1',true]] },
+  { id:'settings', name:'Settings', icon:'gear', color:'#5B6878', agent:'general',
+    doctypes:['Company','User','Role Permission Manager','System Settings','Agent Settings'],
+    cards:[['Users','74','+2',true],['Roles','31','0',true],['Companies','2','0',true],['Agents enabled','5 / 6','+1',true]] },
+];
+const MOD = Object.fromEntries(MODULES.map(m => [m.id, m]));
+
+/* ---------- agents ---------- */
+const AGENTS = {
+  general:{ id:'general', name:'Ekasa Assistant', short:'Assistant', initial:'E', color:'#C97D12', desc:'Routes your question to the right specialist',
+    prompts:['Which leave requests need my approval?','Show overdue invoices','What is low on stock?','How is the sales pipeline?'] },
+  hr:{ id:'hr', name:'HR Agent', short:'HR', initial:'H', color:'#C9404F', desc:'Employees, leave, attendance and payroll',
+    prompts:['Which leave requests need my approval?','Attendance summary for today','Headcount by department','Is October payroll ready?'] },
+  finance:{ id:'finance', name:'Finance Agent', short:'Finance', initial:'F', color:'#1F8A70', desc:'Receivables, payables, cash and P&L',
+    prompts:['Show overdue invoices','What is our cash position?','Month-to-date P&L','Draft payment reminders'] },
+  sales:{ id:'sales', name:'Sales Agent', short:'Sales', initial:'S', color:'#D9772B', desc:'Pipeline, customers, quotations and orders',
+    prompts:['How is the sales pipeline?','Top customers this quarter','Quotations expiring this week'] },
+  inventory:{ id:'inventory', name:'Inventory Agent', short:'Inventory', initial:'I', color:'#7C5CC4', desc:'Stock levels, reorders and warehouses',
+    prompts:['What is low on stock?','Stock value by warehouse','Create material requests for reorder items'] },
+  procurement:{ id:'procurement', name:'Procurement Agent', short:'Procurement', initial:'P', color:'#3D7BD9', desc:'Suppliers, RFQs and purchase orders',
+    prompts:['Purchase orders waiting for delivery','Compare supplier quotes for steel plate','Which suppliers are late?'] },
+};
+const AGENT_LIST = Object.values(AGENTS);
+
+/* ---------- mock records ---------- */
+const LISTS = {
+  'Sales Invoice':{ cols:['ID','Customer','Status','Due date','Grand total'], rows:[
+    ['ACC-SINV-2026-00412','PT Sinar Mas Logistik','Overdue','08 Oct 2026',245000000],
+    ['ACC-SINV-2026-00409','CV Mitra Karya','Unpaid','30 Oct 2026',87500000],
+    ['ACC-SINV-2026-00401','PT Nusantara Retail','Paid','15 Oct 2026',132400000],
+    ['ACC-SINV-2026-00398','PT Bumi Agro Lestari','Overdue','02 Oct 2026',61250000],
+    ['ACC-SINV-2026-00390','PT Cahaya Teknik','Paid','28 Sep 2026',54900000],
+    ['ACC-SINV-2026-00385','Koperasi Maju Bersama','Overdue','25 Sep 2026',38700000]]},
+  'Leave Application':{ cols:['ID','Employee','Leave type','Dates','Status'], rows:[
+    ['HR-LAP-2026-00087','Rina Kartika','Annual Leave','27–28 Oct','Open'],
+    ['HR-LAP-2026-00086','Budi Santoso','Sick Leave','22 Oct','Open'],
+    ['HR-LAP-2026-00085','Dewi Lestari','Annual Leave','27–31 Oct','Open'],
+    ['HR-LAP-2026-00084','Agus Pratama','Compensatory Off','03 Nov','Open'],
+    ['HR-LAP-2026-00080','Sari Wulandari','Annual Leave','14–15 Oct','Approved'],
+    ['HR-LAP-2026-00078','Hendra Wijaya','Sick Leave','09 Oct','Approved']]},
+  'Employee':{ cols:['ID','Name','Department','Designation','Status'], rows:[
+    ['HR-EMP-00012','Rina Kartika','Engineering','Senior Developer','Active'],
+    ['HR-EMP-00019','Budi Santoso','Operations','Warehouse Lead','Active'],
+    ['HR-EMP-00027','Dewi Lestari','Engineering','QA Engineer','Active'],
+    ['HR-EMP-00033','Agus Pratama','Finance','Accountant','Active'],
+    ['HR-EMP-00041','Sari Wulandari','Sales','Account Manager','Active'],
+    ['HR-EMP-00052','Hendra Wijaya','Production','Supervisor','Left']]},
+  'Item':{ cols:['Item code','Item name','Warehouse','Qty','Reorder level'], rows:[
+    ['STL-PLT-6MM','Steel plate 6 mm','Main Warehouse - EKS','42 sheet','100 sheet'],
+    ['BLT-M12-50','Hex bolt M12 × 50','Main Warehouse - EKS','310 pcs','1.000 pcs'],
+    ['PNT-EPX-GRY','Epoxy paint, grey 20 L','Finished Goods - EKS','8 pail','15 pail'],
+    ['CBL-NYY-4X10','Cable NYY 4×10 mm²','Site Store - EKS','120 m','300 m'],
+    ['PKG-CRT-L','Carton box, large','Main Warehouse - EKS','95 pcs','250 pcs'],
+    ['WLD-ROD-E6013','Welding rod E6013','Main Warehouse - EKS','64 kg','40 kg']]},
+  'Purchase Order':{ cols:['ID','Supplier','Status','Required by','Grand total'], rows:[
+    ['PUR-ORD-2026-00231','PT Indo Baja Prima','To Receive and Bill','24 Oct 2026',318000000],
+    ['PUR-ORD-2026-00229','CV Sumber Fastener','To Receive and Bill','20 Oct 2026',42600000],
+    ['PUR-ORD-2026-00226','PT Warna Kimia','To Bill','17 Oct 2026',27900000],
+    ['PUR-ORD-2026-00220','PT Kabel Nusa','Completed','10 Oct 2026',73400000]]},
+  'Opportunity':{ cols:['ID','Party','Stage','Expected close','Amount'], rows:[
+    ['CRM-OPP-2026-00144','PT Arunika Digital','Proposal/Price Quote','31 Oct 2026',540000000],
+    ['CRM-OPP-2026-00141','PT Samudra Energi','Negotiation/Review','07 Nov 2026',1250000000],
+    ['CRM-OPP-2026-00137','CV Karya Mandiri','Qualification','30 Nov 2026',96000000],
+    ['CRM-OPP-2026-00133','PT Tirta Sejahtera','Needs Analysis','15 Nov 2026',310000000]]},
+};
+const STATUS = { ok:['Paid','Approved','Active','Completed','Passed','Submitted'], warn:['Open','Unpaid','To Receive and Bill','To Bill','Draft','Proposal/Price Quote','Negotiation/Review','Pending'], bad:['Overdue','Left','Cancelled','Rejected'] };
+const ALL_STATUS = new Set([...STATUS.ok, ...STATUS.warn, ...STATUS.bad, 'Qualification','Needs Analysis']);
+
+function hash(s){ let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+function abbr(dt){ return dt.split(' ').map(w => w[0]).join('').toUpperCase(); }
+function genericList(dt){
+  const st = ['Submitted','Draft','Pending','Completed','Submitted','Cancelled'];
+  const titles = ['Q4 review','Main Warehouse - EKS','Jakarta office','Line 2 changeover','Annual contract','Site Bekasi'];
+  const h = hash(dt);
+  return { cols:['ID','Title','Status','Modified'], rows: Array.from({ length:6 }, (_, i) => [
+    `${abbr(dt)}-2026-${String(((h >> i) % 400) + 100 - i * 7).padStart(5,'0')}`, `${dt} · ${titles[(h + i) % 6]}`, st[(h + i) % 6], ['12 min ago','1 h ago','3 h ago','Yesterday','2 days ago','Last week'][i]]) };
+}
+
+const RECENT = [
+  { name:'ACC-SINV-2026-00412', doctype:'Sales Invoice', module:'accounting', when:'12 min ago' },
+  { name:'HR-LAP-2026-00087', doctype:'Leave Application', module:'hr', when:'40 min ago' },
+  { name:'PUR-ORD-2026-00231', doctype:'Purchase Order', module:'buying', when:'2 h ago' },
+  { name:'CRM-OPP-2026-00144', doctype:'Opportunity', module:'crm', when:'Yesterday' },
+];
+
+/* ---------- simulated agent brain (swap for ekasa.api.agent.chat) ---------- */
+const ROUTES = {
+  hr:['leave','cuti','employee','karyawan','attendance','absen','payroll','gaji','salary','headcount','hire','recruit','appraisal'],
+  finance:['invoice','faktur','overdue','cash','kas','profit','p&l','revenue','receivable','piutang','payable','hutang','tax','pajak','budget','reminder','payment'],
+  sales:['pipeline','lead','quotation','penawaran','customer','pelanggan','deal','opportunit','sales','order'],
+  inventory:['stock','stok','item','warehouse','gudang','reorder','inventory','low on'],
+  procurement:['supplier','vendor','purchase','po ','rfq','procure','late','quote'],
+};
+function route(t){
+  let best = null, score = 0;
+  for (const [id, words] of Object.entries(ROUTES)) {
+    const s = words.filter(w => t.includes(w)).length;
+    if (s > score) { score = s; best = id; }
+  }
+  return best;
+}
+function specialist(id, t){
+  const has = (...w) => w.some(x => t.includes(x));
+  if (id === 'hr') {
+    if (has('leave','cuti','approv')) return { text:'**4 leave applications** are waiting for your approval. Rina and Dewi (both Engineering) overlap on 27–28 Oct, which would leave the team at 60% capacity.',
+      table:{ cols:['Employee','Type','Dates','Days'], plain:true, rows:[['Rina Kartika','Annual','27–28 Oct',2],['Budi Santoso','Sick','22 Oct',1],['Dewi Lestari','Annual','27–31 Oct',5],['Agus Pratama','Comp. off','03 Nov',1]] },
+      actions:[{ label:'Open Leave Applications', open:['hr','Leave Application'] },{ label:'Approve the 2 without conflicts', toast:'Would call hrms leave approval for HR-LAP-2026-00086 and 00084' }] };
+    if (has('attendance','absen','today')) return { text:'Today so far: **142 present**, 9 on leave, 11 work-from-home and **6 not marked yet** (mostly Production shift 2, which checks in at 14:00).',
+      actions:[{ label:'Open Attendance', open:['hr','Attendance'] }] };
+    if (has('headcount','department','employee','karyawan')) return { text:'Active headcount is **168** across 6 departments. 5 job openings are live.',
+      table:{ cols:['Department','Employees','Open roles'], plain:true, rows:[['Production',54,2],['Operations',31,1],['Engineering',28,1],['Sales',21,1],['Finance',18,0],['HR & GA',16,0]] },
+      actions:[{ label:'Open Employee list', open:['hr','Employee'] }] };
+    if (has('payroll','gaji','salary')) return { text:'October payroll is drafted: **168 salary slips**, gross Rp 3,12 M, PPh 21 Rp 287 jt. **3 slips** are missing attendance for 20–21 Oct and should be fixed before you submit.',
+      actions:[{ label:'Open Payroll Entry', open:['payroll','Payroll Entry'] },{ label:'Ask Finance to reserve cash', switchTo:'finance', prompt:'What is our cash position?' }] };
+    return { text:'I can help with leave approvals, attendance, headcount and payroll. Pick a suggestion below or ask in your own words.' };
+  }
+  if (id === 'finance') {
+    if (has('overdue','receivable','piutang','invoice','faktur')) return { text:'**3 invoices are overdue**, Rp 344.950.000 in total. PT Sinar Mas Logistik accounts for 71% of it and is 14 days late.',
+      table:{ cols:['Customer','Invoice','Days late','Outstanding'], rows:[['PT Sinar Mas Logistik','SINV-00412','14 d',245000000],['PT Bumi Agro Lestari','SINV-00398','20 d',61250000],['Koperasi Maju Bersama','SINV-00385','27 d',38700000]] },
+      actions:[{ label:'Open Sales Invoices', open:['accounting','Sales Invoice'] },{ label:'Draft payment reminders', toast:'Would draft 3 reminder emails from the "Payment Reminder" email template' }] };
+    if (has('cash','kas','bank')) return { text:'Cash and bank balance is **Rp 2,37 M** across 4 accounts. Committed outflows over the next 14 days (payroll + 2 POs) are Rp 3,48 M, so you will need about Rp 1,1 M of collections.',
+      table:{ cols:['Account','Balance'], rows:[['BCA Operasional',1420000000],['Mandiri Payroll',610000000],['BNI Escrow',290000000],['Petty Cash - EKS',50000000]] } };
+    if (has('p&l','profit','revenue','month')) return { text:'Month to date (1–22 Oct): revenue **Rp 4,21 M**, gross margin **31,4%**, net profit **Rp 612 jt**. Margin is 1,8 points lower than September because steel plate cost went up.',
+      actions:[{ label:'Open Profit and Loss', open:['reports','Profit and Loss'] }] };
+    if (has('reminder')) return { text:'I drafted **3 payment reminders** for the overdue invoices. They stay as drafts until you review them.', actions:[{ label:'Review drafts', toast:'Would open the 3 draft Communication records' }] };
+    return { text:'I cover receivables, payables, cash and P&L. Try asking about overdue invoices or the month-to-date P&L.' };
+  }
+  if (id === 'sales') {
+    if (has('pipeline','opportunit','deal')) return { text:'Open pipeline is **Rp 7,9 M** across 29 opportunities. Two big deals close within 3 weeks.',
+      table:{ cols:['Stage','Deals','Value'], rows:[['Qualification',9,1420000000],['Needs Analysis',8,1960000000],['Proposal/Price Quote',7,2310000000],['Negotiation/Review',5,2210000000]] },
+      actions:[{ label:'Open Opportunities', open:['crm','Opportunity'] }] };
+    if (has('customer','pelanggan','top')) return { text:'Top customers this quarter by billed amount:',
+      table:{ cols:['Customer','Billed'], rows:[['PT Sinar Mas Logistik',1180000000],['PT Nusantara Retail',920000000],['PT Samudra Energi',760000000],['CV Mitra Karya',410000000]] } };
+    if (has('quotation','expir','penawaran')) return { text:'**6 quotations** expire this week, Rp 1,04 M in total. 4 of them have had no follow-up in 7 days.', actions:[{ label:'Open Quotations', open:['selling','Quotation'] }] };
+    return { text:'Ask me about the pipeline, top customers, or quotations that need follow-up.' };
+  }
+  if (id === 'inventory') {
+    if (has('low','reorder','stock','stok')) {
+      if (has('material request','create')) return { text:'I prepared **4 draft Material Requests** for the items below reorder level. Nothing is submitted until you approve.', actions:[{ label:'Open Material Requests', open:['buying','Material Request'] }] };
+      if (has('value','warehouse','gudang')) return { text:'Total stock value is **Rp 6,08 M**.', table:{ cols:['Warehouse','Value'], rows:[['Main Warehouse - EKS',3920000000],['Finished Goods - EKS',1460000000],['Site Store - EKS',520000000],['Work In Progress - EKS',180000000]] } };
+      return { text:'**5 items** are below their reorder level. Steel plate is the most urgent: 42 sheets left, about 4 working days of consumption.',
+        table:{ cols:['Item','In stock','Reorder at'], plain:true, rows:[['Steel plate 6 mm','42','100'],['Hex bolt M12 × 50','310','1.000'],['Epoxy paint, grey','8','15'],['Cable NYY 4×10','120 m','300 m'],['Carton box, large','95','250']] },
+        actions:[{ label:'Open Item list', open:['stock','Item'] },{ label:'Create material requests', switchTo:'inventory', prompt:'Create material requests for reorder items' }] };
+    }
+    return { text:'I watch stock levels, reorders and warehouses. Ask what is running low.' };
+  }
+  if (id === 'procurement') {
+    if (has('late')) return { text:'**1 supplier is late**: CV Sumber Fastener, PO-00229 was due 20 Oct (2 days). PT Indo Baja Prima confirmed delivery for 24 Oct.', actions:[{ label:'Open Purchase Orders', open:['buying','Purchase Order'] }] };
+    if (has('compare','quote','steel')) return { text:'3 suppliers replied to RFQ-2026-00058 for steel plate 6 mm (100 sheets):',
+      table:{ cols:['Supplier','Lead time','Total'], rows:[['PT Indo Baja Prima','5 days',318000000],['PT Logam Jaya','9 days',301500000],['CV Baja Utama','7 days',326400000]] },
+      actions:[{ label:'Open Request for Quotation', open:['buying','Request for Quotation'] }] };
+    return { text:'**2 purchase orders** are waiting for delivery, Rp 360,6 jt in total.',
+      table:{ cols:['PO','Supplier','Due'], plain:true, rows:[['PO-00231','PT Indo Baja Prima','24 Oct'],['PO-00229','CV Sumber Fastener','20 Oct (late)']] },
+      actions:[{ label:'Open Purchase Orders', open:['buying','Purchase Order'] }] };
+  }
+  return { text:'I couldn’t match that to a specialist yet. I route questions about **people** (HR), **money** (Finance), **customers** (Sales), **stock** (Inventory) and **suppliers** (Procurement).' };
+}
+function agentReply(agentId, text){
+  const t = ' ' + text.toLowerCase() + ' ';
+  if (agentId === 'general') {
+    const r = route(t);
+    if (r) return { ...specialist(r, t), agent:r, routed:true };
+    return { ...specialist('none', t), agent:'general' };
+  }
+  return { ...specialist(agentId, t), agent:agentId };
+}
+
+/* ---------- app ---------- */
+const app = createApp({
+  template:'#tpl-app',
+  setup(){
+    const phase = ref('boot');
+    const boot = reactive({ progress:0, log:[], timer:null, done:false });
+    const BOOT_STEPS = [[6,'Connecting to site ekasatech.local'],[18,'Restoring session (sid) for oscarutomo@ekasatech.com'],[32,'Fetching boot info · frappe.boot'],[46,'Installed apps: frappe 15, erpnext 15, hrms 15'],[60,'Loading 14 workspaces and role permissions'],[74,'Registering agents: HR, Finance, Sales, Inventory, Procurement'],[88,'Opening realtime channel (socket.io)'],[97,'Preparing desktop']];
+    const bootStatus = computed(() => boot.log.length ? boot.log[boot.log.length - 1] + '…' : 'Starting Ekasa OS…');
+
+    function startBoot(){
+      boot.progress = 0; boot.log = []; boot.done = false;
+      clearInterval(boot.timer);
+      boot.timer = setInterval(() => {
+        boot.progress = Math.min(100, boot.progress + (Math.random() * 2.2 + 0.5));
+        for (const [p, l] of BOOT_STEPS) if (boot.progress >= p && !boot.log.includes(l)) boot.log.push(l);
+        if (boot.progress >= 100 && !boot.done) {
+          boot.done = true; clearInterval(boot.timer);
+          setTimeout(() => { phase.value = 'lock'; nextTick(() => pwInput.value && pwInput.value.focus()); }, 450);
+        }
+      }, 55);
+    }
+    function skipBoot(){ if (!boot.done) boot.progress = 100; }
+
+    /* clock */
+    const now = ref(new Date());
+    const timeStr = computed(() => now.value.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit' }));
+    const shortDate = computed(() => now.value.toLocaleDateString('en-GB'));
+    const longDate = computed(() => now.value.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long' }));
+
+    /* lock */
+    const password = ref(''); const pwInput = ref(null); let signedInOnce = false;
+    function signIn(){
+      phase.value = 'desktop'; password.value = '';
+      if (!signedInOnce) {
+        signedInOnce = true;
+        nextTick(() => { openApp('accounting'); toast('Welcome back, Oscar. Press Ctrl K to search or Ctrl J to talk to an agent.'); });
+      }
+    }
+    function lock(){ closeFlyouts(); agentOpen.value = false; phase.value = 'lock'; nextTick(() => pwInput.value && pwInput.value.focus()); }
+    function restart(){ closeFlyouts(); agentOpen.value = false; windows.splice(0); signedInOnce = false; phase.value = 'boot'; startBoot(); }
+
+    /* responsive */
+    const mq = window.matchMedia('(max-width: 720px)');
+    const isNarrow = ref(mq.matches);
+    mq.addEventListener ? mq.addEventListener('change', e => isNarrow.value = e.matches) : mq.addListener(e => isNarrow.value = e.matches);
+
+    /* windows */
+    const desk = ref(null);
+    const windows = reactive([]); const activeId = ref(null); let z = 10, seq = 0;
+    const mod = id => MOD[id];
+    function deskBounds(){ const el = desk.value; return el ? { w: el.clientWidth, h: el.clientHeight } : { w: innerWidth, h: innerHeight - 52 }; }
+    function openApp(moduleId, doctype = null){
+      closeFlyouts();
+      let w = windows.find(x => x.module === moduleId);
+      if (!w) {
+        const b = deskBounds(), n = windows.length % 6;
+        const ww = Math.min(900, b.w - 140), hh = Math.min(600, b.h - 50);
+        windows.push({ id: ++seq, module: moduleId, doctype, x: Math.max(110, (b.w - ww) / 2 - 60) + n * 30, y: 20 + n * 28, w: ww, h: hh, z: ++z, min:false, max:false });
+        w = windows[windows.length - 1];
+      } else { w.doctype = doctype; w.min = false; }
+      focusWin(w);
+    }
+    function focusWin(w){ w.z = ++z; activeId.value = w.id; }
+    function minimize(w){ w.min = true; const top = windows.filter(x => !x.min).sort((a,b) => b.z - a.z)[0]; activeId.value = top ? top.id : null; }
+    function toggleMax(w){ if (!isNarrow.value) w.max = !w.max; }
+    function closeWin(w){ windows.splice(windows.indexOf(w), 1); const top = windows.filter(x => !x.min).sort((a,b) => b.z - a.z)[0]; activeId.value = top ? top.id : null; }
+    function winStyle(w){
+      if (w.max || isNarrow.value) return { left:0, top:0, width:'100%', height:'100%', zIndex:w.z };
+      return { left:w.x + 'px', top:w.y + 'px', width:w.w + 'px', height:w.h + 'px', zIndex:w.z };
+    }
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    function track(e, onMove){
+      const el = e.currentTarget; el.setPointerCapture && el.setPointerCapture(e.pointerId);
+      const up = () => { el.removeEventListener('pointermove', onMove); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); };
+      el.addEventListener('pointermove', onMove); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+    }
+    function startDrag(e, w){
+      if (e.button !== 0 || w.max || isNarrow.value || e.target.closest('button')) return;
+      focusWin(w); const sx = e.clientX, sy = e.clientY, ox = w.x, oy = w.y, b = deskBounds();
+      track(e, ev => { w.x = clamp(ox + ev.clientX - sx, 120 - w.w, b.w - 120); w.y = clamp(oy + ev.clientY - sy, 0, b.h - 40); });
+    }
+    function startResize(e, w){
+      if (w.max || isNarrow.value) return;
+      focusWin(w); const sx = e.clientX, sy = e.clientY, ow = w.w, oh = w.h;
+      track(e, ev => { w.w = Math.max(440, ow + ev.clientX - sx); w.h = Math.max(320, oh + ev.clientY - sy); });
+    }
+
+    /* taskbar */
+    const PINNED = ['accounting','hr','selling','stock'];
+    const taskItems = computed(() => {
+      const ids = [...PINNED, ...windows.map(w => w.module).filter(id => !PINNED.includes(id))];
+      return ids.map(id => ({ mod: MOD[id], win: windows.find(w => w.module === id) }));
+    });
+    function taskClick(t){
+      closeFlyouts();
+      if (!t.win) return openApp(t.mod.id);
+      if (t.win.min) { t.win.min = false; focusWin(t.win); }
+      else if (t.win.id === activeId.value) minimize(t.win);
+      else focusWin(t.win);
+    }
+
+    /* flyouts */
+    const flyout = ref(null); const powerOpen = ref(false);
+    const query = ref(''); const searchInput = ref(null);
+    function closeFlyouts(){ flyout.value = null; powerOpen.value = false; selIcon.value = null; }
+    function toggle(name){ powerOpen.value = false; flyout.value = flyout.value === name ? null : name; }
+    function openSearch(){ powerOpen.value = false; flyout.value = 'search'; nextTick(() => searchInput.value && searchInput.value.focus()); }
+    const results = computed(() => {
+      const q = query.value.trim().toLowerCase();
+      if (!q) return { modules:[], doctypes:[], records:[] };
+      const modules = MODULES.filter(m => m.name.toLowerCase().includes(q)).slice(0,4);
+      const doctypes = []; MODULES.forEach(m => m.doctypes.forEach(d => { if (d.toLowerCase().includes(q)) doctypes.push({ module:m.id, doctype:d }); }));
+      const records = [];
+      const owner = { 'Sales Invoice':'accounting','Leave Application':'hr','Employee':'hr','Item':'stock','Purchase Order':'buying','Opportunity':'crm' };
+      Object.entries(LISTS).forEach(([dt, l]) => l.rows.forEach(r => { if (r.slice(0,2).join(' ').toLowerCase().includes(q)) records.push({ name:r[0], label:`${dt} · ${r[1]}`, doctype:dt, module:owner[dt] }); }));
+      return { modules, doctypes: doctypes.slice(0,5), records: records.slice(0,5) };
+    });
+    function searchEnter(){
+      const r = results.value;
+      if (r.modules.length) return openApp(r.modules[0].id);
+      if (r.doctypes.length) return openApp(r.doctypes[0].module, r.doctypes[0].doctype);
+      if (query.value.trim()) askFrom('general', query.value.trim());
+    }
+
+    /* desktop icons */
+    const selIcon = ref(null);
+    const desktopIcons = [
+      ...['accounting','hr','selling','stock','reports'].map(id => ({ id, label: MOD[id].name, icon: MOD[id].icon, color: MOD[id].color, run: () => openApp(id) })),
+      { id:'agents', label:'AI Agents', icon:'sparkle', color:'#C97D12', run: () => openAgent('general') },
+      { id:'classic', label:'Classic Desk', icon:'desk', color:'#5B6878', run: () => toast('Would open /app, the standard Frappe desk, in a new tab') },
+    ];
+    function iconClick(d){ if (isNarrow.value || matchMedia('(pointer: coarse)').matches) d.run(); else selIcon.value = d.id; }
+
+    /* notifications */
+    const notifs = ref([
+      { module:'hr', doctype:'Leave Application', title:'4 leave applications need your approval', sub:'Rina Kartika, Budi Santoso and 2 others', when:'8 min' },
+      { module:'accounting', doctype:'Sales Invoice', title:'3 invoices became overdue', sub:'Rp 344.950.000 outstanding', when:'1 h' },
+      { module:'stock', doctype:'Item', title:'5 items are below reorder level', sub:'Main Warehouse - EKS', when:'3 h' },
+      { agent:'finance', title:'Finance Agent finished the month-end check', sub:'2 unreconciled bank entries found', when:'Yesterday' },
+    ]);
+    function openNotif(n){
+      if (n.agent) { closeFlyouts(); openAgent(n.agent); return; }
+      openApp(n.module, n.doctype);
+    }
+
+    /* agents */
+    const agentOpen = ref(false); const agentId = ref('general'); const draft = ref(''); const typing = ref(null);
+    const agentContext = ref(''); const thread = ref(null); const agentInput = ref(null);
+    const threads = reactive(Object.fromEntries(AGENT_LIST.map(a => [a.id, [{ role:'agent', agent:a.id,
+      text: a.id === 'general' ? 'Hi Oscar. Ask me anything about Ekasatech and I’ll hand it to the HR, Finance, Sales, Inventory or Procurement agent.' : `Hi Oscar, I’m the ${a.name}. ${a.desc}.` }]])));
+    const cur = computed(() => AGENTS[agentId.value]);
+    function scrollThread(){ nextTick(() => { const el = thread.value; if (el) el.scrollTop = el.scrollHeight; }); }
+    function openAgent(id, w){
+      flyout.value = null; agentId.value = id; agentOpen.value = true;
+      agentContext.value = w ? MOD[w.module].name + (w.doctype ? ' · ' + w.doctype : ' workspace') : agentContext.value;
+      scrollThread(); nextTick(() => agentInput.value && !isNarrow.value && agentInput.value.focus());
+    }
+    function switchAgent(id){ agentId.value = id; scrollThread(); }
+    function toggleAgent(){ agentOpen.value ? (agentOpen.value = false) : openAgent(agentId.value); }
+    function askFrom(id, text, w){ openAgent(id, w); query.value = ''; send(text); }
+    function send(text){
+      const msg = (text ?? draft.value).trim(); if (!msg || typing.value) return;
+      const id = agentId.value;
+      threads[id].push({ role:'user', text: msg }); if (text === undefined) draft.value = '';
+      typing.value = id; scrollThread();
+      setTimeout(() => {
+        const r = agentReply(id, msg);
+        if (r.routed) threads[id].push({ role:'system', text:`Routed to ${AGENTS[r.agent].name}` });
+        threads[id].push({ role:'agent', ...r });
+        typing.value = null; scrollThread();
+      }, 650 + Math.random() * 650);
+    }
+    function runAction(a){
+      if (a.open) openApp(a.open[0], a.open[1]);
+      if (a.toast) toast(a.toast);
+      if (a.switchTo) { agentId.value = a.switchTo; send(a.prompt); }
+    }
+
+    /* toasts */
+    const toasts = ref([]); let tid = 0;
+    function toast(text){ const id = ++tid; toasts.value.push({ id, text }); setTimeout(() => toasts.value = toasts.value.filter(t => t.id !== id), 3600); }
+
+    /* helpers */
+    const idr = n => 'Rp ' + n.toLocaleString('id-ID');
+    const esc = s => s.replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    const fmt = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+    const listFor = dt => LISTS[dt] || genericList(dt);
+    const countFor = dt => (LISTS[dt] ? 40 : 3) + hash(dt) % 420;
+    const isNumCol = (dt, i) => typeof listFor(dt).rows[0][i] === 'number';
+    const isStatus = v => typeof v === 'string' && ALL_STATUS.has(v);
+    const statusClass = v => STATUS.ok.includes(v) ? 'ok' : STATUS.bad.includes(v) ? 'bad' : STATUS.warn.includes(v) ? 'warn' : '';
+    const slug = dt => dt.toLowerCase().replace(/ /g, '-');
+
+    onMounted(() => {
+      startBoot();
+      setInterval(() => now.value = new Date(), 1000 * 15);
+      window.addEventListener('keydown', e => {
+        if (phase.value === 'boot') { skipBoot(); return; }
+        if (phase.value !== 'desktop') return;
+        const k = e.key.toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && k === 'k') { e.preventDefault(); openSearch(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'j') { e.preventDefault(); toggleAgent(); }
+        else if (e.key === 'Escape') { if (flyout.value) closeFlyouts(); else if (agentOpen.value) agentOpen.value = false; }
+      });
+    });
+
+    return { phase, boot, bootStatus, skipBoot, timeStr, shortDate, longDate, password, pwInput, signIn, lock, restart,
+      isNarrow, desk, windows, activeId, mod, openApp, focusWin, minimize, toggleMax, closeWin, winStyle, startDrag, startResize,
+      taskItems, taskClick, flyout, powerOpen, toggle, openSearch, closeFlyouts, query, searchInput, results, searchEnter,
+      desktopIcons, selIcon, iconClick, notifs, openNotif,
+      agents: AGENTS, agentList: AGENT_LIST, agentOpen, agentId, cur, threads, draft, typing, agentContext, thread, agentInput,
+      openAgent, switchAgent, toggleAgent, askFrom, send, runAction, toasts, toast,
+      modules: MODULES, recent: RECENT, idr, fmt, listFor, countFor, isNumCol, isStatus, statusClass, slug };
+  }
+});
+app.component('icon', Icon);
+app.component('ekasa-mark', EkasaMark);
+app.mount('#os');
+</script>
+</body></html>
