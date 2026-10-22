@@ -125,6 +125,7 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 | 2026-10-22 | `AIOS Token Usage.cost` dalam IDR. |
 | 2026-10-22 | `AIOS Admin` tidak dibuat per client site; hanya control plane di `#11`. |
 | 2026-10-22 | Setup wizard Frappe diselesaikan job provisioning `#11`; client tidak pernah melihat/mengisi wizard atau memakai `Administrator`. |
+| 2026-10-22 | `AIOS Tenant` dihapus; scope tenant diganti `user`; `1 Client = 1 Site`. |
 | 2026-10-22 | `System Manager` tidak boleh write/create/delete `AIOS Setting`; hanya `Administrator`. |
 | 2026-10-22 | Antrean pending wajib filter role `AIOS Client`; `Guest`/`Administrator` tidak boleh muncul. |
 | 2026-10-22 | `User.aios_status` tidak punya default; registrasi mengisi eksplisit. |
