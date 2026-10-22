@@ -263,7 +263,7 @@ sequenceDiagram
 
 ## Alur 6 — Provisioning Klien Lintas Site & Monitoring dari Developer Control Plane
 
-`AIOS Admin` mengelola banyak klien dari satu dashboard di *site developer*. Setiap *site* klien tetap menjadi *data plane* mandiri; control plane tidak menyimpan data bisnis klien dan tidak pernah memakai `Administrator`.
+`AIOS Admin` mengelola banyak klien dari satu dashboard di *site developer*. Setiap *site* klien tetap menjadi *data plane* mandiri; control plane harian tidak menyimpan data bisnis klien dan tidak memakai `Administrator`. Job provisioning awal memakai `Administrator` hanya untuk menyelesaikan setup wizard dan mengisi `AIOS Setting`, lalu tidak dipakai lagi.
 
 ### 6.1. Membuat Site Klien Baru (tombol **Buat Site** — Fase 2 `#11`)
 
@@ -279,6 +279,7 @@ sequenceDiagram
     CP->>CP: Buat record AIOS Client Site (status = Provisioning)
     CP->>Job: Antrekan job provisioning (frappe.enqueue)
     Job->>Job: bench new-site <nama> + install erpnext + install aios_v1
+    Job->>Site: Selesaikan setup wizard Frappe (company, email, currency)
     Job->>Site: Administrator isi AIOS Setting (default_company, limit, persona)
     Job->>Site: Buat token AIOS Control → simpan sebagai api_credential
     Job-->>CP: Sukses → status = Active, last_seen = sekarang
@@ -292,7 +293,8 @@ sequenceDiagram
 3. **Hanya `AIOS Admin` di site developer** yang boleh memicu; setiap pemanggilan dicatat (siapa, nama site, hasil).
 4. **Gagal di tengah wajib dibersihkan** — `bench drop-site --force` + hapus direktori, supaya tidak ada site setengah jadi.
 5. **Alamat site memakai hostname, bukan port:** `nama.localhost` di lokal, `nama.<IP-server>.nip.io` di server testing. Tanpa domain, tanpa sertifikat, tanpa konfigurasi nginx per site.
-6. **`Administrator` hanya dipakai di dalam job provisioning** untuk mengisi `AIOS Setting`; setelah selesai, jalur harian memakai `AIOS Control`.
+6. **`Administrator` hanya dipakai di dalam job provisioning** untuk menyelesaikan setup wizard Frappe dan mengisi `AIOS Setting`; setelah selesai, jalur harian memakai `AIOS Control`.
+7. **Setup wizard Frappe bukan langkah client.** Job provisioning wajib menyelesaikannya secara programatik (company, email, currency) sebelum site dianggap `Active`; client hanya menerima akses `AIOS Client` setelah site siap.
 
 ```mermaid
 sequenceDiagram
