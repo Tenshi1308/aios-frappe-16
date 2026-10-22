@@ -2,6 +2,7 @@ import frappe
 from werkzeug.wrappers import Response
 from werkzeug.exceptions import HTTPException
 import json
+from urllib.parse import unquote
 
 # Batas ukuran file PDF yang boleh diproses (S4).
 MAX_PDF_BYTES = 5 * 1024 * 1024
@@ -59,9 +60,36 @@ def redirect_response(location):
     res.headers["Location"] = location
     raise CustomAPIResponse(res)
 
-def _legacy_company_id(user: str) -> int:
-    tenant = frappe.db.get_value("AIOS Tenant", {"email": user}, "name")
-    return int(tenant) if tenant and str(tenant).isdigit() else 1
+def _get_aios_client_users():
+    names = frappe.get_all(
+        "Has Role",
+        filters={"role": "AIOS Client", "parenttype": "User"},
+        pluck="parent",
+        distinct=1,
+        limit_page_length=0,
+    )
+    if not names:
+        return []
+    return frappe.get_all(
+        "User",
+        filters={"name": ["in", names]},
+        fields=["name", "full_name", "aios_status", "aios_company_name"],
+        limit_page_length=0,
+    )
+
+
+def _usage_totals(user: str):
+    rows = frappe.get_all(
+        "AIOS Token Usage",
+        filters={"user": user},
+        fields=["input_tokens", "output_tokens", "cost"],
+        limit_page_length=0,
+    )
+    return (
+        sum(int(row.get("input_tokens") or 0) for row in rows),
+        sum(int(row.get("output_tokens") or 0) for row in rows),
+        sum(float(row.get("cost") or 0) for row in rows),
+    )
 
 
 def get_current_session():
@@ -72,7 +100,7 @@ def get_current_session():
         return sess
 
     # ponytail: jembatan transisi ke Frappe `sid`; custom aios_session tetap
-    # didukung sampai migrasi auth selesai. companyId legacy dihapus di Tahap C.
+    # didukung sampai migrasi auth selesai.
     user = frappe.session.user
     if not user or user == "Guest":
         return None
@@ -84,7 +112,6 @@ def get_current_session():
         "user": user,
         "name": frappe.db.get_value("User", user, "full_name") or user,
         "role": role,
-        "companyId": _legacy_company_id(user),
     }
 
 
@@ -132,7 +159,6 @@ def handle_api_request():
         if not sess:
             return json_response({"error": "Belum login"}, 401)
         return json_response({
-            "companyId": sess.get("companyId"),
             "role": sess.get("role"),
             "name": sess.get("name"),
             "user": sess.get("user")
@@ -158,11 +184,11 @@ def handle_api_request():
     # 2. PAYMENT ROUTES
     elif path == "api/payment/status":
         sess = require_session()
-        tenant_status = None
+        status = None
         if sess.get("user"):
-            tenant_status = frappe.db.get_value("AIOS Tenant", {"email": sess.get("user")}, "status")
+            status = frappe.db.get_value("User", sess.get("user"), "aios_status")
         return json_response({
-            "companyStatus": tenant_status or "UNKNOWN",
+            "companyStatus": str(status).upper() if status else "UNKNOWN",
             "lastPayment": None
         })
 
@@ -184,143 +210,139 @@ def handle_api_request():
             return json_response({"error": "Akses ditolak"}, 403)
 
         parts = path.split("/")
+        clients = _get_aios_client_users()
 
-        # GET /api/monitoring/usage (Summary per client)
+        # GET /api/monitoring/usage (Summary per client user)
         if len(parts) == 3 and parts[2] == "usage" and method == "GET":
-            tenants = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status", "email"])
             companies = []
-            for t in tenants:
-                c_id = int(t.name) if str(t.name).isdigit() else 1
-                convs = frappe.get_all("AIOS Conversation", filters={"user": t.email or "__no_user__"}, fields=["name"])
-                conv_names = [c.name for c in convs]
-                total_in = 0
-                total_out = 0
-                if conv_names:
-                    msgs = frappe.get_all(
-                        "AIOS Message",
-                        filters={"conversation": ["in", conv_names]},
-                        fields=["input_tokens", "output_tokens"]
-                    )
-                    total_in = sum(int(m.get("input_tokens") or 0) for m in msgs)
-                    total_out = sum(int(m.get("output_tokens") or 0) for m in msgs)
-
-                cost_idr = round((total_in / 1000.0) * 50 + (total_out / 1000.0) * 150)
+            for user in clients:
+                total_in, total_out, total_cost = _usage_totals(user.name)
                 companies.append({
-                    "id": c_id,
-                    "name": t.tenant_name,
-                    "status": t.status,
-                    "conversations": len(convs),
+                    "id": user.name,
+                    "name": user.aios_company_name or user.full_name or user.name,
+                    "status": (user.aios_status or "UNKNOWN").upper(),
+                    "conversations": frappe.db.count(
+                        "AIOS Conversation", {"user": user.name}
+                    ),
                     "inputTokens": total_in,
                     "outputTokens": total_out,
-                    "costIdr": cost_idr
+                    "costIdr": round(total_cost),
                 })
-
             return json_response({
                 "pricing": {
                     "per1kInputIdr": 50,
                     "per1kOutputIdr": 150,
-                    "currency": "IDR"
+                    "currency": "IDR",
                 },
-                "companies": companies
+                "companies": companies,
             })
 
-        # GET /api/monitoring/usage/<company_id> (Drill-down per branch)
+        # GET /api/monitoring/usage/<user> (Drill-down per branch)
         elif len(parts) == 4 and parts[2] == "usage" and method == "GET":
-            company_id = parts[3]
-            try:
-                tenant = frappe.db.get_value("AIOS Tenant", {"name": str(company_id)}, ["name", "tenant_name", "status", "email"], as_dict=True)
-                if not tenant:
-                    all_clients = frappe.get_all("AIOS Tenant", filters={"role": "CLIENT"}, fields=["name", "tenant_name", "status", "email"])
-                    if all_clients:
-                        tenant = all_clients[0]
+            company_id = unquote(parts[3])
+            user = frappe.db.get_value(
+                "User",
+                company_id,
+                ["name", "full_name", "aios_status", "aios_company_name"],
+                as_dict=True,
+            )
+            if not user and clients:
+                user = clients[0]
 
-                conv_user = tenant.get("email") if tenant else None
-                convs = frappe.get_all("AIOS Conversation", filters={"user": conv_user or "__no_user__"}, fields=["name", "branch"])
-
-                branch_convs = {}
-                for c in convs:
-                    b_key = c.branch or "GENERAL"
-                    branch_convs.setdefault(b_key, []).append(c.name)
-
-                branches_list = []
-                for b_name, c_names in branch_convs.items():
-                    msgs = frappe.get_all(
-                        "AIOS Message",
-                        filters={"conversation": ["in", c_names]},
-                        fields=["input_tokens", "output_tokens"]
+            branches = {}
+            if user:
+                rows = frappe.get_all(
+                    "AIOS Token Usage",
+                    filters={"user": user.name},
+                    fields=["branch", "input_tokens", "output_tokens", "cost"],
+                    limit_page_length=0,
+                )
+                for row in rows:
+                    key = row.branch or "GENERAL"
+                    bucket = branches.setdefault(
+                        key,
+                        {"inputTokens": 0, "outputTokens": 0, "calls": 0, "costIdr": 0.0},
                     )
-                    tin = sum(int(m.get("input_tokens") or 0) for m in msgs)
-                    tout = sum(int(m.get("output_tokens") or 0) for m in msgs)
-                    cost = round((tin / 1000.0) * 50 + (tout / 1000.0) * 150)
-                    branches_list.append({
-                        "branch": b_name,
-                        "inputTokens": tin,
-                        "outputTokens": tout,
-                        "calls": len(msgs),
-                        "costIdr": cost
-                    })
+                    bucket["inputTokens"] += int(row.get("input_tokens") or 0)
+                    bucket["outputTokens"] += int(row.get("output_tokens") or 0)
+                    bucket["calls"] += 1
+                    bucket["costIdr"] += float(row.get("cost") or 0)
 
-                # Urutkan berdasarkan pemakaian token terbesar
-                branches_list.sort(key=lambda x: x["inputTokens"] + x["outputTokens"], reverse=True)
+            branches_list = [
+                {
+                    "branch": key,
+                    "inputTokens": value["inputTokens"],
+                    "outputTokens": value["outputTokens"],
+                    "calls": value["calls"],
+                    "costIdr": round(value["costIdr"]),
+                }
+                for key, value in branches.items()
+            ]
+            branches_list.sort(
+                key=lambda x: x["inputTokens"] + x["outputTokens"], reverse=True
+            )
 
-                return json_response({
-                    "company": {
-                        "id": int(company_id) if str(company_id).isdigit() else 1,
-                        "name": tenant.get("tenant_name") if tenant else "Client",
-                        "status": tenant.get("status") if tenant else "ACTIVE"
-                    },
-                    "branches": branches_list
-                })
-            except CustomAPIResponse:
-                raise
-            except Exception as e:
-                return json_response({"error": f"Gagal memuat monitoring branch: {str(e)}"}, 500)
+            return json_response({
+                "company": {
+                    "id": user.name if user else company_id,
+                    "name": (
+                        (user.aios_company_name or user.full_name or user.name)
+                        if user
+                        else "Client"
+                    ),
+                    "status": (
+                        (user.aios_status or "UNKNOWN").upper() if user else "UNKNOWN"
+                    ),
+                },
+                "branches": branches_list,
+            })
 
-        # GET /api/monitoring/usage/<company_id>/<branch> (Drill-down per worker)
+        # GET /api/monitoring/usage/<user>/<branch> (Drill-down per worker)
         elif len(parts) >= 5 and parts[2] == "usage" and method == "GET":
-            company_id = parts[3]
-            branch = parts[4]
-            try:
-                tenant = frappe.db.get_value("AIOS Tenant", {"name": str(company_id)}, ["name", "email"], as_dict=True)
-                conv_user = tenant.get("email") if tenant else None
+            company_id = unquote(parts[3])
+            branch = unquote(parts[4])
+            user = frappe.db.get_value(
+                "User",
+                company_id,
+                ["name", "full_name", "aios_status", "aios_company_name"],
+                as_dict=True,
+            )
+            if not user and clients:
+                user = clients[0]
 
-                convs = frappe.get_all("AIOS Conversation", filters={"user": conv_user or "__no_user__", "branch": branch}, fields=["name"])
-                c_names = [c.name for c in convs]
-                workers_list = []
-
-                if c_names:
-                    msgs = frappe.get_all(
-                        "AIOS Message",
-                        filters={"conversation": ["in", c_names]},
-                        fields=["worker_key", "input_tokens", "output_tokens"]
+            workers = {}
+            if user:
+                rows = frappe.get_all(
+                    "AIOS Token Usage",
+                    filters={"user": user.name, "branch": branch},
+                    fields=["agent", "input_tokens", "output_tokens", "cost"],
+                    limit_page_length=0,
+                )
+                for row in rows:
+                    key = row.agent or "manager"
+                    bucket = workers.setdefault(
+                        key,
+                        {"inputTokens": 0, "outputTokens": 0, "calls": 0, "costIdr": 0.0},
                     )
-                    worker_groups = {}
-                    for m in msgs:
-                        w_key = m.get("worker_key") or "manager"
-                        worker_groups.setdefault(w_key, []).append(m)
+                    bucket["inputTokens"] += int(row.get("input_tokens") or 0)
+                    bucket["outputTokens"] += int(row.get("output_tokens") or 0)
+                    bucket["calls"] += 1
+                    bucket["costIdr"] += float(row.get("cost") or 0)
 
-                    for w_key, w_msgs in worker_groups.items():
-                        tin = sum(int(m.get("input_tokens") or 0) for m in w_msgs)
-                        tout = sum(int(m.get("output_tokens") or 0) for m in w_msgs)
-                        cost = round((tin / 1000.0) * 50 + (tout / 1000.0) * 150)
-                        workers_list.append({
-                            "workerKey": w_key,
-                            "inputTokens": tin,
-                            "outputTokens": tout,
-                            "calls": len(w_msgs),
-                            "costIdr": cost
-                        })
-
-                workers_list.sort(key=lambda x: x["inputTokens"] + x["outputTokens"], reverse=True)
-
-                return json_response({
-                    "branch": branch,
-                    "workers": workers_list
-                })
-            except CustomAPIResponse:
-                raise
-            except Exception as e:
-                return json_response({"error": f"Gagal memuat monitoring worker: {str(e)}"}, 500)
+            workers_list = [
+                {
+                    "workerKey": key,
+                    "inputTokens": value["inputTokens"],
+                    "outputTokens": value["outputTokens"],
+                    "calls": value["calls"],
+                    "costIdr": round(value["costIdr"]),
+                }
+                for key, value in workers.items()
+            ]
+            workers_list.sort(
+                key=lambda x: x["inputTokens"] + x["outputTokens"], reverse=True
+            )
+            return json_response({"branch": branch, "workers": workers_list})
 
     # 6. CHAT ROUTES
     elif path.startswith("api/chat"):
@@ -449,9 +471,6 @@ def handle_api_request():
             # POST /api/chat/<branch>/stream
             if action == "stream" and method == "POST":
                 sess = require_session()
-                company_id = sess.get("companyId")
-                if not company_id:
-                    return json_response({"error": "Sesi tidak valid"}, 401)
 
                 try:
                     body = frappe.request.get_json(force=True, silent=True) or {}
@@ -476,7 +495,6 @@ def handle_api_request():
 
                 mgr = get_manager(branch)
                 stream_generator = mgr.handle_stream(
-                    company_id=company_id,
                     user_message=message,
                     worker_key=worker_key,
                     conversation_id=conversation_id,

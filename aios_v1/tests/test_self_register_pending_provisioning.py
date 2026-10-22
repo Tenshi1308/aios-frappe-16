@@ -1,4 +1,4 @@
-"""P3: registrasi mandiri → `Pending Provisioning`, tanpa `AIOS Tenant` (Alur 3).
+"""P3: registrasi mandiri → `Pending Provisioning` (Alur 3).
 
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
@@ -45,7 +45,6 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         self.assertEqual(row["send_welcome_email"], 0)
         self.assertEqual(row["user_type"], "Website User")
         self.assertIn("AIOS Client", frappe.get_roles(email))
-        self.assertFalse(frappe.db.exists("AIOS Tenant", {"email": email}))
 
     def test_duplicate_email_returns_same_generic_response(self):
         email = "_test.register.beta@example.com"

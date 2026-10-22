@@ -18,9 +18,9 @@ class TestSwarmRouter(unittest.TestCase):
 
     def setUp(self):
         import uuid
-        self.tenant_id = int(str(uuid.uuid4().int)[:8])
-        self.router = get_swarm_router(self.tenant_id)
-        self.ledger = get_task_ledger(self.tenant_id)
+        self.user_id = f"_test.swarm.{uuid.uuid4().hex[:8]}@example.com"
+        self.router = get_swarm_router(self.user_id)
+        self.ledger = get_task_ledger(self.user_id)
 
     def test_single_hop_consultation(self):
         """Uji pengiriman pesan konsultasi tunggal antar cabang."""

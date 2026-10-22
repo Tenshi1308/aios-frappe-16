@@ -1,4 +1,4 @@
-"""L7/C8-C11: konteks tool, schema filtering, tenant/company boundary."""
+"""L7/C8-C11: konteks tool, schema filtering, user/company boundary."""
 
 import json
 import unittest
@@ -31,15 +31,13 @@ PROBE_BRANCH = "_test_tool_branch_probe"
     description="Probe konteks tool untuk test; tidak dipakai produksi.",
     parameters={
         "value": {"type": "string", "description": "Nilai uji"},
-        "tenant_id": {"type": "integer", "description": "hidden"},
         "user_id": {"type": "string", "description": "hidden"},
         "allowed_company": {"type": "string", "description": "hidden"},
     },
 )
-def _probe(value: str = "", tenant_id=None, user_id=None, allowed_company=None):
+def _probe(value: str = "", user_id=None, allowed_company=None):
     return {
         "value": value,
-        "tenant_id": tenant_id,
         "user_id": user_id,
         "allowed_company": allowed_company,
         "context": get_tool_context(),
@@ -52,15 +50,13 @@ def _probe(value: str = "", tenant_id=None, user_id=None, allowed_company=None):
     branch="finance",
     parameters={
         "department": {"type": "string", "description": "Departemen bisnis"},
-        "tenant_id": {"type": "integer", "description": "hidden"},
         "user_id": {"type": "string", "description": "hidden"},
         "allowed_company": {"type": "string", "description": "hidden"},
     },
 )
-def _probe_branch(department: str = "", tenant_id=None, user_id=None, allowed_company=None):
+def _probe_branch(department: str = "", user_id=None, allowed_company=None):
     return {
         "department": department,
-        "tenant_id": tenant_id,
         "user_id": user_id,
         "allowed_company": allowed_company,
     }
@@ -99,14 +95,11 @@ class TestToolContextBoundary(IntegrationTestCase):
             if s["function"]["name"] == PROBE_BRANCH
         )
         branch_params = branch_schema["function"]["parameters"]
-        self.assertNotIn("tenant_id", branch_params["properties"])
         self.assertIn("department", branch_params["properties"])
-        self.assertNotIn("tenant_id", branch_params["required"])
 
         worker_schemas = get_tools_schema_for_worker("finance", "manager")
         self.assertIn(PROBE_BRANCH, [s["function"]["name"] for s in worker_schemas])
         for schema in worker_schemas:
-            self.assertNotIn("tenant_id", schema["function"]["parameters"]["properties"])
             self.assertNotIn("user_id", schema["function"]["parameters"]["properties"])
             self.assertNotIn("allowed_company", schema["function"]["parameters"]["properties"])
 
@@ -120,19 +113,16 @@ class TestToolContextBoundary(IntegrationTestCase):
         result = self._execute(
             {
                 "value": "ok",
-                "tenant_id": 999,
                 "user_id": "llm-evil",
                 "allowed_company": "LLM Evil Co",
             },
             context={
                 "user": "_test.tool.context@example.com",
                 "allowed_company": "_Test Company",
-                "tenant_id": 7,
             },
         )
         self.assertEqual(result["user_id"], "_test.tool.context@example.com")
         self.assertEqual(result["allowed_company"], "_Test Company")
-        self.assertEqual(result["tenant_id"], 7)
         self.assertEqual(result["context"]["user_id"], "_test.tool.context@example.com")
         self.assertEqual(result["context"]["allowed_company"], "_Test Company")
 
@@ -146,13 +136,12 @@ class TestToolContextBoundary(IntegrationTestCase):
     def test_c9_session_context_in_request(self):
         frappe.set_user("Administrator")
         frappe.local.request = object()
-        with (
-            patch("aios_v1.lib.tool_registry._resolve_allowed_company", return_value="_Test Company"),
-            patch("aios_v1.lib.tool_registry._resolve_tenant_id", return_value=None),
+        with patch(
+            "aios_v1.lib.tool_registry._resolve_allowed_company",
+            return_value="_Test Company",
         ):
             result = self._execute()
         self.assertEqual(result["user_id"], "Administrator")
-        self.assertIsNone(result["tenant_id"])
 
     def test_c9_background_explicit_context(self):
         frappe.set_user("Guest")
@@ -168,35 +157,6 @@ class TestToolContextBoundary(IntegrationTestCase):
         ):
             with self.assertRaises(frappe.ValidationError):
                 execute_tool(PROBE, "{}", context={"user": "_test.tool.context@example.com"})
-        log.assert_called()
-
-    def test_tenant_transition_injected_server_side(self):
-        frappe.set_user("Administrator")
-        tenant = frappe.get_doc(
-            {
-                "doctype": "AIOS Tenant",
-                "tenant_name": "_Test Tool Context Tenant",
-                "email": "_test.tool.context@example.com",
-            }
-        ).insert(ignore_permissions=True)
-        frappe.set_user("Guest")
-        result = self._execute(
-            context={
-                "user": "_test.tool.context@example.com",
-                "allowed_company": "_Test Company",
-            }
-        )
-        self.assertEqual(result["tenant_id"], int(tenant.name))
-
-    def test_tenant_missing_is_omitted_and_logged(self):
-        with patch("aios_v1.lib.tool_registry.frappe.log_error") as log:
-            result = self._execute(
-                context={
-                    "user": "_test.no.tenant@example.com",
-                    "allowed_company": "_Test Company",
-                }
-            )
-        self.assertIsNone(result["tenant_id"])
         log.assert_called()
 
     def test_allowed_company_resolution_prefers_aios_setting(self):
@@ -220,7 +180,6 @@ class TestToolContextBoundary(IntegrationTestCase):
         context = {
             "user": "_test.tool.reader@example.com",
             "allowed_company": "_Test Company",
-            "tenant_id": 42,
         }
         result = json.loads(
             execute_tool(
@@ -228,7 +187,6 @@ class TestToolContextBoundary(IntegrationTestCase):
                 json.dumps(
                     {
                         "value": "ok",
-                        "tenant_id": 999,
                         "user_id": "llm-evil",
                         "allowed_company": "LLM Evil Co",
                     }
@@ -239,14 +197,12 @@ class TestToolContextBoundary(IntegrationTestCase):
         self.assertEqual(result["value"], "ok")
         self.assertEqual(result["user_id"], context["user"])
         self.assertEqual(result["allowed_company"], context["allowed_company"])
-        self.assertEqual(result["tenant_id"], context["tenant_id"])
 
         probe_schema = next(s for s in get_all_tools_schema() if s["function"]["name"] == PROBE)
         self.assertIn("value", probe_schema["function"]["parameters"]["properties"])
-        self.assertNotIn("tenant_id", probe_schema["function"]["parameters"]["properties"])
 
     def test_all_schemas_hide_owner_arguments(self):
-        hidden = {"tenant_id", "user_id", "allowed_company"}
+        hidden = {"user_id", "allowed_company"}
         for schema in get_all_tools_schema():
             props = schema["function"]["parameters"]["properties"]
             self.assertFalse(hidden & set(props), schema["function"]["name"])

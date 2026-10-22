@@ -33,10 +33,8 @@ class TestEndpointAuthContract(unittest.TestCase):
     def test_session_supports_frappe_sid(self):
         self.assertIn("frappe.session.user", _source())
 
-    def test_stream_has_no_tenant_fallback(self):
-        src = _source()
-        self.assertNotIn('sess.get("companyId", 2) if sess else 2', src)
-        self.assertNotIn('sess.get("companyId", 1) if sess else 1', src)
+    def test_stream_has_no_company_id(self):
+        self.assertNotIn('sess.get("companyId")', _source())
 
 
 class TestRegisterAndPaymentContract(unittest.TestCase):

@@ -1,6 +1,5 @@
 // Tipe bersama lintas halaman (cermin ringkas bentuk respons server).
 export interface Me {
-  companyId: number;
   role: "CLIENT" | "DEVELOPER";
   name: string;
 }
@@ -54,7 +53,7 @@ export interface ChatReply {
 }
 
 export interface UsageCompany {
-  id: number;
+  id: string;
   name: string;
   status: string;
   conversations: number;

@@ -16,8 +16,8 @@ export default function DeveloperDashboardPage() {
   const router = useRouter();
   const [companies, setCompanies] = useState<UsageCompany[]>([]);
   const [pricing, setPricing] = useState<{ per1kInputIdr: number; per1kOutputIdr: number } | null>(null);
-  const [expandedCompany, setExpandedCompany] = useState<number | null>(null);
-  const [branches, setBranches] = useState<Record<number, UsageBranch[]>>({});
+  const [expandedCompany, setExpandedCompany] = useState<string | null>(null);
+  const [branches, setBranches] = useState<Record<string, UsageBranch[]>>({});
   const [expandedBranchKey, setExpandedBranchKey] = useState<string | null>(null);
   const [workersMap, setWorkersMap] = useState<Record<string, UsageWorker[]>>({});
   const [loadingBranchKey, setLoadingBranchKey] = useState<string | null>(null);
@@ -52,7 +52,7 @@ export default function DeveloperDashboardPage() {
       setExpandedCompany(c.id);
       setExpandedBranchKey(null);
       if (!branches[c.id]) {
-        const d = await api<{ branches: UsageBranch[] }>(`/monitoring/usage/${c.id}`);
+        const d = await api<{ branches: UsageBranch[] }>(`/monitoring/usage/${encodeURIComponent(c.id)}`);
         setBranches((prev) => ({ ...prev, [c.id]: d.branches }));
       }
     },
@@ -60,8 +60,8 @@ export default function DeveloperDashboardPage() {
   );
 
   const toggleBranch = useCallback(
-    async (companyId: number, branch: string) => {
-      const key = `${companyId}:${branch}`;
+    async (userId: string, branch: string) => {
+      const key = `${userId}:${branch}`;
       if (expandedBranchKey === key) {
         setExpandedBranchKey(null);
         return;
@@ -70,7 +70,7 @@ export default function DeveloperDashboardPage() {
       if (!workersMap[key]) {
         setLoadingBranchKey(key);
         try {
-          const d = await api<{ workers: UsageWorker[] }>(`/monitoring/usage/${companyId}/${branch}`);
+          const d = await api<{ workers: UsageWorker[] }>(`/monitoring/usage/${encodeURIComponent(userId)}/${encodeURIComponent(branch)}`);
           setWorkersMap((prev) => ({ ...prev, [key]: d.workers }));
         } finally {
           setLoadingBranchKey(null);

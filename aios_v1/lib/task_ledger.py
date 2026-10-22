@@ -5,15 +5,15 @@ Menyimpan dan melacak status task chain kolaborasi lintas cabang AI Manager.
 
 import json
 import frappe
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 class TaskLedger:
-    def __init__(self, tenant_id: int):
-        self.tenant_id = tenant_id
+    def __init__(self, user_id: str):
+        self.user_id = user_id
 
     def _get_cache_key(self, task_id: str) -> str:
-        return f"aios:task_ledger:{self.tenant_id}:{task_id}"
+        return f"aios:task_ledger:{self.user_id}:{task_id}"
 
     def create_task_chain(
         self,
@@ -26,7 +26,7 @@ class TaskLedger:
         now = datetime.now().isoformat()
         chain_data = {
             "task_id": task_id,
-            "tenant_id": self.tenant_id,
+            "user_id": self.user_id,
             "origin_branch": origin_branch,
             "current_branch": origin_branch,
             "status": "IN_PROGRESS",
@@ -106,5 +106,5 @@ class TaskLedger:
         frappe.cache().set_value(self._get_cache_key(task_id), json.dumps(chain), expires_in_sec=86400)
         return chain
 
-def get_task_ledger(tenant_id: int = 1) -> TaskLedger:
-    return TaskLedger(tenant_id=tenant_id)
+def get_task_ledger(user_id: str) -> TaskLedger:
+    return TaskLedger(user_id=user_id)

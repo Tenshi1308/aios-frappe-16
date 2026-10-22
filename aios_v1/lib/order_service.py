@@ -191,12 +191,17 @@ def create_or_update_erpnext_sales_order(session_name: str | int, order_items: l
         # 2. Pastikan entitas Customer tersedia di ERPNext
         customer_id = ensure_erpnext_customer(lead_name=lead_name, full_name=full_name)
 
-        # 3. Tentukan Company default yang aktif
+        # 3. Tentukan Company default site-level; jangan fallback per-user/hardcode.
         company = (
-            frappe.defaults.get_user_default("Company")
+            frappe.db.get_single_value("AIOS Setting", "default_company")
             or frappe.db.get_single_value("Global Defaults", "default_company")
-            or "Demo Client ERP (Demo)"
         )
+        if not company:
+            frappe.log_error(
+                "default_company kosong: AIOS Setting/Global Defaults",
+                "AIOS Order Service",
+            )
+            frappe.throw("Company default belum dikonfigurasi")
 
         # 4. Validasi dan siapkan item pesanan
         default_delivery_date = getdate(add_days(nowdate(), 3))

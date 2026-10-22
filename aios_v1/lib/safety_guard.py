@@ -17,12 +17,12 @@ class CircuitBreaker:
     """Melacak kesehatan dan ketersediaan cabang-cabang ERP."""
     
     @staticmethod
-    def _cache_key(tenant_id: int, branch: str) -> str:
-        return f"aios:circuit_breaker:{tenant_id}:{branch.lower()}"
+    def _cache_key(user_id: str, branch: str) -> str:
+        return f"aios:circuit_breaker:{user_id}:{branch.lower()}"
 
     @classmethod
-    def get_state(cls, tenant_id: int, branch: str) -> Dict[str, Any]:
-        raw = frappe.cache().get_value(cls._cache_key(tenant_id, branch))
+    def get_state(cls, user_id: str, branch: str) -> Dict[str, Any]:
+        raw = frappe.cache().get_value(cls._cache_key(user_id, branch))
         if raw:
             try:
                 import json
@@ -32,10 +32,10 @@ class CircuitBreaker:
         return {"failures": 0, "status": "CLOSED", "last_failure": 0}
 
     @classmethod
-    def record_failure(cls, tenant_id: int, branch: str) -> Dict[str, Any]:
+    def record_failure(cls, user_id: str, branch: str) -> Dict[str, Any]:
         """Mencatat kegagalan respons pada cabang tertentu."""
         import json
-        state = cls.get_state(tenant_id, branch)
+        state = cls.get_state(user_id, branch)
         state["failures"] += 1
         state["last_failure"] = time.time()
 
@@ -43,30 +43,30 @@ class CircuitBreaker:
             state["status"] = "OPEN"  # Sirkuit Terbuka (Blokir request baru)
 
         frappe.cache().set_value(
-            cls._cache_key(tenant_id, branch),
+            cls._cache_key(user_id, branch),
             json.dumps(state),
             expires_in_sec=CIRCUIT_BREAKER_COOLDOWN_SECONDS
         )
         return state
 
     @classmethod
-    def record_success(cls, tenant_id: int, branch: str):
+    def record_success(cls, user_id: str, branch: str):
         """Mereset sirkuit ke kondisi normal saat cabang berhasil merespons."""
         import json
         state = {"failures": 0, "status": "CLOSED", "last_failure": 0}
         frappe.cache().set_value(
-            cls._cache_key(tenant_id, branch),
+            cls._cache_key(user_id, branch),
             json.dumps(state),
             expires_in_sec=86400
         )
 
     @classmethod
-    def is_branch_available(cls, tenant_id: int, branch: str) -> Tuple[bool, str]:
+    def is_branch_available(cls, user_id: str, branch: str) -> Tuple[bool, str]:
         """
         Memeriksa apakah cabang siap menerima pesan atau sedang dalam masa isolasi / cooldown.
         Returns: (is_available, message)
         """
-        state = cls.get_state(tenant_id, branch)
+        state = cls.get_state(user_id, branch)
         if state.get("status") == "OPEN":
             elapsed = time.time() - state.get("last_failure", 0)
             if elapsed < CIRCUIT_BREAKER_COOLDOWN_SECONDS:

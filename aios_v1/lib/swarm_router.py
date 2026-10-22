@@ -4,11 +4,9 @@ Mengelola orkestrasi pesan antar AI Manager 9 Cabang ERP.
 Terintegrasi dengan Global Task Ledger, SafetyGuard, dan CircuitBreaker.
 """
 
-import time
-import frappe
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Callable
 from aios_v1.lib.task_ledger import get_task_ledger
-from aios_v1.lib.safety_guard import SafetyGuard, CircuitBreaker, MAX_CHAIN_DEPTH
+from aios_v1.lib.safety_guard import SafetyGuard, CircuitBreaker
 
 # Registry callback handler untuk masing-masing cabang
 _BRANCH_HANDLERS: Dict[str, Callable] = {}
@@ -18,9 +16,9 @@ def register_branch_handler(branch: str, handler: Callable):
     _BRANCH_HANDLERS[branch.lower()] = handler
 
 class SwarmRouter:
-    def __init__(self, tenant_id: int = 1):
-        self.tenant_id = tenant_id
-        self.ledger = get_task_ledger(tenant_id)
+    def __init__(self, user_id: str):
+        self.user_id = user_id
+        self.ledger = get_task_ledger(user_id)
 
     def route_message(
         self,
@@ -35,10 +33,9 @@ class SwarmRouter:
         Mengarahkan pesan kolaborasi dari cabang asal ke cabang tujuan dengan pemeriksaan keselamatan.
         """
         to_branch_norm = to_branch.lower()
-        from_branch_norm = from_branch.lower()
 
         # 1. Cek Circuit Breaker target cabang
-        is_available, cb_msg = CircuitBreaker.is_branch_available(self.tenant_id, to_branch_norm)
+        is_available, cb_msg = CircuitBreaker.is_branch_available(self.user_id, to_branch_norm)
         if not is_available:
             self.ledger.add_hop(
                 task_id=task_id,
@@ -88,7 +85,7 @@ class SwarmRouter:
             handler = _BRANCH_HANDLERS.get(to_branch_norm)
             if handler:
                 exec_result = handler(
-                    tenant_id=self.tenant_id,
+                    user_id=self.user_id,
                     task_id=task_id,
                     from_branch=from_branch,
                     message_type=message_type,
@@ -104,7 +101,7 @@ class SwarmRouter:
                 }
 
             # Catat keberhasilan ke Circuit Breaker dan Ledger
-            CircuitBreaker.record_success(self.tenant_id, to_branch_norm)
+            CircuitBreaker.record_success(self.user_id, to_branch_norm)
             self.ledger.add_hop(
                 task_id=task_id,
                 from_branch=from_branch,
@@ -129,7 +126,7 @@ class SwarmRouter:
 
         except Exception as e:
             # Catat kegagalan ke Circuit Breaker
-            cb_state = CircuitBreaker.record_failure(self.tenant_id, to_branch_norm)
+            cb_state = CircuitBreaker.record_failure(self.user_id, to_branch_norm)
             err_msg = str(e)
             
             self.ledger.add_hop(
@@ -153,5 +150,5 @@ class SwarmRouter:
                 "response": None
             }
 
-def get_swarm_router(tenant_id: int = 1) -> SwarmRouter:
-    return SwarmRouter(tenant_id=tenant_id)
+def get_swarm_router(user_id: str) -> SwarmRouter:
+    return SwarmRouter(user_id=user_id)

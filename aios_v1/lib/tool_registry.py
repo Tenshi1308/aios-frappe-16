@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 _TOOL_REGISTRY: Dict[str, Any] = {}
-_HIDDEN_TOOL_PARAMS = frozenset({"tenant_id", "user_id", "allowed_company"})
+_HIDDEN_TOOL_PARAMS = frozenset({"user_id", "allowed_company"})
 
 
 class ToolContextError(frappe.ValidationError):
@@ -32,15 +32,6 @@ def _resolve_allowed_company() -> str:
     return str(company).strip()
 
 
-def _resolve_tenant_id(user: str) -> Optional[int]:
-    if not user:
-        return None
-    tenant = frappe.db.get_value("AIOS Tenant", {"email": user}, "name")
-    if tenant and str(tenant).isdigit():
-        return int(tenant)
-    return None
-
-
 def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if context is not None:
         if not isinstance(context, dict):
@@ -51,9 +42,6 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
             frappe.log_error("Context tool tanpa user valid", "AIOS Tool Context")
             raise ToolContextError("Context tool tanpa user valid")
         allowed_company = context.get("allowed_company") or _resolve_allowed_company()
-        tenant_id = context.get("tenant_id")
-        if tenant_id is None:
-            tenant_id = _resolve_tenant_id(user)
     else:
         if getattr(frappe.local, "request", None) is None:
             frappe.log_error(
@@ -66,7 +54,6 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
             frappe.log_error("execute_tool tanpa sesi valid", "AIOS Tool Context")
             raise ToolContextError("Sesi tidak valid untuk execute_tool")
         allowed_company = _resolve_allowed_company()
-        tenant_id = _resolve_tenant_id(user)
 
     if not allowed_company:
         frappe.log_error(
@@ -75,16 +62,9 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
         )
         raise ToolContextError("allowed_company belum dikonfigurasi")
 
-    if tenant_id is None:
-        frappe.log_error(
-            f"tenant_id tidak ditemukan untuk {user}; argumen tenant_id diomit",
-            "AIOS Tool Context",
-        )
-
     return {
         "user_id": user,
         "allowed_company": allowed_company,
-        "tenant_id": tenant_id,
     }
 
 
@@ -201,7 +181,7 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
 
     `context` eksplisit untuk background/demo/test. Di request HTTP, context
     boleh None dan diambil dari sesi. Argumen LLM tidak pernah menjadi sumber
-    `user_id`, `tenant_id`, atau `allowed_company`.
+    `user_id` atau `allowed_company`.
     """
     _ensure_tools_loaded()
     if name not in _TOOL_REGISTRY:
@@ -226,8 +206,6 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
             kwargs["user_id"] = ctx["user_id"]
         if "allowed_company" in signature.parameters:
             kwargs["allowed_company"] = ctx["allowed_company"]
-        if "tenant_id" in signature.parameters and ctx.get("tenant_id") is not None:
-            kwargs["tenant_id"] = ctx["tenant_id"]
 
         with tool_context(ctx):
             result = func(**kwargs)

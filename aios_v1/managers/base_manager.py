@@ -103,7 +103,7 @@ class BaseManager:
 
         return "\n\n".join(parts)
 
-    def handle_stream(self, company_id: int, user_message: str, worker_key: str = None, conversation_id: int = None, user: str = None):
+    def handle_stream(self, user_message: str, worker_key: str = None, conversation_id: int = None, user: str = None):
         user = user or frappe.session.user
         # 0. Flush initial buffer untuk bypass proxy/nginx buffering
         yield f": {' ' * 1024}\n\n"

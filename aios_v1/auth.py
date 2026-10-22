@@ -1,4 +1,4 @@
-"""Registrasi klien AIOS di atas `User` Frappe (bukan AIOS Tenant).
+"""Registrasi klien AIOS di atas `User` Frappe.
 
 Alur sesuai docs/04 Alur 1: user baru masuk `Pending Provisioning`, `enabled = 0`,
 tanpa email reset password, dan tanpa auto-login.
