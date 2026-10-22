@@ -135,7 +135,7 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 | Gap | Dampak |
 |---|---|
 | `AIOS Setting` JSON masih kurang `default_user_token_limit`, `max_users`, `company_context_persona` | Field site-level lain menyusul `#5`/`#8`. |
-| `AIOS Admin` role lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role control plane menyusul `#11`. |
+| `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
 | `/api/monitoring` masih pakai `AIOS Tenant` | Route lama sampai `#11`; `monitoring_service.py` dead sudah dihapus. |
 
 ---
