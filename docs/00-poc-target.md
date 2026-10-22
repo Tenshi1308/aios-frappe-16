@@ -129,6 +129,8 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 | 2026-10-22 | `System Manager` tidak boleh write/create/delete `AIOS Setting`; hanya `Administrator`. |
 | 2026-10-22 | Antrean pending wajib filter role `AIOS Client`; `Guest`/`Administrator` tidak boleh muncul. |
 | 2026-10-22 | `User.aios_status` tidak punya default; registrasi mengisi eksplisit. |
+| 2026-10-22 | Kuota PoC = satu gerbang site: `AIOS Setting.site_token_limit` vs `site_tokens_used`; `User.aios_token_limit` **bukan** gerbang (dihapus di `#5`), `User.aios_tokens_used` = statistik harian; counter site + user di-reset harian, ledger `AIOS Token Usage` tetap. |
+| 2026-10-22 | Status `Pending Action Draft`: `PENDING_APPROVAL` → `APPROVED` → `EXECUTED` (hanya setelah dokumen ERPNext dibuat) / `REJECTED` / `EXPIRED`; `COMPLETED` dihapus. |
 
 ---
 
@@ -136,9 +138,9 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 
 | Gap | Dampak |
 |---|---|
-| `AIOS Setting` JSON masih kurang `default_user_token_limit`, `max_users`, `company_context_persona` | Field site-level lain menyusul `#5`/`#8`. |
+| `AIOS Setting` JSON masih kurang `max_users` dan `company_context_persona` | Field site-level lain menyusul `#5`/`#8`; `default_user_token_limit` dibatalkan (kuota per user tidak dipakai). |
 | `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
-| `/api/monitoring` masih pakai `AIOS Tenant` | Route lama sampai `#11`; `monitoring_service.py` dead sudah dihapus. |
+| ~~`/api/monitoring` masih pakai `AIOS Tenant`~~ | ✅ Dipindah ke `User` + `AIOS Token Usage` di `#4a-2`. |
 
 ---
 

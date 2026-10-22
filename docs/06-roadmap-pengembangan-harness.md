@@ -96,18 +96,18 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 
 ### 1. Registri Site Klien (`AIOS Client Site`, hanya di site developer)
 1. Field mengikuti `docs/03` §1.4: `site_name` (unique), `base_url`, `company_name`, `contact_name`, `contact_email`, `api_credential` (`Password`), `status`, `last_seen`, `last_error`, `notes`.
-2. **Tanpa `plan`/billing/tiering.** Kuota tetap 3 lapis (`User.aios_token_limit`, `AIOS Setting.site_token_limit`, registry opsional).
+2. **Tanpa `plan`/billing/tiering.** Kuota PoC = satu gerbang site (`AIOS Setting.site_token_limit`); `User.aios_tokens_used` statistik; registry opsional.
 3. Validasi `base_url`: allowlist + wajib HTTPS di non-lokal, guard SSRF (RFC1918/loopback/link-local/cloud metadata, re-check redirect).
 
 ### 2. Role `AIOS Control` & Control API di Site Klien
 1. Role layanan tanpa login manusia: **`read` pada `User` dan `AIOS Token Usage` saja**. Tidak ada akses `AIOS Setting`, tidak ada akses DocType bisnis/ERPNext.
-2. Dua tulis lifecycle (`aios_status`, `aios_token_limit`) lewat endpoint khusus yang hanya menyentuh dua field itu via `frappe.db.set_value` — **bukan `DocPerm write` pada `User`** (yang akan membuka password/role/`enabled`).
+2. Tulis lifecycle (`aios_status`) lewat endpoint khusus yang hanya menyentuh field itu via `frappe.db.set_value` — **bukan `DocPerm write` pada `User`** (yang akan membuka password/role/`enabled`).
 3. Endpoint `/api/control/health`, `/users`, `/users/{user}/activate`, `/metrics`: validasi token `api_credential`, tolak sesi manusia, audit tiap panggilan, mask token di semua error/log. `/metrics` mengembalikan angka agregat saja, bukan isi dokumen.
 4. `AIOS Admin` **tidak dipasang di site klien**; `Administrator` tidak pernah dipakai jalur ini.
 
 ### 3. Dashboard Control Plane (UI `AIOS Admin`)
 1. **Daftar Site & Kesehatan:** status, `last_seen`, `last_error`, aksi health check manual.
-2. **Antrean `Pending Provisioning` Lintas Site:** daftar user pending per site, aksi setujui/tolak, set `aios_persona` & `aios_token_limit`.
+2. **Antrean `Pending Provisioning` Lintas Site:** daftar user pending per site, aksi setujui/tolak, set `aios_persona`.
 3. **Undangan Sekali Pakai:** token set-password dibuat & divalidasi **di site klien** (expiry + sekali pakai); dashboard hanya menampilkan tautan + kode registrasi untuk dikirim manual. **Tanpa SMTP untuk PoC**; email otomatis menyusul lewat Email Queue Frappe tanpa mengubah kontrak tautan.
 4. **Monitoring Agregat:** token usage per site/user/cabang/model, jumlah user aktif, site down.
 
@@ -122,7 +122,7 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 - `aios_v1/tests/test_control_api_auth.py`: token salah/kosong → 401 + tercatat; sesi manusia ditolak; token tidak muncul di pesan error/log.
 - `aios_v1/tests/test_control_site_registry.py`: `site_name` unik, `base_url` non-allowlist ditolak.
 - `aios_v1/tests/test_control_ssrf_guard.py`: menolak `127.0.0.1`, `169.254.169.254`, IP privat, dan redirect ke host terlarang.
-- `aios_v1/tests/test_control_lifecycle.py`: setujui user pending → `aios_status = "Active"` + `enabled = 1`; ubah `aios_token_limit`; `AIOS Control` tidak bisa membaca `AIOS Setting` maupun dokumen bisnis; `Administrator` tidak tersentuh.
+- `aios_v1/tests/test_control_lifecycle.py`: setujui user pending → `aios_status = "Active"` + `enabled = 1`; `AIOS Control` tidak bisa membaca `AIOS Setting` maupun dokumen bisnis; `Administrator` tidak tersentuh.
 - `aios_v1/tests/test_site_provisioning.py`: satu penekanan tombol menghasilkan site baru yang bisa dibuka; nama site tidak valid (huruf besar, spasi, `..`, `;`) ditolak.
 - `aios_v1/tests/test_site_provisioning_cleanup.py`: kegagalan di tengah job tidak meninggalkan site/database setengah jadi.
 

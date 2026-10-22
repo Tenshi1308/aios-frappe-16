@@ -19,9 +19,9 @@ sequenceDiagram
 
     Klien->>UI: Isi Nama Lengkap, Email, Password, Nama Perusahaan
     UI->>API: POST /api/method/aios_v1.auth.register_account
-    API->>Setting: Baca get_single_value("AIOS Setting", "default_user_token_limit")
+    Note over API,Setting: Kuota token site-level (dibaca saat /stream, bukan registrasi)
     API->>DB: Buat DocType "User" (AIOS Client Profile, desk_access=0)
-    Note over DB: Kunci Keamanan User Pending:<br/>aios_status = "Pending Provisioning"<br/>enabled = 0 (Sinkron via User.validate)<br/>send_welcome_email = 0 & flags.no_welcome_mail = True<br/>aios_company_name = Nama PT<br/>aios_persona = "executive"<br/>aios_token_limit = default_user_token_limit<br/>aios_tokens_used = 0
+    Note over DB: Kunci Keamanan User Pending:<br/>aios_status = "Pending Provisioning"<br/>enabled = 0 (Sinkron via User.validate)<br/>send_welcome_email = 0 & flags.no_welcome_mail = True<br/>aios_company_name = Nama PT<br/>aios_persona = "executive"<br/>aios_tokens_used = 0
     DB-->>API: User tersimpan (Tanpa Email Reset Password & Tanpa Sesi Login)
     API-->>UI: Return { status: "PENDING_PROVISIONING" }
     UI-->>Klien: Tampilkan Layar "Pendaftaran Diterima — Menunggu Persetujuan Admin"
@@ -31,7 +31,7 @@ sequenceDiagram
 ### Rincian Langkah Alur 1:
 1. **Input Registrasi Mandiri:** Calon klien mengisi Nama Lengkap, Email, Password, dan Nama Perusahaan/PT pada halaman `/aios/register`.
 2. **Validasi & Proteksi Enumerasi:** Endpoint registrasi (`@frappe.whitelist(allow_guest=True)` + `@rate_limit`) memvalidasi input dan menerapkan respons seragam agar tidak dapat disalahgunakan untuk enumerasi email.
-3. **Resolusi Kuota Default dari `AIOS Setting`:** Sistem membaca nilai `frappe.db.get_single_value("AIOS Setting", "default_user_token_limit")` (tanpa angka gaib hardcoded di kode Python).
+3. **Kuota Token Site-Level:** Registrasi tidak menyalin kuota per user; gerbang kuota dibaca dari `AIOS Setting.site_token_limit` saat `/stream` (Alur 4), bukan saat registrasi.
 4. **Pembuatan Akun `User` Terkunci (`Pending Provisioning`):**
    - Sistem membuat dokumen `User` bawaan Frappe dengan Role `AIOS Client` (`user_type = "Website User"`, `desk_access = 0`).
    - Mematikan pengiriman email sambutan/reset password bawaan Frappe (`user.send_welcome_email = 0` dan `user.flags.no_welcome_mail = True`) sehingga user yang belum di-provision tidak menerima link `/update-password`.
@@ -39,19 +39,18 @@ sequenceDiagram
      - `aios_status = "Pending Provisioning"` (yang secara otomatis menyetel `User.enabled = 0` di `User.validate` sehingga `/login` standar Frappe juga tertutup rapat).
      - `aios_company_name = company_name`
      - `aios_persona = "executive"`
-     - `aios_token_limit = default_user_token_limit`
      - `aios_tokens_used = 0`
    - Sistem **tidak** membuat DocType `AIOS Tenant`, **tidak** membuat `Company` ERPNext secara paksa di dalam request tersebut, dan **tidak** melakukan *auto-login* (`login_as`) ke `/aios`.
 5. **Tampilan Menunggu Persetujuan:** UI menampilkan informasi bahwa pendaftaran telah diterima dan menunggu persetujuan admin AIOS (dilihat `AIOS Admin` di Developer Control Plane, Alur 6).
-6. **Aktivasi via Control Plane:** Setelah disetujui, `AIOS Admin` di control plane menetapkan `aios_persona` (`executive`, `finance`, `sales`) dan `aios_token_limit`, lalu Control API *site* klien menyetel `User.aios_status = "Active"` (yang otomatis mengaktifkan `User.enabled = 1`). Kredensial awal tidak pernah dikirim via email — pengguna diarahkan ke tautan set-password sekali pakai yang dikirim `AIOS Admin` secara manual (WhatsApp/Telegram/email sendiri), lihat Alur 6.
+6. **Aktivasi via Control Plane:** Setelah disetujui, `AIOS Admin` di control plane menetapkan `aios_persona` (`executive`, `finance`, `sales`), lalu Control API *site* klien menyetel `User.aios_status = "Active"` (yang otomatis mengaktifkan `User.enabled = 1`). Kredensial awal tidak pernah dikirim via email — pengguna diarahkan ke tautan set-password sekali pakai yang dikirim `AIOS Admin` secara manual (WhatsApp/Telegram/email sendiri), lihat Alur 6.
 
 ---
 
 ## Alur 2 — Konfigurasi Provider, Model Routing, Plugin, & Kuota `User` dari Control Plane
 
-Operator (`AIOS Admin` di Developer Control Plane) mengatur mesin kecerdasan, kapabilitas tool, serta kuota pemakaian token secara terpusat lintas site. **UI-nya berada di control plane; data konfigurasinya tetap tersimpan di site klien masing-masing** (`AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin` di site klien) — control plane hanya menyimpan registry site + kredensial Control API (`docs/03` §1.4).
+Operator (`AIOS Admin` di Developer Control Plane) mengatur mesin kecerdasan dan kapabilitas tool secara terpusat lintas site. **UI-nya berada di control plane; data konfigurasinya tetap tersimpan di site klien masing-masing** (`AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin` di site klien) — control plane hanya menyimpan registry site + kredensial Control API (`docs/03` §1.4).
 
-> **`AIOS Setting` bukan bagian dari alur ini.** `default_company`, `default_user_token_limit`, dan `company_context_persona` diisi `Administrator` sekali saat *site* disiapkan (`docs/03` §1.3). Control plane tidak membaca maupun menulisnya.
+> **`AIOS Setting` bukan bagian dari alur ini.** `default_company` dan `company_context_persona` diisi `Administrator` sekali saat *site* disiapkan (`docs/03` §1.3). Control plane tidak membaca maupun menulisnya.
 
 ```mermaid
 flowchart TD
@@ -66,7 +65,7 @@ flowchart TD
     Plugin --> PluginExt["Install / Sambungkan External MCP Server\n& Atur Role-Scoping via Child Table AIOS Plugin Scope"]
     PluginBuiltIn --> Quota["4. Manajemen User & Hierarchical Token Quota (via Control API)"]
     PluginExt --> Quota
-    Quota --> QuotaDetail["Sesuaikan aios_token_limit / aios_status per User (via Control API)\nAIOS Setting (default_company, default_user_token_limit) diisi Administrator saat provisioning"]
+    Quota --> QuotaDetail["Aktifkan/suspend aios_status per User (via Control API)\nAIOS Setting (default_company) diisi Administrator saat provisioning; kuota token = site-level"]
 ```
 
 ### Rincian Langkah Alur 2:
@@ -74,7 +73,7 @@ flowchart TD
 2. **Pemetaan Model per Peran Agen (`AIOS Agent Model Route`):** `AIOS Admin` memilih provider dan model spesifik untuk masing-masing **Orchestrator** (`Finance Manager`, `Sales Manager`) maupun setiap **Sub-Agent** (`cfo`, `financial-analyst`, `treasurer`, `budgeting-staff`, `finance-staff`, `sales-representative`, `sales-data-analyst`, `customer-service`, `marketing-specialist`), dengan `route_key` unik dan validasi nama agen ke `registry.py`.
 3. **Kontrak *Fail-Loudly* (Zero Default Hardcode):** Bila ada agen yang dipanggil tetapi belum memiliki rute model aktif di database *site* klien, sistem langsung menghentikan eksekusi secara eksplisit (`frappe.throw`), mencatat ke `Error Log`, dan tidak pernah jatuh ke model default hardcoded.
 4. **Pengaturan Plugin & MCP (`AIOS Plugin`):** `AIOS Admin` mengaktifkan/menonaktifkan *Built-in Default Plugins* maupun menyambungkan server MCP eksternal, serta mengatur hak akses plugin per cabang/sub-agent (*Least Privilege*) — semuanya di *site* klien yang dipilih.
-5. **Manajemen Kuota Token per `User`:** `AIOS Admin` memantau konsumsi token tiap pengguna (`User.aios_tokens_used` & log `AIOS Token Usage`), lalu menaikkan/menurunkan `User.aios_token_limit` atau mengubah `User.aios_status` (`Active` / `Suspended`) per individu — lewat endpoint Control API dengan token `AIOS Control`, bukan login Desk di site klien. Nilai kuota *default* site (`AIOS Setting.default_user_token_limit`) sudah diisi `Administrator` saat *site* disiapkan dan tidak diubah dari control plane.
+5. **Manajemen Status & Pemakaian Token per `User`:** `AIOS Admin` memantau konsumsi token tiap pengguna (`User.aios_tokens_used` & log `AIOS Token Usage`), lalu mengubah `User.aios_status` (`Active` / `Suspended`) per individu — lewat endpoint Control API dengan token `AIOS Control`, bukan login Desk di site klien. Kuota token berlaku site-level (`AIOS Setting.site_token_limit`); tidak ada plafon per user.
 
 ---
 
@@ -136,7 +135,7 @@ sequenceDiagram
 
     Client->>UI: Kirim instruksi kerja di Cabang Sales / Finance
     UI->>Orch: POST /stream (SSE + Header X-Frappe-CSRF-Token)
-    Orch->>Orch: Verifikasi kepemilikan Conversation (conv.user == session.user), Cek User Token Quota, Resolve Model Route
+    Orch->>Orch: Verifikasi kepemilikan Conversation (conv.user == session.user), Cek Site Token Quota, Resolve Model Route
     
     opt Delegasi ke Sub-Agent di Divisi yang Sama (MAX_DELEGATION_DEPTH = 2)
         Orch-->>UI: SSE Event [trace_delegate_start]
@@ -169,7 +168,7 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 4:
-1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token user (`User.aios_tokens_used < User.aios_token_limit`), dan mengambil konfigurasi model dari `AIOS Agent Model Route`.
+1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model dari `AIOS Agent Model Route`.
 2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context`) dan hanya menyertakan skema tool dari plugin yang aktif (`enabled = 1`) serta diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas).
 3. **Delegasi Sub-Agent Nyata & 5 Event Kanonik *Live Agent Trace*:**
    - Bila Orchestrator memanggil `orchestrator_delegate_to_subagent`, backend mengirimkan event SSE kanonik (`trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch`) ke **Live Agent Trace** di panel agent (`docs/08` §3), tanpa emoji.
@@ -182,7 +181,7 @@ sequenceDiagram
    - Melalui `SwarmRouter(user=frappe.session.user)` (tanpa fallback default `1` dan tanpa fallback handler mock), divisi Sales berkonsultasi secara otonom ke divisi Finance untuk memeriksa plafon kredit dan piutang jatuh tempo di ERPNext sebelum pesanan baru dibuat.
 6. **Pembuatan Artefak sebagai Berkas di Desktop:**
    - File kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) disimpan menggunakan DocType `File` Frappe (`is_private=1`, terikat ke `AIOS Conversation` milik user) dan sistem mengirim event `artifact_created` sehingga artefak muncul sebagai berkas/jendela di desktop (`docs/08` §5).
-7. **Sintesis Jawaban & Akuntansi Token Atomik (`usage.py`):** Orchestrator menyusun jawaban akhir untuk pengguna, mencatat rincian ke DocType `AIOS Token Usage`, dan meng-update `User.aios_tokens_used` secara atomik menggunakan SQL (`SET aios_tokens_used = aios_tokens_used + %s`) tanpa memanggil `user_doc.save()`.
+7. **Sintesis Jawaban & Akuntansi Token Atomik (`usage.py`):** Orchestrator menyusun jawaban akhir untuk pengguna, mencatat rincian ke DocType `AIOS Token Usage`, dan meng-update `AIOS Setting.site_tokens_used` serta `User.aios_tokens_used` (statistik) secara atomik menggunakan SQL tanpa memanggil `user_doc.save()`.
 
 ---
 
@@ -314,7 +313,7 @@ sequenceDiagram
     Site-->>CP: Daftar user pending (tanpa password/hash)
     Admin->>CP: 4. Setujui user (persona, token limit) & minta tautan undangan
     CP->>Site: POST /api/control/users/{user}/activate
-    Site->>DB: Set aios_status = "Active" (enabled = 1) & aios_token_limit
+    Site->>DB: Set aios_status = "Active" (enabled = 1)
     Site->>Site: Generate one-time set-password token (expiry, sekali pakai)
     Site-->>CP: { invitation_url }
     CP-->>Admin: Tampilkan tautan undangan + kode registrasi
@@ -329,7 +328,7 @@ sequenceDiagram
 1. **Registrasi Site Klien (`AIOS Client Site`, hanya di site developer):** record registry dibuat oleh alur provisioning (§6.1) berisi `site_name`, `base_url`, `company_name`, `contact_name`, `contact_email`, dan `api_credential` (field `Password` terenkripsi, di-mask di setiap log/error). Control plane memvalidasi `base_url` terhadap allowlist + wajib HTTPS (kecuali lokal) dengan guard anti-SSRF yang sama seperti `web-market-research`.
 2. **Health Check & Status Site:** Control plane memanggil `GET /api/control/health` dengan token `AIOS Control`; hasilnya memperbarui `status`, `last_seen`, dan `last_error` (pesan aman, tanpa traceback/detail internal). Kegagalan tidak boleh dilaporkan sebagai sukses.
 3. **Antrean Pendaftaran Lintas Site:** Control plane membaca `User` dengan `aios_status = "Pending Provisioning"` **dan role `AIOS Client`** dari tiap site klien via Control API. Akun sistem (`Guest`, `Administrator`) tidak boleh masuk antrean. Respons memuat **nama dan email** (diperlukan untuk undangan), **tidak pernah** memuat password, hash, API key, isi `AIOS Setting`, atau data bisnis.
-4. **Persetujuan & Undangan:** Saat disetujui, Control API menyetel `aios_status = "Active"` (otomatis `enabled = 1`), `aios_persona`, dan `aios_token_limit`, lalu membuat token set-password **sekali pakai + kedaluwarsa** yang diproses di site klien. Password tidak pernah dikirim via email; control plane hanya menampilkan tautan undangan untuk dikirim manual oleh `AIOS Admin`.
+4. **Persetujuan & Undangan:** Saat disetujui, Control API menyetel `aios_status = "Active"` (otomatis `enabled = 1`), `aios_persona`, lalu membuat token set-password **sekali pakai + kedaluwarsa** yang diproses di site klien. Password tidak pernah dikirim via email; control plane hanya menampilkan tautan undangan untuk dikirim manual oleh `AIOS Admin`.
 5. **Pengiriman Undangan:** Untuk PoC tidak ada ketergantungan SMTP. `AIOS Admin` menyalin tautan undangan (dan kode registrasi) lalu mengirimkannya lewat kanal yang sudah dipakai (WhatsApp/Telegram/email sendiri). Integrasi email otomatis (Email Queue Frappe → SMTP/Email Account) menyusul tanpa mengubah kontrak tautan.
 6. **Monitoring Lintas Site:** Control plane menarik agregat (`AIOS Token Usage`, `User.aios_tokens_used`, jumlah user aktif, status site) lewat `GET /api/control/metrics`. Data mentah tetap di site klien; control plane hanya menyimpan ringkasan yang diperlukan dashboard.
 7. **Audit & Pemisahan Wewenang:** Setiap panggilan Control API dicatat (user pelaku, site target, operasi, hasil). `AIOS Control` hanya boleh operasi lifecycle & agregat monitoring — bukan menulis dokumen bisnis ERPNext. `Administrator` di site klien tidak pernah dipakai jalur ini.

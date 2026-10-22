@@ -33,7 +33,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 
 3. **[03 — Skema Data, Identitas Frappe (`User`), & Arsitektur `1 Client = 1 Site`](./03-skema-data-dan-isolasi-multitenant.md)** — *spesifikasi normatif*
    - Konsep **1 Client = 1 Site (`dns_multitenant`)**: setiap klien memiliki *site* dan database MariaDB terpisah, sehingga DocType `AIOS Tenant` dihapus sepenuhnya.
-   - Pemusatan atribut operasional & kuota langsung pada DocType **`User`** bawaan Frappe (`aios_persona`, `aios_persona_context`, `aios_status`, `aios_company_name`, `aios_token_limit`, `aios_tokens_used`) dengan update kuota atomik via SQL dan nilai *default* tingkat site di **`AIOS Setting`**.
+   - Pemusatan atribut operasional pada DocType **`User`** bawaan Frappe (`aios_persona`, `aios_persona_context`, `aios_status`, `aios_company_name`, `aios_tokens_used`); kuota token = plafon site di **`AIOS Setting`** (`site_token_limit`), counter di-update atomik via SQL.
    - **Developer Control Plane (§1.4):** registry `AIOS Client Site` di site developer, role layanan `AIOS Control`, Control API per site klien, dan batas wewenang lintas site.
    - **Adapter DB eksternal dihapus (§2):** `AIOS DB Connection`, `AIOS Mapping`, `AIOS Mapping Entry`, `AIOS Schema Snapshot` tidak lagi bagian dari skema — PoC ERPNext-first.
    - Matriks otoritatif `User.aios_status` × `User.enabled` beserta pertahanan 3 lapis (`send_welcome_email = 0` + `no_welcome_mail = True`, sinkronisasi `enabled = 0`, serta hook `on_login` & `auth_hooks`).

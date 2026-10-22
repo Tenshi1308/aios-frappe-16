@@ -95,7 +95,7 @@ Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya d
 | Daftar agent, nama, deskripsi, saran prompt | Backend (`registry.py`) |
 | Daftar modul, ikon, warna, doctype | Backend |
 | Company aktif, mata uang | `AIOS Setting` |
-| Kuota & pemakaian token | `User.aios_token_limit`, `User.aios_tokens_used` |
+| Kuota & pemakaian token | `AIOS Setting.site_token_limit` (gerbang), `User.aios_tokens_used` (statistik) |
 | Versi & URL API | `frappe.boot` / environment |
 
 **Aturan yang bisa diuji:** tidak ada nama agent, nama modul, atau nama doctype yang ditulis sebagai teks di berkas komponen. Data contoh hanya boleh hidup di lapisan `api/mock/` dan tidak pernah diimpor jalur produksi.
