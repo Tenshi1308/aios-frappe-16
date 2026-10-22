@@ -7,6 +7,8 @@ import time
 import frappe
 from typing import Tuple, Dict, Any
 
+from aios_v1.lib.error_utils import log_exception
+
 # Safety Limits Defaults (Berdasarkan Blueprint §8.2)
 MAX_CHAIN_DEPTH = 5
 CIRCUIT_BREAKER_THRESHOLD = 3
@@ -27,8 +29,8 @@ class CircuitBreaker:
             try:
                 import json
                 return json.loads(raw)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_exception("AIOS SafetyGuard: state circuit breaker rusak", exc=exc)
         return {"failures": 0, "status": "CLOSED", "last_failure": 0}
 
     @classmethod

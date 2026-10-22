@@ -8,6 +8,7 @@ from urllib.parse import unquote
 MAX_PDF_BYTES = 5 * 1024 * 1024
 
 from aios_v1.lib.auth import verify_session_token, SESSION_COOKIE
+from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.plugin_manager.registry import get_branches
 from aios_v1.managers import get_manager
 from aios_v1.services.usage import check_site_token_quota
@@ -55,6 +56,13 @@ def json_response(data, status=200, cookie_to_set=None, cookie_to_clear=None):
     if cookie_to_clear:
         res.delete_cookie(SESSION_COOKIE, path="/")
     raise CustomAPIResponse(res)
+
+def json_error(status, code, message, exc=None, title=None):
+    """Response error yang aman + dicatat ke Error Log."""
+    if exc is not None:
+        log_exception(title or f"AIOS API: {code}", exc=exc)
+    return json_response(safe_error(message, code), status)
+
 
 def redirect_response(location):
     res = Response(status=302)
@@ -126,6 +134,16 @@ def require_session(role: str | None = None) -> dict:
     return sess
 
 def handle_api_request():
+    try:
+        return _handle_api_request()
+    except CustomAPIResponse:
+        raise
+    except Exception as exc:
+        log_exception("AIOS Dispatcher: request gagal", exc=exc)
+        return json_error(500, "INTERNAL_ERROR", "Terjadi kesalahan internal.")
+
+
+def _handle_api_request():
     path = frappe.request.path.strip("/")
 
     # =========================================================================
@@ -364,13 +382,15 @@ def handle_api_request():
                     try:
                         uploaded_file.stream.seek(0)
                         file_bytes = uploaded_file.stream.read()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log_exception("AIOS Dispatcher: gagal membaca stream file PDF", exc=exc)
+                        file_bytes = b""
                 if not file_bytes and hasattr(uploaded_file, "read"):
                     try:
                         file_bytes = uploaded_file.read()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log_exception("AIOS Dispatcher: gagal membaca file PDF", exc=exc)
+                        file_bytes = b""
 
             if not file_bytes and hasattr(frappe.request, "data") and frappe.request.data:
                 file_bytes = frappe.request.data
@@ -407,7 +427,11 @@ def handle_api_request():
                 for idx, page in enumerate(reader.pages):
                     try:
                         p_txt = page.extract_text() or ""
-                    except Exception:
+                    except Exception as exc:
+                        log_exception(
+                            f"AIOS Dispatcher: gagal ekstrak teks halaman {idx + 1}",
+                            exc=exc,
+                        )
                         p_txt = ""
                     if p_txt.strip():
                         pages_text.append(f"--- [Halaman {idx + 1}] ---\n{p_txt.strip()}")
@@ -418,8 +442,13 @@ def handle_api_request():
 
             except CustomAPIResponse:
                 raise
-            except Exception as e:
-                return json_response({"error": f"Gagal membaca dokumen PDF: {str(e)}"}, 500)
+            except Exception as exc:
+                log_exception("AIOS Dispatcher: baca PDF gagal", exc=exc)
+                return json_error(
+                    500,
+                    "PDF_READ_FAILED",
+                    "Gagal membaca dokumen PDF.",
+                )
 
             return json_response({
                 "success": True,
@@ -476,8 +505,9 @@ def handle_api_request():
                     body = frappe.request.get_json(force=True, silent=True) or {}
                     if not body and frappe.request.data:
                         body = json.loads(frappe.request.data.decode("utf-8"))
-                except Exception:
-                    body = {}
+                except Exception as exc:
+                    log_exception("AIOS Dispatcher: body stream tidak valid", exc=exc)
+                    return json_response({"error": "Body permintaan tidak valid"}, 400)
 
                 message = (body.get("message") or "").strip()
                 worker_key = body.get("workerKey") or None
@@ -558,8 +588,9 @@ def handle_api_request():
             if not body and frappe.request.data:
                 try:
                     body = json.loads(frappe.request.data.decode("utf-8"))
-                except Exception:
-                    body = {}
+                except Exception as exc:
+                    log_exception("AIOS Dispatcher: body chatbot settings tidak valid", exc=exc)
+                    return json_response({"error": "Body permintaan tidak valid"}, 400)
 
             persona_tone = body.get("persona_tone", "Ramah & Kasual")
             custom_instructions = body.get("custom_instructions", "")

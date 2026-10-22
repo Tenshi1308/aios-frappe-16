@@ -6,6 +6,8 @@ import base64
 import time
 import frappe
 
+from aios_v1.lib.error_utils import log_exception
+
 SESSION_COOKIE = "aios_session"
 
 def get_session_secret() -> str:
@@ -34,7 +36,11 @@ def verify_password(password: str, stored: str) -> bool:
         salt, hash_hex = parts
         dk = hashlib.scrypt(password.encode('utf-8'), salt=bytes.fromhex(salt), n=16384, r=8, p=1, maxmem=0, dklen=32)
         return hmac.compare_digest(dk.hex(), hash_hex)
-    except Exception:
+    except Exception as exc:
+        log_exception(
+            "AIOS Auth: verifikasi password gagal",
+            context=f"jenis={type(exc).__name__}",
+        )
         return False
 
 def base64url_encode(data: bytes) -> str:
@@ -72,7 +78,11 @@ def verify_session_token(token: str | None) -> dict | None:
         if payload.get('exp', 0) < int(time.time() * 1000):
             return None
         return payload
-    except Exception:
+    except Exception as exc:
+        log_exception(
+            "AIOS Auth: verifikasi sesi gagal",
+            context=f"jenis={type(exc).__name__}",
+        )
         return None
 
 def portal_from_request(req, body=None):

@@ -8,6 +8,8 @@ import frappe
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from aios_v1.lib.error_utils import log_exception
+
 class TaskLedger:
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -47,8 +49,9 @@ class TaskLedger:
         if raw:
             try:
                 return json.loads(raw)
-            except Exception:
-                pass
+            except Exception as exc:
+                log_exception("AIOS TaskLedger: cache task chain rusak", exc=exc)
+                return None
         return None
 
     def add_hop(

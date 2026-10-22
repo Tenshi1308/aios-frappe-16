@@ -5,6 +5,7 @@ Terintegrasi dengan Global Task Ledger, SafetyGuard, dan CircuitBreaker.
 """
 
 from typing import Dict, Any, Callable
+from aios_v1.lib.error_utils import log_exception, sanitize_text
 from aios_v1.lib.task_ledger import get_task_ledger
 from aios_v1.lib.safety_guard import SafetyGuard, CircuitBreaker
 
@@ -124,18 +125,23 @@ class SwarmRouter:
                 "message": f"Pesan {message_type} berhasil diproses oleh cabang {to_branch}."
             }
 
-        except Exception as e:
+        except Exception as exc:
+            log_exception(
+                "AIOS Swarm: eksekusi cabang gagal",
+                exc=exc,
+                context=f"{from_branch}->{to_branch}",
+            )
             # Catat kegagalan ke Circuit Breaker
             cb_state = CircuitBreaker.record_failure(self.user_id, to_branch_norm)
-            err_msg = str(e)
-            
+            err_detail = sanitize_text(f"{type(exc).__name__}: {exc}")
+
             self.ledger.add_hop(
                 task_id=task_id,
                 from_branch=from_branch,
                 to_branch=to_branch,
                 message_type=message_type,
                 payload=payload,
-                response={"error": err_msg, "circuit_breaker": cb_state},
+                response={"error": err_detail, "circuit_breaker": cb_state},
                 status="FAILED"
             )
 
@@ -146,7 +152,8 @@ class SwarmRouter:
                 "from_branch": from_branch,
                 "to_branch": to_branch,
                 "chain_depth": current_depth + 1,
-                "message": f"Eksekusi gagal pada cabang {to_branch}: {err_msg}",
+                "message": f"Eksekusi gagal pada cabang {to_branch}.",
+                "code": "BRANCH_EXECUTION_FAILED",
                 "response": None
             }
 

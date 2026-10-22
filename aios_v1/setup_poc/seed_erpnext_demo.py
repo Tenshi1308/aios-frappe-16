@@ -49,8 +49,12 @@ PENTING SEBELUM MENJALANKAN
    error keras (beserta cuplikan `Error Log`) bila terjadi silent rollback.
 """
 
+import functools
+
 import frappe
 from frappe.utils import getdate, now_datetime, nowdate
+
+from aios_v1.lib.error_utils import log_exception
 
 # =============================================================================
 # FALLBACK DEFAULT — hanya dipakai bila argumen fungsi, site_config, dan
@@ -89,6 +93,20 @@ VERIFY_DOCTYPES = [
 def _log(msg: str) -> None:
     """Cetak dengan prefix supaya mudah dibaca di output bench."""
     print(f"[AIOS PoC] {msg}")
+
+
+def _log_failures(func):
+    """Catat error tak terduga ke Error Log lalu re-raise (tidak ditelan)."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            log_exception(f"AIOS PoC Seed: {func.__name__} gagal", exc=exc)
+            raise
+
+    return wrapper
 
 
 def _resolve_company_name(company: str | None = None) -> str:
@@ -200,6 +218,7 @@ def _print_snapshot(title: str, snap: dict) -> None:
 # 1. STATUS (read-only)
 # =============================================================================
 
+@_log_failures
 def status(company: str | None = None) -> dict:
     """
     Laporkan kondisi site sekarang. TIDAK menulis apa pun.
@@ -367,6 +386,7 @@ def ensure_base_company(
 # 4. JALANKAN
 # =============================================================================
 
+@_log_failures
 def run(
     company: str | None = None,
     abbr: str | None = None,

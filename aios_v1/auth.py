@@ -9,6 +9,8 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 from frappe.utils import validate_email_address
 
+from aios_v1.lib.error_utils import log_exception
+
 
 @frappe.whitelist(allow_guest=True)
 @rate_limit(limit=5, seconds=60)
@@ -56,8 +58,9 @@ def register_account(full_name: str, email: str, password: str, company_name: st
 
     try:
         user.insert(ignore_permissions=True)
-    except frappe.DuplicateEntryError:
+    except frappe.DuplicateEntryError as exc:
         # Balapan dua request dengan email sama: tetap respons seragam.
+        log_exception("AIOS Auth: email duplikat saat registrasi", exc=exc)
         return generic
 
     return generic

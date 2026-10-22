@@ -1,8 +1,9 @@
 import frappe
 import requests
 import json
-import re
 from typing import Optional
+
+from aios_v1.lib.error_utils import log_exception, safe_error
 
 def safe_parse_json(raw_text: str) -> dict:
     """
@@ -42,16 +43,16 @@ def ask_intelligence(message: Optional[str] = None, context: Optional[str] = Non
     # 1. Ambil konfigurasi dari DocType AIOS Setting
     try:
         settings = frappe.get_single("AIOS Setting")
-        api_key = settings.get_password("api_key")
-    except Exception as e:
-        api_key = None
-        settings = None
+        api_key = (settings.get_password("api_key", raise_exception=False) or "").strip()
+    except Exception as exc:
+        log_exception("AIOS Intelligence: gagal membaca AIOS Setting", exc=exc)
+        return safe_error("Konfigurasi AI belum bisa dibaca. Hubungi admin.", "CONFIG_READ_FAILED")
 
     if not api_key:
-        return {
-            "success": False,
-            "error": "API Key belum diatur di AIOS Setting! Silakan isi terlebih dahulu di Desk."
-        }
+        return safe_error(
+            "API Key belum diatur di AIOS Setting! Silakan isi terlebih dahulu di Desk.",
+            "CONFIG_MISSING",
+        )
 
     base_url = (settings.base_url or "").strip() if settings else ""
     model_name = (settings.model_name or "").strip() if settings else ""
@@ -114,9 +115,6 @@ def ask_intelligence(message: Optional[str] = None, context: Optional[str] = Non
             "model": model_name
         }
 
-    except Exception as e:
-        frappe.log_error(title="AIOS Intelligence Call Error", message=str(e))
-        return {
-            "success": False,
-            "error": f"Gagal menghubungi AI Engine: {str(e)}"
-        }
+    except Exception as exc:
+        log_exception("AIOS Intelligence: gagal memanggil AI Engine", exc=exc)
+        return safe_error("Gagal menghubungi AI Engine. Coba lagi.", "LLM_REQUEST_FAILED")

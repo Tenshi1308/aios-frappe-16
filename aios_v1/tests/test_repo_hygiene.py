@@ -17,6 +17,16 @@ EMOJI_FREE_FILES = [
     FRONTEND_DIR / "components" / "chat" / "ChatDock.tsx",
 ]
 
+# Batch 1 hanya modul PoC aktif; modul dormant menyusul #3.
+DORMANT_MODULES = {
+    "telegram_service.py",
+    "order_service.py",
+    "skills_loader.py",
+    "pdf_extractor.py",
+    "inspect_setting.py",
+    "read_setting.py",
+}
+
 
 def _git_ls_files(subpath):
     out = subprocess.run(
@@ -32,13 +42,20 @@ def _iter_production_modules():
             continue
         if path.name.startswith("test_"):
             continue
+        if path.name in DORMANT_MODULES:
+            continue
         yield path
 
 
 def _has_log_error_or_raise(handler):
     calls = [n for n in ast.walk(handler) if isinstance(n, ast.Call)]
     has_log = any(
-        isinstance(c.func, ast.Attribute) and c.func.attr == "log_error" for c in calls
+        (
+            isinstance(c.func, ast.Attribute)
+            and c.func.attr in ("log_error", "log_exception")
+        )
+        or (isinstance(c.func, ast.Name) and c.func.id == "log_exception")
+        for c in calls
     )
     return has_log or any(isinstance(n, ast.Raise) for n in ast.walk(handler))
 
@@ -61,9 +78,11 @@ class TestRepoHygiene(unittest.TestCase):
                 offenders.append(f.name)
         self.assertEqual(offenders, [], f"Emoji dekoratif di: {offenders}")
 
-    @pytest.mark.xfail(reason="target #3 (K1/K4/K8/K9)", strict=False)
     def test_no_silent_except_in_production_modules(self):
-        """Setiap ExceptHandler memanggil frappe.log_error atau raise (AST)."""
+        """Setiap ExceptHandler memanggil log_error/log_exception atau raise (AST).
+
+        Modul dormant dikecualikan sementara (batch 1 = PoC aktif); #3 membersihkannya.
+        """
         offenders = []
         for path in _iter_production_modules():
             try:

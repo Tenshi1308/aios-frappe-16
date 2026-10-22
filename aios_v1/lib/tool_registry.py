@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
+from aios_v1.lib.error_utils import log_exception, safe_error
+
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _HIDDEN_TOOL_PARAMS = frozenset({"user_id", "allowed_company"})
 
@@ -79,10 +81,8 @@ def tool_context(context: Dict[str, Any]):
         yield
     finally:
         if previous is None:
-            try:
+            if hasattr(frappe.local, "aios_tool_context"):
                 delattr(frappe.local, "aios_tool_context")
-            except AttributeError:
-                pass
         else:
             frappe.local.aios_tool_context = previous
 
@@ -212,9 +212,9 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         return json.dumps(result)
     except ToolContextError:
         raise
-    except Exception as e:
-        frappe.log_error(message=str(e), title=f"AIOS Tool Error: {name}")
-        return json.dumps({"error": str(e)})
+    except Exception as exc:
+        log_exception(f"AIOS Tool Error: {name}", exc=exc)
+        return json.dumps(safe_error("Tool gagal dijalankan.", "TOOL_FAILED"))
 
 # ==========================================
 # 1. DUMMY TOOL (For Testing - Tahap 1)
@@ -235,6 +235,6 @@ def get_current_time(timezone="Asia/Jakarta"):
     try:
         tz = pytz.timezone(timezone)
         return {"current_time": datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S"), "timezone": timezone}
-    except Exception as e:
-        frappe.log_error(f"Invalid timezone: {e}", "AIOS Tool Error")
-        return {"error": f"Invalid timezone: {timezone}"}
+    except Exception as exc:
+        log_exception("AIOS Tool: timezone tidak valid", exc=exc, context=f"timezone={timezone}")
+        return safe_error("Timezone tidak valid.", "INVALID_TIMEZONE")
