@@ -125,6 +125,19 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         )
         self.assertEqual(res.status_code, 401)
 
+    def test_stream_blocked_when_site_quota_exhausted(self):
+        frappe.set_user(self.ALPHA)
+        frappe.db.set_single_value("AIOS Setting", "site_token_limit", 100)
+        frappe.db.set_single_value("AIOS Setting", "site_tokens_used", 100)
+
+        res = _call(
+            "/api/chat/sales/stream",
+            method="POST",
+            body={"message": "halo"},
+        )
+
+        self.assertEqual(res.status_code, 429)
+
     def test_aios_endpoints_without_session_return_401(self):
         frappe.set_user("Guest")
         cases = (

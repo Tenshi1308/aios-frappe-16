@@ -3,6 +3,7 @@ import frappe
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
 from aios_v1.lib.llm_client import chat_stream
+from aios_v1.services.usage import record_token_usage
 from aios_v1.plugin_manager.registry import get_worker
 
 class BaseManager:
@@ -175,11 +176,12 @@ class BaseManager:
         user_msg_doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # 4. Stream Jawaban dari LLM
+        # 4. Stream Jawaban dari LLM (usage provider ikut ditangkap)
         full_reply = ""
         delegated_to = worker_def["jobRole"] if worker_def else "Manager"
+        usage = {}
 
-        for delta in chat_stream(llm_messages):
+        for delta in chat_stream(llm_messages, usage=usage):
             full_reply += delta
             yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
 
@@ -191,15 +193,33 @@ class BaseManager:
         # Estimasi output tokens dari teks balasan AI
         est_output_tokens = max(1, int(len(full_reply) / 3.8))
 
+        input_tokens = int(usage.get("prompt_tokens") or est_input_tokens)
+        output_tokens = int(usage.get("completion_tokens") or est_output_tokens)
+        total_tokens = int(usage.get("total_tokens") or input_tokens + output_tokens)
+
         # 5. Simpan Pesan Assistant ke DocType AIOS Message
         asst_msg_doc = frappe.new_doc("AIOS Message")
         asst_msg_doc.conversation = str(conversation_id)
         asst_msg_doc.role = "manager" if not worker_def else "worker"
         asst_msg_doc.worker_key = worker_key or "manager"
         asst_msg_doc.content = full_reply
-        asst_msg_doc.output_tokens = est_output_tokens
+        asst_msg_doc.output_tokens = output_tokens
         asst_msg_doc.insert(ignore_permissions=True)
+
+        # 5b. Akuntansi token: ledger + counter site/user (atomik)
+        if not usage.get("failed"):
+            record_token_usage(
+                user=user,
+                provider=usage.get("provider") or "",
+                model=usage.get("model") or "",
+                branch=self.branch.get("key") or "",
+                agent=worker_key or "manager",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+            )
+
         frappe.db.commit()
 
         # 6. Kirim Done Event
-        yield f"data: {json.dumps({'type': 'done', 'conversationId': conversation_id, 'delegatedTo': delegated_to, 'dataUsed': data_used, 'limitation': '', 'tokens': est_output_tokens})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'conversationId': conversation_id, 'delegatedTo': delegated_to, 'dataUsed': data_used, 'limitation': '', 'tokens': output_tokens})}\n\n"

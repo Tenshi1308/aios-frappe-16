@@ -10,6 +10,7 @@ MAX_PDF_BYTES = 5 * 1024 * 1024
 from aios_v1.lib.auth import verify_session_token, SESSION_COOKIE
 from aios_v1.plugin_manager.registry import get_branches
 from aios_v1.managers import get_manager
+from aios_v1.services.usage import check_site_token_quota
 
 class CustomAPIResponse(HTTPException):
     def __init__(self, response):
@@ -464,6 +465,12 @@ def handle_api_request():
             # POST /api/chat/<branch>/stream
             if action == "stream" and method == "POST":
                 sess = require_session()
+
+                if not check_site_token_quota():
+                    return json_response(
+                        {"error": "Kuota token site sudah habis. Hubungi administrator."},
+                        429,
+                    )
 
                 try:
                     body = frappe.request.get_json(force=True, silent=True) or {}

@@ -4,11 +4,10 @@ Mendukung delegasi sub-agent, koordinasi lintas cabang (Swarm Router),
 eskalasi draf manusia (Draft Manager), pemantauan task ledger, dan manajemen kebijakan.
 """
 
-import json
 import frappe
 from typing import Dict, Any, Optional
-from frappe.utils import add_to_date, now_datetime
 from aios_v1.lib.tool_registry import ai_tool, get_tool_context
+from aios_v1.lib.draft_manager import create_draft
 from aios_v1.lib.swarm_router import get_swarm_router
 from aios_v1.lib.task_ledger import get_task_ledger
 
@@ -136,20 +135,14 @@ def cross_branch_consultation(task_id: str, from_branch: str, to_branch: str, me
     }
 )
 def escalate_to_human_approval(task_id: str, action_type: str, branch: str, created_by_agent: str, payload: Dict[str, Any], reason: str = "") -> Dict[str, Any]:
-    payload_str = json.dumps(payload) if isinstance(payload, dict) else str(payload)
-    
-    doc = frappe.get_doc({
-        "doctype": "Pending Action Draft",
-        "user": frappe.session.user,
-        "task_id": task_id,
-        "type": action_type,
-        "branch": branch,
-        "created_by_agent": created_by_agent,
-        "payload": payload_str,
-        "status": "PENDING_APPROVAL",
-        "expires_at": add_to_date(now_datetime(), hours=24)
-    })
-    doc.insert(ignore_permissions=True)
+    doc = create_draft(
+        task_id=task_id,
+        action_type=action_type,
+        payload=payload,
+        branch=branch,
+        created_by_agent=created_by_agent,
+        reason=reason,
+    )
     frappe.db.commit()
 
     draft_id = doc.name

@@ -211,18 +211,11 @@ has_permission = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"aios_v1.tasks.all"
-# 	"daily": [
-# 		"aios_v1.tasks.daily"
-# 	"hourly": [
-# 		"aios_v1.tasks.hourly"
-# 	"weekly": [
-# 		"aios_v1.tasks.weekly"
-# 	"monthly": [
-# 		"aios_v1.tasks.monthly"
-# }
+scheduler_events = {
+	"daily": [
+		"aios_v1.services.usage.reset_daily_counters",
+	],
+}
 
 # Testing
 # -------

@@ -1,6 +1,7 @@
 import json
-import os
 import time
+from urllib.parse import urlparse
+
 import requests
 import frappe
 
@@ -26,8 +27,12 @@ def get_llm_config():
         "timeout": 90.0
     }
 
-def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None):
+def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage=None):
+    """Stream teks delta; `usage` (dict) diisi token & metadata dari provider."""
     cfg = get_llm_config()
+    if usage is not None:
+        usage["provider"] = urlparse(cfg["base_url"]).netloc or ""
+        usage["model"] = cfg["model"]
     req_timeout = timeout if timeout is not None else cfg["timeout"]
     url = f"{cfg['base_url']}/chat/completions"
     headers = {
@@ -39,7 +44,8 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None):
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature if temperature is not None else cfg["temperature"],
-        "stream": True
+        "stream": True,
+        "stream_options": {"include_usage": True},
     }
 
     max_attempts = 2
@@ -64,18 +70,27 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None):
                     break
                 try:
                     chunk = json.loads(data_str)
-                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
-                    if delta:
-                        yield delta
                 except Exception:
+                    frappe.log_error(frappe.get_traceback(), "AIOS LLM Stream Chunk")
                     continue
+                if usage is not None and chunk.get("usage"):
+                    usage.update(chunk["usage"])
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                delta = (choices[0].get("delta") or {}).get("content", "")
+                if delta:
+                    yield delta
 
             return
 
         except Exception as e:
             last_err = e
+            frappe.log_error(frappe.get_traceback(), "AIOS LLM Request")
             if attempt < max_attempts:
                 time.sleep(1)
                 continue
 
+    if usage is not None:
+        usage["failed"] = True
     yield f"Mohon maaf, server AI memerlukan waktu lebih lama dari biasanya ({str(last_err)}). Silakan coba ajukan pertanyaan kembali."

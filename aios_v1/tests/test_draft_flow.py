@@ -3,8 +3,6 @@
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
-import unittest
-
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
@@ -65,7 +63,9 @@ class TestDraftFlow(IntegrationTestCase):
     def test_approve_own_draft(self):
         draft = self._create_draft()
         result = approve_draft(draft.name)
-        self.assertEqual(result["status"], "success")
+        # Payload kosong tidak punya dokumen ERPNext -> tetap APPROVED, bukan EXECUTED.
+        self.assertEqual(result["status"], "APPROVED")
+        self.assertFalse(result["executed"])
         self.assertEqual(
             frappe.db.get_value("Pending Action Draft", draft.name, "status"),
             "APPROVED",
