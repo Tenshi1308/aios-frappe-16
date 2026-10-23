@@ -999,8 +999,19 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                                              'kapasitas wajar.'],
                            'relevantEntities': ['ProductionOrder', 'Product', 'Employee']}]}]
 
+_PRIORITY_BRANCHES = {"finance", "sales"}
+
+for _branch in BRANCHES:
+    _branch["enabled"] = _branch["key"] in _PRIORITY_BRANCHES
+
+
+def is_branch_enabled(branch_key: str) -> bool:
+    branch = get_branch(branch_key)
+    return bool(branch and branch.get("enabled"))
+
+
 def get_branches():
-    return BRANCHES
+    return [branch for branch in BRANCHES if branch.get("enabled")]
 
 def get_branch(branch_key: str):
     for b in BRANCHES:

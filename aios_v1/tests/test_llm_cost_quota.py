@@ -10,6 +10,7 @@ import frappe
 from aios_v1.services.usage import (
 	check_site_token_quota,
 	record_token_usage,
+	record_token_usage_batch,
 	reset_daily_counters,
 )
 
@@ -129,6 +130,24 @@ class TestTokenQuota(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 20)
 		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 20)
 
+	def test_batch_records_each_agent_and_increments_aggregate_once(self):
+		self._set_site(1000, 0)
+		frappe.db.set_value("User", EMAIL, "aios_tokens_used", 0)
+		record_token_usage_batch(EMAIL, [
+			{"provider": "p", "model": "m", "branch": "finance", "agent": "manager",
+			 "input_tokens": 10, "output_tokens": 5, "total_tokens": 15},
+			{"provider": "p", "model": "m", "branch": "finance", "agent": "treasurer",
+			 "input_tokens": 7, "output_tokens": 3, "total_tokens": 10},
+			{"provider": "p", "model": "m", "branch": "finance", "agent": "treasurer",
+			 "input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+		])
+		rows = frappe.get_all("AIOS Token Usage", filters={"user": EMAIL}, fields=["agent", "total_tokens"])
+		self.assertEqual(len(rows), 2)
+		self.assertEqual({row.agent for row in rows}, {"manager", "treasurer"})
+		self.assertEqual(sum(row.total_tokens for row in rows), 27)
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 27)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 27)
+
 	def test_reset_daily_counters(self):
 		self._set_site(1000, 50)
 		frappe.db.set_value("User", EMAIL, "aios_tokens_used", 40)
@@ -175,3 +194,21 @@ class TestTokenQuota(IntegrationTestCase):
 		self.assertEqual(rows[0]["provider"], "mock-provider")
 		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 18)
 		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 18)
+
+	def test_handle_stream_records_usage_when_llm_turn_fails(self):
+		self._set_site(1000, 0)
+		frappe.db.set_value("User", EMAIL, "aios_tokens_used", 0)
+		frappe.set_user(EMAIL)
+		from aios_v1.managers import get_manager
+
+		def failed_stream(messages, usage=None, tools=None, tool_calls=None, **kwargs):
+			usage.update({"provider": "mock", "model": "mock", "prompt_tokens": 8,
+						  "completion_tokens": 2, "total_tokens": 10, "failed": True})
+			if False:
+				yield ""
+
+		with patch("aios_v1.managers.base_manager.chat_stream", side_effect=failed_stream):
+			list(get_manager("finance").handle_stream("gagal", user=EMAIL))
+		rows = frappe.get_all("AIOS Token Usage", filters={"user": EMAIL}, fields=["total_tokens"])
+		self.assertEqual(rows[-1].total_tokens, 10)
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 10)

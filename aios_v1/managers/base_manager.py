@@ -1,12 +1,25 @@
 import json
+
 import frappe
+
 from aios_v1.lib.error_utils import log_exception, safe_error
-from aios_v1.lib.tool_registry import ToolContextError, execute_tool, get_tools_schema_for_worker
+from aios_v1.lib.llm_client import chat_stream
+from aios_v1.lib.tool_registry import (
+    MAX_DELEGATION_DEPTH,
+    ToolContextError,
+    execute_tool,
+    get_tools_schema_for_worker,
+)
+from aios_v1.plugin_manager.registry import get_worker, is_branch_enabled
+from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
-from aios_v1.lib.llm_client import chat_stream
-from aios_v1.services.usage import record_token_usage
-from aios_v1.plugin_manager.registry import get_worker
+from aios_v1.shared.trace_events import (
+    trace_delegate_start,
+    trace_subagent_prompt,
+    trace_subagent_result,
+    trace_subagent_tool,
+)
 
 MAX_TOOL_ROUNDS = 6
 TOOL_CONTEXT_ERROR_MESSAGE = "Konteks sesi untuk menjalankan tool tidak valid. Silakan mulai percakapan kembali."
@@ -126,7 +139,110 @@ class BaseManager:
 2. Anda adalah bagian dari AIOS (platform AI enterprise), bukan asisten publik umum.
 3. Bantu pengguna menganalisis data, memberikan rekomendasi operasional, dan menjawab pertanyaan terkait bidang Anda.""")
 
-        return "\n\n".join(parts)
+        prompt = "\n\n".join(parts)
+        from aios_v1.lib.skills_loader import compose_worker_system_prompt
+        if worker_def:
+            prompt = compose_worker_system_prompt(self.branch["key"], worker_def["key"], prompt)
+        else:
+            prompt = compose_worker_system_prompt(self.branch["key"], "manager", prompt)
+        return prompt
+
+    def _run_subagent(self, worker_key: str, task_instruction: str, context_data: dict,
+                      user: str, usage_records: list, result_holder: list | None = None):
+        """Jalankan loop worker internal; hanya trace yang keluar dari generator."""
+        import time
+
+        branch = self.branch["key"]
+        started = time.monotonic()
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        status, summary = "failed", "Sub-agent gagal menyelesaikan tugas."
+        worker_def = get_worker(branch, worker_key)
+        if not is_branch_enabled(branch) or not worker_def:
+            log_exception("AIOS Sub-agent Unavailable", context=f"branch={branch}; worker={worker_key}")
+            yield trace_subagent_result(branch, worker_key, "failed", summary, usage, 0)
+            result = json.dumps(safe_error("Sub-agent tidak tersedia.", "SUBAGENT_UNAVAILABLE"))
+            if result_holder is not None:
+                result_holder.append(result)
+            return
+        role_summary = f"{worker_def.get('jobRole', worker_key)}: {worker_def.get('description', '')}"
+        yield trace_subagent_prompt(branch, worker_key, role_summary, task_instruction)
+        try:
+            prompt = self.build_system_prompt(worker_def, user)
+            schemas = get_tools_schema_for_worker(branch, worker_key)
+        except Exception as exc:
+            log_exception("AIOS Sub-agent Prompt", exc=exc)
+            usage_records.append({"branch": branch, "agent": worker_key, "input_tokens": 0,
+                                 "output_tokens": 0, "total_tokens": 0, "provider": "", "model": ""})
+            yield trace_subagent_result(branch, worker_key, "failed", summary, usage,
+                                        int((time.monotonic() - started) * 1000))
+            result = json.dumps(safe_error("Sub-agent gagal disiapkan.", "SUBAGENT_FAILED"))
+            if result_holder is not None:
+                result_holder.append(result)
+            return
+        messages = [{"role": "system", "content": prompt},
+                    {"role": "user", "content": task_instruction +
+                     ("\n\nKonteks tugas: " + json.dumps(context_data, ensure_ascii=False) if context_data else "")}]
+        reply = ""
+        completed = False
+        llm_failed = False
+        tool_progress = False
+        for round_number in range(MAX_TOOL_ROUNDS):
+            turn_usage, calls = {}, []
+            try:
+                for fragment in chat_stream(messages, usage=turn_usage, tools=schemas, tool_calls=calls):
+                    reply += fragment
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    usage[key] += int(turn_usage.get(key) or 0)
+                usage["provider"] = turn_usage.get("provider", usage.get("provider", ""))
+                usage["model"] = turn_usage.get("model", usage.get("model", ""))
+                if turn_usage.get("failed"):
+                    llm_failed = True
+                    break
+                if not calls:
+                    completed = True
+                    break
+                messages.append({"role": "assistant", "content": None, "tool_calls": calls})
+                for call in calls:
+                    function = call.get("function") or {}
+                    name = function.get("name", "")
+                    try:
+                        args = json.loads(function.get("arguments") or "{}")
+                    except (TypeError, ValueError) as exc:
+                        log_exception("AIOS Sub-agent Tool Arguments", exc=exc)
+                        args = {}
+                    yield trace_subagent_tool(branch, worker_key, name, args)
+                    result = execute_tool(name, function.get("arguments") or "{}", context={
+                        "user": user, "branch": branch, "worker_key": worker_key,
+                        "delegation_depth": MAX_DELEGATION_DEPTH - 1,
+                    })
+                    tool_progress = True
+                    messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
+                if round_number == MAX_TOOL_ROUNDS - 1:
+                    break
+            except Exception as exc:
+                log_exception("AIOS Sub-agent Runner", exc=exc)
+                llm_failed = True
+                break
+        if llm_failed:
+            status = "partial" if tool_progress else "failed"
+            summary = "Sub-agent berhenti setelah sebagian proses." if tool_progress else "Sub-agent gagal menyelesaikan tugas."
+        elif reply.strip():
+            summary = reply[:500]
+            status = "success" if completed else "partial"
+        elif completed:
+            status, summary = "success", "Tugas selesai tanpa ringkasan teks."
+        usage_records.append({"provider": usage.get("provider", ""), "model": usage.get("model", ""),
+            "branch": branch, "agent": worker_key, "input_tokens": usage["prompt_tokens"],
+            "output_tokens": usage["completion_tokens"],
+            "total_tokens": usage["total_tokens"] or usage["prompt_tokens"] + usage["completion_tokens"]})
+        elapsed = int((time.monotonic() - started) * 1000)
+        yield trace_subagent_result(branch, worker_key, status, summary, usage, elapsed)
+        if status == "failed":
+            result = json.dumps(safe_error("Sub-agent gagal menyelesaikan tugas.", "SUBAGENT_FAILED"))
+        else:
+            result = json.dumps({"status": status, "summary": reply, "usage": usage}, ensure_ascii=False)
+        if result_holder is not None:
+            result_holder.append(result)
 
     def handle_stream(self, user_message: str, worker_key: str = None, conversation_id: int = None, user: str = None):
         user = user or frappe.session.user
@@ -204,6 +320,7 @@ class BaseManager:
         full_reply = ""
         delegated_to = worker_def["jobRole"] if worker_def else "Manager"
         accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        usage_records = []
         failed = False
         tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager")
 
@@ -233,15 +350,48 @@ class BaseManager:
                 call_id = call.get("id") or ""
                 function = call.get("function") or {}
                 try:
-                    result = execute_tool(
-                        function.get("name", ""),
-                        function.get("arguments", "{}"),
-                        context={
-                            "user": user,
-                            "branch": self.branch.get("key"),
-                            "worker_key": worker_key or "manager",
-                        },
-                    )
+                    tool_name = function.get("name", "")
+                    if tool_name == "orchestrator_delegate_to_subagent":
+                        try:
+                            args = json.loads(function.get("arguments", "{}"))
+                        except (TypeError, ValueError) as exc:
+                            log_exception("AIOS Delegation Arguments", exc=exc)
+                            args = None
+                        if not isinstance(args, dict):
+                            result = json.dumps(safe_error("Argumen delegasi tidak valid.", "DELEGATION_INVALID"))
+                            llm_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                            continue
+                        target_branch = args.get("branch")
+                        target_worker = args.get("worker_key")
+                        instruction = args.get("task_instruction")
+                        if (worker_def is not None or target_branch != self.branch.get("key")
+                                or not isinstance(instruction, str) or not instruction.strip()
+                                or not isinstance(args.get("context_data") or {}, dict)):
+                            result = json.dumps(safe_error("Delegasi tidak valid.", "DELEGATION_FORBIDDEN"))
+                        elif not is_branch_enabled(target_branch):
+                            result = json.dumps(safe_error("Cabang ini belum tersedia.", "BRANCH_DISABLED"))
+                        else:
+                            target_def = get_worker(target_branch, target_worker) or {}
+                            yield "data: " + json.dumps(trace_delegate_start(
+                                target_branch, target_def.get("jobRole", target_worker), instruction[:500])) + "\n\n"
+                            result_holder = []
+                            runner = self._run_subagent(
+                                target_worker, instruction, args.get("context_data") or {}, user,
+                                usage_records, result_holder)
+                            for trace_event in runner:
+                                yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
+                            result = result_holder[0]
+                    else:
+                        result = execute_tool(
+                            tool_name,
+                            function.get("arguments", "{}"),
+                            context={
+                                "user": user,
+                                "branch": self.branch.get("key"),
+                                "worker_key": worker_key or "manager",
+                                "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
+                            },
+                        )
                 except ToolContextError as exc:
                     log_exception("AIOS Tool Context", exc=exc)
                     error = safe_error(TOOL_CONTEXT_ERROR_MESSAGE, "TOOL_CONTEXT_INVALID")
@@ -280,20 +430,17 @@ class BaseManager:
         asst_msg_doc.output_tokens = output_tokens
         asst_msg_doc.insert(ignore_permissions=True)
 
-        # 5b. Akuntansi token: ledger + counter site/user (atomik)
-        if not failed:
-            record_token_usage(
-                user=user,
-                provider=accumulated_usage.get("provider") or "",
-                model=accumulated_usage.get("model") or "",
-                branch=self.branch.get("key") or "",
-                agent=worker_key or "manager",
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=total_tokens,
-            )
+        # 5b. Ledger per agent dan counter agregat dalam satu transaksi.
+        usage_records.append({
+            "provider": accumulated_usage.get("provider") or "",
+            "model": accumulated_usage.get("model") or "",
+            "branch": self.branch.get("key") or "",
+            "agent": worker_key or "manager", "input_tokens": input_tokens,
+            "output_tokens": output_tokens, "total_tokens": total_tokens,
+        })
+        record_token_usage_batch(user, usage_records)
 
         frappe.db.commit()
 
         # 6. Kirim Done Event
-        yield f"data: {json.dumps({'type': 'done', 'conversationId': conversation_id, 'delegatedTo': delegated_to, 'dataUsed': data_used, 'limitation': '', 'tokens': output_tokens})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'conversationId': conversation_id, 'delegatedTo': delegated_to, 'dataUsed': data_used, 'limitation': '', 'tokens': total_tokens + sum(int(item.get('total_tokens') or 0) for item in usage_records[:-1])})}\n\n"

@@ -45,7 +45,7 @@ class TestToolExecutionLoop(IntegrationTestCase):
             patch("aios_v1.managers.base_manager.chat_stream", side_effect=chat),
             patch("aios_v1.managers.base_manager.frappe.new_doc", return_value=self.doc),
             patch("aios_v1.managers.base_manager.frappe.get_list", return_value=[]),
-            patch("aios_v1.managers.base_manager.record_token_usage") as record_usage,
+            patch("aios_v1.managers.base_manager.record_token_usage_batch") as record_usage,
             patch("aios_v1.managers.base_manager.execute_tool", return_value=tool_result) as execute,
             patch("aios_v1.managers.base_manager.log_exception") as log_exception,
         ):
@@ -94,15 +94,23 @@ class TestToolExecutionLoop(IntegrationTestCase):
         self.assertEqual(execute.call_count, 1)
         self.assertEqual(
             execute.call_args.kwargs["context"],
-            {"user": "_test@example.com", "branch": "finance", "worker_key": "manager"},
+            {
+                "user": "_test@example.com",
+                "branch": "finance",
+                "worker_key": "manager",
+                "delegation_depth": 0,
+            },
         )
         self.assertEqual(len(self.llm_message_snapshots), 2)
         tool_messages = [message for message in self.llm_message_snapshots[1] if message.get("role") == "tool"]
         self.assertEqual(tool_messages, [{"role": "tool", "tool_call_id": "call_0", "content": '{"ok": true}'}])
         record_usage.assert_called_once()
-        self.assertEqual(record_usage.call_args.kwargs["input_tokens"], 30)
-        self.assertEqual(record_usage.call_args.kwargs["output_tokens"], 5)
-        self.assertEqual(record_usage.call_args.kwargs["total_tokens"], 35)
+        self.assertEqual(record_usage.call_args.args[0], "_test@example.com")
+        records = record_usage.call_args.args[1]
+        manager_record = records[-1]
+        self.assertEqual(manager_record["input_tokens"], 30)
+        self.assertEqual(manager_record["output_tokens"], 5)
+        self.assertEqual(manager_record["total_tokens"], 35)
         self.assertTrue(any("Jawaban akhir" in event for event in events))
 
     def test_tool_error_result_does_not_stop_loop(self):

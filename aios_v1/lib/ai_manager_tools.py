@@ -27,7 +27,7 @@ def _user_id_from_context() -> str:
     name="orchestrator_delegate_to_subagent",
     description="Mendelegasikan tugas khusus ke sub-agent (worker job role) dalam divisinya sendiri.",
     branch="ai_manager",
-    dormant=True,
+    dormant=False,
     parameters={
         "branch": {
             "type": "string",
@@ -48,13 +48,8 @@ def _user_id_from_context() -> str:
     }
 )
 def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruction: str, context_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    return {
-        "status": "DELEGATED",
-        "branch": branch,
-        "worker_key": worker_key,
-        "instruction": task_instruction,
-        "message": f"Tugas berhasil didelegasikan ke sub-agent '{worker_key}' di divisi '{branch}'."
-    }
+    return {"error": "Delegasi hanya dapat dijalankan oleh runner internal.",
+            "code": "DELEGATION_RUNNER_REQUIRED"}
 
 # =========================================================================
 # 2. CROSS BRANCH CONSULTATION
@@ -222,13 +217,7 @@ def monitor_global_task_ledger(task_id: str) -> Dict[str, Any]:
     }
 )
 def resolve_agent_conflict(conflict_topic: str, proposals: Dict[str, Any], selected_decision: str, rationale: str) -> Dict[str, Any]:
-    return {
-        "status": "RESOLVED",
-        "conflict_topic": conflict_topic,
-        "decision": selected_decision,
-        "rationale": rationale,
-        "message": f"Konflik pada topik '{conflict_topic}' telah diselesaikan oleh AI Manager."
-    }
+    return {"error": "Tool belum diimplementasikan.", "code": "TOOL_NOT_IMPLEMENTED"}
 
 # =========================================================================
 # 6. BROADCAST POLICY UPDATE
@@ -254,12 +243,7 @@ def resolve_agent_conflict(conflict_topic: str, proposals: Dict[str, Any], selec
     }
 )
 def broadcast_policy_update(branch: str, policy_title: str, policy_instruction: str) -> Dict[str, Any]:
-    return {
-        "status": "BROADCASTED",
-        "branch": branch,
-        "policy_title": policy_title,
-        "message": f"Kebijakan '{policy_title}' berhasil disebarkan ke seluruh sub-agent di divisi '{branch}'."
-    }
+    return {"error": "Tool belum diimplementasikan.", "code": "TOOL_NOT_IMPLEMENTED"}
 
 # =========================================================================
 # 7. SUMMARIZE BRANCH STATUS
@@ -281,11 +265,5 @@ def broadcast_policy_update(branch: str, policy_title: str, policy_instruction: 
     }
 )
 def summarize_branch_status(branch: str, period: str = "today") -> Dict[str, Any]:
-    return {
-        "status": "SUMMARIZED",
-        "branch": branch,
-        "period": period,
-        "executive_summary": f"Seluruh sistem dan sub-agent pada divisi {branch} terpantau beroperasi normal pada periode {period}.",
-        "message": f"Rangkuman status divisi '{branch}' berhasil di-generate."
-    }
+    return {"error": "Tool belum diimplementasikan.", "code": "TOOL_NOT_IMPLEMENTED"}
 

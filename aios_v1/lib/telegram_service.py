@@ -8,6 +8,7 @@ import requests
 import frappe
 from frappe.utils import now_datetime
 from aios_v1.lib.llm_client import chat_stream
+from aios_v1.lib.error_utils import safe_error
 from aios_v1.lib.order_service import (
     get_active_catalog_prompt,
     get_active_draft_prompt,
@@ -18,6 +19,11 @@ from aios_v1.lib.order_service import (
 
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
+TELEGRAM_DISABLED = True
+
+
+def _telegram_disabled_error() -> dict:
+    return safe_error("Integrasi Telegram belum diaktifkan.", "TELEGRAM_DISABLED")
 
 def _sanitize_error(err: Exception | str, token: str = "") -> str:
     """
@@ -57,6 +63,8 @@ def save_telegram_token(bot_token: str) -> bool:
     """
     Menyimpan token bot Telegram ke dalam DocType Single 'AIOS Telegram Setting'.
     """
+    if TELEGRAM_DISABLED:
+        return False
     try:
         doc = frappe.get_single("AIOS Telegram Setting")
         doc.bot_token = bot_token
@@ -73,6 +81,9 @@ def test_telegram_connection() -> dict:
     """
     Menguji koneksi ke Telegram Bot API menggunakan getMe.
     """
+    if TELEGRAM_DISABLED:
+        return {"success": False, "code": "TELEGRAM_DISABLED",
+                "message": "Integrasi Telegram belum diaktifkan."}
     config = get_telegram_setting()
     token = config.get("bot_token")
 
@@ -109,11 +120,13 @@ def send_telegram_message(
     text: str,
     parse_mode: str = None,
     reply_markup: dict = None
-) -> bool:
+) -> bool | dict:
     """
     Mengirim pesan teks ke chat Telegram tertentu via Telegram Bot API,
     dengan dukungan tombol interaktif (reply_markup / inline keyboard).
     """
+    if TELEGRAM_DISABLED:
+        return _telegram_disabled_error()
     config = get_telegram_setting()
     token = config.get("bot_token")
 
@@ -658,12 +671,14 @@ def process_callback_query(callback_query: dict) -> dict:
     return {"success": False, "error": "Aksi tidak dikenal"}
 
 
-def poll_telegram_updates(limit: int = 10, timeout: int = 5, single_run: bool = True) -> int:
+def poll_telegram_updates(limit: int = 10, timeout: int = 5, single_run: bool = True) -> int | dict:
     """
     Mengambil pesan baru dari Telegram menggunakan metode Long-Polling (getUpdates).
     Mendukung single_run=True (sekali periksa) atau single_run=False (loop terus menerus).
     Menggunakan requests.Session() persistent untuk koneksi stabil.
     """
+    if TELEGRAM_DISABLED:
+        return _telegram_disabled_error()
     config = get_telegram_setting()
     token = config.get("bot_token")
 
@@ -773,6 +788,9 @@ def start_polling():
     Dapat dipanggil via:
     bench --site aios.localhost execute aios_v1.lib.telegram_service.start_polling
     """
+    if TELEGRAM_DISABLED:
+        return {"success": False, "code": "TELEGRAM_DISABLED",
+                "message": "Integrasi Telegram belum diaktifkan."}
     status = test_telegram_connection()
     if not status.get("success"):
         print(f"[{time.strftime('%H:%M:%S')}] ❌ [Telegram Bot] Gagal memulai: {status.get('message')}")

@@ -9,6 +9,7 @@ from aios_v1.lib.error_utils import log_exception, safe_error
 
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _HIDDEN_TOOL_PARAMS = frozenset({"user_id", "allowed_company"})
+MAX_DELEGATION_DEPTH = 2
 
 
 class ToolContextError(frappe.ValidationError):
@@ -74,6 +75,7 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
         "allowed_company": allowed_company,
         "branch": context.get("branch") if context else None,
         "worker_key": context.get("worker_key") if context else None,
+        "delegation_depth": context.get("delegation_depth", 0) if context else 0,
     }
 
 
@@ -239,7 +241,10 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
     """
     _ensure_tools_loaded()
     schemas = []
+    from aios_v1.plugin_manager.registry import is_branch_enabled
     requested_branches = [item.lower() for item in branch] if isinstance(branch, list) else [branch.lower()] if branch else []
+    if any(not is_branch_enabled(item) for item in requested_branches):
+        return []
     worker_lower = worker_key.lower() if worker_key else "manager"
     
     for t_name, t_data in _TOOL_REGISTRY.items():
@@ -286,6 +291,9 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
                 context = getattr(frappe.local, "aios_tool_context", None)
             branch = (context or {}).get("branch") if context else ""
             worker_key = (context or {}).get("worker_key") if context else ""
+            from aios_v1.plugin_manager.registry import is_branch_enabled
+            if branch and not is_branch_enabled(branch):
+                return json.dumps(safe_error("Cabang ini belum diaktifkan.", "BRANCH_DISABLED"))
             kwargs = json.loads(arguments_json)
             if not isinstance(kwargs, dict):
                 return json.dumps(safe_error("Argumen tool MCP tidak valid.", "MCP_TOOL_FAILED"))
@@ -302,15 +310,25 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
             return json.dumps(safe_error("Tool MCP gagal dijalankan.", "MCP_TOOL_FAILED"))
     if name not in _TOOL_REGISTRY:
         return json.dumps({"error": f"Tool {name} not found"})
+    if context is None:
+        context = getattr(frappe.local, "aios_tool_context", None)
+    branch = (context or {}).get("branch") if context else ""
+    worker_key = (context or {}).get("worker_key") if context else ""
+    from aios_v1.plugin_manager.registry import is_branch_enabled
+    if branch and not is_branch_enabled(branch):
+        return json.dumps(safe_error("Cabang ini belum diaktifkan.", "BRANCH_DISABLED"))
+    if name in {"resolve_agent_conflict", "broadcast_policy_update", "summarize_branch_status"}:
+        return json.dumps(safe_error("Tool belum diimplementasikan.", "TOOL_NOT_IMPLEMENTED"))
     if _TOOL_REGISTRY[name].get("dormant"):
         log_exception("AIOS Dormant Tool", context=f"Tool dormant ditolak: {name}")
         return json.dumps(safe_error("Tool ini belum aktif.", "TOOL_DORMANT"))
 
     tool_data = _TOOL_REGISTRY[name]
-    if context is None:
-        context = getattr(frappe.local, "aios_tool_context", None)
-    branch = (context or {}).get("branch") if context else ""
-    worker_key = (context or {}).get("worker_key") if context else ""
+    if name == "orchestrator_delegate_to_subagent":
+        depth = (context or {}).get("delegation_depth", 0)
+        if (worker_key not in {"manager", "ai_manager", f"{branch}_manager"}
+                or depth != MAX_DELEGATION_DEPTH - 2):
+            return _log_tool_denial("DELEGATION_FORBIDDEN", name)
     try:
         if tool_data.get("branch") and not _worker_access(tool_data, branch, worker_key):
             return _log_tool_denial("TOOL_WORKER_FORBIDDEN", name)

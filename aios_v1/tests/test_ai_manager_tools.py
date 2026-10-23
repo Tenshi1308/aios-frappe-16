@@ -47,7 +47,8 @@ class TestAIManagerTools(IntegrationTestCase):
         frappe.db.commit = lambda *a, **k: None
         _make_test_user(self.EMAIL, "_Test AI Manager")
         frappe.set_user(self.EMAIL)
-        self.context = {"user": self.EMAIL, "allowed_company": "_Test Company"}
+        self.context = {"user": self.EMAIL, "allowed_company": "_Test Company",
+                        "branch": "finance", "worker_key": "manager", "delegation_depth": 0}
 
     def tearDown(self):
         frappe.db.commit = self._orig_commit
@@ -87,20 +88,22 @@ class TestAIManagerTools(IntegrationTestCase):
                 payload={"vendor": "_Test Vendor"},
             )
 
-    def test_dormant_orchestration_tools_are_hidden_from_worker_schema(self):
+    def test_delegation_is_manager_only_and_other_orchestration_tools_stay_dormant(self):
         names = {
             schema["function"]["name"]
             for schema in get_tools_schema_for_worker("finance", "manager")
         }
+        self.assertIn("orchestrator_delegate_to_subagent", names)
         self.assertTrue(
             {
-                "orchestrator_delegate_to_subagent",
                 "resolve_agent_conflict",
                 "broadcast_policy_update",
                 "summarize_branch_status",
                 "escalate_to_human_approval",
             }.isdisjoint(names)
         )
+        worker_names = {schema["function"]["name"] for schema in get_tools_schema_for_worker("finance", "treasurer")}
+        self.assertNotIn("orchestrator_delegate_to_subagent", worker_names)
 
     def test_orchestrator_delegation_execution(self):
         args = {
@@ -112,9 +115,18 @@ class TestAIManagerTools(IntegrationTestCase):
             result = json.loads(
                 execute_tool("orchestrator_delegate_to_subagent", json.dumps(args), context=self.context)
             )
-        self.assertEqual(result.get("code"), "TOOL_DORMANT")
-        self.assertEqual(result.get("error"), "Tool ini belum aktif.")
-        log_exception.assert_called_once()
+        self.assertEqual(result.get("code"), "DELEGATION_RUNNER_REQUIRED")
+        log_exception.assert_not_called()
+
+    def test_unimplemented_mock_tools_fail_loud(self):
+        calls = {
+            "resolve_agent_conflict": {"conflict_topic": "x", "proposals": {}, "selected_decision": "x", "rationale": "x"},
+            "broadcast_policy_update": {"branch": "finance", "policy_title": "x", "policy_instruction": "x"},
+            "summarize_branch_status": {"branch": "finance"},
+        }
+        for name, arguments in calls.items():
+            result = json.loads(execute_tool(name, json.dumps(arguments), context=self.context))
+            self.assertEqual(result.get("code"), "TOOL_NOT_IMPLEMENTED")
 
     def test_cross_branch_consultation_dormant_guard(self):
         args = {

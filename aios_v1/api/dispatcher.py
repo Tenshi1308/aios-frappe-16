@@ -9,7 +9,7 @@ MAX_PDF_BYTES = 5 * 1024 * 1024
 
 from aios_v1.lib.auth import verify_session_token, SESSION_COOKIE
 from aios_v1.lib.error_utils import log_exception, safe_error
-from aios_v1.plugin_manager.registry import get_branches
+from aios_v1.plugin_manager.registry import get_branches, is_branch_enabled
 from aios_v1.managers import get_manager
 from aios_v1.services.usage import check_site_token_quota
 
@@ -495,6 +495,9 @@ def _handle_api_request():
             if action == "stream" and method == "POST":
                 sess = require_session()
 
+                if not is_branch_enabled(branch):
+                    return json_error(404, "BRANCH_DISABLED", "Cabang ini belum tersedia.")
+
                 if not check_site_token_quota():
                     return json_response(
                         {"error": "Kuota token site sudah habis. Hubungi administrator."},
@@ -544,6 +547,7 @@ def _handle_api_request():
     # =========================================================================
     if path.startswith("api/chatbot"):
         require_session(role="DEVELOPER")
+        return json_error(503, "TELEGRAM_DISABLED", "Integrasi Telegram belum diaktifkan.")
 
         # GET /api/chatbot/sessions
         if path == "api/chatbot/sessions" and method == "GET":

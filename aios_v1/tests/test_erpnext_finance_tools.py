@@ -186,7 +186,7 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         )
         list_schema = next(schema for schema in schemas if schema["function"]["name"] == "erpnext_doc_list")
         self.assertEqual(list_schema["function"]["parameters"]["required"], ["doctype"])
-        self.assertNotIn("orchestrator_delegate_to_subagent", names)
+        self.assertIn("orchestrator_delegate_to_subagent", names)
         self.assertNotIn("escalate_to_human_approval", names)
 
     def test_company_context_persona_is_available_in_desk_form_metadata(self):

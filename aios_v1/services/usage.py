@@ -74,6 +74,38 @@ def record_token_usage(
 	return {"total_tokens": total_tokens}
 
 
+def record_token_usage_batch(user: str, records: list[dict]) -> dict:
+	"""Catat seluruh agent dalam request; counter agregat dinaikkan sekali."""
+	total = 0
+	aggregated = {}
+	for record in records:
+		key = (record.get("branch") or "", record.get("agent") or "",
+			   record.get("provider") or "", record.get("model") or "")
+		bucket = aggregated.setdefault(key, {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0})
+		input_tokens = max(0, int(record.get("input_tokens") or 0))
+		output_tokens = max(0, int(record.get("output_tokens") or 0))
+		total_tokens = max(0, int(record.get("total_tokens") if record.get("total_tokens") is not None
+									 else input_tokens + output_tokens))
+		bucket["input_tokens"] += input_tokens
+		bucket["output_tokens"] += output_tokens
+		bucket["total_tokens"] += total_tokens
+	for (branch, agent, provider, model), counts in aggregated.items():
+		frappe.get_doc({
+			"doctype": "AIOS Token Usage", "user": user,
+			"provider": provider, "model": model, "branch": branch, "agent": agent,
+			"input_tokens": counts["input_tokens"], "output_tokens": counts["output_tokens"],
+			"total_tokens": counts["total_tokens"], "cost": 0,
+		}).insert(ignore_permissions=True)
+		total += counts["total_tokens"]
+	if total:
+		_increment_site_counter(total)
+		frappe.db.sql(
+			"UPDATE `tabUser` SET aios_tokens_used = COALESCE(aios_tokens_used, 0) + %s WHERE name = %s",
+			(total, user),
+		)
+	return {"total_tokens": total, "agents": len(aggregated)}
+
+
 def reset_daily_counters() -> None:
 	"""Job harian: nol-kan counter site + statistik per user; ledger tetap utuh."""
 	frappe.db.sql(

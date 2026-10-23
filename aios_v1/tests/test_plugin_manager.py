@@ -236,9 +236,9 @@ class TestPluginManager(IntegrationTestCase):
 
 	def test_direct_execution_cannot_bypass_decorator_branch_or_role(self):
 		plugin = self._plugin(scopes=("hr",))
-		# DB scope HR cannot widen this tool's finance/sales decorator ceiling.
+		# Branch gating rejects disabled HR before the decorator worker ceiling is checked.
 		result = self._execute("hr", "payroll-officer")
-		self.assertEqual(result["code"], "TOOL_WORKER_FORBIDDEN")
+		self.assertEqual(result["code"], "BRANCH_DISABLED")
 		self.assertEqual(CALLS, [])
 		plugin.append("scopes", {"scope_type": "branch", "scope_key": "finance", "enabled": 1})
 		plugin.save(ignore_permissions=True)
