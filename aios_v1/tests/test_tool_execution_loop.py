@@ -56,11 +56,11 @@ class TestToolExecutionLoop(IntegrationTestCase):
             events = list(self.manager.handle_stream("_Test request", conversation_id=7, user="_test@example.com"))
         return events, record_usage, execute, log_exception
 
-    def _tool_call(self, index=0):
+    def _tool_call(self, index=0, tool_name="erpnext_doc_list"):
         return {
             "id": f"call_{index}",
             "type": "function",
-            "function": {"name": "erpnext_doc_list", "arguments": '{"doctype":"Sales Order"}'},
+            "function": {"name": tool_name, "arguments": '{"doctype":"Sales Order"}'},
         }
 
     def test_tool_call_fragments_are_joined_by_index(self):
@@ -119,6 +119,25 @@ class TestToolExecutionLoop(IntegrationTestCase):
         tool_messages = [message for message in self.llm_message_snapshots[1] if message.get("role") == "tool"]
         self.assertEqual(tool_messages[0]["content"], '{"success":false,"code":"TOOL_FAILED"}')
         self.assertTrue(any("lanjut" in event for event in events))
+
+    def test_mcp_alias_result_is_returned_to_model_with_same_tool_call_id(self):
+        alias = "mcp__market__lookup__12345678"
+
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name=alias))
+                return iter(())
+            return iter(["nonce _Test MCP result"])
+
+        events, _, execute, _ = self._run_manager(scripted, tool_result='{"content":"nonce _Test MCP result"}')
+        self.assertEqual(execute.call_args.args[0], alias)
+        tool_messages = [message for message in self.llm_message_snapshots[1] if message.get("role") == "tool"]
+        self.assertEqual(
+            tool_messages,
+            [{"role": "tool", "tool_call_id": "call_0", "content": '{"content":"nonce _Test MCP result"}'}],
+        )
+        self.assertTrue(any("nonce _Test MCP result" in event for event in events))
 
     def test_six_round_limit_logs_and_returns_safe_message(self):
         def scripted(round_number, usage, calls):

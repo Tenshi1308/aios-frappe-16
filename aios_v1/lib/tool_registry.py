@@ -125,6 +125,8 @@ def _ensure_tools_loaded():
     import aios_v1.lib.erpnext_financial_reports  # noqa: F401
     import aios_v1.lib.quant_calculator  # noqa: F401
     import aios_v1.lib.document_intelligence  # noqa: F401
+    import aios_v1.lib.web_market_research
+    import aios_v1.lib.mcp_client
 
 
 def _worker_access(t_data: Dict[str, Any], branch: str, worker_key: str) -> bool:
@@ -264,6 +266,10 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
                     }
                 }
             })
+    from aios_v1.lib.mcp_client import get_mcp_tools_schema_for_worker
+
+    for requested_branch in requested_branches:
+        schemas.extend(get_mcp_tools_schema_for_worker(requested_branch, worker_lower))
     return schemas
 
 def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any]] = None):
@@ -274,6 +280,26 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
     `user_id` atau `allowed_company`.
     """
     _ensure_tools_loaded()
+    if isinstance(name, str) and name.startswith("mcp__"):
+        try:
+            if context is None:
+                context = getattr(frappe.local, "aios_tool_context", None)
+            branch = (context or {}).get("branch") if context else ""
+            worker_key = (context or {}).get("worker_key") if context else ""
+            kwargs = json.loads(arguments_json)
+            if not isinstance(kwargs, dict):
+                return json.dumps(safe_error("Argumen tool MCP tidak valid.", "MCP_TOOL_FAILED"))
+            ctx = _build_tool_context(context)
+            from aios_v1.lib.mcp_client import execute_mcp_tool
+
+            with tool_context(ctx):
+                result = execute_mcp_tool(name, kwargs, branch, worker_key)
+            return json.dumps(result, default=str)
+        except ToolContextError:
+            raise
+        except Exception as exc:
+            log_exception("AIOS MCP Tool Dispatch", exc=exc)
+            return json.dumps(safe_error("Tool MCP gagal dijalankan.", "MCP_TOOL_FAILED"))
     if name not in _TOOL_REGISTRY:
         return json.dumps({"error": f"Tool {name} not found"})
     if _TOOL_REGISTRY[name].get("dormant"):

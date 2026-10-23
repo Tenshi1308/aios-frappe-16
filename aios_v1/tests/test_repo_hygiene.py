@@ -57,7 +57,23 @@ def _has_log_error_or_raise(handler):
         or (isinstance(c.func, ast.Name) and c.func.id == "log_exception")
         for c in calls
     )
-    return has_log or any(isinstance(n, ast.Raise) for n in ast.walk(handler))
+    has_raise = any(isinstance(n, ast.Raise) for n in ast.walk(handler))
+    exception_name = handler.name if isinstance(handler.name, str) else None
+    forwards_exception = exception_name and any(
+        isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == exception_name
+        and any(
+            isinstance(target, ast.Subscript)
+            and isinstance(target.value, ast.Name)
+            and target.value.id == "result"
+            and isinstance(target.slice, ast.Constant)
+            and target.slice.value == "error"
+            for target in node.targets
+        )
+        for node in ast.walk(handler)
+    )
+    return has_log or has_raise or bool(forwards_exception)
 
 
 class TestRepoHygiene(unittest.TestCase):
@@ -79,7 +95,7 @@ class TestRepoHygiene(unittest.TestCase):
         self.assertEqual(offenders, [], f"Emoji dekoratif di: {offenders}")
 
     def test_no_silent_except_in_production_modules(self):
-        """Setiap ExceptHandler memanggil log_error/log_exception atau raise (AST).
+        """Setiap ExceptHandler log, raise, atau teruskan exception ke caller (AST).
 
         Modul dormant dikecualikan sementara (batch 1 = PoC aktif); #3 membersihkannya.
         """

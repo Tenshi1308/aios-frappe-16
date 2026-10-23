@@ -119,8 +119,9 @@ class TestPluginManager(IntegrationTestCase):
 			self.assertEqual(frappe.db.count("AIOS Plugin Scope", {"parent": name}), expected)
 
 	def test_phase_two_plugins_are_seeded_and_enforced(self):
-		self.assertEqual(frappe.db.count("AIOS Plugin"), 5)
-		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), 10)
+		ensure_builtin_plugins()
+		self.assertEqual(frappe.db.count("AIOS Plugin"), 6)
+		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), 12)
 		for plugin_key, tool_name in (
 			("quant-calculator", "quant_calculate"),
 			("document-intelligence", "document_extract"),
@@ -174,6 +175,42 @@ class TestPluginManager(IntegrationTestCase):
 					)["code"],
 					"PLUGIN_SCOPE_DENIED",
 				)
+
+	def test_web_market_research_is_seeded_and_plugin_scope_is_enforced(self):
+		from unittest.mock import Mock, patch
+
+		ensure_builtin_plugins()
+		plugin_name = frappe.db.get_value("AIOS Plugin", {"plugin_key": "web-market-research"}, "name")
+		plugin = frappe.get_doc("AIOS Plugin", plugin_name)
+		self.assertEqual(plugin.plugin_type, "BUILT_IN")
+		self.assertEqual(
+			{scope.scope_key for scope in plugin.scopes if scope.enabled}, {"finance", "sales"}
+		)
+		context = {
+			"user": self.USER,
+			"allowed_company": "_Test Company",
+			"branch": "finance",
+			"worker_key": "manager",
+		}
+		for tool_name in ("web_fetch", "web_search"):
+			with self.subTest(tool=tool_name):
+				probe = Mock(return_value={"unexpected": True})
+				with patch.dict(_TOOL_REGISTRY, {tool_name: {**_TOOL_REGISTRY[tool_name], "func": probe}}):
+					plugin.enabled = 0
+					plugin.save(ignore_permissions=True)
+					self.assertNotIn(tool_name, self._schemas("finance"))
+					self.assertEqual(self._execute_web(tool_name, context)["code"], "PLUGIN_DISABLED")
+					plugin.enabled = 1
+					plugin.set("scopes", [{"scope_type": "branch", "scope_key": "sales", "enabled": 1}])
+					plugin.save(ignore_permissions=True)
+					self.assertNotIn(tool_name, self._schemas("finance"))
+					self.assertIn(tool_name, self._schemas("sales"))
+					self.assertEqual(self._execute_web(tool_name, context)["code"], "PLUGIN_SCOPE_DENIED")
+					probe.assert_not_called()
+				plugin.reload()
+
+	def _execute_web(self, tool_name, context):
+		return json.loads(execute_tool(tool_name, "{}", context=context))
 
 	def test_disabled_plugin_is_hidden_and_direct_execution_is_rejected(self):
 		self._plugin(enabled=0)

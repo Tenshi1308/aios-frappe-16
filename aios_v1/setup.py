@@ -81,6 +81,7 @@ BUILTIN_PLUGIN_SEEDS = (
     ("erpnext-action-drafts", "ERPNext Action Drafts"),
     ("quant-calculator", "Quant Calculator"),
     ("document-intelligence", "Document Intelligence"),
+    ("web-market-research", "Web Market Research"),
 )
 
 
