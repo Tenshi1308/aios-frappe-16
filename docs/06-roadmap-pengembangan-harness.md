@@ -65,9 +65,11 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 
 > **Lokasi data (2026-10-23):** `AIOS Plugin` dan `AIOS Plugin Scope` ada di **site developer** sebagai sumber kebenaran, disalin ke tiap site klien untuk dipakai runtime. Konfigurasi ini global — tidak ada plugin per site.
 
-Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas fondasi plugin awal dari `#8` (`erpnext-core-data` & `erpnext-financial-reports`), melengkapinya menjadi 7 *Built-in Default Plugins*, dapat di-*toggle* On/Off melalui UI `AIOS Admin`, serta mendukung server MCP eksternal. Tiga plugin ERPNext adalah **wrapper tipis** di atas API ERPNext; skema tool-nya diadaptasi dari `@casys/mcp-erpnext` (MIT) — lihat `docs/02` §2.2.
+H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext yang sudah dibuat di `#8`, menambah `AIOS Plugin`/`AIOS Plugin Scope`, dan menegakkan status enabled serta irisan scope pada schema dan eksekusi tool. **Fase berikutnya** menambah empat built-in plugin lain dan client MCP eksternal. Plugin dibuat dan disemai di setiap site; site developer menjadi sumber kebenaran global dan sinkronisasi ke site klien menyusul `#11`.
 
-### 1. Skema DocType `AIOS Plugin` & Child Table `AIOS Plugin Scope` (Hanya `AIOS Admin`)
+> **Permission (2026-10-23):** fase 1 tidak memasang DocPerm `AIOS Admin` untuk kedua DocType ini karena role lama juga dapat ada di site klien. Runtime membaca konfigurasi secara server-side melalui `frappe.db.*`/`frappe.get_all`; DocPerm developer dan UI pengelolaan plugin masuk `#11`.
+
+### 1. Skema DocType `AIOS Plugin` & Child Table `AIOS Plugin Scope`
 - **`AIOS Plugin`:**
   - `plugin_key` (`Data`, Unique)
   - `plugin_name` (`Data`, Mandatory)
@@ -80,7 +82,7 @@ Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas
 Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; `AIOS Plugin Scope` membatasi akses per branch/worker; plugin eksternal MCP mengikuti §1.
 
 ### 3. UI di Developer Control Plane (sumber data di site developer)
-- Halaman **Plugin & MCP Registry** di control plane (berlaku untuk semua site klien): daftar seluruh plugin bawaan dan eksternal, tombol toggle **On/Off**, tombol *Discover Tools / Health Check* untuk MCP eksternal, serta pengaturan izin akses (`AIOS Plugin Scope`) per cabang/sub-agent. Perubahan disalin ke tiap site klien lewat Control API.
+- UI dan DocPerm **Plugin & MCP Registry** masuk `#11`; H2 backend tidak membangun UI sendiri dan tidak memasang permission `AIOS Admin`. Di `#11`, halaman ini mengelola plugin global, toggle **On/Off**, *Discover Tools / Health Check* MCP, dan `AIOS Plugin Scope`; permission developer dibatasi ke site developer dan perubahan dikirim ke site klien lewat Control API.
 
 ### 4. Script Test Wajib
 - `aios_v1/tests/test_plugin_manager.py`:
