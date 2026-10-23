@@ -23,7 +23,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - Model SaaS **1 Client = 1 Site** dengan **Developer Control Plane** (site developer, role `AIOS Admin`) + **Ekasa Desk** (site klien, role `AIOS Client`, antarmuka desktop OS — `docs/08`).
 
 2. **[02 — Arsitektur Harness, Model Routing, Plugin/MCP, & Kontrak Trace](./02-arsitektur-harness-dan-plugin.md)** — *spesifikasi normatif*
-   - Konfigurasi Provider LLM & pemetaan model per Orchestrator/Sub-Agent berbasis UI & DocType (`AIOS LLM Provider` & `AIOS Agent Model Route` dengan `route_key` unik dan validasi ke `registry.py`, *Zero Hardcode*). **UI di Developer Control Plane, data di site klien.**
+   - Konfigurasi Provider LLM & pemetaan model per Orchestrator/Sub-Agent berbasis UI & DocType (`AIOS LLM Provider` & `AIOS Agent Model Route` dengan `route_key` unik dan validasi ke `registry.py`, *Zero Hardcode*). **UI dan sumber kebenaran di Developer Control Plane; konfigurasi disalin ke tiap site klien.**
    - Arsitektur **Plugin & MCP Manager (`AIOS Plugin`)**: katalog 7 *Built-in Default Plugins* (didukung `Custom DocPerm` `read=1, report=1` untuk `AIOS Client`) dan dukungan External MCP Server.
    - **Batas Eksekusi Agen (§2.3):** agen tanpa shell, tanpa akses file server di luar `File` Frappe, tanpa jaringan bebas, identitas tak bisa dipalsukan; isolasi level OS sengaja ditunda.
    - **Kontrak trace & artefak (§3):** 5 event SSE; system prompt internal tidak pernah ditampilkan.
@@ -41,7 +41,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 
 4. **[04 — Alur Kerja Sistem (End-to-End Workflows)](./04-alur-kerja-sistem.md)** — *spesifikasi normatif*
    - **Alur 1:** *Self-Registration* calon klien (`Pending Provisioning`, `enabled = 0`, tanpa email reset password) & aktivasi `User` dari Developer Control Plane.
-   - **Alur 2:** Pengelolaan Provider LLM, Model Routing per agen, Kuota Token `User`, dan Plugin/MCP oleh `AIOS Admin` — UI di control plane, data di site klien.
+   - **Alur 2:** Pengelolaan Provider LLM, Model Routing per agen, Kuota Token `User`, dan Plugin/MCP oleh `AIOS Admin` — UI dan sumber kebenaran di control plane; konfigurasi disalin ke tiap site klien.
    - **Alur 3:** Autentikasi Frappe, guard 3 lapis `aios_status == "Active"`, bootstrap `csrf_token`, dan penentuan portal berbasis Role.
    - **Alur 4:** Eksekusi tugas analitik, delegasi sub-agent (5 event SSE kanonik), kolaborasi lintas divisi (**Sales ↔ Finance**), dan pembuatan artefak sebagai berkas/jendela desktop.
    - **Alur 5:** Eskalasi aksi tulis ke **Pending Action Draft** (*Human-in-the-Loop Approval*) hingga eksekusi ke ERPNext; jenis aksi `CREATE` / `UPDATE_DRAFT` / `CANCEL_AND_AMEND` dan batas **draft vs submitted**.

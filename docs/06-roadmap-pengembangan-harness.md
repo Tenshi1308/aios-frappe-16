@@ -33,6 +33,8 @@ flowchart LR
 
 > **Jangan dikerjakan untuk PoC.** PoC memakai satu model dari `AIOS Setting`; H1 masuk fase setelah PoC.
 
+> **Koreksi kepemilikan (2026-10-23):** konfigurasi model bersifat **global lintas semua site klien**; sumber kebenaran di site developer, disalin ke tiap site klien lewat Control API. Field `user` pada `AIOS Agent Model Route` dan lookup per-user di §1–§2 **tidak dipakai**; `route_key` cukup `f"{branch_key}:{agent_key}:*"`.
+
 Menggantikan `AIOS Setting` lama (yang hanya mendukung 1 `base_url` dan 1 `model_name` untuk seluruh sistem) menjadi arsitektur konfigurasi **Multi-Provider & Per-Agent Model Routing** setara `opencode.jsonc`, tetapi dikelola penuh melalui UI oleh `AIOS Admin`.
 
 ### 1. Perubahan Skema DocType
@@ -40,15 +42,15 @@ Menggantikan `AIOS Setting` lama (yang hanya mendukung 1 `base_url` dan 1 `model
 Basis skema & field: `docs/02` §1.1. Delta H1:
 
 1. **`AIOS LLM Provider`:** field mengikuti `docs/02` §1.1, ditambah `enabled` (`Check`, default `1`) dan `available_models_json` (`Code`/Child Table: model + `input_cost_per_1m` & `output_cost_per_1m`).
-2. **`AIOS Agent Model Route`:** `route_key` unik (format `f"{branch_key}:{agent_key}:{user or '*'}"`), `branch_key` (`finance`/`sales`/`global`), `agent_key` (wajib validasi ke `registry.py`), `provider` (`Link -> AIOS LLM Provider`), `model_name`, `temperature` (default `DEFAULT_TEMPERATURE` di `lib/pricing.py`), `max_tokens` (default `AIOS Setting.default_max_tokens`), `user` (`Link -> User`, opsional; resolver prioritaskan rute user sebelum `*`).
+2. **`AIOS Agent Model Route`:** `route_key` unik (format `f"{branch_key}:{agent_key}:*"`), `branch_key` (`finance`/`sales`/`global`), `agent_key` (wajib validasi ke `registry.py`), `provider` (`Link -> AIOS LLM Provider`), `model_name`, `temperature` (default `DEFAULT_TEMPERATURE` di `lib/pricing.py`), `max_tokens` (default `AIOS Setting.default_max_tokens`). Field `user` **tidak dipakai** — konfigurasi global.
 3. **Pembersihan field lama di `AIOS Setting`:** hapus `base_url`, `api_key`, `model_name` agar hanya ada satu sumber routing.
 
 ### 2. Perubahan Backend & UI
 - **`aios_v1/lib/llm_client.py`:**
-  - Fungsi `get_llm_config(branch_key: str, agent_key: str, user_id: str | None = None)` mencari rute spesifik `f"{branch_key}:{agent_key}:{user_id}"` lalu fallback ke rute global site `f"{branch_key}:{agent_key}:*"`.
+  - Fungsi `get_llm_config(branch_key: str, agent_key: str)` membaca rute global `f"{branch_key}:{agent_key}:*"` dari site developer; tidak ada lookup per user.
   - **Fail Loudly:** Jika rute model untuk `(branch_key, agent_key)` belum diatur atau provider-nya `enabled = 0`, panggil `frappe.log_error` dan `frappe.throw(f"Model LLM untuk agen {branch_key}/{agent_key} belum dikonfigurasi oleh AIOS Admin.")` — **dilarang keras** memberi fallback model default di kode Python.
-- **UI di Developer Control Plane (data di site klien):**
-  - Halaman **LLM Providers & Agent Model Routing** untuk *site* klien yang dipilih dari registry: tambah/edit/hapus provider, uji koneksi API Key, dan dropdown pemetaan model untuk setiap Orchestrator serta Sub-Agent. Penulisan lewat Control API (`AIOS Control`), bukan login Desk di site klien.
+- **UI di Developer Control Plane (sumber data di site developer):**
+  - Halaman **LLM Providers & Agent Model Routing** di control plane (berlaku untuk semua site klien): tambah/edit/hapus provider, uji koneksi API Key, dan dropdown pemetaan model untuk setiap Orchestrator serta Sub-Agent. Perubahan disalin ke tiap site klien lewat Control API (`AIOS Control`), bukan login Desk di site klien.
 
 ### 3. Script Test Wajib
 - `aios_v1/tests/test_agent_model_routing.py`:
@@ -60,6 +62,8 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 ## Tahap H2 — `feat/plugin-mcp-manager` · WAJIB PoC
 
 > **Wajib PoC.** Tanpa H2 agent cuma punya 3 plugin ERPNext dari `#8`; H2 melengkapi 7 plugin + scope.
+
+> **Lokasi data (2026-10-23):** `AIOS Plugin` dan `AIOS Plugin Scope` ada di **site developer** sebagai sumber kebenaran, disalin ke tiap site klien untuk dipakai runtime. Konfigurasi ini global — tidak ada plugin per site.
 
 Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas fondasi plugin awal dari `#8` (`erpnext-core-data` & `erpnext-financial-reports`), melengkapinya menjadi 7 *Built-in Default Plugins*, dapat di-*toggle* On/Off melalui UI `AIOS Admin`, serta mendukung server MCP eksternal. Tiga plugin ERPNext adalah **wrapper tipis** di atas API ERPNext; skema tool-nya diadaptasi dari `@casys/mcp-erpnext` (MIT) — lihat `docs/02` §2.2.
 
@@ -75,8 +79,8 @@ Merombak `aios_v1/lib/tool_registry.py` menjadi **Plugin & MCP Manager** di atas
 ### 2. Katalog Lengkap 7 *Built-in Default Plugins*
 Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; `AIOS Plugin Scope` membatasi akses per branch/worker; plugin eksternal MCP mengikuti §1.
 
-### 3. UI di Developer Control Plane (data di site klien)
-- Halaman **Plugin & MCP Registry** untuk *site* klien terpilih: daftar seluruh plugin bawaan dan eksternal, tombol toggle **On/Off**, tombol *Discover Tools / Health Check* untuk MCP eksternal, serta pengaturan izin akses (`AIOS Plugin Scope`) per cabang/sub-agent.
+### 3. UI di Developer Control Plane (sumber data di site developer)
+- Halaman **Plugin & MCP Registry** di control plane (berlaku untuk semua site klien): daftar seluruh plugin bawaan dan eksternal, tombol toggle **On/Off**, tombol *Discover Tools / Health Check* untuk MCP eksternal, serta pengaturan izin akses (`AIOS Plugin Scope`) per cabang/sub-agent. Perubahan disalin ke tiap site klien lewat Control API.
 
 ### 4. Script Test Wajib
 - `aios_v1/tests/test_plugin_manager.py`:

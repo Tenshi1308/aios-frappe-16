@@ -48,18 +48,20 @@ sequenceDiagram
 
 ## Alur 2 — Konfigurasi Provider, Model Routing, Plugin, & Kuota `User` dari Control Plane
 
-Operator (`AIOS Admin` di Developer Control Plane) mengatur mesin kecerdasan dan kapabilitas tool secara terpusat lintas site. **UI-nya berada di control plane; data konfigurasinya tetap tersimpan di site klien masing-masing** (`AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin` di site klien) — control plane hanya menyimpan registry site + kredensial Control API (`docs/03` §1.4).
+Operator (`AIOS Admin` di Developer Control Plane) mengatur mesin kecerdasan dan kapabilitas tool **sekali untuk semua site klien**. **UI dan sumber kebenaran ada di control plane; konfigurasi disalin ke tiap site klien** (`AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin`) — control plane juga menyimpan registry site + kredensial Control API (`docs/03` §1.4).
 
-> **`AIOS Setting` bukan bagian dari alur ini.** `default_company` dan `company_context_persona` diisi `Administrator` sekali saat *site* disiapkan (`docs/03` §1.3). Control plane tidak membaca maupun menulisnya.
+> **`AIOS Setting` bukan bagian dari alur ini — kecuali field model.** `default_company` dan `company_context_persona` diisi `Administrator` sekali saat *site* disiapkan (`docs/03` §1.3). Field model (`base_url`, `api_key`, `model_name`, `temperature`) disalin dari control plane lewat endpoint sync.
+
+> **Catatan PoC:** alur provider + routing per agen di bawah adalah **target H1 yang ditunda** (`docs/00` §2.3). Pada PoC, model LLM tunggal disalin dari control plane ke `AIOS Setting` site klien (`base_url`, `api_key`, `model_name`, `temperature`); `AIOS LLM Provider` dan `AIOS Agent Model Route` belum ada. Plugin (`AIOS Plugin`) juga baru ada di H2.
 
 ```mermaid
 flowchart TD
-    Admin["AIOS Admin (Developer Control Plane)<br/>pilih site klien dari registry AIOS Client Site"] --> Prov["1. Konfigurasi Provider LLM (AIOS LLM Provider di site klien)"]
+    Admin["AIOS Admin (Developer Control Plane)"] --> Prov["1. Konfigurasi Provider LLM (AIOS LLM Provider di site developer)"]
     Prov --> ProvDetail["Tambah/Ubah Provider (OpenRouter, OpenAI, Anthropic, Gemini, dll.)\nSimpan Base URL, API Key (Password Terenkripsi), & Tarif Token"]
-    ProvDetail --> Route["2. Pemetaan Model per Agen (AIOS Agent Model Route di site klien)"]
+    ProvDetail --> Route["2. Pemetaan Model per Agen (AIOS Agent Model Route di site developer)"]
     Route --> RouteOrch["Set Model Orchestrator (route_key unik):\n- Finance Manager\n- Sales Manager"]
     Route --> RouteSub["Set Model per Sub-Agent (divalidasi ke registry.py):\n- CFO, Financial Analyst, Treasurer, Budgeting, Finance Staff\n- Sales Rep, Sales Analyst, Customer Service, Marketing"]
-    RouteOrch --> Plugin["3. Manajemen Plugin & MCP (AIOS Plugin di site klien)"]
+    RouteOrch --> Plugin["3. Manajemen Plugin & MCP (AIOS Plugin di site developer)"]
     RouteSub --> Plugin
     Plugin --> PluginBuiltIn["Toggle On/Off Built-in Default Plugins\n(ERPNext Core, Financial Reports, Action Drafts, Quant Calc, Doc Intel, Artifact Builder, Web Research)"]
     Plugin --> PluginExt["Install / Sambungkan External MCP Server\n& Atur Role-Scoping via Child Table AIOS Plugin Scope"]
@@ -69,10 +71,10 @@ flowchart TD
 ```
 
 ### Rincian Langkah Alur 2:
-1. **Pendaftaran Provider LLM (`AIOS LLM Provider`):** `AIOS Admin` menambahkan satu atau beberapa provider LLM dari UI control plane (setelah memilih *site* klien dari registry), mengisi `base_url`, `api_key` (disimpan sebagai field `Password` terenkripsi Frappe pada `AIOS LLM Provider` di *site* klien), daftar model, serta tarif token per model.
-2. **Pemetaan Model per Peran Agen (`AIOS Agent Model Route`):** `AIOS Admin` memilih provider dan model spesifik untuk masing-masing **Orchestrator** (`Finance Manager`, `Sales Manager`) maupun setiap **Sub-Agent** (`cfo`, `financial-analyst`, `treasurer`, `budgeting-staff`, `finance-staff`, `sales-representative`, `sales-data-analyst`, `customer-service`, `marketing-specialist`), dengan `route_key` unik dan validasi nama agen ke `registry.py`.
-3. **Kontrak *Fail-Loudly* (Zero Default Hardcode):** Bila ada agen yang dipanggil tetapi belum memiliki rute model aktif di database *site* klien, sistem langsung menghentikan eksekusi secara eksplisit (`frappe.throw`), mencatat ke `Error Log`, dan tidak pernah jatuh ke model default hardcoded.
-4. **Pengaturan Plugin & MCP (`AIOS Plugin`):** `AIOS Admin` mengaktifkan/menonaktifkan *Built-in Default Plugins* maupun menyambungkan server MCP eksternal, serta mengatur hak akses plugin per cabang/sub-agent (*Least Privilege*) — semuanya di *site* klien yang dipilih.
+1. **Pendaftaran Provider LLM (`AIOS LLM Provider`):** `AIOS Admin` menambahkan satu atau beberapa provider LLM dari UI control plane, mengisi `base_url`, `api_key` (field `Password` terenkripsi Frappe), daftar model, serta tarif token per model. Data ini tinggal di site developer sebagai sumber kebenaran dan disalin ke tiap site klien lewat Control API.
+2. **Pemetaan Model per Peran Agen (`AIOS Agent Model Route`):** `AIOS Admin` memilih provider dan model spesifik untuk masing-masing **Orchestrator** (`Finance Manager`, `Sales Manager`) maupun setiap **Sub-Agent** (`cfo`, `financial-analyst`, `treasurer`, `budgeting-staff`, `finance-staff`, `sales-representative`, `sales-data-analyst`, `customer-service`, `marketing-specialist`), dengan `route_key` unik dan validasi nama agen ke `registry.py`. Konfigurasi ini global; tidak ada pemilihan per site maupun per user.
+3. **Kontrak *Fail-Loudly* (Zero Default Hardcode):** Bila ada agen yang dipanggil tetapi belum memiliki rute model aktif di database site developer, sistem langsung menghentikan eksekusi secara eksplisit (`frappe.throw`), mencatat ke `Error Log`, dan tidak pernah jatuh ke model default hardcoded.
+4. **Pengaturan Plugin & MCP (`AIOS Plugin`):** `AIOS Admin` mengaktifkan/menonaktifkan *Built-in Default Plugins* maupun menyambungkan server MCP eksternal, serta mengatur hak akses plugin per cabang/sub-agent (*Least Privilege*). Konfigurasi ini global dan disalin ke tiap site klien.
 5. **Manajemen Status & Pemakaian Token per `User`:** `AIOS Admin` memantau konsumsi token tiap pengguna (`User.aios_tokens_used` & log `AIOS Token Usage`), lalu mengubah `User.aios_status` (`Active` / `Suspended`) per individu — lewat endpoint Control API dengan token `AIOS Control`, bukan login Desk di site klien. Kuota token berlaku site-level (`AIOS Setting.site_token_limit`); tidak ada plafon per user.
 
 ---
@@ -168,8 +170,8 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 4:
-1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model dari `AIOS Agent Model Route`.
-2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context`) dan hanya menyertakan skema tool dari plugin yang aktif (`enabled = 1`) serta diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas).
+1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model. **PoC memakai satu model dari `AIOS Setting`** (`base_url`, `model_name`, `temperature`); `AIOS Agent Model Route` adalah target H1 yang ditunda (`docs/00` §2.3) dan belum dipakai.
+2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context`) dan hanya menyertakan skema tool yang diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas). **DocType `AIOS Plugin` baru dibuat di H2** (`docs/06`); `#8` belum memakainya. Pada `#8` skema tool diambil dari registry plugin bawaan (`aios_v1/lib/tool_registry.py`).
 3. **Delegasi Sub-Agent Nyata & 5 Event Kanonik *Live Agent Trace*:**
    - Bila Orchestrator memanggil `orchestrator_delegate_to_subagent`, backend mengirimkan event SSE kanonik (`trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch`) ke **Live Agent Trace** di panel agent (`docs/08` §3), tanpa emoji.
    - Sub-Agent yang ditunjuk benar-benar dieksekusi dengan model dan daftar tool spesifik miliknya.

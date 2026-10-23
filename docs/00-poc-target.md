@@ -73,7 +73,7 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 7. **Token & biaya:** pemakaian token tercatat per user/agent/site; kuota dicek; biaya bisa dihitung.
 8. **Workspace:** file/artefak dibuat lewat Private `File` terikat `AIOS Conversation`; user lain tidak bisa akses; nama file disanitasi; artefak tampil sebagai jendela desktop.
 9. **Control plane:** `AIOS Admin` bisa melihat site, menyetujui user pending (hanya role `AIOS Client`), mengatur kuota, monitoring agregat.
-10. **Keamanan & izin:** `AIOS Client` read-only ERPNext; `AIOS Control` hanya read `User` + `AIOS Token Usage`; tidak ada `AIOS Admin` di site klien; `Administrator` tidak tersentuh.
+10. **Keamanan & izin:** `AIOS Client` read-only ERPNext; `AIOS Control` hanya read `User` + `AIOS Token Usage`, plus satu endpoint sync konfigurasi yang sempit; tidak ada `AIOS Admin` di site klien; `Administrator` tidak tersentuh.
 
 ---
 
@@ -89,7 +89,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 |---|---|
 | **AIOS Admin** | Role operator di **site developer**. `desk_access=0`; tidak dipasang di site klien. |
 | **Administrator** | Root Frappe. Satu-satunya yang memakai **Frappe Desk** untuk setup/operasi darurat. Tidak pernah dimodifikasi. |
-| **AIOS Control** | Role layanan di **site klien**. Tanpa login manusia; `read` `User` + `AIOS Token Usage`; tanpa akses `AIOS Setting`/ERPNext. |
+| **AIOS Control** | Role layanan di **site klien**. Tanpa login manusia; `read` `User` + `AIOS Token Usage`, plus satu endpoint sync konfigurasi yang sempit; tanpa akses DocPerm umum ke `AIOS Setting`/ERPNext. |
 | **AIOS Client** | User bisnis di site klien. `Website User`, `desk_access=0`; memakai **Ekasa Desk**. |
 | **AIOS Setting** | Config site: company, kuota site, konteks bisnis, dan **satu model LLM** untuk PoC. |
 | **AIOS Token Usage** | DocType log pemakaian token/biaya per panggilan. Tidak ada link `conversation`. |
@@ -97,7 +97,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | **AIOS Agent Model Route** | Mapping agent → provider/model (H1). **Ditunda** untuk PoC. |
 | **Frappe Desk** | UI admin bawaan Frappe (`/app`). Bukan UI produk AIOS. |
 | **Ekasa Desk** | Desktop OS produk AIOS (Vue, `docs/08`). |
-| **Control Plane** | Site Frappe khusus developer untuk mengelola banyak site klien. |
+| **Control Plane** | Site Frappe khusus developer untuk mengelola banyak site klien, sekaligus sumber kebenaran konfigurasi operator (model, provider, plugin). |
 | **Client Site** | Satu site/DB per klien (`1 Client = 1 Site`). |
 | **Sandbox** | Batas eksekusi agent: tanpa shell, tanpa jaringan bebas, tanpa file server di luar `File`, tanpa SQL, identitas tak bisa dipalsukan, delegasi maks. 2, tulis ERPNext lewat approval. |
 | **H1–H5** | Tahap di `docs/06`; H1 ditunda, H2–H5 masuk PoC. |
@@ -125,6 +125,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-22 | `User.aios_status` tidak punya default; registrasi mengisi eksplisit. |
 | 2026-10-22 | Kuota PoC = satu gerbang site: `AIOS Setting.site_token_limit` vs `site_tokens_used`; `User.aios_token_limit` **bukan** gerbang (dihapus di `#5`), `User.aios_tokens_used` = statistik harian; counter site + user di-reset harian, ledger `AIOS Token Usage` tetap. |
 | 2026-10-22 | Status `Pending Action Draft`: `PENDING_APPROVAL` → `APPROVED` → `EXECUTED` (hanya setelah dokumen ERPNext dibuat) / `REJECTED` / `EXPIRED`; `COMPLETED` dihapus. |
+| 2026-10-23 | Konfigurasi operator (model LLM, provider, plugin) **global lintas semua site klien**: satu sumber kebenaran di site developer, disalin ke tiap site klien lewat Control API (bentuk *push*). Semua klien memakai konfigurasi yang sama; tidak ada override per site maupun per user. Konsekuensi yang diterima: kredensial LLM terkonsentrasi di database developer. |
 
 ---
 

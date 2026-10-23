@@ -42,16 +42,17 @@ Karena `frappe/auth.py:286` secara native hanya memeriksa `User.enabled`, maka `
 > 3. **Lapis 3 (`on_login` & `auth_hooks` di `hooks.py`):** Hook `on_login` (`auth.py:172`, sebelum `make_session`) dan `auth_hooks` (`auth.py:750`, setiap request) membaca `frappe.db.get_value("User", user, "aios_status")` (tanpa cache) dan melempar `frappe.AuthenticationError` bila status bukan `"Active"`.
 
 ### 1.3. Doctype `AIOS Setting` (`Single DocType` Tingkat Site)
-Menyimpan konfigurasi dan plafon default tingkat *site* (agar tidak ada angka gaib yang di-hardcode di kode Python):
+Menyimpan konfigurasi dan plafon default tingkat *site* (agar tidak ada angka gaib yang di-hardcode di kode Python). Sebagian field model disalin dari site developer; sisanya diisi `Administrator` saat provisioning:
 - `default_company` (`Link -> Company`): Perusahaan ERPNext utama yang dioperasikan oleh agen AI pada *site* ini.
   - **Resolusi 100% Site-Level:** Dibaca menggunakan `frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value("Global Defaults", "default_company")`. **Dilarang keras** memakai `frappe.db.get_default("default_company")` karena fungsi tersebut membaca `tabDefaultValue` per-user yang dapat menyebabkan kebocoran lintas-company jika user memiliki default berbeda.
 - `site_token_limit` (`Int`, Opsional) & `site_tokens_used` (`Int`, `read_only=1`): Plafon pengaman dan counter materialisasi total konsumsi token satu *site* (di-update atomik via SQL).
 - `max_users` (`Int`): Batas jumlah `User` aktif (`enabled = 1`, `aios_status = "Active"`) yang diizinkan di dalam *site* tersebut (divalidasi di `User.validate`).
 - `company_context_persona` (`Small Text`): Konteks bisnis tingkat perusahaan yang disertakan ke prompt seluruh agen di *site* tersebut.
+- `base_url` (`Data`), `api_key` (`Password`), `model_name` (`Data`), `temperature` (`Float`): konfigurasi **satu model LLM untuk PoC**. Nilainya **disalin dari site developer** lewat endpoint sync konfigurasi, bukan diisi manual per site. Field ini **dihapus di H1** ketika `AIOS LLM Provider` + `AIOS Agent Model Route` menggantikannya (`docs/06`).
 
-> **Kewenangan mengisi `AIOS Setting` (mengikat):** `AIOS Setting` adalah konfigurasi tingkat *site* yang **hanya boleh diisi `Administrator`**, sekali saat *site* disiapkan. Developer Control Plane **tidak pernah membaca maupun menulis** `AIOS Setting` — isinya memuat konteks bisnis klien (`company_context_persona`) dan plafon *site*. Karena `AIOS Admin` tidak ada di site klien (§1.4 poin 6), tidak ada jalur lain yang boleh mengubahnya.
+> **Kewenangan mengisi `AIOS Setting` (mengikat):** `default_company`, `site_token_limit`, dan `company_context_persona` hanya boleh diisi `Administrator` sekali saat *site* disiapkan. Pengecualian: **field model** (`base_url`, `api_key`, `model_name`, `temperature`) ditulis oleh endpoint sync konfigurasi dari control plane (`docs/03` §1.4). Developer Control Plane tidak pernah menulis field site-level lain.
 
-### 1.4. Developer Control Plane (Registry di Site Developer)
+### 1.4. Developer Control Plane (Registry & Konfigurasi di Site Developer)
 
 Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane** — satu *site* Frappe khusus developer yang menjalankan dashboard `AIOS Admin`. Registry *site* klien berupa DocType **`AIOS Client Site`** yang **hanya ada di site developer** (bukan di site klien):
 
@@ -67,20 +68,24 @@ Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane*
 
 **Aturan penting:**
 1. **Tidak ada DocType `plan`, billing, atau tiering** pada tahap ini; kuota PoC = satu gerbang site — `AIOS Setting.site_token_limit` vs `site_tokens_used` (per site klien). `User.aios_tokens_used` hanya statistik harian, bukan gerbang; registry `AIOS Client Site` (opsional) untuk ringkasan lintas site.
-2. **Ownership tetap per `User` di site klien.** Control plane tidak pernah menulis data bisnis klien; ia hanya mengelola lifecycle (`aios_status`) dan membaca agregat monitoring via role `AIOS Control`.
-3. **`Administrator` di site klien tidak dipakai oleh control plane harian.** Job provisioning awal memakai `Administrator` hanya untuk setup wizard dan `AIOS Setting`; jalur programatik harian memakai token role `AIOS Control` (bukan `AIOS Admin`, bukan `Administrator`).
-4. **Role `AIOS Control`** di site klien: service role tanpa login manusia — **hanya `read` pada `User` dan `AIOS Token Usage`**. Tidak ada akses ke `AIOS Setting` maupun DocType bisnis/ERPNext. Aksinya diekspos lewat endpoint Control API (`/api/control/...`) yang memvalidasi token `api_credential` dan menolak sesi manusia.
+2. **Ownership tetap per `User` di site klien.** Control plane tidak pernah menulis data bisnis klien; ia mengelola lifecycle (`aios_status`), menyalin konfigurasi operator, dan membaca agregat monitoring via role `AIOS Control`.
+3. **`Administrator` di site klien tidak dipakai oleh control plane harian.** Job provisioning awal memakai `Administrator` hanya untuk setup wizard dan `AIOS Setting`; jalur programatik harian (lifecycle, monitoring, **sync konfigurasi**) memakai token role `AIOS Control` (bukan `AIOS Admin`, bukan `Administrator`).
+4. **Role `AIOS Control`** di site klien: service role tanpa login manusia — `read` pada `User` dan `AIOS Token Usage`, plus **satu endpoint tulis sempit untuk sync konfigurasi** yang hanya menyentuh field model `AIOS Setting` (dan, setelah H1/H2, DocType konfigurasi operator). Tidak ada akses ke DocType bisnis/ERPNext dan tidak ada `DocPerm write` umum pada `AIOS Setting`. Aksinya diekspos lewat endpoint Control API (`/api/control/...`) yang memvalidasi token `api_credential` dan menolak sesi manusia.
 5. **Tulis lifecycle lewat pintu sempit, bukan `DocPerm`.** `AIOS Control` **tidak** memegang `write = 1` pada `User` (karena `DocPerm` tidak bisa membatasi per-field, sehingga `write` akan membuka password/role/`enabled`). Perubahan `aios_status` dilakukan oleh endpoint Control API khusus yang hanya menyentuh field itu via `frappe.db.set_value`, tercatat audit. Kuota token tidak ditulis dari control plane (site-level, `Administrator` saat provisioning).
 6. **`AIOS Admin` hanya di site developer** (target `desk_access = 0`); site klien tidak memiliki role `AIOS Admin`.
 7. **Angka kuota site diambil dari endpoint metrics, bukan dari `AIOS Setting`.** Endpoint mengembalikan angka agregat (`site_tokens_used`, jumlah user aktif) tanpa mengekspos isi dokumen.
 8. Panggilan keluar dari control plane melewati **allowlist `base_url` registry + wajib HTTPS** di non-lokal, dengan SSRF guard yang sama seperti plugin `web-market-research` (blokir RFC1918/loopback/link-local/cloud metadata, re-check tiap redirect).
 9. **Data yang boleh tampil di dashboard (mengikat):** **nama dan email `User`** — diperlukan agar `AIOS Admin` bisa mengirim undangan — beserta `aios_status`, `aios_persona`, kuota, dan pemakaian token. **Yang tidak boleh tampil:** password/hash, API key/`api_credential`, isi `AIOS Setting` (`company_context_persona`), dan seluruh data bisnis/ERPNext.
 
+**Sumber kebenaran konfigurasi operator:** model LLM, provider, dan plugin bersumber dari site developer dan disalin ke tiap site klien lewat Control API. Site klien menyimpan salinan lokal yang dipakai saat runtime. Sync hanya menyentuh field/DocType konfigurasi operator — tidak pernah data bisnis, `default_company`, `site_token_limit`, atau `company_context_persona`.
+
 ---
 
 ## 2. Peta Doctype AIOS & Matriks Permission (Site Klien: `AIOS Client` / `AIOS Control`)
 
 Seluruh DocType operasional AIOS berelasi langsung ke **`User`** (`user -> Link(User)`) — kecuali registry `AIOS Client Site` yang hanya ada di *site developer* (`docs/03` §1.4).
+
+> Dokumen ini menetapkan **bentuk akhir** semua DocType, termasuk yang belum ada di kode. Status implementasi per DocType ada di `docs/05.1` §1.3.
 
 > **DocType adapter DB eksternal dihapus:** `AIOS DB Connection`, `AIOS Mapping`, `AIOS Mapping Entry`, dan `AIOS Schema Snapshot` tidak lagi bagian dari skema. PoC bersifat **ERPNext-first** — data bisnis dibaca langsung dari ERPNext site klien, bukan dari database luar. Alasannya: pemetaan kolom tetap tidak mampu menangani variasi skema klien (jumlah kolom, tipe data, penamaan), sehingga modelnya tidak dapat dipertahankan.
 
@@ -108,11 +113,11 @@ Matriks ini berlaku di **site klien**. Di site developer, `AIOS Admin` bekerja l
 | **DocType ERPNext Target (via `add_permission` / `Custom DocPerm` di `setup.py`)** | `Sales Order`, `Sales Invoice`, `Delivery Note`, `Payment Entry`, `Journal Entry`, `GL Entry`, `Customer`, `Supplier`, `Item`, `Company`, `Account` | **`read = 1, report = 1`**, `create/write/delete = 0` (aksi tulis wajib lewat `Pending Action Draft`) | **`—`** (tidak ada akses data bisnis) | — (tidak ada di site klien) |
 | **DocType AIOS Kepemilikan Langsung (`user -> Link(User)`)** | `AIOS Conversation`, `Pending Action Draft`, `AIOS Agent State` | `read = 1, write = 1, create = 1, delete = 1` (dibatasi `user = session.user` via `permission_query_conditions` & `has_permission`) | **`—`** | — (tidak ada di site klien) |
 | **DocType AIOS Log & Join (`1-hop`)** | `AIOS Message`, `AIOS Token Usage` | `read = 1` (khusus miliknya via `permission_query_conditions` & `has_permission`) | `read = 1` **hanya pada `AIOS Token Usage`**; lainnya `—` | — (tidak ada di site klien) |
-| **DocType Konfigurasi & Rahasia Admin** | `AIOS Setting`, `AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin`, `AIOS Telegram Setting`, `AIOS Telegram Session`, `AIOS Telegram Message` | **Tidak ada akses (`read = 0`)** + ditolak eksplisit di `has_permission` | **`—`** (termasuk `AIOS Setting`; dua tulis lifecycle lewat endpoint khusus, bukan `DocPerm`) | — (tidak ada di site klien) |
+| **DocType Konfigurasi & Rahasia Admin** | `AIOS Setting`, `AIOS LLM Provider`, `AIOS Agent Model Route`, `AIOS Plugin`, `AIOS Telegram Setting`, `AIOS Telegram Session`, `AIOS Telegram Message` | **Tidak ada akses (`read = 0`)** + ditolak eksplisit di `has_permission` | **`—`** (termasuk `AIOS Setting`; tulis lifecycle dan sync konfigurasi lewat endpoint khusus, bukan `DocPerm`) | — (tidak ada di site klien) |
 
 > **Batas peran `Administrator` (mengikat, berlaku saat izin dipasang):**
 > - **`Administrator` tidak dibatasi dan tidak pernah dimodifikasi.** Di Frappe, `Administrator` sudah melewati seluruh cek izin (`frappe/permissions.py:108,306`). Maka **jangan** menambahkan `Administrator` ke permission role AIOS: baris izin seperti itu tidak memberi kemampuan apa pun (memang sudah ada) dan hanya menyesatkan pembaca berikutnya. Control plane **wajib** memakai role `AIOS Control`, bukan `Administrator`.
-> - **`AIOS Control` bukan `AIOS Admin` dan bukan `Administrator`.** Ia hanya punya `read` pada `User` dan `AIOS Token Usage`. Setiap penambahan izin baru ke role ini adalah keputusan keamanan, bukan detail teknis.
+> - **`AIOS Control` bukan `AIOS Admin` dan bukan `Administrator`.** Ia hanya punya `read` pada `User` dan `AIOS Token Usage`, plus satu endpoint sync konfigurasi yang sempit. Setiap penambahan izin baru ke role ini adalah keputusan keamanan, bukan detail teknis.
 > - **`AIOS Admin` bukan `Administrator`.** `AIOS Admin` adalah role Frappe biasa untuk operator di site developer (dibuat oleh `Administrator`), bukan pemegang kunci skema dan **tidak dipasang di site klien**. `AIOS Client` ber-`desk_access = 0` (Website User) sehingga tidak menambah seat desk Frappe.
 
 ### 2.2. Lima Lapis Pertahanan Isolasi Data
@@ -129,5 +134,5 @@ Matriks ini berlaku di **site klien**. Di site developer, `AIOS Admin` bekerja l
    - Pemakaian token dicatat ke `AIOS Token Usage` dan di-increment secara atomik via SQL pada `User.aios_tokens_used`.
 5. **Lapis 5 — Batas Wewenang Control Plane (`AIOS Control` + Control API):**
    - Control plane hanya berbicara ke *site* klien lewat Control API (`/api/control/...`) dengan token `api_credential` milik role `AIOS Control`; token di-mask di setiap pesan error/log.
-   - Endpoint Control API menolak sesi login manusia, mencatat setiap panggilan (audit), dan hanya mengizinkan operasi lifecycle (`aios_status`, health check, agregat monitoring) — **bukan data bisnis dan bukan `AIOS Setting`**.
-   - `AIOS Control` hanya memegang `read` pada `User` dan `AIOS Token Usage`. Tulis lifecycle dijalankan endpoint khusus yang menyentuh hanya `aios_status` via `frappe.db.set_value` — bukan `DocPerm write` pada `User`.
+   - Endpoint Control API menolak sesi login manusia, mencatat setiap panggilan (audit), dan hanya mengizinkan operasi lifecycle (`aios_status`, health check, agregat monitoring) serta **sync konfigurasi operator** — **bukan data bisnis**.
+   - `AIOS Control` hanya memegang `read` pada `User` dan `AIOS Token Usage`, plus satu endpoint sync konfigurasi. Tulis lifecycle dijalankan endpoint khusus yang menyentuh hanya `aios_status` via `frappe.db.set_value` — bukan `DocPerm write` pada `User`.
