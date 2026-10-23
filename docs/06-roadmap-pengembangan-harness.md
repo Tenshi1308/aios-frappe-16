@@ -134,6 +134,9 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 
 ## Tahap H4 — `feat/deep-finance-sales-agents` · WAJIB PoC (= pendalaman `#8`)
 
+> **Tambahan dari `#8` (2026-10-23):** `UPDATE_DRAFT` dan `CANCEL_AND_AMEND` — dua jenis aksi
+> yang ditunda dari `#8` — dikerjakan di H4. `#8` hanya menutup `CREATE`.
+
 > **Ini pendalaman `#8`.** `#8` menyiapkan tool dasar; H4 memperdalam delegasi, trace, dan akumulasi token.
 
 Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar prompt statis menjadi organisasi agen yang dapat melakukan **delegasi nyata** dan **konsultasi lintas cabang** dengan transparansi visual di UI (*Live Agent Trace*).

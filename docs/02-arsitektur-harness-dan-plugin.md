@@ -124,10 +124,9 @@ Semua event dikirim sebagai satu baris `data: <json>\n\n` pada response
 | `trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch` | lihat §3.1 | H4 |
 | `artifact_created` | `{"type": "artifact_created", "artifact": {...}}` | H5 |
 
-**Belum diputuskan: event tool call tingkat Orchestrator.** `#8` menambahkan
-loop `tool_calls` di Orchestrator (bukan Sub-Agent). Sampai ada keputusan, loop
-itu **tidak mengirim event** — hanya hasil akhir yang tampil lewat `delta` dan
-`done`. Bila nanti diputuskan di-stream, ada dua opsi: memakai ulang
+**Diputuskan 2026-10-23: event tool call tingkat Orchestrator tidak dikirim di `#8`.**
+Loop `tool_calls` di Orchestrator (bukan Sub-Agent) hanya menampilkan hasil akhir lewat
+`delta` dan `done`. Bila nanti dibutuhkan, ada dua opsi: memakai ulang
 `trace_subagent_tool` dengan `agent` = Orchestrator, atau menambah event baru
-`trace_orchestrator_tool`. Keputusan ini milik pemilik produk, bukan detail
-implementasi.
+`trace_orchestrator_tool` — keputusan itu menyusul H4. Loop dibatasi
+`MAX_TOOL_ROUNDS = 6`; bila habis, stream mengirim pesan aman dan mencatatnya ke `Error Log`.

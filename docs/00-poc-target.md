@@ -75,6 +75,8 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 9. **Control plane:** `AIOS Admin` bisa melihat site, menyetujui user pending (hanya role `AIOS Client`), mengatur kuota, monitoring agregat.
 10. **Keamanan & izin:** `AIOS Client` read-only ERPNext; `AIOS Control` hanya read `User` + `AIOS Token Usage`, plus satu endpoint sync konfigurasi yang sempit; tidak ada `AIOS Admin` di site klien; `Administrator` tidak tersentuh.
 
+> **Catatan implementasi (2026-10-23):** `#8` baru menutup `CREATE`; `UPDATE_DRAFT` dan `CANCEL_AND_AMEND` dikerjakan di H4. Acceptance #5–#6 terpenuhi penuh setelah H4.
+
 ---
 
 ## 4. Urutan pengerjaan
@@ -126,6 +128,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-22 | Kuota PoC = satu gerbang site: `AIOS Setting.site_token_limit` vs `site_tokens_used`; `User.aios_token_limit` **bukan** gerbang (dihapus di `#5`), `User.aios_tokens_used` = statistik harian; counter site + user di-reset harian, ledger `AIOS Token Usage` tetap. |
 | 2026-10-22 | Status `Pending Action Draft`: `PENDING_APPROVAL` → `APPROVED` → `EXECUTED` (hanya setelah dokumen ERPNext dibuat) / `REJECTED` / `EXPIRED`; `COMPLETED` dihapus. |
 | 2026-10-23 | Konfigurasi operator (model LLM, provider, plugin) **global lintas semua site klien**: satu sumber kebenaran di site developer, disalin ke tiap site klien lewat Control API (bentuk *push*). Semua klien memakai konfigurasi yang sama; tidak ada override per site maupun per user. Konsekuensi yang diterima: kredensial LLM terkonsentrasi di database developer. |
+| 2026-10-23 | `#8` menutup `CREATE` saja; `UPDATE_DRAFT` dan `CANCEL_AND_AMEND` dipindah ke H4. Loop tool maksimal 6 putaran; event tool call Orchestrator tidak dikirim di `#8`. |
 
 ---
 
@@ -133,7 +136,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 
 | Gap | Dampak |
 |---|---|
-| `AIOS Setting` JSON masih kurang `max_users` dan `company_context_persona` | Field site-level lain menyusul `#5`/`#8`; `default_user_token_limit` dibatalkan (kuota per user tidak dipakai). |
+| `AIOS Setting` JSON masih kurang `max_users` | `company_context_persona` sudah ada sejak `#8`; `max_users` menyusul `#5`. `default_user_token_limit` dibatalkan (kuota per user tidak dipakai). |
 | `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
 | ~~`/api/monitoring` masih pakai `AIOS Tenant`~~ | ✅ Dipindah ke `User` + `AIOS Token Usage` di `#4a-2`. |
 
