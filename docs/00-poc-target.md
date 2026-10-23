@@ -39,6 +39,8 @@ PoC **bukan** “semua fitur di docs selesai”. PoC adalah alur end-to-end di a
 | `H5` | Isolated workspace/artefak: **sandbox file** berbasis Private `File`. |
 | `#12` | Ekasa Desk Vue (frontend baru). |
 
+> Catatan: katalog H2 tujuh plugin dilengkapi oleh `workspace-artifact-builder` di H5.
+
 ### 2.2 Pendukung (bukan gate PoC)
 
 `#4b`/`#4c` (identitas/auth), `#5` (kuota site & user), `#6` (konstanta), `#9` (dispatcher router), `#10` (status docs), `#2`/`#3` (higiene repo). Boleh selesai sebelum/sesudah PoC selama tidak merusak alur utama.
@@ -129,6 +131,8 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-22 | Status `Pending Action Draft`: `PENDING_APPROVAL` → `APPROVED` → `EXECUTED` (hanya setelah dokumen ERPNext dibuat) / `REJECTED` / `EXPIRED`; `COMPLETED` dihapus. |
 | 2026-10-23 | Konfigurasi operator (model LLM, provider, plugin) **global lintas semua site klien**: satu sumber kebenaran di site developer, disalin ke tiap site klien lewat Control API (bentuk *push*). Semua klien memakai konfigurasi yang sama; tidak ada override per site maupun per user. Konsekuensi yang diterima: kredensial LLM terkonsentrasi di database developer. |
 | 2026-10-23 | `#8` menutup `CREATE` saja; `UPDATE_DRAFT` dan `CANCEL_AND_AMEND` dipindah ke H4. Loop tool maksimal 6 putaran; event tool call Orchestrator tidak dikirim di `#8`. |
+| 2026-10-23 | Plugin `workspace-artifact-builder` dipindah dari H2 ke H5; H2 melengkapi katalog tujuh plugin melalui plugin artefak H5. |
+| 2026-10-23 | H2 fase 2 (`cf77edf`) menambahkan `quant-calculator` dan `document-intelligence`; lima dari tujuh plugin terdaftar. `workspace-artifact-builder` di H5; `web-market-research` dan MCP menyusul fase 3. |
 
 ---
 

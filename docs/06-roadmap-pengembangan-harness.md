@@ -61,11 +61,11 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 
 ## Tahap H2 — `feat/plugin-mcp-manager` · WAJIB PoC
 
-> **Wajib PoC.** Tanpa H2 agent cuma punya 3 plugin ERPNext dari `#8`; H2 melengkapi 7 plugin + scope.
+> **Wajib PoC.** Tanpa H2 agent cuma punya 3 plugin ERPNext dari `#8`; H2 dan H5 bersama-sama melengkapi 7 plugin + scope.
 
 > **Lokasi data (2026-10-23):** `AIOS Plugin` dan `AIOS Plugin Scope` ada di **site developer** sebagai sumber kebenaran, disalin ke tiap site klien untuk dipakai runtime. Konfigurasi ini global — tidak ada plugin per site.
 
-H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext yang sudah dibuat di `#8`, menambah `AIOS Plugin`/`AIOS Plugin Scope`, dan menegakkan status enabled serta irisan scope pada schema dan eksekusi tool. **Fase berikutnya** menambah empat built-in plugin lain dan client MCP eksternal. Plugin dibuat dan disemai di setiap site; site developer menjadi sumber kebenaran global dan sinkronisasi ke site klien menyusul `#11`.
+H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext yang sudah dibuat di `#8`, menambah `AIOS Plugin`/`AIOS Plugin Scope`, dan menegakkan status enabled serta irisan scope pada schema dan eksekusi tool. **Fase 2 selesai (`cf77edf`)** menambah `quant-calculator` dan `document-intelligence`; bersama fase 1 saat ini ada lima dari tujuh plugin. `workspace-artifact-builder` dipindah ke H5; `web-market-research` dan client MCP eksternal menyusul fase 3. Plugin dibuat dan disemai di setiap site; site developer menjadi sumber kebenaran global dan sinkronisasi ke site klien menyusul `#11`.
 
 > **Permission (2026-10-23):** fase 1 tidak memasang DocPerm `AIOS Admin` untuk kedua DocType ini karena role lama juga dapat ada di site klien. Runtime membaca konfigurasi secara server-side melalui `frappe.db.*`/`frappe.get_all`; DocPerm developer dan UI pengelolaan plugin masuk `#11`.
 
@@ -79,7 +79,7 @@ H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext y
   - `endpoint_url` / `config_json` (`Data` / `Code` untuk plugin MCP eksternal)
 
 ### 2. Katalog Lengkap 7 *Built-in Default Plugins*
-Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; `AIOS Plugin Scope` membatasi akses per branch/worker; plugin eksternal MCP mengikuti §1.
+Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; fase 2 menambahkan `quant-calculator` dan `document-intelligence`. `workspace-artifact-builder` disediakan pada H5, sedangkan `web-market-research` dan client MCP eksternal menyusul H2 fase 3. `AIOS Plugin Scope` membatasi akses per branch/worker.
 
 ### 3. UI di Developer Control Plane (sumber data di site developer)
 - UI dan DocPerm **Plugin & MCP Registry** masuk `#11`; H2 backend tidak membangun UI sendiri dan tidak memasang permission `AIOS Admin`. Di `#11`, halaman ini mengelola plugin global, toggle **On/Off**, *Discover Tools / Health Check* MCP, dan `AIOS Plugin Scope`; permission developer dibatasi ke site developer dan perubahan dikirim ke site klien lewat Control API.
@@ -176,6 +176,8 @@ Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar pr
 > **Wajib PoC.** Ini sandbox file/workspace agent, bukan sekadar demo artefak. Tanpa H5 agent tidak punya batas file yang jelas.
 
 Menyediakan ruang kerja file terisolasi (*Isolated Workspace*) per sesi percakapan menggunakan primitif Private `File` Frappe, dengan artefak tampil sebagai **berkas dan jendela di desktop** (`docs/08` §5).
+
+Plugin built-in `workspace-artifact-builder` merupakan bagian dari H5; penyediaan plugin tidak memperluas H2 menjadi pembangunan workspace atau UI artefak.
 
 ### 1. Isolated Workspace Backend (Berbasis Frappe Private `File` DocType)
 - Gunakan `frappe.core.doctype.file.utils.save_file(..., is_private=1, dt="AIOS Conversation", dn=conversation_id)` sehingga setiap file kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) tercatat resmi di DocType `File` dengan kepemilikan `owner = frappe.session.user` dan dilindungi oleh `File.validate_file_access` + `has_permission` pada `AIOS Conversation`.
