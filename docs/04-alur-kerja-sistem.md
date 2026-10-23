@@ -137,33 +137,33 @@ sequenceDiagram
 
     Client->>UI: Kirim instruksi kerja di Cabang Sales / Finance
     UI->>Orch: POST /stream (SSE + Header X-Frappe-CSRF-Token)
-    Orch->>Orch: Verifikasi kepemilikan Conversation (conv.user == session.user), Cek Site Token Quota, Resolve Model Route
+    Orch->>Orch: Verifikasi kepemilikan Conversation (conv.user == session.user), Cek Site Token Quota, baca satu model AIOS Setting
     
     opt Delegasi ke Sub-Agent di Divisi yang Sama (MAX_DELEGATION_DEPTH = 2)
-        Orch-->>UI: SSE Event [trace_delegate_start]
+        Orch-->>UI: Backend SSE [trace_delegate_start] (tampilan di #12)
         Orch->>Sub: Kirim Task Instruction & Context
-        Sub-->>UI: SSE Event [trace_subagent_prompt]
+        Sub-->>UI: Backend SSE [trace_subagent_prompt] (tampilan di #12)
         Sub->>Tool: Panggil Plugin (mis. erpnext-financial-reports / quant-calculator)
-        Sub-->>UI: SSE Event [trace_subagent_tool]
+        Sub-->>UI: Backend SSE [trace_subagent_tool] (tampilan di #12)
         Tool->>Tool: Injeksi paksa Company aktif dari get_single_value("AIOS Setting", "default_company")
         Tool->>ERP: Eksekusi Query Report / get_list / get_doc(..., check_permission="read")
         ERP-->>Tool: Data Akuntansi / Penjualan Aktual
         Tool-->>Sub: Hasil JSON Tervalidasi
-        Sub-->>UI: SSE Event [trace_subagent_result]
+        Sub-->>UI: Backend SSE [trace_subagent_result] (tampilan di #12)
         Sub-->>Orch: Kembalikan Analisis Spesialis + Akumulasi Token Usage
     end
 
-    opt Konsultasi Lintas Divisi (Sales <-> Finance)
+    opt Konsultasi Lintas Divisi — fase H4 berikutnya
         Orch->>Swarm: route_message(from="sales", to="finance", type="consultation")
-        Swarm-->>UI: SSE Event [trace_cross_branch] (Sales Manager -> Finance Treasurer)
+        Swarm-->>UI: Backend SSE [trace_cross_branch] (belum di fase 1; UI di #12)
         Swarm->>Sub: Eksekusi Handler Cabang Tujuan (Cek Credit Limit & Overdue Invoice di ERPNext)
         Sub-->>Swarm: Status Plafon Kredit & Piutang Pelanggan Aktual
         Swarm-->>Orch: Kembalikan Hasil Konsultasi + Catat di Task Ledger
     end
 
-    opt Pembuatan Artefak
+    opt Pembuatan Artefak — H5
         Orch->>Tool: Panggil workspace-artifact-builder (Buat Chart / Laporan / Private File .xlsx)
-        Tool-->>UI: SSE Event [artifact_created] (Artefak muncul sebagai berkas/jendela di desktop)
+        Tool-->>UI: SSE [artifact_created] (implementasi H5)
     end
 
     Orch-->>UI: Stream Jawaban Sintesis Akhir + Atomic SQL Increment User.aios_tokens_used & Insert AIOS Token Usage
@@ -173,7 +173,7 @@ sequenceDiagram
 1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model. **PoC memakai satu model dari `AIOS Setting`** (`base_url`, `model_name`, `temperature`); `AIOS Agent Model Route` adalah target H1 yang ditunda (`docs/00` §2.3) dan belum dipakai.
 2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context`) dan hanya menyertakan skema tool yang diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas). **DocType `AIOS Plugin` baru dibuat di H2** (`docs/06`); `#8` belum memakainya. Pada `#8` skema tool diambil dari registry plugin bawaan (`aios_v1/lib/tool_registry.py`).
 3. **Delegasi Sub-Agent Nyata & 5 Event Kanonik *Live Agent Trace*:**
-   - Bila Orchestrator memanggil `orchestrator_delegate_to_subagent`, backend mengirimkan event SSE kanonik (`trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch`) ke **Live Agent Trace** di panel agent (`docs/08` §3), tanpa emoji.
+   - PoC memakai satu model dari `AIOS Setting`; routing model per-agent melalui `AIOS Agent Model Route` adalah target H1 yang ditunda. H4 fase 1 mengirim empat event trace delegasi lewat SSE backend; `trace_cross_branch` menyusul integrasi fase 2. UI Live Agent Trace dikerjakan di #12 (`docs/08` §3).
    - Sub-Agent yang ditunjuk benar-benar dieksekusi dengan model dan daftar tool spesifik miliknya.
 4. **Injeksi Paksa Konteks `Company` Site-Level & Izin Baca ERPNext:**
    - Setiap kali Sub-Agent atau Orchestrator memanggil plugin (`erpnext-core-data`, `erpnext-financial-reports`, dll.), `execute_tool` mengabaikan klaim company dari argumen LLM dan menyuntikkan `allowed_company` yang dibaca secara site-level dari `frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value("Global Defaults", "default_company")`.

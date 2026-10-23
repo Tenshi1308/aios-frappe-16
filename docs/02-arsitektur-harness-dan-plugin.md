@@ -66,8 +66,8 @@ Agen AIOS dijalankan di dalam **kotak tertutup**: ia hanya bisa melakukan apa ya
 | Agen **tidak punya akses jaringan bebas**; hanya plugin terdaftar, dengan guard anti-SSRF | `web_fetch` memvalidasi dan mem-pin koneksi ke IP publik, memeriksa ulang setiap redirect, dan membatasi ukuran/waktu/jenis konten. Client MCP memvalidasi endpoint serta DNS sebelum panggilan SDK, tetapi SDK melakukan resolusi koneksinya sendiri; pinning koneksi MCP belum terbukti |
 | Agen **tidak bisa memalsukan identitas/company** — `user_id`, `allowed_company` disembunyikan dari LLM dan diisi dari sesi | **Ditegakkan** (`_HIDDEN_TOOL_PARAMS` + `execute_tool`) |
 | Agen **tidak menjalankan SQL sama sekali** — tidak ada akses ke database eksternal | **Ditegakkan** — adapter DB eksternal dihapus (`#13`) |
-| Delegasi maksimal **2 tingkat** | **Belum ada** — `MAX_DELEGATION_DEPTH` belum didefinisikan di kode; menyusul H4 |
-| Setiap tool call **tercatat** | **Belum ada** — event trace belum diimplementasikan; audit trail terpisah belum |
+| Delegasi maksimal **2 tingkat** | H4 fase 1: depth maksimum 2; Orchestrator depth 0 memanggil worker depth 1, worker tidak dapat mendelegasikan ulang |
+| Trace tool Sub-Agent | H4 fase 1 mengirim panggilan dan argumen aman lewat SSE; audit trail persisten dan trace tool Orchestrator belum ada |
 
 **Status jujur:** beberapa aturan aman *karena tool-nya belum ada*, bukan karena ada penahan. Aturan di atas tetap mengikat dan wajib diuji saat tool baru ditambahkan.
 
@@ -92,7 +92,7 @@ Tata letak antarmuka (desktop OS, taskbar, panel agent, jendela modul) diatur di
 
 ### 3.1. *Live Agent Trace* (Kontrak 5 Event)
 
-Ketika Orchestrator mendelegasikan tugas ke Sub-Agent (dibatasi maksimal 2 tingkat; Sub-Agent tidak menerima tool delegasi lagi untuk mencegah rekursi) atau melakukan konsultasi lintas cabang (`Sales` ↔ `Finance`), stream SSE mengirimkan 5 event kanonik (`aios_v1/shared/trace_events.py` — modul ini belum ada; dibuat pada H4):
+Ketika Orchestrator mendelegasikan tugas ke Sub-Agent (dibatasi maksimal 2 tingkat; Sub-Agent tidak menerima tool delegasi lagi untuk mencegah rekursi) atau melakukan konsultasi lintas cabang (`Sales` ↔ `Finance`), stream SSE memakai 5 event kanonik (`aios_v1/shared/trace_events.py`). H4 fase 1 mengirim empat event delegasi; `trace_cross_branch` disiapkan dan baru dikirim setelah integrasi fase 2.
 
 1. `trace_delegate_start`
 2. `trace_subagent_prompt`
@@ -100,7 +100,9 @@ Ketika Orchestrator mendelegasikan tugas ke Sub-Agent (dibatasi maksimal 2 tingk
 4. `trace_subagent_result`
 5. `trace_cross_branch`
 
-**Isi yang wajib bisa dibaca pengguna:** instruksi tugas yang dikirim Orchestrator ke Sub-Agent, panggilan tool beserta **argumen aslinya**, durasi, pemakaian token sub-agent, dan hasil yang dikembalikan.
+**Isi yang wajib bisa dibaca pengguna:** instruksi tugas yang dikirim Orchestrator ke Sub-Agent, panggilan tool beserta argumen bisnis (key sensitif disensor), durasi, pemakaian token sub-agent, dan hasil yang dikembalikan.
+
+Kontrak fase 1: `trace_delegate_start` memuat `from`, `to`, `instruction`; `trace_subagent_prompt` memuat `agent`, ringkasan metadata role aman pada `system_prompt_summary`, dan `task_prompt`; `trace_subagent_tool` memuat `agent`, `tool`, `args`; `trace_subagent_result` memuat `agent`, `status` (`success`, `partial`, `failed`), `summary`, `usage`, dan `duration_ms`. Argumen tool menyensor nilai pada key yang mengandung `token`, `secret`, `password`, `credential`, atau `auth`, dan menghapus `user_id` serta `allowed_company`. Ringkasan prompt hanya metadata role, bukan system prompt, ETHOS, atau guard.
 
 **Yang tidak boleh ditampilkan:** *system prompt* internal AIOS (instruksi dasar, ETHOS, guard). Trace menampilkan **tugas, tool, dan hasil** — bukan resep produk.
 
@@ -108,7 +110,7 @@ Ketika Orchestrator mendelegasikan tugas ke Sub-Agent (dibatasi maksimal 2 tingk
 
 Setiap artefak yang dibuat agen disimpan sebagai **Private File (`is_private=1`)** Frappe, terikat ke `AIOS Conversation` milik `frappe.session.user`. Bentuk tampilannya — file dan jendela di desktop — diatur di `docs/08` §5.
 
-Jenis artefak yang didukung: **Approval Card** (draf transaksi), tabel & grafik data, dokumen eksekutif + diagram Mermaid, spreadsheet `.xlsx`/`.csv`, dan presentasi HTML terisolasi.
+Jenis artefak yang direncanakan: Approval Card (kontrak approval Alur 5; implementasi belum di H4 fase 1), tabel & grafik data, dokumen eksekutif + diagram Mermaid, spreadsheet `.xlsx`/`.csv`, dan presentasi HTML terisolasi. File privat dan builder artefak dikerjakan H5.
 
 ### 3.3. Transport SSE & Event Dasar
 
@@ -127,7 +129,8 @@ Semua event dikirim sebagai satu baris `data: <json>\n\n` pada response
 
 | Event | Payload | Tahap |
 |---|---|---|
-| `trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result`, `trace_cross_branch` | lihat §3.1 | H4 |
+| `trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result` | lihat §3.1 | H4 fase 1 |
+| `trace_cross_branch` | lihat §3.1 | H4 fase 2; belum diemisi |
 | `artifact_created` | `{"type": "artifact_created", "artifact": {...}}` | H5 |
 
 **Diputuskan 2026-10-23: event tool call tingkat Orchestrator tidak dikirim di `#8`.**

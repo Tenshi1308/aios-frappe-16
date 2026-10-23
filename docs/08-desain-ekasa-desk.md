@@ -53,6 +53,8 @@ Backend menolak file milik user lain, file publik, file dari conversation lain, 
 
 Kontrak event ada di `docs/02` §3.1. Tata letaknya:
 
+**Status implementasi:** H4 fase 1 menyediakan event SSE backend; tampilan Live Agent Trace belum dibuat dan masuk #12. Empat event delegasi tersedia, sedangkan `trace_cross_branch` menunggu fase 2.
+
 1. Di bawah setiap jawaban agent ada baris ringkas: **jumlah langkah · token · durasi**, dengan tombol **Lihat detail**.
 2. Menekan baris tersebut mekarkan daftar langkah (delegasi, panggilan tool, hasil).
 3. Menekan satu langkah membuka isi lengkapnya: instruksi tugas, nama tool, **argumen asli**, dan hasil.

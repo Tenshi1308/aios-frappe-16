@@ -137,19 +137,18 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 
 ## Tahap H4 — `feat/deep-finance-sales-agents` · WAJIB PoC (= pendalaman `#8`)
 
-> **Tambahan dari `#8` (2026-10-23):** `UPDATE_DRAFT` dan `CANCEL_AND_AMEND` — dua jenis aksi
-> yang ditunda dari `#8` — dikerjakan di H4. `#8` hanya menutup `CREATE`.
+> **Status fase:** H4 fase 1 selesai dan diverifikasi pada commit `87d6b42`: bench menjalankan 189 integration tests OK; 7 failure pada 102 unspecified dicatat sebagai pre-existing #3, bukan regresi H4. Targeted `test_tool_execution_loop` 7/7 dan `test_plugin_manager` 15/15; test baru branch gating, delegasi, dan usage lulus; pytest statis 41 passed, 2 skipped, 7 xfailed, 1 xpassed. Implementasi mencakup branch gating, Telegram fail-closed, delegasi worker Finance/Sales, empat trace event delegasi, token usage per agent, dan prompt skills. H4 fase 2 masih pending, termasuk cross-branch consultation. `UPDATE_DRAFT`, `CANCEL_AND_AMEND`, Approval Card, UI trace, dan H5 tidak termasuk fase 1.
 
 > **Ini pendalaman `#8`.** `#8` menyiapkan tool dasar; H4 memperdalam delegasi, trace, dan akumulasi token.
 
-Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar prompt statis menjadi organisasi agen yang dapat melakukan **delegasi nyata** dan **konsultasi lintas cabang** dengan transparansi visual di UI (*Live Agent Trace*).
+Memperdalam perilaku agen **Finance** dan **Sales** melalui delegasi worker nyata dan event trace backend. Satu model AIOS Setting dipakai sampai H1 (AIOS Agent Model Route) dikerjakan; UI Live Agent Trace menyusul #12.
 
 ### 1. Perombakan Sub-Agents, Batas Rekursi, & Orkestrasi (`Finance` & `Sales`)
-- Fokuskan `registry.py` pada 2 cabang utama (`finance` dan `sales`); nonaktifkan sementara (`enabled = False`) 7 cabang lainnya dan sembunyikan fitur Telegram (`dormant`).
+- Fase 1: definisi sembilan cabang, worker, dan skills tetap tersimpan; Finance/Sales enabled, tujuh cabang lain disabled. Telegram fail-closed tanpa jaringan dan tanpa perubahan setting.
 - **Pencegahan Rekursi Tak Terbatas (`MAX_DELEGATION_DEPTH = 2`):**
   - Di `get_tools_schema_for_worker()` (`tool_registry.py`), pastikan tool `orchestrator_delegate_to_subagent` **hanya diberikan kepada Orchestrator (`worker_key == "manager"`)** dan tidak pernah diberikan ke Sub-Agent sehingga Sub-Agent tidak dapat mendelegasikan ulang ke Sub-Agent lain.
-- **Hapus Seluruh Kode Return Dummy/Mock di `ai_manager_tools.py` & `swarm_router.py`:**
-  - `orchestrator_delegate_to_subagent(branch, worker_key, task_instruction, context_data)` benar-benar memanggil eksekusi LLM Sub-Agent tujuan menggunakan model dari `AIOS Agent Model Route` beserta plugin/tool milik Sub-Agent tersebut.
+- Bersihkan return mock: fase 1 membuat tiga tool yang belum tersedia fail-loud dengan `TOOL_NOT_IMPLEMENTED` dan tetap dormant. Fallback `SwarmRouter` serta handler finance/sales berada di fase 2 dan belum disentuh.
+  - Fase 1 menjalankan worker dengan satu model AIOS Setting dan schema tool worker. Model per-agent melalui `AIOS Agent Model Route` adalah target H1 yang ditunda.
   - Ubah konstruktor `SwarmRouter(user: str)` dan `TaskLedger`/`SafetyGuard` agar wajib menerima `user` (hapus default `tenant_id: int = 1`), daftarkan handler nyata untuk cabang `finance` dan `sales`, dan **hapus fallback handler mock** di `swarm_router.py:97-104` (jika handler cabang tidak terdaftar, wajib `frappe.log_error` + `frappe.throw`).
 - **Kontrak Tunggal 5 Event SSE *Live Agent Trace* (`aios_v1/shared/trace_events.py`):**
   - Nama & makna event mengikuti `docs/02` §3.1; tata letak tampilan mengikuti `docs/08` §3. Payload kanonik di modul konstanta:
@@ -160,13 +159,14 @@ Merombak total perilaku agen di cabang **Finance** dan **Sales** dari sekadar pr
     5. `trace_cross_branch`: `{"type": "trace_cross_branch", "from_branch": ..., "to_branch": ..., "payload": ..., "result": ...}`
   - Akumulasikan seluruh `usage` token dari Orchestrator + semua Sub-Agent yang terlibat secara atomik melalui `aios_v1/services/usage.py` (yang sudah dibuat di `#7`).
 
-### 2. UI *Live Agent Trace* (Zero Emoji)
-- Render komponen **Agent Delegation Trace Drawer / Collapsible Step Card** menggunakan ikon vektor garis dan badge tipografi (`DELEGATE`, `PROMPT`, `CROSS-BRANCH`, `TOOL`, `RESULT`).
+### 2. UI *Live Agent Trace* (Zero Emoji) — menyusul #12
+- Fase 1 hanya menyediakan SSE backend. Render komponen **Agent Delegation Trace Drawer / Collapsible Step Card** di #12.
 - Pengguna dapat membuka kartu trace untuk membaca prompt instruksi Orchestrator ke Sub-Agent (`trace_subagent_prompt`), tool yang dieksekusi, dan jawaban Sub-Agent.
 
 ### 3. Script Test Wajib
 - `aios_v1/tests/test_subagent_delegation_real.py`:
-  - Uji pemanggilan `orchestrator_delegate_to_subagent` benar-benar mengeksekusi loop Sub-Agent, memancarkan ke-5 event SSE kanonik (termasuk `trace_subagent_prompt`), menolak delegasi bertingkat dari Sub-Agent (`MAX_DELEGATION_DEPTH`), dan mengakumulasikan token usage secara atomik ke `User.aios_tokens_used`.
+  - H4 fase 1 menguji loop sub-agent, empat event SSE delegasi (cross-branch belum diemisi), penolakan delegasi worker, masking trace, dan akumulasi usage per agent. UI dan cross-branch menunggu fase 2/#12.
+  - Verifikasi fase 1: bench integration 189 OK; 7 failure pada 102 unspecified adalah pre-existing #3; targeted `test_tool_execution_loop` 7/7 dan `test_plugin_manager` 15/15; test H4 baru lulus. `pytest -q` statis 41 passed, 2 skipped, 7 xfailed, 1 xpassed.
 - `aios_v1/tests/test_cross_branch_sales_finance.py`:
   - Uji skenario *Order-to-Cash*: Sales Manager memanggil `cross_branch_consultation` ke Finance untuk memeriksa piutang pelanggan sebelum menyusun draf *Sales Order*, serta uji *fail-loudly* bila cabang tujuan tidak memiliki handler.
 
