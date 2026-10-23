@@ -65,7 +65,7 @@ Basis skema & field: `docs/02` §1.1. Delta H1:
 
 > **Lokasi data (2026-10-23):** `AIOS Plugin` dan `AIOS Plugin Scope` ada di **site developer** sebagai sumber kebenaran, disalin ke tiap site klien untuk dipakai runtime. Konfigurasi ini global — tidak ada plugin per site.
 
-H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext yang sudah dibuat di `#8`, menambah `AIOS Plugin`/`AIOS Plugin Scope`, dan menegakkan status enabled serta irisan scope pada schema dan eksekusi tool. **Fase 2 selesai (`cf77edf`)** menambah `quant-calculator` dan `document-intelligence`; bersama fase 1 saat ini ada lima dari tujuh plugin. `workspace-artifact-builder` dipindah ke H5; `web-market-research` dan client MCP eksternal menyusul fase 3. Plugin dibuat dan disemai di setiap site; site developer menjadi sumber kebenaran global dan sinkronisasi ke site klien menyusul `#11`.
+H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext yang sudah dibuat di `#8`, menambah `AIOS Plugin`/`AIOS Plugin Scope`, dan menegakkan status enabled serta irisan scope pada schema dan eksekusi tool. **Fase 2 (`cf77edf`)** menambah `quant-calculator` dan `document-intelligence`. **Fase 3 selesai pada kode dan diverifikasi di `cce5209`:** `web-market-research` menyediakan `web_fetch` (IP-pinned dan guard redirect); `web_search` gagal eksplisit sampai provider tersedia. Client MCP Streamable HTTP mendukung discovery eksplisit, cache schema sementara, dan eksekusi alias; SSE serta autentikasi belum didukung. Verifikasi bench, nonce `web_fetch`, dan MCP lokal lulus; document chat manual belum diuji. Enam dari tujuh plugin tersedia; `workspace-artifact-builder` dipindah ke H5. Attachment spec ada di `docs/08` untuk implementasi #12/H5. Plugin disemai di tiap site melalui hook install/migrate; site developer menjadi sumber kebenaran global dan sinkronisasi ke site klien menyusul `#11`.
 
 > **Permission (2026-10-23):** fase 1 tidak memasang DocPerm `AIOS Admin` untuk kedua DocType ini karena role lama juga dapat ada di site klien. Runtime membaca konfigurasi secara server-side melalui `frappe.db.*`/`frappe.get_all`; DocPerm developer dan UI pengelolaan plugin masuk `#11`.
 
@@ -79,7 +79,7 @@ H2 dibagi dalam fase implementasi. **Fase 1** mendaftarkan tiga plugin ERPNext y
   - `endpoint_url` / `config_json` (`Data` / `Code` untuk plugin MCP eksternal)
 
 ### 2. Katalog Lengkap 7 *Built-in Default Plugins*
-Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plugin yang fondasinya dibuat di `#8` (`erpnext-core-data`, `erpnext-financial-reports`, `erpnext-action-drafts`) didaftarkan ke `AIOS Plugin`; fase 2 menambahkan `quant-calculator` dan `document-intelligence`. `workspace-artifact-builder` disediakan pada H5, sedangkan `web-market-research` dan client MCP eksternal menyusul H2 fase 3. `AIOS Plugin Scope` membatasi akses per branch/worker.
+Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: tiga plugin ERPNext dari `#8`, dua plugin fase 2, dan `web-market-research` (fetch saja; search provider belum dikonfigurasi) tersedia di backend. Client MCP eksternal memakai Streamable HTTP dan cache discovery eksplisit; koneksi MCP belum dipastikan IP-pinned. `workspace-artifact-builder` disediakan pada H5. `AIOS Plugin Scope` membatasi akses per branch/worker.
 
 ### 3. UI di Developer Control Plane (sumber data di site developer)
 - UI dan DocPerm **Plugin & MCP Registry** masuk `#11`; H2 backend tidak membangun UI sendiri dan tidak memasang permission `AIOS Admin`. Di `#11`, halaman ini mengelola plugin global, toggle **On/Off**, *Discover Tools / Health Check* MCP, dan `AIOS Plugin Scope`; permission developer dibatasi ke site developer dan perubahan dikirim ke site klien lewat Control API.
@@ -89,6 +89,7 @@ Katalog, fungsi, dan primitif 7 plugin mengikuti `docs/02` §2.2. Delta H2: plug
   - Uji penonaktifan plugin (`enabled = 0`) otomatis menghapus skema tool tersebut dari `get_tools_schema_for_worker()` dan menolak `execute_tool()`.
   - Uji `AIOS Client` berhasil mengeksekusi `erpnext-core-data` dan `erpnext-financial-reports` (`read=1, report=1`) tanpa `PermissionError`, serta menolak akses lintas `Company`.
   - Uji guard anti-SSRF pada `web-market-research` (menolak `127.0.0.1`, `169.254.169.254`, dan IP privat).
+  - Fase 3 menambah `test_web_market_research.py` (DNS rebinding, redirect ke private, timeout, batas body, content-type, ekstraksi HTML, dan search fail-loud) dan `test_mcp_client.py` (discovery/cache, alias, scope, disabled, transport SSE ditolak, error, dan async bridge). Verifikasi fase 3 (`cce5209`) tercatat di `docs/05.1` revisi 25: migrate EXIT 0, bench 175 integration OK dengan 7 failure pre-existing #3 dan 102 unspecified, pytest statis 41/2/7/1, nonce `web_fetch` dan MCP lokal berhasil. Document chat manual belum diuji. Attachment spec ada di `docs/08`; implementasi #12/H5.
 
 ---
 
@@ -182,6 +183,7 @@ Plugin built-in `workspace-artifact-builder` merupakan bagian dari H5; penyediaa
 ### 1. Isolated Workspace Backend (Berbasis Frappe Private `File` DocType)
 - Gunakan `frappe.core.doctype.file.utils.save_file(..., is_private=1, dt="AIOS Conversation", dn=conversation_id)` sehingga setiap file kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) tercatat resmi di DocType `File` dengan kepemilikan `owner = frappe.session.user` dan dilindungi oleh `File.validate_file_access` + `has_permission` pada `AIOS Conversation`.
 - Tambahkan guard validasi nama file (*filename sanitization* & blokir `..` / path separator) sebelum memanggil `save_file`.
+- Upload lampiran chat memakai `save_file` yang sama dengan workspace, terikat ke `AIOS Conversation`, dan chat membawa `file_ids` yang divalidasi backend.
 
 ### 2. Implementasi Artefak Desktop
 Jenis artefak mengikuti `docs/02` §3.2; bentuk tampilan mengikuti `docs/08` §5. Delta implementasi H5:

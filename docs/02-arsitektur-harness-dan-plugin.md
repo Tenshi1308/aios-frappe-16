@@ -32,7 +32,7 @@ Alih-alih menulis ratusan fungsi Python spesifik yang kaku dan sulit dirawat, la
 ### 2.1. Manajemen via UI (Developer Control Plane, berlaku untuk semua site klien)
 - Menyediakan katalog plugin yang dapat di-*toggle* **On/Off** dari UI control plane. Katalog ini **global untuk semua site klien**: perubahan disalin ke tiap site klien, bukan diatur per site.
 - Mengatur *Role-Scoping* (*Least Privilege*) melalui child table `AIOS Plugin Scope`: menentukan plugin/tool mana yang boleh diakses oleh cabang (`finance`, `sales`) dan jabatan sub-agent tertentu.
-- Mendukung pendaftaran **External MCP Server / Plugin** (melalui endpoint *Streamable HTTP / SSE* atau paket standar komunitas open-source) sehingga kemampuan agen dapat terus bertambah tanpa mengubah kode inti (*core engine*) AIOS.
+- Backend mendukung client **External MCP Streamable HTTP**; transport MCP SSE tetap tercatat di schema lama, tetapi ditolak saat runtime. Pendaftaran, discovery manual, health check, autentikasi, dan pengelolaan global berada di #11 atau tahap lanjutan; tidak ada UI MCP di fase H2 ini.
 
 ### 2.2. Katalog *Built-in Default Plugins* (Fondasi Bisnis)
 AIOS hadir dengan himpunan plugin bawaan (*default*) untuk kebutuhan kritikal bisnis yang dapat terus ditambah seiring pengembangan proyek:
@@ -45,7 +45,9 @@ AIOS hadir dengan himpunan plugin bawaan (*default*) untuk kebutuhan kritikal bi
 | **`quant-calculator`** | Kalkulator finansial dan statistik deterministik di Python (perhitungan margin, delta pertumbuhan MoM/YoY, pajak, proyeksi arus kas, dan rekonsiliasi selisih angka) agar LLM tidak pernah menebak hitungan matematika. | Modul komputasi numerik Python stdlib terisolasi (tanpa dependency berat) |
 | **`document-intelligence`** | Mengekstrak teks dan tabel terstruktur dari dokumen yang diunggah pengguna klien (PDF invoice/PO, CSV, spreadsheet Excel `.xlsx`) untuk dianalisis atau dicocokkan dengan pembukuan ERPNext. | `pypdf`, `openpyxl`, parser tabular CSV/XLSX |
 | **`workspace-artifact-builder`** | Membuat file kerja nyata di ruang kerja sesi pengguna (`.xlsx`, `.csv`, `.pdf`, `.md`) melalui DocType `File` (`is_private=1`) serta mengirim spesifikasi grafik interaktif & diagram Mermaid agar dibuka sebagai jendela di desktop. | Frappe Private `File` API (`save_file`) & renderer artefak (`docs/08` §5) |
-| **`web-market-research`** | Mencari informasi bisnis publik terkini (kurs pajak/valas, regulasi keuangan/pajak terbaru, riset pasar & profil calon pelanggan B2B). | HTTP Web Search & Fetcher dengan guard anti-SSRF ketat (blokir IP privat RFC1918, loopback, link-local, cloud metadata `169.254.169.254`, dan re-check setiap hop redirect) |
+| **`web-market-research`** | Mengambil konten publik lewat `web_fetch`; `web_search` terdaftar tetapi gagal eksplisit dengan `SEARCH_PROVIDER_NOT_CONFIGURED` sampai provider tersedia. | HTTP(S) dengan validasi DNS, koneksi langsung ke IP yang divalidasi, TLS hostname/certificate check, redirect manual dengan validasi ulang, batas ukuran, waktu, dan content-type |
+
+**Status katalog H2 (2026-10-23):** enam dari tujuh plugin tersedia di kode. `workspace-artifact-builder` berada di H5; web search belum memiliki provider. Seed `web-market-research` berjalan melalui hook install/migrate, tetapi data plugin pada suatu site baru berubah setelah hook dijalankan.
 
 > **Tiga plugin ERPNext adalah *wrapper tipis*, bukan implementasi baru.**
 > - **Logika data memakai ERPNext sendiri:** `frappe.get_list` / `frappe.get_doc` untuk dokumen, `frappe.desk.query_report.run` untuk laporan keuangan, dan API dokumen Frappe untuk penulisan. Karena berjalan di dalam proses Frappe dengan `frappe.session.user`, izin user berlaku **native** — tidak perlu kredensial layanan.
@@ -60,14 +62,16 @@ Agen AIOS dijalankan di dalam **kotak tertutup**: ia hanya bisa melakukan apa ya
 | Aturan (mengikat) | Status penegakan sekarang |
 |---|---|
 | Agen **tidak punya shell/terminal** — tidak ada `subprocess`, `os.system`, `eval`, atau `exec` di lapisan tool | **Ditegakkan** (`aios_v1/lib/tool_registry.py`; direktori `aios_v1/lib/tools/` dihapus di `#13`) |
-| Agen **tidak boleh membaca/menulis file server** di luar DocType `File` Frappe (private, terikat `AIOS Conversation`) | **Belum relevan** — belum ada tool file; aturan mengikat saat tool baru ditambahkan |
-| Agen **tidak punya akses jaringan bebas**; hanya plugin terdaftar, dengan guard anti-SSRF | **Belum ada** — plugin `web-market-research` menyusul H2; guard anti-SSRF baru berlaku saat plugin itu ada |
+| Agen **tidak boleh membaca/menulis file server** di luar DocType `File` Frappe (private, terikat `AIOS Conversation`) | `document_extract` hanya membaca `File` privat milik user; upload dari chat dan workspace belum tersedia (H5/#12) |
+| Agen **tidak punya akses jaringan bebas**; hanya plugin terdaftar, dengan guard anti-SSRF | `web_fetch` memvalidasi dan mem-pin koneksi ke IP publik, memeriksa ulang setiap redirect, dan membatasi ukuran/waktu/jenis konten. Client MCP memvalidasi endpoint serta DNS sebelum panggilan SDK, tetapi SDK melakukan resolusi koneksinya sendiri; pinning koneksi MCP belum terbukti |
 | Agen **tidak bisa memalsukan identitas/company** — `user_id`, `allowed_company` disembunyikan dari LLM dan diisi dari sesi | **Ditegakkan** (`_HIDDEN_TOOL_PARAMS` + `execute_tool`) |
 | Agen **tidak menjalankan SQL sama sekali** — tidak ada akses ke database eksternal | **Ditegakkan** — adapter DB eksternal dihapus (`#13`) |
 | Delegasi maksimal **2 tingkat** | **Belum ada** — `MAX_DELEGATION_DEPTH` belum didefinisikan di kode; menyusul H4 |
 | Setiap tool call **tercatat** | **Belum ada** — event trace belum diimplementasikan; audit trail terpisah belum |
 
 **Status jujur:** beberapa aturan aman *karena tool-nya belum ada*, bukan karena ada penahan. Aturan di atas tetap mengikat dan wajib diuji saat tool baru ditambahkan.
+
+**Batas H2 fase 3:** hanya Streamable HTTP untuk client MCP; SSE menghasilkan `MCP_TRANSPORT_UNSUPPORTED`, autentikasi belum didukung, dan tidak ada audit trail tool-call. MCP eksternal umum dapat dipakai setelah plugin dikonfigurasi dan discovery eksplisit; server MCP ERPNext tetap tidak digunakan untuk menjaga identitas dan izin per-user.
 
 **Yang sengaja belum dipakai:** isolasi level OS (container/seccomp per agen). Tool berjalan di proses web Frappe yang sama, jadi kurungannya **logis** (dijaga kode), bukan **fisik**. Ini dicatat sebagai jalur *upgrade* bila satu server memuat banyak klien sekaligus — bukan kebutuhan PoC.
 
@@ -77,6 +81,8 @@ Agen AIOS dijalankan di dalam **kotak tertutup**: ia hanya bisa melakukan apa ya
 3. **Sandbox.** Server MCP adalah proses eksternal; setiap tool call menjadi lompatan jaringan keluar, sehingga batas eksekusi agen menjadi lebih sulit dipertanggungjawabkan.
 
 Keputusan: **skema tool-nya dipinjam (MIT), servernya tidak.** Ini memberi keuntungan desain tool tanpa mengorbankan isolasi.
+
+Keputusan tersebut khusus server MCP ERPNext. Client MCP Streamable HTTP fase H2 dapat menghubungkan plugin eksternal yang dikonfigurasi operator; autentikasi dan pinning IP koneksi SDK belum didukung.
 
 ---
 
@@ -130,3 +136,4 @@ Loop `tool_calls` di Orchestrator (bukan Sub-Agent) hanya menampilkan hasil akhi
 `trace_subagent_tool` dengan `agent` = Orchestrator, atau menambah event baru
 `trace_orchestrator_tool` — keputusan itu menyusul H4. Loop dibatasi
 `MAX_TOOL_ROUNDS = 6`; bila habis, stream mengirim pesan aman dan mencatatnya ke `Error Log`.
+Ketentuan tanpa event tool-call juga berlaku untuk tool eksternal MCP pada H2; nonce manual dapat membuktikan panggilan, tetapi tidak menciptakan audit trail.
