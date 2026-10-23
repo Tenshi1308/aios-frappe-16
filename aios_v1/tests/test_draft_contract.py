@@ -24,6 +24,21 @@ class TestDraftContract(unittest.TestCase):
         src = DRAFT_MANAGER.read_text(encoding="utf-8")
         self.assertIn("doc.rejection_reason = reason", src)
 
+    def test_owner_lock_retry_and_idempotency_contract(self):
+        src = DRAFT_MANAGER.read_text(encoding="utf-8")
+        self.assertIn('user != "Administrator" and doc.user != user', src)
+        self.assertIn("for update", src)
+        self.assertIn('doc.status not in {"PENDING_APPROVAL", "APPROVED"}', src)
+        self.assertIn('payload["result"] = result', src)
+        self.assertIn('rollback(save_point="aios_draft_execution")', src)
+
+    def test_update_amend_allowlist_and_closed_period_guard_exist(self):
+        src = DRAFT_MANAGER.read_text(encoding="utf-8")
+        self.assertIn('ACTION_TYPES = frozenset({"CREATE", "UPDATE_DRAFT", "CANCEL_AND_AMEND"})', src)
+        self.assertIn("ALLOWED_DRAFT_DOCTYPES", src)
+        self.assertIn('"PERIOD_CLOSED"', src)
+        self.assertIn('"DRAFT_STALE"', src)
+
 
 if __name__ == "__main__":
     unittest.main()

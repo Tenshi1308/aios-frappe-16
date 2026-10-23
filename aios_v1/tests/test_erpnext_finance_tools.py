@@ -6,6 +6,7 @@ from unittest.mock import patch
 import frappe
 from frappe.model.document import Document
 
+from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
 from aios_v1.lib.tool_registry import execute_tool, get_tools_schema_for_worker
 from aios_v1.permissions import ERP_CLIENT_DOCTYPES
 
@@ -164,13 +165,13 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         submit.assert_not_called()
         commit.assert_not_called()
 
-    def test_action_draft_rejects_non_create_with_clear_message(self):
-        result = self._execute(
-            "erpnext_action_draft_create",
-            {"action_type": "UPDATE_DRAFT", "doctype": "Sales Order", "data": {}},
-        )
-        self.assertEqual(result["code"], "ACTION_TYPE_UNSUPPORTED")
-        self.assertIn("CREATE", result["error"])
+    def test_action_draft_requires_name_and_reason_for_update(self):
+        with self.assertRaises(frappe.ValidationError):
+            erpnext_action_draft_create("UPDATE_DRAFT", "Sales Order", {"po_no": "_Test"})
+
+    def test_action_draft_uses_draft_allowlist_not_read_allowlist(self):
+        with self.assertRaises(frappe.ValidationError):
+            erpnext_action_draft_create("CREATE", "Customer", {"customer_name": "_Test"})
 
     def test_finance_sales_tools_are_registered_and_not_dormant(self):
         schemas = get_tools_schema_for_worker(["finance", "sales"], "manager")
@@ -187,7 +188,18 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         list_schema = next(schema for schema in schemas if schema["function"]["name"] == "erpnext_doc_list")
         self.assertEqual(list_schema["function"]["parameters"]["required"], ["doctype"])
         self.assertIn("orchestrator_delegate_to_subagent", names)
+        self.assertIn("cross_branch_consultation", names)
         self.assertNotIn("escalate_to_human_approval", names)
+        draft_schema = next(schema for schema in schemas if schema["function"]["name"] == "erpnext_action_draft_create")
+        self.assertEqual(
+            draft_schema["function"]["parameters"]["properties"]["action_type"]["enum"],
+            ["CREATE", "UPDATE_DRAFT", "CANCEL_AND_AMEND"],
+        )
+        self.assertEqual(
+            set(draft_schema["function"]["parameters"]["properties"]["doctype"]["enum"]),
+            {"Quotation", "Sales Order", "Sales Invoice", "Delivery Note", "Purchase Order", "Payment Entry", "Journal Entry"},
+        )
+        self.assertNotIn("name", draft_schema["function"]["parameters"]["required"])
 
     def test_company_context_persona_is_available_in_desk_form_metadata(self):
         self.assertTrue(frappe.get_meta("AIOS Setting").has_field("company_context_persona"))

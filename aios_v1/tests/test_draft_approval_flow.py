@@ -124,14 +124,19 @@ class TestDraftApprovalFlow(IntegrationTestCase):
 			frappe.db.get_value("Journal Entry", result["document"], "docstatus"),
 			1,
 		)
+		retry_result = approve_and_execute_draft(draft.name)
+		self.assertEqual(retry_result, result)
+		self.assertEqual(frappe.db.count("Journal Entry", {"name": result["document"]}), 1)
 
 	def test_approve_without_executable_payload_stays_approved(self):
 		draft = self._draft({"doctype": "Journal Entry", "data": {}})
 
 		result = approve_and_execute_draft(draft.name)
+		retry_result = approve_and_execute_draft(draft.name)
 
 		self.assertEqual(result["status"], "APPROVED")
 		self.assertFalse(result["executed"])
+		self.assertEqual(retry_result["draft_status"], "APPROVED")
 		self.assertEqual(
 			frappe.db.get_value("Pending Action Draft", draft.name, "status"),
 			"APPROVED",

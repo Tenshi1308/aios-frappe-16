@@ -53,8 +53,9 @@ class TestDraftManager(IntegrationTestCase):
             {
                 "doctype": "Pending Action Draft",
                 "task_id": "TEST-DRAFTMGR-001",
-                "type": "create_po",
-                "payload": '{"item": "Baut"}',
+                "user": self.EMAIL,
+                "type": "CREATE",
+                "payload": '{"doctype": "Sales Order", "data": {}}',
                 "status": "PENDING_APPROVAL",
                 "expires_at": add_to_date(now_datetime(), hours=expires_hours),
             }

@@ -5,6 +5,7 @@ Terintegrasi dengan Global Task Ledger, SafetyGuard, dan CircuitBreaker.
 """
 
 from typing import Dict, Any, Callable
+import frappe
 from aios_v1.lib.error_utils import log_exception, sanitize_text
 from aios_v1.lib.task_ledger import get_task_ledger
 from aios_v1.lib.safety_guard import SafetyGuard, CircuitBreaker
@@ -15,6 +16,13 @@ _BRANCH_HANDLERS: Dict[str, Callable] = {}
 def register_branch_handler(branch: str, handler: Callable):
     """Mendaftarkan handler eksekusi cabang ke Central Swarm Router."""
     _BRANCH_HANDLERS[branch.lower()] = handler
+
+
+def _ensure_default_handlers():
+    from aios_v1.lib.branch_handlers import finance_consultation, sales_consultation
+
+    _BRANCH_HANDLERS.setdefault("finance", finance_consultation)
+    _BRANCH_HANDLERS.setdefault("sales", sales_consultation)
 
 class SwarmRouter:
     def __init__(self, user_id: str):
@@ -33,7 +41,24 @@ class SwarmRouter:
         """
         Mengarahkan pesan kolaborasi dari cabang asal ke cabang tujuan dengan pemeriksaan keselamatan.
         """
+        if not isinstance(to_branch, str) or not isinstance(from_branch, str):
+            frappe.throw("Cabang sumber dan tujuan konsultasi tidak valid.")
+        if not isinstance(payload, dict):
+            frappe.throw("Payload konsultasi harus berupa object.")
         to_branch_norm = to_branch.lower()
+        from_branch_norm = from_branch.lower()
+        if message_type != "consultation":
+            frappe.throw("Hanya pesan consultation yang didukung.")
+        if from_branch_norm not in {"finance", "sales"} or to_branch_norm not in {"finance", "sales"}:
+            frappe.throw("Konsultasi hanya tersedia antara Finance dan Sales.")
+        if from_branch_norm == to_branch_norm:
+            frappe.throw("Konsultasi lintas cabang memerlukan cabang tujuan berbeda.")
+
+        from aios_v1.plugin_manager.registry import is_branch_enabled
+
+        if not is_branch_enabled(to_branch_norm):
+            frappe.throw("Cabang tujuan belum diaktifkan.")
+        _ensure_default_handlers()
 
         # 1. Cek Circuit Breaker target cabang
         is_available, cb_msg = CircuitBreaker.is_branch_available(self.user_id, to_branch_norm)
@@ -61,15 +86,7 @@ class SwarmRouter:
         current_depth = self.ledger.get_chain_depth(task_id)
         is_depth_safe, depth_msg = SafetyGuard.check_chain_depth(current_depth)
         if not is_depth_safe:
-            self.ledger.add_hop(
-                task_id=task_id,
-                from_branch=from_branch,
-                to_branch=to_branch,
-                message_type=message_type,
-                payload=payload,
-                response={"escalation_reason": depth_msg},
-                status="ESCALATED"
-            )
+            self.ledger.update_task_status(task_id, "ESCALATED")
             return {
                 "ok": False,
                 "status": "ESCALATED",
@@ -81,25 +98,32 @@ class SwarmRouter:
                 "response": None
             }
 
-        # 3. Eksekusi pesan ke target cabang
+        # 3. Eksekusi pesan ke target cabang; ketiadaan handler tidak pernah sukses.
+        handler = _BRANCH_HANDLERS.get(to_branch_norm)
+        if not handler:
+            log_exception(
+                "AIOS Swarm: handler cabang tidak terdaftar",
+                context=f"{from_branch_norm}->{to_branch_norm}",
+            )
+            self.ledger.add_hop(
+                task_id=task_id,
+                from_branch=from_branch_norm,
+                to_branch=to_branch_norm,
+                message_type=message_type,
+                payload=payload,
+                response={"code": "BRANCH_HANDLER_MISSING"},
+                status="FAILED",
+            )
+            frappe.throw("Handler cabang tujuan tidak tersedia.")
+
         try:
-            handler = _BRANCH_HANDLERS.get(to_branch_norm)
-            if handler:
-                exec_result = handler(
-                    user_id=self.user_id,
-                    task_id=task_id,
-                    from_branch=from_branch,
-                    message_type=message_type,
-                    payload=payload
-                )
-            else:
-                # Default mock handler jika cabang belum mendaftarkan custom handler
-                exec_result = {
-                    "acknowledged": True,
-                    "branch": to_branch,
-                    "type": message_type,
-                    "summary": f"Cabang {to_branch} menerima permintaan {message_type} dari {from_branch}."
-                }
+            exec_result = handler(
+                user_id=self.user_id,
+                task_id=task_id,
+                from_branch=from_branch_norm,
+                message_type=message_type,
+                payload=payload,
+            )
 
             # Catat keberhasilan ke Circuit Breaker dan Ledger
             CircuitBreaker.record_success(self.user_id, to_branch_norm)

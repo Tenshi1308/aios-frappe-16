@@ -57,5 +57,19 @@ def trace_subagent_result(branch: str, worker_key: str, status: str, summary: st
 
 
 def trace_cross_branch(**payload) -> dict:
-    """Reserved for phase 2; deliberately has no emitter in phase 1."""
+    """Build the cross-branch result event with the same redaction rules."""
     return {"type": TRACE_CROSS_BRANCH, **_safe_value(payload)}
+
+
+def approval_card_artifact(draft_id: str, action_type: str, doctype: str, branch: str) -> dict:
+    """Build an in-memory approval card event; it does not create a file."""
+    return {
+        "type": "artifact_created",
+        "artifact": {
+            "type": "APPROVAL_CARD",
+            "draft_id": str(draft_id),
+            "action_type": str(action_type),
+            "doctype": str(doctype),
+            "branch": str(branch),
+        },
+    }

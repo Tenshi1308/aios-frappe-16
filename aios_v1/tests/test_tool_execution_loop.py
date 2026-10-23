@@ -113,6 +113,50 @@ class TestToolExecutionLoop(IntegrationTestCase):
         self.assertEqual(manager_record["total_tokens"], 35)
         self.assertTrue(any("Jawaban akhir" in event for event in events))
 
+    def test_cross_branch_trace_is_emitted_once_and_masks_internal_args(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name="cross_branch_consultation"))
+                calls[-1]["function"]["arguments"] = json.dumps({
+                    "to_branch": "sales", "message_type": "consultation",
+                    "payload": {"customer": "_Test Customer", "api_token": "secret",
+                                "allowed_company": "_Test Company", "user_id": "_Test User"},
+                })
+                return iter(())
+            return iter(["hasil konsultasi"])
+
+        events, _, _, _ = self._run_manager(scripted, tool_result='{"ok":true,"response":{"status":"DELIVERED"}}')
+        trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        cross = [event for event in trace if event.get("type") == "trace_cross_branch"]
+        self.assertEqual(len(cross), 1)
+        self.assertEqual(cross[0]["from_branch"], "finance")
+        self.assertEqual(cross[0]["to_branch"], "sales")
+        self.assertEqual(cross[0]["payload"]["api_token"], "[REDACTED]")
+        self.assertNotIn("allowed_company", cross[0]["payload"])
+        self.assertNotIn("user_id", cross[0]["payload"])
+
+    def test_main_manager_emits_approval_card_artifact_for_created_draft(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name="erpnext_action_draft_create"))
+                return iter(())
+            return iter(["draf siap ditinjau"])
+
+        result = json.dumps({
+            "status": "PENDING_APPROVAL", "draft_id": "DRF-_Test-1",
+            "action_type": "UPDATE_DRAFT", "doctype": "Sales Order",
+        })
+        events, _, _, _ = self._run_manager(scripted, tool_result=result)
+        trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        artifacts = [event for event in trace if event.get("type") == "artifact_created"]
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["artifact"], {
+            "type": "APPROVAL_CARD", "draft_id": "DRF-_Test-1",
+            "action_type": "UPDATE_DRAFT", "doctype": "Sales Order", "branch": "finance",
+        })
+
     def test_tool_error_result_does_not_stop_loop(self):
         def scripted(round_number, usage, calls):
             usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)

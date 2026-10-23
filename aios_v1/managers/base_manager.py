@@ -15,6 +15,8 @@ from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
 from aios_v1.shared.trace_events import (
+    approval_card_artifact,
+    trace_cross_branch,
     trace_delegate_start,
     trace_subagent_prompt,
     trace_subagent_result,
@@ -392,6 +394,45 @@ class BaseManager:
                                 "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
                             },
                         )
+                        if worker_def is None and tool_name == "cross_branch_consultation":
+                            try:
+                                trace_args = json.loads(function.get("arguments", "{}"))
+                            except (TypeError, ValueError) as exc:
+                                log_exception("AIOS Cross-Branch Trace Arguments", exc=exc)
+                                trace_args = {}
+                            if not isinstance(trace_args, dict):
+                                log_exception("AIOS Cross-Branch Trace Arguments", context="JSON args bukan object.")
+                                trace_args = {}
+                            try:
+                                trace_result = json.loads(result)
+                            except (TypeError, ValueError) as exc:
+                                log_exception("AIOS Cross-Branch Trace Result", exc=exc)
+                                trace_result = {"status": "failed", "message": "Hasil konsultasi tidak valid."}
+                            if not isinstance(trace_result, dict):
+                                log_exception("AIOS Cross-Branch Trace Result", context="JSON result bukan object.")
+                                trace_result = {"status": "failed", "message": "Hasil konsultasi tidak valid."}
+                            event = trace_cross_branch(
+                                from_branch=self.branch.get("key"),
+                                to_branch=trace_args.get("to_branch", ""),
+                                payload=trace_args.get("payload", {}),
+                                result=trace_result,
+                            )
+                            yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+                        elif worker_def is None and tool_name == "erpnext_action_draft_create":
+                            try:
+                                draft_result = json.loads(result)
+                            except (TypeError, ValueError) as exc:
+                                log_exception("AIOS Approval Card Trace Result", exc=exc)
+                                draft_result = {}
+                            if not isinstance(draft_result, dict):
+                                log_exception("AIOS Approval Card Trace Result", context="JSON result bukan object.")
+                                draft_result = {}
+                            if draft_result.get("status") == "PENDING_APPROVAL" and draft_result.get("draft_id"):
+                                event = approval_card_artifact(
+                                    draft_result["draft_id"], draft_result.get("action_type", ""),
+                                    draft_result.get("doctype", ""), self.branch.get("key", ""),
+                                )
+                                yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                 except ToolContextError as exc:
                     log_exception("AIOS Tool Context", exc=exc)
                     error = safe_error(TOOL_CONTEXT_ERROR_MESSAGE, "TOOL_CONTEXT_INVALID")

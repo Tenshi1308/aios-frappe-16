@@ -5,6 +5,7 @@ eskalasi draf manusia (Draft Manager), pemantauan task ledger, dan manajemen keb
 """
 
 import frappe
+import uuid
 from typing import Dict, Any, Optional
 from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 from aios_v1.lib.draft_manager import create_draft
@@ -58,23 +59,17 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
     name="cross_branch_consultation",
     description="Meminta data atau keputusan dari AI Manager di divisi lain via Central Swarm Router.",
     branch="ai_manager",
-    dormant=True,
+    dormant=False,
     parameters={
-        "task_id": {
-            "type": "string",
-            "description": "ID Unik Task Chain (misal: 'TSK-2026-001')"
-        },
-        "from_branch": {
-            "type": "string",
-            "description": "Nama cabang pengirim permintaan"
-        },
         "to_branch": {
             "type": "string",
-            "description": "Nama cabang target yang dituju"
+            "enum": ["finance", "sales"],
+            "description": "Nama cabang tujuan yang berbeda dari cabang aktif"
         },
         "message_type": {
             "type": "string",
-            "description": "Jenis pesan: 'consultation' (read-only) atau 'action_request' (permintaan aksi)"
+            "enum": ["consultation"],
+            "description": "Jenis pesan read-only yang didukung"
         },
         "payload": {
             "type": "object",
@@ -86,10 +81,16 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
         }
     }
 )
-def cross_branch_consultation(task_id: str, from_branch: str, to_branch: str, message_type: str, payload: Dict[str, Any], priority: str = "NORMAL") -> Dict[str, Any]:
+def cross_branch_consultation(to_branch: str, message_type: str, payload: Dict[str, Any], priority: str = "NORMAL") -> Dict[str, Any]:
+    context = get_tool_context()
+    from_branch = context.get("branch")
+    if from_branch not in {"finance", "sales"}:
+        frappe.throw("Cabang sumber konsultasi tidak valid.")
+    if message_type != "consultation":
+        frappe.throw("Hanya message_type consultation yang didukung.")
     router = get_swarm_router(user_id=_user_id_from_context())
     return router.route_message(
-        task_id=task_id,
+        task_id=f"AIOS-{uuid.uuid4()}",
         from_branch=from_branch,
         to_branch=to_branch,
         message_type=message_type,

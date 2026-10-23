@@ -77,7 +77,7 @@ class TestAIManagerTools(IntegrationTestCase):
             schema["function"]["name"]
             for schema in get_tools_schema_for_worker("finance", "manager")
         }
-        self.assertNotIn("cross_branch_consultation", worker_names)
+        self.assertIn("cross_branch_consultation", worker_names)
         self.assertNotIn("monitor_global_task_ledger", worker_names)
 
     def test_legacy_escalation_rejects_unknown_action_type(self):
@@ -128,10 +128,8 @@ class TestAIManagerTools(IntegrationTestCase):
             result = json.loads(execute_tool(name, json.dumps(arguments), context=self.context))
             self.assertEqual(result.get("code"), "TOOL_NOT_IMPLEMENTED")
 
-    def test_cross_branch_consultation_dormant_guard(self):
+    def test_cross_branch_consultation_uses_server_branch_and_manager_only(self):
         args = {
-            "task_id": "TSK-CTX-001",
-            "from_branch": "finance",
             "to_branch": "sales",
             "message_type": "consultation",
             "payload": {"question": "cek piutang"},
@@ -139,16 +137,33 @@ class TestAIManagerTools(IntegrationTestCase):
         router = MagicMock()
         router.route_message.return_value = {"ok": True}
         with patch("aios_v1.lib.ai_manager_tools.get_swarm_router", return_value=router) as get_router:
-            with patch("aios_v1.lib.tool_registry.log_exception"):
-                result = json.loads(
-                    execute_tool(
-                        "cross_branch_consultation",
-                        json.dumps(args),
-                        context=self.context,
-                    )
+            result = json.loads(
+                execute_tool(
+                    "cross_branch_consultation",
+                    json.dumps(args),
+                    context=self.context,
                 )
-        get_router.assert_not_called()
-        self.assertEqual(result.get("code"), "TOOL_DORMANT")
+            )
+        get_router.assert_called_once_with(user_id=self.EMAIL)
+        route_args = router.route_message.call_args.kwargs
+        self.assertEqual(route_args["from_branch"], "finance")
+        self.assertEqual(route_args["to_branch"], "sales")
+        self.assertEqual(route_args["message_type"], "consultation")
+        self.assertEqual(result, {"ok": True})
+
+        worker_result = json.loads(execute_tool(
+            "cross_branch_consultation", json.dumps(args),
+            context={**self.context, "worker_key": "treasurer"},
+        ))
+        self.assertEqual(worker_result.get("code"), "TOOL_WORKER_FORBIDDEN")
+
+    def test_cross_branch_action_request_fails_loud(self):
+        result = json.loads(execute_tool(
+            "cross_branch_consultation",
+            json.dumps({"to_branch": "sales", "message_type": "action_request", "payload": {}}),
+            context=self.context,
+        ))
+        self.assertFalse(result.get("success", True))
 
     def test_monitor_global_task_ledger_dormant_guard(self):
         ledger = MagicMock()
