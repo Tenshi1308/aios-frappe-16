@@ -97,7 +97,7 @@ def tool_context(context: Dict[str, Any]):
 def get_tool_context() -> Dict[str, Any]:
     return dict(getattr(frappe.local, "aios_tool_context", {}) or {})
 
-def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = None, branch: Optional[str | List[str]] = None, roles: Optional[List[str]] = None, dormant: bool = False):
+def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = None, branch: Optional[str | List[str]] = None, roles: Optional[List[str]] = None, dormant: bool = False, plugin_key: Optional[str] = None):
     """
     Decorator to register a python function as an AI Tool.
     `branch`: Nama divisi ERP (misal: 'hr', 'finance', 'sales')
@@ -111,6 +111,7 @@ def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = 
             "branch": [item.lower() for item in branch] if isinstance(branch, list) else branch.lower() if branch else None,
             "roles": [r.lower() for r in roles] if roles else [],
             "dormant": dormant,
+            "plugin_key": plugin_key,
             "func": func
         }
         return func
@@ -122,6 +123,91 @@ def _ensure_tools_loaded():
     import aios_v1.lib.erpnext_action_drafts  # noqa: F401
     import aios_v1.lib.erpnext_core_data  # noqa: F401
     import aios_v1.lib.erpnext_financial_reports  # noqa: F401
+
+
+def _worker_access(t_data: Dict[str, Any], branch: str, worker_key: str) -> bool:
+    """Check decorator ceilings for both schema visibility and direct execution."""
+    requested = branch.lower() if isinstance(branch, str) else ""
+    worker = worker_key.lower() if isinstance(worker_key, str) else ""
+    tool_branch = t_data.get("branch")
+    tool_branches = tool_branch if isinstance(tool_branch, list) else [tool_branch] if tool_branch else []
+    if not tool_branch:
+        return True
+    from aios_v1.plugin_manager.registry import get_branch, get_worker
+
+    if requested not in ("orchestrator", "ai_manager"):
+        if not get_branch(requested):
+            return False
+        manager_keys = {"manager", "ai_manager", f"{requested}_manager"}
+        if worker not in manager_keys and not get_worker(requested, worker):
+            return False
+    if any(item in ("ai_manager", "orchestrator") for item in tool_branches) and (
+        worker in ("manager", "ai_manager", f"{requested}_manager")
+        or requested in ("orchestrator", "ai_manager")
+    ):
+        return True
+    if requested not in tool_branches:
+        return False
+    if not t_data.get("roles"):
+        return True
+    return (
+        worker in t_data["roles"]
+        or worker.replace("_", "-") in t_data["roles"]
+        or worker.replace("-", "_") in t_data["roles"]
+    )
+
+
+def _plugin_enabled(plugin_key: str) -> bool:
+    """Read plugin state server-side, bypassing AIOS Client's DocPerm by design."""
+    plugin_name = frappe.db.get_value("AIOS Plugin", {"plugin_key": plugin_key}, "name")
+    return bool(plugin_name and frappe.db.get_value("AIOS Plugin", plugin_name, "enabled"))
+
+
+def _plugin_scope_allows(plugin_key: str, branch: str, worker_key: str) -> bool:
+    if not branch or not worker_key:
+        return False
+    scopes = frappe.get_all(
+        "AIOS Plugin Scope",
+        filters={
+            "parent": frappe.db.get_value("AIOS Plugin", {"plugin_key": plugin_key}, "name"),
+            "parenttype": "AIOS Plugin",
+            "parentfield": "scopes",
+            "enabled": 1,
+        },
+        fields=["scope_type", "scope_key"],
+    )
+    from aios_v1.plugin_manager.registry import get_branch, get_worker
+
+    if not get_branch(branch):
+        return False
+    for scope in scopes:
+        scope_type = scope.get("scope_type")
+        scope_key = (scope.get("scope_key") or "").strip()
+        if scope_type == "branch" and scope_key == branch:
+            return True
+        if scope_type == "worker" and ":" in scope_key:
+            scope_branch, scope_worker = scope_key.split(":", 1)
+            if (
+                get_worker(scope_branch, scope_worker)
+                and scope_branch == branch
+                and scope_worker == worker_key
+            ):
+                return True
+    return False
+
+
+def _log_tool_denial(code: str, name: str) -> str:
+    log_exception("AIOS Tool Access Denied", context=f"{code}: {name}")
+    return json.dumps(safe_error("Tool tidak diizinkan untuk worker ini.", code))
+
+
+def _tool_is_available(t_data: Dict[str, Any], branch: str, worker_key: str) -> bool:
+    if t_data.get("dormant") or not _worker_access(t_data, branch, worker_key):
+        return False
+    plugin_key = t_data.get("plugin_key")
+    if plugin_key:
+        return _plugin_enabled(plugin_key) and _plugin_scope_allows(plugin_key, branch, worker_key)
+    return True
 
 def get_all_tools_schema():
     """Returns list of all tools formatted for LLM API (OpenAI spec)."""
@@ -150,32 +236,19 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
     _ensure_tools_loaded()
     schemas = []
     requested_branches = [item.lower() for item in branch] if isinstance(branch, list) else [branch.lower()] if branch else []
-    branch_lower = requested_branches[0] if requested_branches else ""
     worker_lower = worker_key.lower() if worker_key else "manager"
     
     for t_name, t_data in _TOOL_REGISTRY.items():
         if t_data.get("dormant"):
             continue
-        t_branch = t_data.get("branch")
-        t_roles = t_data.get("roles", [])
-        tool_branches = t_branch if isinstance(t_branch, list) else [t_branch] if t_branch else []
-        
-        # 1. Global tools (tanpa branch spesifik) selalu diizinkan
-        if not t_branch:
-            is_allowed = True
-        # 2. AI Manager Orchestrator tools diizinkan untuk semua AI Manager cabang
-        elif any(item in ["ai_manager", "orchestrator"] for item in tool_branches) and (worker_lower in ["manager", "ai_manager", f"{branch_lower}_manager"] or branch_lower in ["orchestrator", "ai_manager"]):
-            is_allowed = True
-        # 3. Jika worker adalah AI Manager cabang -> dapat akses seluruh tools cabang tsb
-        elif worker_lower in ["manager", "ai_manager", f"{branch_lower}_manager"] and any(item in requested_branches for item in tool_branches):
-            is_allowed = True
-        # 4. Jika sub-agent spesifik -> cek apakah worker_key ada di t_roles
-        elif any(item in requested_branches for item in tool_branches) and (not t_roles or worker_lower in t_roles or any(r in t_roles for r in [worker_lower, worker_lower.replace('_', '-'), worker_lower.replace('-', '_')])):
-            is_allowed = True
-        else:
-            is_allowed = False
-            
-        if is_allowed:
+        allowed_branches = [
+            item for item in requested_branches if _worker_access(t_data, item, worker_lower)
+        ]
+        if allowed_branches:
+            if t_data.get("plugin_key") and not any(
+                _tool_is_available(t_data, item, worker_lower) for item in allowed_branches
+            ):
+                continue
             parameters, required = _public_parameters(t_data["parameters"])
             schemas.append({
                 "type": "function",
@@ -205,13 +278,23 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         log_exception("AIOS Dormant Tool", context=f"Tool dormant ditolak: {name}")
         return json.dumps(safe_error("Tool ini belum aktif.", "TOOL_DORMANT"))
 
+    tool_data = _TOOL_REGISTRY[name]
+    if context is None:
+        context = getattr(frappe.local, "aios_tool_context", None)
+    branch = (context or {}).get("branch") if context else ""
+    worker_key = (context or {}).get("worker_key") if context else ""
     try:
+        if tool_data.get("branch") and not _worker_access(tool_data, branch, worker_key):
+            return _log_tool_denial("TOOL_WORKER_FORBIDDEN", name)
+        if tool_data.get("plugin_key"):
+            if not _plugin_enabled(tool_data["plugin_key"]):
+                return _log_tool_denial("PLUGIN_DISABLED", name)
+            if not _plugin_scope_allows(tool_data["plugin_key"], branch, worker_key):
+                return _log_tool_denial("PLUGIN_SCOPE_DENIED", name)
+
         kwargs = json.loads(arguments_json)
         if not isinstance(kwargs, dict):
             raise ValueError("arguments_json harus object JSON")
-
-        if context is None:
-            context = getattr(frappe.local, "aios_tool_context", None)
 
         ctx = _build_tool_context(context)
 

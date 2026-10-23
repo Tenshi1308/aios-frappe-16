@@ -36,6 +36,7 @@ def _validate_fields(doctype: str, values, label: str, allow_empty: bool = True)
     name="erpnext_doc_list",
     description="Membaca daftar dokumen ERPNext untuk company aktif.",
     branch=["finance", "sales"],
+    plugin_key="erpnext-core-data",
     parameters={
         "doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"},
         "fields": {"type": "array", "items": {"type": "string"}, "description": "Field yang dikembalikan", "required": False},
@@ -92,6 +93,7 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
     name="erpnext_doc_get",
     description="Membaca detail satu dokumen ERPNext yang diizinkan.",
     branch=["finance", "sales"],
+    plugin_key="erpnext-core-data",
     parameters={
         "doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"},
         "name": {"type": "string", "description": "ID dokumen"},
@@ -111,6 +113,7 @@ def erpnext_doc_get(doctype, name):
     name="erpnext_doctype_schema",
     description="Membaca field yang tersedia pada DocType ERPNext yang diizinkan.",
     branch=["finance", "sales"],
+    plugin_key="erpnext-core-data",
     parameters={"doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"}},
 )
 def erpnext_doctype_schema(doctype):

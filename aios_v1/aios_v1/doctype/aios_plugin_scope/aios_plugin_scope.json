@@ -1,0 +1,18 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": ["scope_type", "scope_key", "enabled"],
+ "fields": [
+  {"fieldname": "scope_type", "fieldtype": "Select", "label": "Scope Type", "options": "branch\nworker", "reqd": 1},
+  {"fieldname": "scope_key", "fieldtype": "Data", "label": "Scope Key", "reqd": 1},
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "1"}
+ ],
+ "istable": 1,
+ "module": "AIOS V1",
+ "name": "AIOS Plugin Scope",
+ "permissions": [],
+ "track_changes": 0
+}

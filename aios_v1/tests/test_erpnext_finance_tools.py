@@ -37,7 +37,12 @@ class TestERPNextFinanceTools(IntegrationTestCase):
                 }
             ).insert(ignore_permissions=True)
         frappe.set_user(self.USER)
-        self.context = {"user": self.USER, "allowed_company": self.COMPANY}
+        self.context = {
+            "user": self.USER,
+            "allowed_company": self.COMPANY,
+            "branch": "finance",
+            "worker_key": "manager",
+        }
 
     def tearDown(self):
         frappe.db.commit = self.original_commit
@@ -47,8 +52,18 @@ class TestERPNextFinanceTools(IntegrationTestCase):
     def _execute(self, name, args):
         return json.loads(execute_tool(name, json.dumps(args), context=self.context))
 
+    def _mock_empty_list(self, target_doctype):
+        original_get_list = frappe.get_list
+
+        def get_list(doctype, *args, **kwargs):
+            if doctype == target_doctype:
+                return []
+            return original_get_list(doctype, *args, **kwargs)
+
+        return patch("aios_v1.lib.erpnext_core_data.frappe.get_list", side_effect=get_list)
+
     def test_company_argument_is_ignored_and_list_is_bounded(self):
-        with patch("aios_v1.lib.erpnext_core_data.frappe.get_list", return_value=[]) as get_list:
+        with self._mock_empty_list("Sales Order") as get_list:
             result = self._execute(
                 "erpnext_doc_list",
                 {
@@ -69,12 +84,12 @@ class TestERPNextFinanceTools(IntegrationTestCase):
                 self.assertFalse(result.get("success", True))
 
     def test_company_doctype_list_is_forced_to_configured_company(self):
-        with patch("aios_v1.lib.erpnext_core_data.frappe.get_list", return_value=[]) as get_list:
+        with self._mock_empty_list("Company") as get_list:
             self._execute("erpnext_doc_list", {"doctype": "Company", "filters": {"name": "_Test Forged Company"}})
         self.assertEqual(get_list.call_args.kwargs["filters"]["name"], self.COMPANY)
 
     def test_default_list_limit_is_twenty(self):
-        with patch("aios_v1.lib.erpnext_core_data.frappe.get_list", return_value=[]) as get_list:
+        with self._mock_empty_list("Sales Order") as get_list:
             self._execute("erpnext_doc_list", {"doctype": "Sales Order"})
         self.assertEqual(get_list.call_args.kwargs["limit_page_length"], 20)
 

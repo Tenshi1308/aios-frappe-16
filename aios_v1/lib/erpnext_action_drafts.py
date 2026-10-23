@@ -14,6 +14,7 @@ from aios_v1.permissions import ERP_CLIENT_DOCTYPES
     name="erpnext_action_draft_create",
     description="Membuat Pending Action Draft untuk ditinjau manusia; tidak menulis ke ERPNext.",
     branch=["finance", "sales"],
+    plugin_key="erpnext-action-drafts",
     parameters={
         "action_type": {"type": "string", "description": "Jenis aksi; saat ini hanya CREATE"},
         "doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"},

@@ -178,6 +178,9 @@ def ensure_aios_permissions() -> None:
 			continue
 		_ensure_role_perm(doctype, "AIOS Control", ptypes)
 
+	_remove_role_perm("AIOS Plugin", "AIOS Admin")
+	_remove_role_perm("AIOS Plugin Scope", "AIOS Admin")
+
 	# AIOS Admin tidak dipasang di site klien. Bersihkan sisa baris lama.
 	for doctype in set(CLIENT_PERMS) | set(ERP_CLIENT_DOCTYPES):
 		_remove_role_perm(doctype, "AIOS Admin")

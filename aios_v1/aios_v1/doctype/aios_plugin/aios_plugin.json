@@ -1,0 +1,24 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:plugin_key",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": ["plugin_key", "plugin_name", "plugin_type", "enabled", "scopes", "endpoint_url", "config_json"],
+ "fields": [
+  {"fieldname": "plugin_key", "fieldtype": "Data", "label": "Plugin Key", "reqd": 1, "unique": 1, "in_list_view": 1},
+  {"fieldname": "plugin_name", "fieldtype": "Data", "label": "Plugin Name", "reqd": 1, "in_list_view": 1},
+  {"fieldname": "plugin_type", "fieldtype": "Select", "label": "Plugin Type", "options": "BUILT_IN\nEXTERNAL_MCP_HTTP\nEXTERNAL_MCP_SSE", "reqd": 1, "default": "BUILT_IN"},
+  {"fieldname": "enabled", "fieldtype": "Check", "label": "Enabled", "default": "1", "in_list_view": 1},
+  {"fieldname": "scopes", "fieldtype": "Table", "label": "Scopes", "options": "AIOS Plugin Scope"},
+  {"fieldname": "endpoint_url", "fieldtype": "Data", "label": "Endpoint URL"},
+  {"fieldname": "config_json", "fieldtype": "Code", "label": "Config JSON", "options": "JSON"}
+ ],
+ "module": "AIOS V1",
+ "name": "AIOS Plugin",
+ "permissions": [],
+ "sort_field": "plugin_name",
+ "sort_order": "ASC",
+ "track_changes": 1
+}

@@ -22,6 +22,7 @@ ALLOWED_REPORTS = frozenset(
     name="erpnext_report_run",
     description="Menjalankan laporan keuangan atau penjualan ERPNext yang diizinkan.",
     branch=["finance", "sales"],
+    plugin_key="erpnext-financial-reports",
     parameters={
         "report_name": {"type": "string", "description": "Nama laporan ERPNext yang diizinkan"},
         "filters": {"type": "object", "description": "Filter laporan", "required": False},

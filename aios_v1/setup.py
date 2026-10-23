@@ -67,10 +67,53 @@ AIOS_ROLE_PROFILES = {
 
 def after_install():
     setup_aios_identity()
+    ensure_builtin_plugins()
 
 
 def after_migrate():
     setup_aios_identity()
+    ensure_builtin_plugins()
+
+
+BUILTIN_PLUGIN_SEEDS = (
+    ("erpnext-core-data", "ERPNext Core Data"),
+    ("erpnext-financial-reports", "ERPNext Financial Reports"),
+    ("erpnext-action-drafts", "ERPNext Action Drafts"),
+)
+
+
+def ensure_builtin_plugins():
+    """Upsert built-in plugin records without replacing operator state."""
+    for plugin_key, plugin_name in BUILTIN_PLUGIN_SEEDS:
+        name = frappe.db.get_value("AIOS Plugin", {"plugin_key": plugin_key}, "name")
+        if name:
+            plugin = frappe.get_doc("AIOS Plugin", name)
+            changed = False
+            if plugin.plugin_name != plugin_name:
+                plugin.plugin_name = plugin_name
+                changed = True
+            if plugin.plugin_type != "BUILT_IN":
+                plugin.plugin_type = "BUILT_IN"
+                changed = True
+            if not plugin.get("scopes"):
+                plugin.append("scopes", {"scope_type": "branch", "scope_key": "finance", "enabled": 1})
+                plugin.append("scopes", {"scope_type": "branch", "scope_key": "sales", "enabled": 1})
+                changed = True
+            if changed:
+                plugin.save(ignore_permissions=True)
+        else:
+            plugin = frappe.get_doc(
+                {
+                    "doctype": "AIOS Plugin",
+                    "plugin_key": plugin_key,
+                    "plugin_name": plugin_name,
+                    "plugin_type": "BUILT_IN",
+                    "enabled": 1,
+                }
+            )
+            plugin.append("scopes", {"scope_type": "branch", "scope_key": "finance", "enabled": 1})
+            plugin.append("scopes", {"scope_type": "branch", "scope_key": "sales", "enabled": 1})
+            plugin.insert(ignore_permissions=True)
 
 
 def setup_aios_identity():
