@@ -17,12 +17,17 @@ class ToolContextError(frappe.ValidationError):
 
 def _public_parameters(parameters: Optional[Dict[str, Any]]):
     """Parameter yang boleh dilihat LLM; argumen pemilik tetap server-side."""
-    public = {
-        key: value
-        for key, value in (parameters or {}).items()
-        if key not in _HIDDEN_TOOL_PARAMS
-    }
-    return public, list(public.keys())
+    public = {}
+    required = []
+    for key, value in (parameters or {}).items():
+        if key in _HIDDEN_TOOL_PARAMS:
+            continue
+        property_schema = dict(value)
+        is_required = property_schema.pop("required", True)
+        public[key] = property_schema
+        if is_required:
+            required.append(key)
+    return public, required
 
 
 def _resolve_allowed_company() -> str:
@@ -67,6 +72,8 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
     return {
         "user_id": user,
         "allowed_company": allowed_company,
+        "branch": context.get("branch") if context else None,
+        "worker_key": context.get("worker_key") if context else None,
     }
 
 
@@ -90,7 +97,7 @@ def tool_context(context: Dict[str, Any]):
 def get_tool_context() -> Dict[str, Any]:
     return dict(getattr(frappe.local, "aios_tool_context", {}) or {})
 
-def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = None, branch: Optional[str] = None, roles: Optional[List[str]] = None):
+def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = None, branch: Optional[str | List[str]] = None, roles: Optional[List[str]] = None, dormant: bool = False):
     """
     Decorator to register a python function as an AI Tool.
     `branch`: Nama divisi ERP (misal: 'hr', 'finance', 'sales')
@@ -101,16 +108,20 @@ def ai_tool(name: str, description: str, parameters: Optional[Dict[str, Any]] = 
             "name": name,
             "description": description,
             "parameters": parameters or {},
-            "branch": branch.lower() if branch else None,
+            "branch": [item.lower() for item in branch] if isinstance(branch, list) else branch.lower() if branch else None,
             "roles": [r.lower() for r in roles] if roles else [],
+            "dormant": dormant,
             "func": func
         }
         return func
     return decorator
 
 def _ensure_tools_loaded():
-    """Memastikan tool module yang tersisa (AI Manager) telah di-import & terdaftar."""
+    """Memastikan tool modules telah di-import & terdaftar."""
     import aios_v1.lib.ai_manager_tools  # noqa: F401 - side effect: registrasi tool
+    import aios_v1.lib.erpnext_action_drafts  # noqa: F401
+    import aios_v1.lib.erpnext_core_data  # noqa: F401
+    import aios_v1.lib.erpnext_financial_reports  # noqa: F401
 
 def get_all_tools_schema():
     """Returns list of all tools formatted for LLM API (OpenAI spec)."""
@@ -138,24 +149,28 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
     """
     _ensure_tools_loaded()
     schemas = []
-    branch_lower = branch.lower() if branch else ""
+    requested_branches = [item.lower() for item in branch] if isinstance(branch, list) else [branch.lower()] if branch else []
+    branch_lower = requested_branches[0] if requested_branches else ""
     worker_lower = worker_key.lower() if worker_key else "manager"
     
     for t_name, t_data in _TOOL_REGISTRY.items():
+        if t_data.get("dormant"):
+            continue
         t_branch = t_data.get("branch")
         t_roles = t_data.get("roles", [])
+        tool_branches = t_branch if isinstance(t_branch, list) else [t_branch] if t_branch else []
         
         # 1. Global tools (tanpa branch spesifik) selalu diizinkan
         if not t_branch:
             is_allowed = True
         # 2. AI Manager Orchestrator tools diizinkan untuk semua AI Manager cabang
-        elif t_branch in ["ai_manager", "orchestrator"] and (worker_lower in ["manager", "ai_manager", f"{branch_lower}_manager"] or branch_lower in ["orchestrator", "ai_manager"]):
+        elif any(item in ["ai_manager", "orchestrator"] for item in tool_branches) and (worker_lower in ["manager", "ai_manager", f"{branch_lower}_manager"] or branch_lower in ["orchestrator", "ai_manager"]):
             is_allowed = True
         # 3. Jika worker adalah AI Manager cabang -> dapat akses seluruh tools cabang tsb
-        elif worker_lower in ["manager", "ai_manager", f"{branch_lower}_manager"] and t_branch == branch_lower:
+        elif worker_lower in ["manager", "ai_manager", f"{branch_lower}_manager"] and any(item in requested_branches for item in tool_branches):
             is_allowed = True
         # 4. Jika sub-agent spesifik -> cek apakah worker_key ada di t_roles
-        elif t_branch == branch_lower and (not t_roles or worker_lower in t_roles or any(r in t_roles for r in [worker_lower, worker_lower.replace('_', '-'), worker_lower.replace('-', '_')])):
+        elif any(item in requested_branches for item in tool_branches) and (not t_roles or worker_lower in t_roles or any(r in t_roles for r in [worker_lower, worker_lower.replace('_', '-'), worker_lower.replace('-', '_')])):
             is_allowed = True
         else:
             is_allowed = False
@@ -186,6 +201,9 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
     _ensure_tools_loaded()
     if name not in _TOOL_REGISTRY:
         return json.dumps({"error": f"Tool {name} not found"})
+    if _TOOL_REGISTRY[name].get("dormant"):
+        log_exception("AIOS Dormant Tool", context=f"Tool dormant ditolak: {name}")
+        return json.dumps(safe_error("Tool ini belum aktif.", "TOOL_DORMANT"))
 
     try:
         kwargs = json.loads(arguments_json)
@@ -209,7 +227,7 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
 
         with tool_context(ctx):
             result = func(**kwargs)
-        return json.dumps(result)
+        return json.dumps(result, default=str)
     except ToolContextError:
         raise
     except Exception as exc:

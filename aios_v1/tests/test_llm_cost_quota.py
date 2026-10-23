@@ -145,7 +145,7 @@ class TestTokenQuota(IntegrationTestCase):
 
 		from aios_v1.managers import get_manager
 
-		def fake_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage=None):
+		def fake_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage=None, tools=None, tool_calls=None):
 			if usage is not None:
 				usage.update(
 					{

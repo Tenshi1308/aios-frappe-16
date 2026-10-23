@@ -10,7 +10,8 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 import aios_v1.lib.ai_manager_tools  # noqa: F401 - mendaftarkan tools ke registry
-from aios_v1.lib.tool_registry import _TOOL_REGISTRY, execute_tool, get_all_tools_schema
+from aios_v1.lib.tool_registry import _TOOL_REGISTRY, execute_tool, get_all_tools_schema, get_tools_schema_for_worker
+from aios_v1.lib.draft_manager import create_draft
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -71,30 +72,34 @@ class TestAIManagerTools(IntegrationTestCase):
         tool_names = [schema["function"]["name"] for schema in schemas]
         self.assertIn("orchestrator_delegate_to_subagent", tool_names)
         self.assertIn("escalate_to_human_approval", tool_names)
-
-    def test_escalate_to_human_approval_creates_draft(self):
-        args = {
-            "task_id": "TSK-6A-TEST",
-            "action_type": "purchase_order",
-            "branch": "material_management",
-            "created_by_agent": "purchasing_officer",
-            "payload": {"vendor": "PT Test Sukses", "amount": 50000},
-            "reason": "Melebihi limit approval otomatis",
+        worker_names = {
+            schema["function"]["name"]
+            for schema in get_tools_schema_for_worker("finance", "manager")
         }
-        result = json.loads(
-            execute_tool("escalate_to_human_approval", json.dumps(args), context=self.context)
-        )
-        self.assertEqual(result.get("status"), "PENDING_HUMAN_APPROVAL")
-        self.assertTrue(result.get("draft_id", "").startswith("DRF-"))
-        self.assertIn("/draft/", result.get("card_markdown", ""))
+        self.assertNotIn("cross_branch_consultation", worker_names)
+        self.assertNotIn("monitor_global_task_ledger", worker_names)
+
+    def test_legacy_escalation_rejects_unknown_action_type(self):
+        with self.assertRaises(frappe.ValidationError):
+            create_draft(
+                task_id="TSK-6A-TEST",
+                action_type="purchase_order",
+                payload={"vendor": "_Test Vendor"},
+            )
+
+    def test_dormant_orchestration_tools_are_hidden_from_worker_schema(self):
+        names = {
+            schema["function"]["name"]
+            for schema in get_tools_schema_for_worker("finance", "manager")
+        }
         self.assertTrue(
-            frappe.db.exists("Pending Action Draft", result["draft_id"])
-        )
-        self.assertEqual(
-            frappe.db.get_value(
-                "Pending Action Draft", result["draft_id"], "user"
-            ),
-            self.EMAIL,
+            {
+                "orchestrator_delegate_to_subagent",
+                "resolve_agent_conflict",
+                "broadcast_policy_update",
+                "summarize_branch_status",
+                "escalate_to_human_approval",
+            }.isdisjoint(names)
         )
 
     def test_orchestrator_delegation_execution(self):
@@ -103,13 +108,15 @@ class TestAIManagerTools(IntegrationTestCase):
             "worker_key": "treasurer",
             "task_instruction": "Cek rekonsiliasi bank hari ini",
         }
-        result = json.loads(
-            execute_tool("orchestrator_delegate_to_subagent", json.dumps(args), context=self.context)
-        )
-        self.assertEqual(result.get("status"), "DELEGATED")
-        self.assertEqual(result.get("worker_key"), "treasurer")
+        with patch("aios_v1.lib.tool_registry.log_exception") as log_exception:
+            result = json.loads(
+                execute_tool("orchestrator_delegate_to_subagent", json.dumps(args), context=self.context)
+            )
+        self.assertEqual(result.get("code"), "TOOL_DORMANT")
+        self.assertEqual(result.get("error"), "Tool ini belum aktif.")
+        log_exception.assert_called_once()
 
-    def test_cross_branch_consultation_uses_context_user(self):
+    def test_cross_branch_consultation_dormant_guard(self):
         args = {
             "task_id": "TSK-CTX-001",
             "from_branch": "finance",
@@ -119,36 +126,33 @@ class TestAIManagerTools(IntegrationTestCase):
         }
         router = MagicMock()
         router.route_message.return_value = {"ok": True}
-        with patch(
-            "aios_v1.lib.ai_manager_tools.get_swarm_router", return_value=router
-        ) as get_router:
-            result = json.loads(
-                execute_tool(
-                    "cross_branch_consultation",
-                    json.dumps(args),
-                    context=self.context,
+        with patch("aios_v1.lib.ai_manager_tools.get_swarm_router", return_value=router) as get_router:
+            with patch("aios_v1.lib.tool_registry.log_exception"):
+                result = json.loads(
+                    execute_tool(
+                        "cross_branch_consultation",
+                        json.dumps(args),
+                        context=self.context,
+                    )
                 )
-            )
+        get_router.assert_not_called()
+        self.assertEqual(result.get("code"), "TOOL_DORMANT")
 
-        get_router.assert_called_once_with(user_id=self.EMAIL)
-        self.assertEqual(result, {"ok": True})
-
-    def test_monitor_global_task_ledger_uses_context_user(self):
+    def test_monitor_global_task_ledger_dormant_guard(self):
         ledger = MagicMock()
         ledger.get_task_chain.return_value = {"status": "IN_PROGRESS", "hops": []}
-        with patch(
-            "aios_v1.lib.ai_manager_tools.get_task_ledger", return_value=ledger
-        ) as get_ledger:
-            result = json.loads(
-                execute_tool(
-                    "monitor_global_task_ledger",
-                    json.dumps({"task_id": "TSK-CTX-002"}),
-                    context=self.context,
+        with patch("aios_v1.lib.ai_manager_tools.get_task_ledger", return_value=ledger) as get_ledger:
+            with patch("aios_v1.lib.tool_registry.log_exception"):
+                result = json.loads(
+                    execute_tool(
+                        "monitor_global_task_ledger",
+                        json.dumps({"task_id": "TSK-CTX-002"}),
+                        context=self.context,
+                    )
                 )
-            )
 
-        get_ledger.assert_called_once_with(user_id=self.EMAIL)
-        self.assertEqual(result["status"], "FOUND")
+        get_ledger.assert_not_called()
+        self.assertEqual(result.get("code"), "TOOL_DORMANT")
 
     def test_no_tenant_scope_in_manager_tools(self):
         source = (

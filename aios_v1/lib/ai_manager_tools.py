@@ -27,6 +27,7 @@ def _user_id_from_context() -> str:
     name="orchestrator_delegate_to_subagent",
     description="Mendelegasikan tugas khusus ke sub-agent (worker job role) dalam divisinya sendiri.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "branch": {
             "type": "string",
@@ -62,6 +63,7 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
     name="cross_branch_consultation",
     description="Meminta data atau keputusan dari AI Manager di divisi lain via Central Swarm Router.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "task_id": {
             "type": "string",
@@ -107,6 +109,7 @@ def cross_branch_consultation(task_id: str, from_branch: str, to_branch: str, me
     name="escalate_to_human_approval",
     description="Mengunggah draf aksi ke IDB sebagai Pending Action Draft dan menampilkan Interactive Card di UI Klien.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "task_id": {
             "type": "string",
@@ -163,6 +166,7 @@ def escalate_to_human_approval(task_id: str, action_type: str, branch: str, crea
     name="monitor_global_task_ledger",
     description="Membaca progress dan riwayat rantai tugas (task chain) lintas cabang dari Global Task Ledger.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "task_id": {
             "type": "string",
@@ -197,6 +201,7 @@ def monitor_global_task_ledger(task_id: str) -> Dict[str, Any]:
     name="resolve_agent_conflict",
     description="Mengambil keputusan resmi dari AI Manager jika ada rekomendasi bertentangan antar sub-agent.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "conflict_topic": {
             "type": "string",
@@ -232,6 +237,7 @@ def resolve_agent_conflict(conflict_topic: str, proposals: Dict[str, Any], selec
     name="broadcast_policy_update",
     description="Menyebarkan pembaruan aturan, SOP, atau instruksi operasional masal ke semua sub-agent di divisinya.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "branch": {
             "type": "string",
@@ -262,6 +268,7 @@ def broadcast_policy_update(branch: str, policy_title: str, policy_instruction: 
     name="summarize_branch_status",
     description="Mengumpulkan data dan status dari seluruh sub-agent bawahan menjadi 1 rangkuman eksekutif.",
     branch="ai_manager",
+    dormant=True,
     parameters={
         "branch": {
             "type": "string",

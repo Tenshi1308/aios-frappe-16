@@ -1,10 +1,16 @@
 import json
 import frappe
+from aios_v1.lib.error_utils import log_exception, safe_error
+from aios_v1.lib.tool_registry import ToolContextError, execute_tool, get_tools_schema_for_worker
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
 from aios_v1.lib.llm_client import chat_stream
 from aios_v1.services.usage import record_token_usage
 from aios_v1.plugin_manager.registry import get_worker
+
+MAX_TOOL_ROUNDS = 6
+TOOL_CONTEXT_ERROR_MESSAGE = "Konteks sesi untuk menjalankan tool tidak valid. Silakan mulai percakapan kembali."
+MAX_TOOL_ROUNDS_MESSAGE = "Batas langkah penggunaan tool tercapai. Silakan persempit permintaan dan coba lagi."
 
 class BaseManager:
     def __init__(self, branch_def):
@@ -91,11 +97,29 @@ class BaseManager:
             f"- Jawablah murni dari perspektif manajer umum yang bertugas memimpin cabang ini."
         ]
 
-    def build_system_prompt(self, worker_def) -> str:
+    def build_system_prompt(self, worker_def, user: str = None) -> str:
         if worker_def:
             parts = self._build_worker_prompt(worker_def)
         else:
             parts = self._build_manager_prompt()
+
+        setting = frappe.get_single("AIOS Setting")
+        persona_context = (setting.get("company_context_persona") or "").strip()
+        user_context = frappe.db.get_value(
+            "User",
+            user or frappe.session.user,
+            ["aios_persona", "aios_persona_context"],
+            as_dict=True,
+        ) or {}
+        context_lines = ["KONTEKS ORGANISASI DAN PENGGUNA:"]
+        if persona_context:
+            context_lines.append(f"Konteks company: {persona_context}")
+        if user_context.get("aios_persona"):
+            context_lines.append(f"Persona pengguna: {user_context['aios_persona']}")
+        if user_context.get("aios_persona_context"):
+            context_lines.append(f"Konteks persona pengguna: {user_context['aios_persona_context']}")
+        if len(context_lines) > 1:
+            parts.append("\n".join(context_lines))
 
         parts.append("""ATURAN JAWABAN (WAJIB):
 1. Jawab dalam bahasa Indonesia, ramah, ringkas, terstruktur dan profesional.
@@ -135,7 +159,7 @@ class BaseManager:
         recent_messages.reverse()
 
         worker_def = self.get_worker_def(worker_key)
-        system_prompt = self.build_system_prompt(worker_def)
+        system_prompt = self.build_system_prompt(worker_def, user)
 
         llm_messages = [{"role": "system", "content": system_prompt}]
         for m in recent_messages[:-1]:
@@ -176,14 +200,64 @@ class BaseManager:
         user_msg_doc.save(ignore_permissions=True)
         frappe.db.commit()
 
-        # 4. Stream Jawaban dari LLM (usage provider ikut ditangkap)
+        # 4. Stream Jawaban dari LLM dan jalankan tool call secara berurutan.
         full_reply = ""
         delegated_to = worker_def["jobRole"] if worker_def else "Manager"
-        usage = {}
+        accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        failed = False
+        tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager")
 
-        for delta in chat_stream(llm_messages, usage=usage):
-            full_reply += delta
-            yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
+        def stream_llm_turn():
+            nonlocal full_reply, failed
+            turn_usage = {}
+            turn_tool_calls = []
+            for delta in chat_stream(llm_messages, usage=turn_usage, tools=tool_schemas, tool_calls=turn_tool_calls):
+                full_reply += delta
+                yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
+            failed = failed or bool(turn_usage.get("failed"))
+            for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                if turn_usage.get(key) is not None:
+                    accumulated_usage[key] += int(turn_usage[key] or 0)
+            if turn_usage.get("provider"):
+                accumulated_usage["provider"] = turn_usage["provider"]
+            if turn_usage.get("model"):
+                accumulated_usage["model"] = turn_usage["model"]
+            return turn_tool_calls
+
+        for tool_round in range(MAX_TOOL_ROUNDS):
+            tool_calls = yield from stream_llm_turn()
+            if failed or not tool_calls:
+                break
+            llm_messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+            for call in tool_calls:
+                call_id = call.get("id") or ""
+                function = call.get("function") or {}
+                try:
+                    result = execute_tool(
+                        function.get("name", ""),
+                        function.get("arguments", "{}"),
+                        context={
+                            "user": user,
+                            "branch": self.branch.get("key"),
+                            "worker_key": worker_key or "manager",
+                        },
+                    )
+                except ToolContextError as exc:
+                    log_exception("AIOS Tool Context", exc=exc)
+                    error = safe_error(TOOL_CONTEXT_ERROR_MESSAGE, "TOOL_CONTEXT_INVALID")
+                    message = error["error"]
+                    full_reply += message
+                    yield f"data: {json.dumps({'type': 'delta', 'text': message})}\n\n"
+                    failed = True
+                    break
+                llm_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+            if failed:
+                break
+            if tool_round == MAX_TOOL_ROUNDS - 1:
+                log_exception("AIOS Tool Loop Limit", context=f"Batas {MAX_TOOL_ROUNDS} putaran tool tercapai.")
+                full_reply += MAX_TOOL_ROUNDS_MESSAGE
+                yield f"data: {json.dumps({'type': 'delta', 'text': MAX_TOOL_ROUNDS_MESSAGE})}\n\n"
+                break
 
         # Pastikan full_reply tidak kosong agar tidak melanggar mandatory constraint Frappe
         if not full_reply or not full_reply.strip():
@@ -193,9 +267,9 @@ class BaseManager:
         # Estimasi output tokens dari teks balasan AI
         est_output_tokens = max(1, int(len(full_reply) / 3.8))
 
-        input_tokens = int(usage.get("prompt_tokens") or est_input_tokens)
-        output_tokens = int(usage.get("completion_tokens") or est_output_tokens)
-        total_tokens = int(usage.get("total_tokens") or input_tokens + output_tokens)
+        input_tokens = int(accumulated_usage["prompt_tokens"] or est_input_tokens)
+        output_tokens = int(accumulated_usage["completion_tokens"] or est_output_tokens)
+        total_tokens = int(accumulated_usage["total_tokens"] or input_tokens + output_tokens)
 
         # 5. Simpan Pesan Assistant ke DocType AIOS Message
         asst_msg_doc = frappe.new_doc("AIOS Message")
@@ -207,11 +281,11 @@ class BaseManager:
         asst_msg_doc.insert(ignore_permissions=True)
 
         # 5b. Akuntansi token: ledger + counter site/user (atomik)
-        if not usage.get("failed"):
+        if not failed:
             record_token_usage(
                 user=user,
-                provider=usage.get("provider") or "",
-                model=usage.get("model") or "",
+                provider=accumulated_usage.get("provider") or "",
+                model=accumulated_usage.get("model") or "",
                 branch=self.branch.get("key") or "",
                 agent=worker_key or "manager",
                 input_tokens=input_tokens,

@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 
 import requests
 import frappe
+from aios_v1.lib.error_utils import log_exception
 
 def get_llm_config():
     setting = frappe.get_single("AIOS Setting")
@@ -27,8 +28,8 @@ def get_llm_config():
         "timeout": 90.0
     }
 
-def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage=None):
-    """Stream teks delta; `usage` (dict) diisi token & metadata dari provider."""
+def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage=None, tools=None, tool_calls=None):
+    """Stream content delta and aggregate fragmented tool calls into `tool_calls`."""
     cfg = get_llm_config()
     if usage is not None:
         usage["provider"] = urlparse(cfg["base_url"]).netloc or ""
@@ -47,10 +48,13 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
         "stream": True,
         "stream_options": {"include_usage": True},
     }
+    if tools:
+        payload["tools"] = tools
 
     max_attempts = 2
 
     for attempt in range(1, max_attempts + 1):
+        collected_calls = {}
         try:
             res = requests.post(url, headers=headers, json=payload, stream=True, timeout=req_timeout)
             if not res.ok:
@@ -69,22 +73,39 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
                     break
                 try:
                     chunk = json.loads(data_str)
-                except Exception:
-                    frappe.log_error(frappe.get_traceback(), "AIOS LLM Stream Chunk")
+                except Exception as exc:
+                    log_exception("AIOS LLM Stream Chunk", exc=exc)
                     continue
                 if usage is not None and chunk.get("usage"):
                     usage.update(chunk["usage"])
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
-                delta = (choices[0].get("delta") or {}).get("content", "")
+                delta_obj = choices[0].get("delta") or {}
+                delta = delta_obj.get("content", "")
                 if delta:
                     yield delta
+                for fragment in delta_obj.get("tool_calls") or []:
+                    index = fragment.get("index", 0)
+                    call = collected_calls.setdefault(
+                        index,
+                        {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+                    )
+                    if fragment.get("id") and not call["id"]:
+                        call["id"] = fragment["id"]
+                    function = fragment.get("function") or {}
+                    if function.get("name") and not call["function"]["name"]:
+                        call["function"]["name"] = function["name"]
+                    if function.get("arguments"):
+                        call["function"]["arguments"] += function["arguments"]
+
+            if tool_calls is not None:
+                tool_calls.extend(collected_calls[index] for index in sorted(collected_calls))
 
             return
 
-        except Exception:
-            frappe.log_error(frappe.get_traceback(), "AIOS LLM Request")
+        except Exception as exc:
+            log_exception("AIOS LLM Request", exc=exc)
             if attempt < max_attempts:
                 time.sleep(1)
                 continue

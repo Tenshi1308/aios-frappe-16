@@ -87,7 +87,7 @@ class TestDraftApprovalFlow(IntegrationTestCase):
 	def _draft(self, payload=None, task_id="TEST-FLOW-001"):
 		return create_draft(
 			task_id=task_id,
-			action_type="journal_entry",
+			action_type="CREATE",
 			payload=payload if payload is not None else {"doctype": "Journal Entry", "data": {}},
 			branch="finance",
 			created_by_agent="treasurer",
@@ -97,6 +97,14 @@ class TestDraftApprovalFlow(IntegrationTestCase):
 		draft = self._draft()
 		self.assertEqual(draft.user, EMAIL)
 		self.assertEqual(draft.status, "PENDING_APPROVAL")
+
+	def test_unknown_action_type_is_rejected(self):
+		with self.assertRaises(frappe.ValidationError):
+			create_draft(
+				task_id="TEST-FLOW-UNKNOWN",
+				action_type="journal_entry",
+				payload={"doctype": "Journal Entry", "data": {}},
+			)
 
 	def test_approve_executes_and_marks_executed(self):
 		payload = _journal_payload()

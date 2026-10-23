@@ -4,6 +4,7 @@ Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
 import json
+from io import BytesIO
 
 import frappe
 from werkzeug.test import EnvironBuilder
@@ -169,3 +170,45 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             frappe.local.request = None
 
         self.assertEqual(response.status_code, 413)
+
+    def test_parse_pdf_extracts_text_and_page_count(self):
+        from pypdf import PdfWriter
+        from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+        writer = PdfWriter()
+        page = writer.add_blank_page(width=200, height=200)
+        font = DictionaryObject(
+            {
+                NameObject("/Type"): NameObject("/Font"),
+                NameObject("/Subtype"): NameObject("/Type1"),
+                NameObject("/BaseFont"): NameObject("/Helvetica"),
+            }
+        )
+        font_ref = writer._add_object(font)
+        page[NameObject("/Resources")] = DictionaryObject(
+            {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font_ref})}
+        )
+        content = DecodedStreamObject()
+        content.set_data(b"BT /F1 12 Tf 20 150 Td (PoC PDF text) Tj ET")
+        page[NameObject("/Contents")] = writer._add_object(content)
+        pdf_file = BytesIO()
+        writer.write(pdf_file)
+
+        frappe.set_user(self.ALPHA)
+        builder = EnvironBuilder(
+            path="/api/chat/parse-pdf",
+            method="POST",
+            data={"file": (BytesIO(pdf_file.getvalue()), "_Test text.pdf")},
+        )
+        frappe.local.request = Request(builder.get_environ())
+        try:
+            handle_api_request()
+        except CustomAPIResponse as exc:
+            response = exc._custom_response
+        finally:
+            frappe.local.request = None
+
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.get_data(as_text=True))
+        self.assertEqual(body["pages"], 1)
+        self.assertIn("PoC PDF text", body["text"])

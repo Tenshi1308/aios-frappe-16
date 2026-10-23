@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "default_company",
+  "company_context_persona",
   "site_token_limit",
   "site_tokens_used",
   "api_key",
@@ -22,6 +23,11 @@
    "fieldtype": "Link",
    "label": "Default Company",
    "options": "Company"
+  },
+  {
+   "fieldname": "company_context_persona",
+   "fieldtype": "Small Text",
+   "label": "Company Context Persona"
   },
   {
    "fieldname": "site_token_limit",

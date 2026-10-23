@@ -12,6 +12,7 @@ import frappe
 from frappe.utils import add_to_date, now_datetime
 
 DRAFT_DOCTYPE = "Pending Action Draft"
+ACTION_TYPES = frozenset({"CREATE", "UPDATE_DRAFT", "CANCEL_AND_AMEND"})
 
 # DocType ERPNext yang boleh dibuat lewat approval (docs/04 Alur 5, docs/02 §2.2).
 ALLOWED_DRAFT_DOCTYPES = frozenset(
@@ -39,6 +40,8 @@ def create_draft(
     """Simpan draft baru; `user` tidak pernah diambil dari argumen pemanggil."""
     if not task_id or not action_type:
         frappe.throw("task_id dan action_type wajib diisi.")
+    if action_type not in ACTION_TYPES:
+        frappe.throw("Jenis aksi draft tidak dikenal.")
     if not isinstance(payload, dict):
         frappe.throw("Payload draft harus berupa object JSON.")
 
@@ -67,6 +70,10 @@ def create_draft(
 
 def execute_draft(doc) -> dict:
     """Buat + submit dokumen ERPNext dari payload draft; company dipaksa site-level."""
+    if doc.type not in ACTION_TYPES:
+        frappe.throw("Jenis aksi draft tidak dikenal.")
+    if doc.type != "CREATE":
+        frappe.throw("Jenis aksi draft ini belum didukung pada PoC.")
     try:
         payload = json.loads(doc.payload or "{}")
     except (TypeError, ValueError):
