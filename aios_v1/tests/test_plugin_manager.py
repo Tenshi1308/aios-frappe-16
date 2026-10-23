@@ -118,6 +118,63 @@ class TestPluginManager(IntegrationTestCase):
 			expected = 1 if key == "erpnext-core-data" else counts[key]
 			self.assertEqual(frappe.db.count("AIOS Plugin Scope", {"parent": name}), expected)
 
+	def test_phase_two_plugins_are_seeded_and_enforced(self):
+		self.assertEqual(frappe.db.count("AIOS Plugin"), 5)
+		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), 10)
+		for plugin_key, tool_name in (
+			("quant-calculator", "quant_calculate"),
+			("document-intelligence", "document_extract"),
+		):
+			with self.subTest(plugin_key=plugin_key):
+				name = frappe.db.get_value("AIOS Plugin", {"plugin_key": plugin_key}, "name")
+				plugin = frappe.get_doc("AIOS Plugin", name)
+				self.assertEqual(plugin.plugin_type, "BUILT_IN")
+				self.assertEqual(plugin.enabled, 1)
+				self.assertEqual(
+					{scope.scope_key for scope in plugin.scopes if scope.enabled}, {"finance", "sales"}
+				)
+				for branch in ("finance", "sales"):
+					self.assertIn(tool_name, self._schemas(branch))
+
+				plugin.enabled = 0
+				plugin.save(ignore_permissions=True)
+				self.assertNotIn(tool_name, self._schemas("finance"))
+				self.assertEqual(
+					json.loads(
+						execute_tool(
+							tool_name,
+							"{}",
+							context={
+								"user": self.USER,
+								"allowed_company": "_Test Company",
+								"branch": "finance",
+								"worker_key": "manager",
+							},
+						)
+					)["code"],
+					"PLUGIN_DISABLED",
+				)
+
+				plugin.enabled = 1
+				plugin.set("scopes", [{"scope_type": "branch", "scope_key": "hr", "enabled": 1}])
+				plugin.save(ignore_permissions=True)
+				self.assertNotIn(tool_name, self._schemas("finance"))
+				self.assertEqual(
+					json.loads(
+						execute_tool(
+							tool_name,
+							"{}",
+							context={
+								"user": self.USER,
+								"allowed_company": "_Test Company",
+								"branch": "finance",
+								"worker_key": "manager",
+							},
+						)
+					)["code"],
+					"PLUGIN_SCOPE_DENIED",
+				)
+
 	def test_disabled_plugin_is_hidden_and_direct_execution_is_rejected(self):
 		self._plugin(enabled=0)
 		self.assertNotIn(TOOL_NAME, self._schemas("finance"))

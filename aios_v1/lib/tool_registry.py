@@ -123,6 +123,8 @@ def _ensure_tools_loaded():
     import aios_v1.lib.erpnext_action_drafts  # noqa: F401
     import aios_v1.lib.erpnext_core_data  # noqa: F401
     import aios_v1.lib.erpnext_financial_reports  # noqa: F401
+    import aios_v1.lib.quant_calculator  # noqa: F401
+    import aios_v1.lib.document_intelligence  # noqa: F401
 
 
 def _worker_access(t_data: Dict[str, Any], branch: str, worker_key: str) -> bool:

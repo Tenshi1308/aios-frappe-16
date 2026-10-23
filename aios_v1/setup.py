@@ -79,6 +79,8 @@ BUILTIN_PLUGIN_SEEDS = (
     ("erpnext-core-data", "ERPNext Core Data"),
     ("erpnext-financial-reports", "ERPNext Financial Reports"),
     ("erpnext-action-drafts", "ERPNext Action Drafts"),
+    ("quant-calculator", "Quant Calculator"),
+    ("document-intelligence", "Document Intelligence"),
 )
 
 
