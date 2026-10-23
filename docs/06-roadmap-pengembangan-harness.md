@@ -137,7 +137,7 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 
 ## Tahap H4 — `feat/deep-finance-sales-agents` · WAJIB PoC (= pendalaman `#8`)
 
-> **Status fase:** H4 fase 1 selesai dan diverifikasi pada commit `87d6b42`: bench menjalankan 189 integration tests OK; 7 failure pada 102 unspecified dicatat sebagai pre-existing #3, bukan regresi H4. Targeted `test_tool_execution_loop` 7/7 dan `test_plugin_manager` 15/15; test baru branch gating, delegasi, dan usage lulus; pytest statis 41 passed, 2 skipped, 7 xfailed, 1 xpassed. Implementasi mencakup branch gating, Telegram fail-closed, delegasi worker Finance/Sales, empat trace event delegasi, token usage per agent, dan prompt skills. H4 fase 2 masih pending, termasuk cross-branch consultation. `UPDATE_DRAFT`, `CANCEL_AND_AMEND`, Approval Card, UI trace, dan H5 tidak termasuk fase 1.
+> **Status fase:** H4 fase 1 selesai dan diverifikasi pada commit `87d6b42`: bench menjalankan 189 integration tests OK; 7 failure pada 102 unspecified dicatat sebagai pre-existing #3, bukan regresi H4. Targeted `test_tool_execution_loop` 7/7 dan `test_plugin_manager` 15/15; test baru branch gating, delegasi, dan usage lulus; pytest statis 41 passed, 2 skipped, 7 xfailed, 1 xpassed. Fase 1 mencakup branch gating, Telegram fail-closed, delegasi worker Finance/Sales, empat trace event delegasi, token usage per agent, dan prompt skills. **Fase 2 backend selesai diverifikasi dan committed at `e6db80a`:** targeted test terkait 68/68 lulus; full bench menghasilkan 193 integration tests OK, 7 failure #3 pre-existing dalam 119 unspecified (repo hygiene: package placement, empty managers, debug scripts, shadowed API, web handler HTML, emoji, dan tracked frontend artifacts), serta 2 skipped. `pytest -q` statis 43 passed, 2 skipped, 7 xfailed, 1 xpassed. Ruff tiga file baru lulus; 32 temuan dari semua file berubah juga ada pada HEAD sebelum perubahan. Fase 2 mencakup consultation Finance/Sales read-only + `trace_cross_branch`, `CREATE`/`UPDATE_DRAFT`/`CANCEL_AND_AMEND` dengan approval retry/idempotency, dan event Approval Card. UI trace/Approval Card visual tetap #12; file/workspace tetap H5.
 
 > **Ini pendalaman `#8`.** `#8` menyiapkan tool dasar; H4 memperdalam delegasi, trace, dan akumulasi token.
 
@@ -147,7 +147,7 @@ Memperdalam perilaku agen **Finance** dan **Sales** melalui delegasi worker nyat
 - Fase 1: definisi sembilan cabang, worker, dan skills tetap tersimpan; Finance/Sales enabled, tujuh cabang lain disabled. Telegram fail-closed tanpa jaringan dan tanpa perubahan setting.
 - **Pencegahan Rekursi Tak Terbatas (`MAX_DELEGATION_DEPTH = 2`):**
   - Di `get_tools_schema_for_worker()` (`tool_registry.py`), pastikan tool `orchestrator_delegate_to_subagent` **hanya diberikan kepada Orchestrator (`worker_key == "manager"`)** dan tidak pernah diberikan ke Sub-Agent sehingga Sub-Agent tidak dapat mendelegasikan ulang ke Sub-Agent lain.
-- Bersihkan return mock: fase 1 membuat tiga tool yang belum tersedia fail-loud dengan `TOOL_NOT_IMPLEMENTED` dan tetap dormant. Fallback `SwarmRouter` serta handler finance/sales berada di fase 2 dan belum disentuh.
+- Bersihkan return mock: fase 1 membuat tiga tool yang belum tersedia fail-loud dengan `TOOL_NOT_IMPLEMENTED` dan tetap dormant. Fase 2 menghapus fallback mock SwarmRouter dan mendaftarkan handler read-only Finance/Sales.
   - Fase 1 menjalankan worker dengan satu model AIOS Setting dan schema tool worker. Model per-agent melalui `AIOS Agent Model Route` adalah target H1 yang ditunda.
   - Ubah konstruktor `SwarmRouter(user: str)` dan `TaskLedger`/`SafetyGuard` agar wajib menerima `user` (hapus default `tenant_id: int = 1`), daftarkan handler nyata untuk cabang `finance` dan `sales`, dan **hapus fallback handler mock** di `swarm_router.py:97-104` (jika handler cabang tidak terdaftar, wajib `frappe.log_error` + `frappe.throw`).
 - **Kontrak Tunggal 5 Event SSE *Live Agent Trace* (`aios_v1/shared/trace_events.py`):**
@@ -165,10 +165,14 @@ Memperdalam perilaku agen **Finance** dan **Sales** melalui delegasi worker nyat
 
 ### 3. Script Test Wajib
 - `aios_v1/tests/test_subagent_delegation_real.py`:
-  - H4 fase 1 menguji loop sub-agent, empat event SSE delegasi (cross-branch belum diemisi), penolakan delegasi worker, masking trace, dan akumulasi usage per agent. UI dan cross-branch menunggu fase 2/#12.
-  - Verifikasi fase 1: bench integration 189 OK; 7 failure pada 102 unspecified adalah pre-existing #3; targeted `test_tool_execution_loop` 7/7 dan `test_plugin_manager` 15/15; test H4 baru lulus. `pytest -q` statis 41 passed, 2 skipped, 7 xfailed, 1 xpassed.
-- `aios_v1/tests/test_cross_branch_sales_finance.py`:
+  - Fase 1 menguji loop sub-agent, empat event SSE delegasi, penolakan delegasi worker, masking trace, dan akumulasi usage per agent.
+  - Verifikasi fase 1: bench integration 189 OK; 7 failure pada 102 unspecified adalah pre-existing #3; targeted `test_tool_execution_loop` 7/7 dan `test_plugin_manager` 15/15; test H4 baru lulus. `pytest -q` statis 41 passed, 2 skipped, 7 xfailed, 1 xpassed. Verifikasi fase 2: targeted test terkait 68/68; full bench 193 integration OK, 7 failure pre-existing #3 dalam 119 unspecified, 2 skipped; pytest statis 43 passed, 2 skipped, 7 xfailed, 1 xpassed. Ruff pada file baru lulus; 32 temuan lint keseluruhan sudah ada di HEAD. UI #12 dan H5 tetap pending.
+- `aios_v1/tests/test_swarm_router.py` dan `aios_v1/tests/test_cross_branch_sales_finance.py`:
   - Uji skenario *Order-to-Cash*: Sales Manager memanggil `cross_branch_consultation` ke Finance untuk memeriksa piutang pelanggan sebelum menyusun draf *Sales Order*, serta uji *fail-loudly* bila cabang tujuan tidak memiliki handler.
+- `aios_v1/tests/test_draft_update_amend.py`, `test_draft_approval_flow.py`, `test_draft_contract.py`, `test_draft_manager.py`, dan `test_erpnext_finance_tools.py`:
+  - Uji snapshot before/after, `UPDATE_DRAFT`, `CANCEL_AND_AMEND`, periode tertutup, kegagalan, owner, expiry/reject, rollback/retry `APPROVED`, dan idempotensi; targeted dan full bench fase 2 selesai. Tidak ada uji manual dengan data bisnis nyata.
+- `aios_v1/tests/test_tool_execution_loop.py`:
+  - Uji satu event `trace_cross_branch` setelah tool selesai dan event Approval Card backend dari manager utama; UI tidak termasuk.
 
 ---
 

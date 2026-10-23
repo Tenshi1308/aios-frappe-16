@@ -153,17 +153,22 @@ sequenceDiagram
         Sub-->>Orch: Kembalikan Analisis Spesialis + Akumulasi Token Usage
     end
 
-    opt Konsultasi Lintas Divisi — fase H4 berikutnya
+    opt Konsultasi Lintas Divisi — H4 fase 2
         Orch->>Swarm: route_message(from="sales", to="finance", type="consultation")
-        Swarm-->>UI: Backend SSE [trace_cross_branch] (belum di fase 1; UI di #12)
-        Swarm->>Sub: Eksekusi Handler Cabang Tujuan (Cek Credit Limit & Overdue Invoice di ERPNext)
+        Swarm->>Sub: Handler Finance/Sales read-only dengan company site-level
         Sub-->>Swarm: Status Plafon Kredit & Piutang Pelanggan Aktual
-        Swarm-->>Orch: Kembalikan Hasil Konsultasi + Catat di Task Ledger
+        Swarm-->>Orch: Hasil konsultasi + Task Ledger
+        Orch-->>UI: Backend SSE [trace_cross_branch] setelah hasil tool
     end
 
-    opt Pembuatan Artefak — H5
+    opt Approval Card — H4 fase 2
+        Orch->>DraftMgr: Panggil erpnext_action_draft_create
+        DraftMgr-->>UI: SSE [artifact_created: APPROVAL_CARD]
+    end
+
+    opt File / Workspace — H5
         Orch->>Tool: Panggil workspace-artifact-builder (Buat Chart / Laporan / Private File .xlsx)
-        Tool-->>UI: SSE [artifact_created] (implementasi H5)
+        Tool-->>UI: SSE [artifact_created] untuk file privat (implementasi H5)
     end
 
     Orch-->>UI: Stream Jawaban Sintesis Akhir + Atomic SQL Increment User.aios_tokens_used & Insert AIOS Token Usage
@@ -173,16 +178,16 @@ sequenceDiagram
 1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model. **PoC memakai satu model dari `AIOS Setting`** (`base_url`, `model_name`, `temperature`); `AIOS Agent Model Route` adalah target H1 yang ditunda (`docs/00` §2.3) dan belum dipakai.
 2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context`) dan hanya menyertakan skema tool yang diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas). **DocType `AIOS Plugin` baru dibuat di H2** (`docs/06`); `#8` belum memakainya. Pada `#8` skema tool diambil dari registry plugin bawaan (`aios_v1/lib/tool_registry.py`).
 3. **Delegasi Sub-Agent Nyata & 5 Event Kanonik *Live Agent Trace*:**
-   - PoC memakai satu model dari `AIOS Setting`; routing model per-agent melalui `AIOS Agent Model Route` adalah target H1 yang ditunda. H4 fase 1 mengirim empat event trace delegasi lewat SSE backend; `trace_cross_branch` menyusul integrasi fase 2. UI Live Agent Trace dikerjakan di #12 (`docs/08` §3).
+   - PoC memakai satu model dari `AIOS Setting`; routing model per-agent melalui `AIOS Agent Model Route` adalah target H1 yang ditunda. H4 mengirim empat event trace delegasi dan `trace_cross_branch` lewat SSE backend. UI Live Agent Trace dikerjakan di #12 (`docs/08` §3).
    - Sub-Agent yang ditunjuk benar-benar dieksekusi dengan model dan daftar tool spesifik miliknya.
 4. **Injeksi Paksa Konteks `Company` Site-Level & Izin Baca ERPNext:**
    - Setiap kali Sub-Agent atau Orchestrator memanggil plugin (`erpnext-core-data`, `erpnext-financial-reports`, dll.), `execute_tool` mengabaikan klaim company dari argumen LLM dan menyuntikkan `allowed_company` yang dibaca secara site-level dari `frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value("Global Defaults", "default_company")`.
    - Pembacaan detail dokumen menggunakan `frappe.get_doc(doctype, name, check_permission="read")`.
    - Perhitungan angka finansial/statistik dilakukan secara deterministik melalui plugin `quant-calculator`.
 5. **Kolaborasi Lintas Divisi (`Sales ↔ Finance`):**
-   - Melalui `SwarmRouter(user=frappe.session.user)` (tanpa fallback default `1` dan tanpa fallback handler mock), divisi Sales berkonsultasi secara otonom ke divisi Finance untuk memeriksa plafon kredit dan piutang jatuh tempo di ERPNext sebelum pesanan baru dibuat.
-6. **Pembuatan Artefak sebagai Berkas di Desktop:**
-   - File kerja (`.xlsx`, `.csv`, `.pdf`, `.md`) disimpan menggunakan DocType `File` Frappe (`is_private=1`, terikat ke `AIOS Conversation` milik user) dan sistem mengirim event `artifact_created` sehingga artefak muncul sebagai berkas/jendela di desktop (`docs/08` §5).
+   - H4 menerima `consultation` saja; sumber cabang berasal dari context server. Finance membaca plafon kredit, piutang outstanding, dan overdue; Sales membaca status Customer dan Sales Order. Handler memakai company site-level dan ERPNext read permission. Handler yang hilang atau gagal tidak pernah menghasilkan mock sukses. `MAX_CHAIN_DEPTH = 5` hanya membatasi rantai konsultasi; batas delegasi tetap `MAX_DELEGATION_DEPTH = 2`.
+6. **Approval Card dan Artefak File:**
+   - H4 mengirim event backend `artifact_created` dengan `artifact.type = "APPROVAL_CARD"` setelah draft berhasil dibuat; UI #12 mengambil detail `before`/`after` melalui `get_draft`. Tidak ada file dibuat untuk kartu ini. File kerja privat dan workspace `.xlsx`, `.csv`, `.pdf`, `.md` tetap H5.
 7. **Sintesis Jawaban & Akuntansi Token Atomik (`usage.py`):** Orchestrator menyusun jawaban akhir untuk pengguna, mencatat rincian ke DocType `AIOS Token Usage`, dan meng-update `AIOS Setting.site_tokens_used` serta `User.aios_tokens_used` (statistik) secara atomik menggunakan SQL tanpa memanggil `user_doc.save()`.
 
 ---
@@ -228,8 +233,8 @@ sequenceDiagram
 3. **Render Approval Card sebagai Jendela Desktop:** Jendela kartu persetujuan (`docs/08` §5) menampilkan tabel rincian item/akun, nominal, justifikasi bisnis, serta tombol aksi **Approve & Post to ERPNext** dan **Reject**.
 4. **Eksekusi Saat Disetujui (**Approve**):**
    - Pengguna menekan tombol **Approve**.
-   - Backend (`approve_and_execute_draft`) memverifikasi autentikasi sesi, token CSRF, dan memastikan `draft.user == frappe.session.user` (atau user memiliki role `AIOS Admin`).
-   - Sistem membuat dokumen resmi di ERPNext di bawah `Company` aktif pada site tersebut, mengubah status draf menjadi `EXECUTED`, dan mengembalikan nomor dokumen resmi ERPNext ke layar pengguna.
+   - Backend (`approve_and_execute_draft`) memverifikasi sesi/CSRF dan membatasi approval ke pemilik draft atau `Administrator`; role `AIOS Admin` saja tidak melewati pemeriksaan pemilik. Row lock mencegah eksekusi bersamaan. Status `APPROVED` dapat dicoba ulang setelah kegagalan; hasil `EXECUTED` dikembalikan dari `payload.result` tanpa membuat dokumen kedua.
+   - Eksekusi berada di savepoint/transaksi yang sama dengan perubahan status: gagal berarti rollback aksi ERPNext, status tetap `APPROVED`, dan detail dicatat di Error Log. Company berasal dari setting site.
 5. **Pembatalan Saat Ditolak (**Reject**):**
    - Bila pengguna menekan **Reject** dan mengisi alasan penolakan, sistem memverifikasi kepemilikan draf, memperbarui status draf menjadi `REJECTED`, dan menyimpan alasan penolakan ke field `rejection_reason` tanpa menyentuh database transaksi ERPNext.
 
@@ -240,8 +245,10 @@ sequenceDiagram
 | Jenis aksi | Kapan dipakai | Efek setelah Approve |
 |---|---|---|
 | `CREATE` | Membuat dokumen baru | Dokumen dibuat & di-submit di ERPNext |
-| `UPDATE_DRAFT` | Mengubah `Pending Action Draft` milik agen yang belum disetujui | Payload draf diperbarui; belum ada yang ditulis ke ERPNext |
-| `CANCEL_AND_AMEND` | Mengoreksi dokumen yang sudah `docstatus = 1` | Dokumen lama di-cancel (jurnal pembalik), draft baru bernilai benar dibuat & di-submit |
+| `UPDATE_DRAFT` | Mengubah dokumen ERPNext dengan `docstatus = 0` | Setelah approval, field yang diusulkan disimpan; dokumen tidak di-submit |
+| `CANCEL_AND_AMEND` | Mengoreksi dokumen ERPNext dengan `docstatus = 1` | Setelah pemeriksaan periode, dokumen lama di-cancel dan salinan amend tertaut dibuat & di-submit |
+
+Semua aksi hanya menerima DocType dalam `ALLOWED_DRAFT_DOCTYPES`. Untuk UPDATE/AMEND, backend menyimpan `name`, snapshot `before` dari server untuk field pada `data`, nilai usulan `data`, dan `reason`; sebelum eksekusi, company, permission, `docstatus`, dan snapshot diverifikasi ulang. Snapshot yang berubah menghasilkan `DRAFT_STALE`. Periode tutup atau kegagalan pemeriksaan periode memblokir cancel dan menyarankan jurnal koreksi pada periode berjalan. Pembuatan draft tidak menulis dokumen ERPNext.
 
 **Batas yang tidak boleh dilanggar agen:**
 1. **Agen tidak pernah menulis langsung ke tabel ERPNext — termasuk untuk draft.** Semua aksi tulis agen berhenti di `Pending Action Draft`; dokumen ERPNext baru dibuat saat manusia menekan **Approve**.
