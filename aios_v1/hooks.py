@@ -26,6 +26,10 @@ doc_events = {
     },
 }
 
+# Company-scope `AIOS Client` untuk DocType ERPNext; sumber daftar tetap
+# `ERP_CLIENT_DOCTYPES` di aios_v1.permissions (satu sumber, tanpa duplikasi).
+from aios_v1.permissions import ERP_CLIENT_DOCTYPES
+
 # Apps
 # ------------------
 
@@ -186,6 +190,10 @@ permission_query_conditions = {
 	"Pending Action Draft": "aios_v1.permissions.draft_query_conditions",
 	"AIOS Message": "aios_v1.permissions.message_query_conditions",
 	"AIOS Token Usage": "aios_v1.permissions.token_usage_query_conditions",
+	**{
+		doctype: "aios_v1.permissions.erp_company_query_conditions"
+		for doctype in ERP_CLIENT_DOCTYPES
+	},
 }
 
 has_permission = {
@@ -194,6 +202,10 @@ has_permission = {
 	"Pending Action Draft": "aios_v1.permissions.has_permission",
 	"AIOS Message": "aios_v1.permissions.has_permission",
 	"AIOS Token Usage": "aios_v1.permissions.has_permission",
+	**{
+		doctype: "aios_v1.permissions.erp_company_has_permission"
+		for doctype in ERP_CLIENT_DOCTYPES
+	},
 }
 
 # Document Events
@@ -236,6 +248,12 @@ scheduler_events = {
 # override_whitelisted_methods = {
 # 	"frappe.desk.doctype.event.event.get_events": "aios_v1.event.get_events"
 # }
+
+# Guard report untuk AIOS Client: company dipaksa ke company aktif dan report
+# dibatasi ALLOWED_REPORTS (docs/03 §2.2 Lapis 3). Non-client pass-through.
+override_whitelisted_methods = {
+	"frappe.desk.query_report.run": "aios_v1.api.report_guard.run_query_report"
+}
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,

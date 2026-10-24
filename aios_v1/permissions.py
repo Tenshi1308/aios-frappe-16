@@ -67,12 +67,64 @@ def _is_client(user: str) -> bool:
 
 
 def _owned_condition(user: str, doctype: str) -> str:
-	"""Filter baris milik user; `NULL` otomatis tidak cocok."""
-	if not user or user == "Guest":
-		return "1=0"
-	if _is_admin(user) or not _is_client(user):
-		return ""
-	return f"`tab{doctype}`.user = {frappe.db.escape(user)}"
+    """Filter baris milik user; `NULL` otomatis tidak cocok."""
+    if not user or user == "Guest":
+        return "1=0"
+    if _is_admin(user) or not _is_client(user):
+        return ""
+    return f"`tab{doctype}`.user = {frappe.db.escape(user)}"
+
+
+def _active_company() -> str:
+    """Company aktif dari `AIOS Setting.default_company` (fallback `Global Defaults`)."""
+    from aios_v1.lib.tool_registry import _resolve_allowed_company
+
+    return _resolve_allowed_company()
+
+
+def erp_company_query_conditions(user=None, doctype=None) -> str:
+    """Hook `permission_query_conditions` untuk DocType ERPNext (docs/03 §2.2 Lapis 3).
+
+    Hanya menyempitkan `AIOS Client` ke company aktif; Administrator/AIOS Admin
+    dan role lain tidak terpengaruh. DocType tanpa field `company` tidak di-scope.
+    """
+    if not user or user == "Guest":
+        return ""
+    if _is_admin(user) or not _is_client(user):
+        return ""
+    company = _active_company()
+    if not company:
+        # Fail-closed: tanpa company aktif, client tidak melihat data ERP apa pun.
+        return "1=0"
+    escaped = frappe.db.escape(company)
+    if doctype == "Company":
+        return f"`tabCompany`.name = {escaped}"
+    if doctype and frappe.get_meta(doctype).has_field("company"):
+        return f"`tab{doctype}`.company = {escaped}"
+    return ""
+
+
+def erp_company_has_permission(doc, ptype=None, user=None, debug=False) -> bool:
+    """Hook `has_permission` untuk DocType ERPNext.
+
+    Frappe menolak bila hook mengembalikan falsy, jadi jalur bypass/non-tercakup
+    wajib mengembalikan `True` secara eksplisit — bukan `None`.
+    """
+    user = user or frappe.session.user
+    if not user or user == "Guest":
+        return False
+    if _is_admin(user) or not _is_client(user):
+        return True
+    if ptype not in ("read", "report"):
+        return True
+    company = _active_company()
+    if not company:
+        return False
+    if doc.doctype == "Company":
+        return doc.name == company
+    if frappe.get_meta(doc.doctype).has_field("company"):
+        return (doc.get("company") or "") == company
+    return True
 
 
 def conversation_query_conditions(user=None, doctype=None) -> str:

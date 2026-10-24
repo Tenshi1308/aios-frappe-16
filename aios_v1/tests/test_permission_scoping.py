@@ -3,6 +3,8 @@
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
+from unittest.mock import patch
+
 import frappe
 
 try:
@@ -132,3 +134,104 @@ class TestPermissionScoping(IntegrationTestCase):
                 ),
                 doctype,
             )
+
+
+def _active_company():
+    from aios_v1.lib.tool_registry import _resolve_allowed_company
+
+    return _resolve_allowed_company()
+
+
+class TestERPCompanyScope(IntegrationTestCase):
+    """Company-scope `AIOS Client` di layer Frappe (hook permission).
+
+    Regresi bug 2026-10-24: client melihat GL Entry/Account dua company lewat
+    get_list dan has_permission doc company lain = True. Scope wajib mengikuti
+    `AIOS Setting.default_company` (fallback `Global Defaults`), bukan hardcode.
+    """
+
+    def setUp(self):
+        super().setUp()
+        frappe.set_user("Administrator")
+        self.alpha = _make_user(ALPHA, "AIOS Client")
+        self.allowed = _active_company()
+        non_test = [
+            row.name
+            for row in frappe.get_all("Company", fields=["name"])
+            if not row.name.startswith("_Test")
+        ]
+        self.other = next((name for name in non_test if name != self.allowed), None)
+        if not self.other:
+            self.skipTest("Butuh dua company non-test untuk membedakan scope.")
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def test_client_list_gl_entry_only_active_company(self):
+        frappe.set_user(self.alpha.name)
+        companies = {
+            row.company
+            for row in frappe.get_list("GL Entry", fields=["company"], limit_page_length=0)
+        }
+        self.assertEqual(companies, {self.allowed})
+
+    def test_client_list_account_other_company_empty_active_nonempty(self):
+        frappe.set_user(self.alpha.name)
+        other_rows = frappe.get_list(
+            "Account", filters={"company": self.other}, limit_page_length=1
+        )
+        active_rows = frappe.get_list(
+            "Account", filters={"company": self.allowed}, limit_page_length=1
+        )
+        self.assertEqual(other_rows, [])
+        self.assertTrue(active_rows)
+
+    def test_client_list_company_only_active(self):
+        frappe.set_user(self.alpha.name)
+        names = frappe.get_list("Company", pluck="name", limit_page_length=0)
+        self.assertEqual(names, [self.allowed])
+
+    def test_client_doc_permission_company_pair(self):
+        frappe.set_user(self.alpha.name)
+        self.assertFalse(
+            frappe.has_permission("Company", "read", doc=self.other),
+            "doc company lain harus ditolak",
+        )
+        self.assertTrue(frappe.has_permission("Company", "read", doc=self.allowed))
+
+    def test_client_get_doc_other_company_denied_active_allowed(self):
+        frappe.set_user(self.alpha.name)
+        other_account = frappe.db.get_value("Account", {"company": self.other}, "name")
+        active_account = frappe.db.get_value("Account", {"company": self.allowed}, "name")
+        with self.assertRaises(frappe.PermissionError):
+            frappe.get_doc("Account", other_account, check_permission="read")
+        self.assertEqual(
+            frappe.get_doc("Account", active_account, check_permission="read").company,
+            self.allowed,
+        )
+
+    def test_master_without_company_field_not_scoped(self):
+        frappe.set_user(self.alpha.name)
+        self.assertIsInstance(frappe.get_list("Customer", limit_page_length=5), list)
+        self.assertIsInstance(frappe.get_list("Item", limit_page_length=5), list)
+
+    def test_administrator_still_sees_both_companies(self):
+        frappe.set_user("Administrator")
+        companies = {
+            row.company
+            for row in frappe.get_list("GL Entry", fields=["company"], limit_page_length=0)
+        }
+        self.assertIn(self.allowed, companies)
+        self.assertIn(self.other, companies)
+
+    def test_scope_follows_dynamic_setting(self):
+        frappe.set_user(self.alpha.name)
+        with patch(
+            "aios_v1.lib.tool_registry._resolve_allowed_company", return_value=self.other
+        ):
+            companies = {
+                row.company
+                for row in frappe.get_list("GL Entry", fields=["company"], limit_page_length=0)
+            }
+        self.assertEqual(companies, {self.other})
