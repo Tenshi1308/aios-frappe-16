@@ -39,11 +39,13 @@ Menempel di sisi kanan. Berisi riwayat percakapan, composer, pemilih agent, dan 
 
 #### Lampiran chat
 
-Composer menyediakan tombol paperclip untuk memilih dan mengunggah file, menampilkan progress, chip file, error, serta aksi hapus lampiran. Client tidak pernah melihat atau mengetik File ID.
+Composer menyediakan tombol paperclip untuk memilih dan mengunggah file, menampilkan progress, chip file, error, serta aksi hapus lampiran. Client tidak pernah menampilkan atau meminta user mengetik File ID; ID hanya menjadi state internal frontend untuk mengirim `file_ids`.
 
 Upload membuat Private `File` dengan `owner = frappe.session.user`, `is_private = 1`, `dt = "AIOS Conversation"`, dan `dn = conversation_id`. Request chat mengirim `file_ids`; backend memvalidasi kepemilikan, status private, keterikatan pada conversation yang sama, serta batas ukuran dan format yang diizinkan. Backend menyisipkan metadata file ke konteks model, lalu model dapat memanggil `document_extract(file_id)`; hasil ekstraksi tampil di chat.
 
-Backend menolak file milik user lain, file publik, file dari conversation lain, dan file yang melampaui batas ukuran atau format. Respons ke client tidak membocorkan File ID maupun isi file.
+Backend menolak file milik user lain, file publik, file dari conversation lain, dan file yang melampaui batas ukuran atau format. Respons ke client tidak membocorkan isi file; File ID tidak boleh muncul di pesan error maupun event — ia hanya state internal frontend.
+
+**Status backend (H5 fase 1, `b07975f`, 2026-10-24):** endpoint upload `POST /api/chat/upload`, validasi `file_ids` sebelum konteks model dibentuk, dan binding `document_extract` ke conversation aktif sudah ada. **UI composer, chip lampiran, progress upload, dan aksi hapus menyusul di #12.**
 
 **Acceptance:** client dapat melampirkan CSV, PDF, atau XLSX tanpa mengetik ID; model membaca isi file; file user lain ditolak; file publik ditolak.
 
@@ -85,7 +87,7 @@ File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tam
 | Spreadsheet `.xlsx` / `.csv` | Jendela preview + unduh |
 | Presentasi HTML | Jendela slide terisolasi |
 
-Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut.
+Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut. **Status backend (H5 fase 1, `b07975f`):** file privat `.csv`/`.xlsx`/`.md`/`.pdf` dibuat oleh `workspace_create_file` dan event `artifact_created` (`FILE`) sudah dikirim backend; jendela artefak, grafik interaktif, Mermaid, dan iframe menyusul di #12.
 
 ---
 
@@ -184,8 +186,9 @@ Folder kerja bernama `desk/` selama migrasi. Setelah paritas, `frontend/` (Next.
 | `desktop.list` | baris dokumen (paging, filter) |
 | `desktop.search` | hasil pencarian `Ctrl+K` |
 | `desktop.chat` | stream SSE; memakai ulang dispatcher `/stream`; request membawa `file_ids[]` opsional untuk lampiran |
+| `POST /api/chat/upload` | multipart `file` + `conversationId` (atau `branch` bila belum ada conversation); membuat Private `File` terikat conversation; respons `conversationId` + `attachment` (`id`, `file_name`, `file_size`, `format`) — H5 fase 1 |
 
-Backend memvalidasi setiap ID pada `file_ids` sebagai Private `File` milik session user dan terikat ke `AIOS Conversation` yang sama dengan chat; ukuran dan format harus dalam batas yang diizinkan. File tidak valid ditolak sebelum konteks model dibentuk. Client tidak menerima File ID atau isi file melalui metadata maupun pesan error.
+Backend memvalidasi setiap ID pada `file_ids` sebagai Private `File` milik session user dan terikat ke `AIOS Conversation` yang sama dengan chat; ukuran dan format harus dalam batas yang diizinkan. File tidak valid ditolak sebelum konteks model dibentuk. `attachment.id` pada respons upload adalah ID `File` yang frontend butuhkan untuk mengirim `file_ids` — ID ini **hanya state internal frontend**: tidak ditampilkan ke user, tidak diketik user, dan tidak boleh muncul di pesan error maupun event `artifact_created`. Client tidak pernah menerima isi file melalui metadata maupun pesan error.
 
 Semua endpoint memakai sesi Frappe yang sedang login dan tunduk pada `docs/03` §2.2. Tidak ada kredensial layanan di jalur ini.
 

@@ -47,7 +47,7 @@ AIOS hadir dengan himpunan plugin bawaan (*default*) untuk kebutuhan kritikal bi
 | **`workspace-artifact-builder`** | Membuat file kerja nyata di ruang kerja sesi pengguna (`.xlsx`, `.csv`, `.pdf`, `.md`) melalui DocType `File` (`is_private=1`) serta mengirim spesifikasi grafik interaktif & diagram Mermaid agar dibuka sebagai jendela di desktop. | Frappe Private `File` API (`save_file`) & renderer artefak (`docs/08` §5) |
 | **`web-market-research`** | Mengambil konten publik lewat `web_fetch`; `web_search` terdaftar tetapi gagal eksplisit dengan `SEARCH_PROVIDER_NOT_CONFIGURED` sampai provider tersedia. | HTTP(S) dengan validasi DNS, koneksi langsung ke IP yang divalidasi, TLS hostname/certificate check, redirect manual dengan validasi ulang, batas ukuran, waktu, dan content-type |
 
-**Status katalog H2 (2026-10-23):** enam dari tujuh plugin tersedia di kode. `workspace-artifact-builder` berada di H5; web search belum memiliki provider. Seed `web-market-research` berjalan melalui hook install/migrate, tetapi data plugin pada suatu site baru berubah setelah hook dijalankan.
+**Status katalog (2026-10-24):** tujuh dari tujuh plugin tersedia di kode — `workspace-artifact-builder` (tool `workspace_create_file` csv/xlsx/md/pdf sebagai Private File terikat conversation) selesai pada H5 fase 1 (`b07975f`); web search belum memiliki provider; chart interaktif dan diagram Mermaid pada artefak belum ada (UI #12). Seed plugin berjalan melalui hook install/migrate, tetapi data plugin pada suatu site baru berubah setelah hook dijalankan.
 
 > **Tiga plugin ERPNext adalah *wrapper tipis*, bukan implementasi baru.**
 > - **Logika data memakai ERPNext sendiri:** `frappe.get_list` / `frappe.get_doc` untuk dokumen, `frappe.desk.query_report.run` untuk laporan keuangan, dan API dokumen Frappe untuk penulisan. Karena berjalan di dalam proses Frappe dengan `frappe.session.user`, izin user berlaku **native** — tidak perlu kredensial layanan.
@@ -62,7 +62,7 @@ Agen AIOS dijalankan di dalam **kotak tertutup**: ia hanya bisa melakukan apa ya
 | Aturan (mengikat) | Status penegakan sekarang |
 |---|---|
 | Agen **tidak punya shell/terminal** — tidak ada `subprocess`, `os.system`, `eval`, atau `exec` di lapisan tool | **Ditegakkan** (`aios_v1/lib/tool_registry.py`; direktori `aios_v1/lib/tools/` dihapus di `#13`) |
-| Agen **tidak boleh membaca/menulis file server** di luar DocType `File` Frappe (private, terikat `AIOS Conversation`) | `document_extract` hanya membaca `File` privat milik user; upload dari chat dan workspace belum tersedia (H5/#12) |
+| Agen **tidak boleh membaca/menulis file server** di luar DocType `File` Frappe (private, terikat `AIOS Conversation`) | **Ditegakkan** — upload chat (`/api/chat/upload`), workspace `workspace_create_file`, dan `document_extract` hanya memakai Private `File` terikat conversation milik session user (H5 fase 1); `has_permission` tidak diandalkan sendirian karena `Administrator` bypass |
 | Agen **tidak punya akses jaringan bebas**; hanya plugin terdaftar, dengan guard anti-SSRF | `web_fetch` memvalidasi dan mem-pin koneksi ke IP publik, memeriksa ulang setiap redirect, dan membatasi ukuran/waktu/jenis konten. Client MCP memvalidasi endpoint serta DNS sebelum panggilan SDK, tetapi SDK melakukan resolusi koneksinya sendiri; pinning koneksi MCP belum terbukti |
 | Agen **tidak bisa memalsukan identitas/company** — `user_id`, `allowed_company` disembunyikan dari LLM dan diisi dari sesi | **Ditegakkan** (`_HIDDEN_TOOL_PARAMS` + `execute_tool`) |
 | Agen **tidak menjalankan SQL sama sekali** — tidak ada akses ke database eksternal | **Ditegakkan** — adapter DB eksternal dihapus (`#13`) |
@@ -108,9 +108,9 @@ Kontrak trace: `trace_delegate_start` memuat `from`, `to`, `instruction`; `trace
 
 ### 3.2. Approval Card dan Artefak File
 
-Event `artifact_created` untuk Approval Card adalah kartu virtual backend H4, berisi `artifact.type = "APPROVAL_CARD"` dan `draft_id`; kartu mengambil nilai sebelum/sesudah dari `get_draft`. Event ini tidak membuat file. Artefak file yang dibuat agen disimpan sebagai **Private File (`is_private=1`)** Frappe, terikat ke `AIOS Conversation` milik `frappe.session.user`; builder dan file/workspace adalah H5. Bentuk tampilan UI diatur di `docs/08` §5 dan masuk #12.
+Event `artifact_created` untuk Approval Card adalah kartu virtual backend H4, berisi `artifact.type = "APPROVAL_CARD"` dan `draft_id`; kartu mengambil nilai sebelum/sesudah dari `get_draft`. Event ini tidak membuat file. **Artefak file diimplementasikan pada H5 fase 1 (`b07975f`):** plugin `workspace-artifact-builder` membuat Private File (`is_private=1`) terikat ke `AIOS Conversation` milik `frappe.session.user` melalui `aios_v1/lib/workspace.py` (sanitasi nama, cek kepemilikan `conversation.user == session user`, verifikasi pasca-insert, tanpa commit di helper); `document_extract` kini hanya membaca File privat milik user yang terikat ke conversation aktif. Bentuk tampilan UI diatur di `docs/08` §5 dan masuk #12.
 
-Jenis artefak yang direncanakan: Approval Card (kontrak approval Alur 5; implementasi belum di H4 fase 1), tabel & grafik data, dokumen eksekutif + diagram Mermaid, spreadsheet `.xlsx`/`.csv`, dan presentasi HTML terisolasi. File privat dan builder artefak dikerjakan H5.
+Jenis artefak yang direncanakan: Approval Card (kontrak approval Alur 5; event backend H4 fase 2), tabel & grafik data, dokumen eksekutif + diagram Mermaid, spreadsheet `.xlsx`/`.csv`, dan presentasi HTML terisolasi. File privat dan builder file selesai di backend H5 fase 1; grafik interaktif, Mermaid, dan iframe menyusul.
 
 ### 3.3. Transport SSE & Event Dasar
 
@@ -125,14 +125,14 @@ Semua event dikirim sebagai satu baris `data: <json>\n\n` pada response
 | `delta` | `{"type": "delta", "text": <str>}` | setiap potongan teks jawaban |
 | `done` | `{"type": "done", "conversationId": <int>, "delegatedTo": <str>, "dataUsed": <list>, "limitation": <str>, "tokens": <int>}` | sekali, di akhir stream yang selesai normal |
 
-**Event yang sudah ditetapkan tetapi belum diimplementasikan:**
+**Event yang sudah ditetapkan; semua event di bawah telah diimplementasikan di backend:**
 
-| Event | Payload | Tahap |
+| Event | Payload | Kapan dikirim |
 |---|---|---|
 | `trace_delegate_start`, `trace_subagent_prompt`, `trace_subagent_tool`, `trace_subagent_result` | lihat §3.1 | H4 fase 1 |
 | `trace_cross_branch` | lihat §3.1 | H4 fase 2 |
 | `artifact_created` Approval Card | `{"type": "artifact_created", "artifact": {"type": "APPROVAL_CARD", "draft_id": ..., "action_type": ..., "doctype": ..., "branch": ...}}` | H4 fase 2; event backend, UI #12 |
-| `artifact_created` file/workspace | `{"type": "artifact_created", "artifact": {...}}` | H5; file privat dan workspace |
+| `artifact_created` file/workspace | `{"type": "artifact_created", "artifact": {"type": "FILE", "file_name": ..., "file_url": ..., "format": ..., "size": ..., "conversation_id": ...}}` — whitelist tanpa `file_id`, tanpa path filesystem, tanpa isi file | **H5 fase 1** (`b07975f`); dikirim manager maupun sub-agent setelah `workspace_create_file` sukses; UI #12 |
 
 **Diputuskan 2026-10-23: event tool call tingkat Orchestrator tidak dikirim di `#8`.**
 Loop `tool_calls` di Orchestrator (bukan Sub-Agent) hanya menampilkan hasil akhir lewat
