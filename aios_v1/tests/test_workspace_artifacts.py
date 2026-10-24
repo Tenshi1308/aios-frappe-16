@@ -105,7 +105,7 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
         marker = uuid.uuid4().hex[:8]
         cases = (
             ("csv", [["name", "amount"], [f"INV-{marker}", 125]], None),
-            ("xlsx", [["name", "amount"], [f"INV-{marker}", 125]], None),
+            ("xlsx", [["name", "amount", "flag"], [f"INV-{marker}", 125, True]], None),
             ("md", None, f"# Laporan {marker}\nIsi ringkas."),
         )
         for file_format, rows, content in cases:
@@ -125,6 +125,14 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
                 self.assertEqual(bound.owner, self.USER)
                 self.assertEqual(bound.attached_to_doctype, "AIOS Conversation")
                 self.assertEqual(str(bound.attached_to_name), str(self.conversation.name))
+                if file_format == "xlsx":
+                    from openpyxl import load_workbook
+
+                    xlsx_bytes = frappe.get_doc("File", file_id).get_content()
+                    workbook = load_workbook(io.BytesIO(xlsx_bytes))
+                    self.assertEqual(workbook["Data"]["B2"].value, 125)
+                    self.assertIsInstance(workbook["Data"]["B2"].value, int)
+                    self.assertIs(workbook["Data"]["C2"].value, True)
 
         pdf_bytes = _blank_pdf()
         with patch("frappe.utils.pdf.get_pdf", return_value=pdf_bytes) as render:
@@ -190,7 +198,9 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
     def test_formula_cells_are_prefixed_for_csv_and_xlsx(self):
         marker = uuid.uuid4().hex[:6]
         result = self._create(
-            f"formula {marker}.csv", "csv", rows=[["header"], ["=1+1"], ["+SUM(A1)"], ["-2+3"], ["@cmd"]]
+            f"formula {marker}.csv",
+            "csv",
+            rows=[["header"], ["=1+1"], ["+SUM(A1)"], ["-2+3"], ["@cmd"]],
         )
         self.assertEqual(result.get("status"), "created")
         file_id = self._find_file_id(result["file_name"])
@@ -203,14 +213,22 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
         self.assertIn("'-2+3", text)
         self.assertIn("'@cmd", text)
         self.assertNotIn("\n=1+1", text)
+        self.assertNotIn("\n-2+3", text)
 
         from openpyxl import load_workbook
 
-        result = self._create(f"formula {marker}.xlsx", "xlsx", rows=[["header"], ["=1+1"]])
+        result = self._create(
+            f"formula {marker}.xlsx",
+            "xlsx",
+            rows=[["header"], ["=1+1"], ["-2+3"], [-2]],
+        )
         self.assertEqual(result.get("status"), "created")
         xlsx_id = self._find_file_id(result["file_name"])
         workbook = load_workbook(io.BytesIO(frappe.get_doc("File", xlsx_id).get_content()))
         self.assertEqual(workbook["Data"]["A2"].value, "'=1+1")
+        self.assertEqual(workbook["Data"]["A3"].value, "'-2+3")
+        self.assertEqual(workbook["Data"]["A4"].value, -2)
+        self.assertIsInstance(workbook["Data"]["A4"].value, int)
 
     def test_pdf_content_is_html_escaped(self):
         captured = {}

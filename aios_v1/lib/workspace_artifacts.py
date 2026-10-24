@@ -24,15 +24,17 @@ MAX_CELL_LENGTH = 32767
 FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 
-def _sanitize_cell(value) -> str:
-    """Normalkan sel menjadi string aman spreadsheet (anti formula injection)."""
+def _sanitize_cell(value, *, preserve_types: bool = False):
+    """Normalkan sel; XLSX (preserve_types) menyimpan angka/boolean sebagai tipe asli."""
     if value is None:
-        return ""
+        return None if preserve_types else ""
     if isinstance(value, bool):
-        return "TRUE" if value else "FALSE"
-    if not isinstance(value, (str, int, float)):
+        return value if preserve_types else ("TRUE" if value else "FALSE")
+    if isinstance(value, (int, float)):
+        return value if preserve_types else str(value)
+    if not isinstance(value, str):
         raise WorkspaceError(400, "INVALID_ROWS", "Sel tabel harus string, angka, boolean, atau kosong.")
-    text = str(value)
+    text = value
     if text.startswith(FORMULA_PREFIXES):
         text = "'" + text
     if len(text) > MAX_CELL_LENGTH:
@@ -40,7 +42,7 @@ def _sanitize_cell(value) -> str:
     return text
 
 
-def _validate_rows(rows) -> list:
+def _validate_rows(rows, *, preserve_types: bool = False):
     if not isinstance(rows, list) or not rows:
         raise WorkspaceError(400, "ROWS_REQUIRED", "rows wajib diisi untuk format csv/xlsx.")
     if len(rows) > MAX_WORKSPACE_ROWS:
@@ -49,7 +51,7 @@ def _validate_rows(rows) -> list:
     for row in rows:
         if not isinstance(row, list):
             raise WorkspaceError(400, "INVALID_ROWS", "Setiap baris harus berupa array.")
-        validated.append([_sanitize_cell(cell) for cell in row])
+        validated.append([_sanitize_cell(cell, preserve_types=preserve_types) for cell in row])
     return validated
 
 
@@ -140,7 +142,7 @@ def workspace_create_file(file_name, format, rows=None, content=None):
             raise WorkspaceError(400, "FORMAT_MISMATCH", "Ekstensi file_name tidak cocok dengan format.")
 
         if format in ("csv", "xlsx"):
-            validated_rows = _validate_rows(rows)
+            validated_rows = _validate_rows(rows, preserve_types=(format == "xlsx"))
             payload = _build_csv(validated_rows) if format == "csv" else _build_xlsx(validated_rows)
         else:
             if not isinstance(content, str) or not content.strip():

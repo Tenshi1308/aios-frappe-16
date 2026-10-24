@@ -145,7 +145,7 @@ def _ensure_tools_loaded():
     import aios_v1.lib.erpnext_financial_reports  # noqa: F401
     import aios_v1.lib.quant_calculator  # noqa: F401
     import aios_v1.lib.document_intelligence  # noqa: F401
-    import aios_v1.lib.workspace_artifacts  # noqa: F401
+    import aios_v1.lib.workspace_artifacts
     import aios_v1.lib.web_market_research
     import aios_v1.lib.mcp_client
 
