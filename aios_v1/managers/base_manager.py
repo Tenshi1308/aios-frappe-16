@@ -11,7 +11,7 @@ from aios_v1.lib.tool_registry import (
     get_tools_schema_for_worker,
 )
 from aios_v1.lib.workspace import build_attachment_context
-from aios_v1.plugin_manager.registry import get_worker, is_branch_enabled
+from aios_v1.plugin_manager.registry import get_branch, get_worker, is_branch_enabled
 from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
@@ -28,6 +28,7 @@ from aios_v1.shared.trace_events import (
 MAX_TOOL_ROUNDS = 6
 TOOL_CONTEXT_ERROR_MESSAGE = "Konteks sesi untuk menjalankan tool tidak valid. Silakan mulai percakapan kembali."
 MAX_TOOL_ROUNDS_MESSAGE = "Batas langkah penggunaan tool tercapai. Silakan persempit permintaan dan coba lagi."
+TRUNCATION_NOTICE = "_[Jawaban terpotong karena batas output model.]_"
 
 
 def _workspace_artifact_event(tool_name, result_json):
@@ -370,16 +371,20 @@ class BaseManager:
         accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         usage_records = []
         failed = False
+        last_finish_reason = ""
         tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager")
 
         def stream_llm_turn():
-            nonlocal full_reply, failed
+            nonlocal full_reply, failed, last_finish_reason
             turn_usage = {}
             turn_tool_calls = []
             for delta in chat_stream(llm_messages, usage=turn_usage, tools=tool_schemas, tool_calls=turn_tool_calls):
                 full_reply += delta
                 yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
             failed = failed or bool(turn_usage.get("failed"))
+            # Reset per turn: `length` pada turn tool-call tidak boleh membocor
+            # ke penilaian turn jawaban akhir.
+            last_finish_reason = turn_usage.get("finish_reason") or ""
             for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
                 if turn_usage.get(key) is not None:
                     accumulated_usage[key] += int(turn_usage[key] or 0)
@@ -419,16 +424,33 @@ class BaseManager:
                         elif not is_branch_enabled(target_branch):
                             result = json.dumps(safe_error("Cabang ini belum tersedia.", "BRANCH_DISABLED"))
                         else:
-                            target_def = get_worker(target_branch, target_worker) or {}
-                            yield "data: " + json.dumps(trace_delegate_start(
-                                target_branch, target_def.get("jobRole", target_worker), instruction[:500])) + "\n\n"
-                            result_holder = []
-                            runner = self._run_subagent(
-                                target_worker, instruction, args.get("context_data") or {}, user,
-                                usage_records, result_holder, conversation_id=conversation_id)
-                            for trace_event in runner:
-                                yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
-                            result = result_holder[0]
+                            target_def = get_worker(target_branch, target_worker)
+                            if not target_def:
+                                # Worker tidak dikenal: kembalikan daftar worker valid agar
+                                # model bisa mengoreksi key, tanpa menjalankan runner yang
+                                # pasti gagal sebagai SUBAGENT_UNAVAILABLE.
+                                valid_workers = ", ".join(
+                                    worker["key"] for worker in self.branch.get("workers", [])
+                                )
+                                log_exception(
+                                    "AIOS Delegation Unknown Worker",
+                                    context=f"branch={target_branch}; worker={target_worker}",
+                                )
+                                result = json.dumps(safe_error(
+                                    f"Sub-agent '{target_worker}' tidak dikenal di cabang ini. "
+                                    f"Worker yang tersedia: {valid_workers}.",
+                                    "DELEGATION_INVALID",
+                                ))
+                            else:
+                                yield "data: " + json.dumps(trace_delegate_start(
+                                    target_branch, target_def["jobRole"], instruction[:500])) + "\n\n"
+                                result_holder = []
+                                runner = self._run_subagent(
+                                    target_def["key"], instruction, args.get("context_data") or {}, user,
+                                    usage_records, result_holder, conversation_id=conversation_id)
+                                for trace_event in runner:
+                                    yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
+                                result = result_holder[0]
                     else:
                         result = execute_tool(
                             tool_name,
@@ -499,6 +521,16 @@ class BaseManager:
                 full_reply += MAX_TOOL_ROUNDS_MESSAGE
                 yield f"data: {json.dumps({'type': 'delta', 'text': MAX_TOOL_ROUNDS_MESSAGE})}\n\n"
                 break
+
+        # Penanda jujur bila jawaban akhir berhenti karena batas output model,
+        # bukan karena model selesai (finish_reason == "length" pada turn terakhir).
+        if last_finish_reason == "length":
+            full_reply += TRUNCATION_NOTICE
+            yield f"data: {json.dumps({'type': 'delta', 'text': TRUNCATION_NOTICE})}\n\n"
+            frappe.log_error(
+                "AIOS LLM Output Truncated",
+                message=f"finish_reason=length pada jawaban akhir; conversation={conversation_id}",
+            )
 
         # Pastikan full_reply tidak kosong agar tidak melanggar mandatory constraint Frappe
         if not full_reply or not full_reply.strip():

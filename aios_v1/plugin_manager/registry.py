@@ -1026,4 +1026,15 @@ def get_worker(branch_key: str, worker_key: str):
     for w in b.get("workers", []):
         if w["key"] == worker_key:
             return w
+    # Key dari LLM tidak selalu canonical (schema delegasi dulu mencontohkan
+    # 'financial_analyst'); varian snake/space/case dipetakan balik ke key hyphen.
+    # Pemetaan ini tidak melebarkan izin: hasil tetap worker canonical.
+    if not isinstance(worker_key, str) or not worker_key.strip():
+        return None
+    from aios_v1.lib.skills_loader import _normalize_role_variants
+
+    variants = _normalize_role_variants(worker_key)
+    for w in b.get("workers", []):
+        if w["key"] in variants:
+            return w
     return None

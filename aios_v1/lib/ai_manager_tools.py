@@ -36,7 +36,7 @@ def _user_id_from_context() -> str:
         },
         "worker_key": {
             "type": "string",
-            "description": "Kunci identitas sub-agent (misal: 'treasurer', 'financial_analyst', 'recruiter')"
+            "description": "Kunci identitas sub-agent (misal: 'treasurer', 'financial-analyst', 'recruiter')"
         },
         "task_instruction": {
             "type": "string",

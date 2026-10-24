@@ -7,7 +7,7 @@ import frappe
 from frappe.model.document import Document
 
 from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
-from aios_v1.lib.tool_registry import execute_tool, get_tools_schema_for_worker
+from aios_v1.lib.tool_registry import _resolve_allowed_company, execute_tool, get_tools_schema_for_worker
 from aios_v1.permissions import ERP_CLIENT_DOCTYPES
 
 try:
@@ -118,7 +118,14 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         with patch("frappe.desk.query_report.run", return_value={"result": []}) as run_report:
             result = self._execute(
                 "erpnext_report_run",
-                {"report_name": "General Ledger", "filters": {"company": "_Test Forged Company"}},
+                {
+                    "report_name": "General Ledger",
+                    "filters": {
+                        "company": "_Test Forged Company",
+                        "from_date": "2026-01-01",
+                        "to_date": "2026-12-31",
+                    },
+                },
             )
         self.assertEqual(result, {"result": []})
         self.assertEqual(run_report.call_args.kwargs["filters"]["company"], self.COMPANY)
@@ -210,3 +217,109 @@ class TestERPNextFinanceTools(IntegrationTestCase):
             "company_context_persona",
             {field.get("fieldname") for field in form_metadata[0].get("fields", [])},
         )
+
+
+class TestReportFilterGuide(IntegrationTestCase):
+    """Regresi bug 2026-10-24: report keuangan dijalankan tanpa filter wajib
+    sehingga error mentah ERPNext (fiscal_year/periodicity) sampai ke LLM sebagai
+    TOOL_FAILED generik; validasi filter harus menghasilkan safe error yang jelas."""
+
+    def setUp(self):
+        super().setUp()
+        self.original_commit = frappe.db.commit
+        frappe.db.commit = lambda *args, **kwargs: None
+        if not frappe.db.exists("User", TestERPNextFinanceTools.USER):
+            frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": TestERPNextFinanceTools.USER,
+                    "first_name": "_Test Finance Tools",
+                    "enabled": 1,
+                    "send_welcome_email": 0,
+                    "user_type": "Website User",
+                    "aios_status": "Active",
+                    "roles": [{"role": "AIOS Client"}],
+                }
+            ).insert(ignore_permissions=True)
+
+    def tearDown(self):
+        frappe.db.commit = self.original_commit
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def _execute_client(self, arguments):
+        frappe.set_user(TestERPNextFinanceTools.USER)
+        context = {
+            "user": TestERPNextFinanceTools.USER,
+            "allowed_company": TestERPNextFinanceTools.COMPANY,
+            "branch": "finance",
+            "worker_key": "manager",
+        }
+        return json.loads(execute_tool("erpnext_report_run", json.dumps(arguments), context=context))
+
+    def _execute_admin(self, arguments):
+        frappe.set_user("Administrator")
+        context = {
+            "user": "Administrator",
+            "allowed_company": _resolve_allowed_company(),
+            "branch": "finance",
+            "worker_key": "manager",
+        }
+        return json.loads(execute_tool("erpnext_report_run", json.dumps(arguments), context=context))
+
+    def test_trial_balance_without_fiscal_year_returns_safe_filter_error(self):
+        result = self._execute_client({"report_name": "Trial Balance"})
+        self.assertEqual(result["code"], "REPORT_FILTER_REQUIRED")
+        self.assertIn("fiscal_year", result["error"])
+
+    def test_profit_and_loss_without_period_returns_safe_filter_error(self):
+        result = self._execute_client({"report_name": "Profit and Loss Statement"})
+        self.assertEqual(result["code"], "REPORT_FILTER_REQUIRED")
+        self.assertIn("periodicity", result["error"])
+        self.assertIn("from_fiscal_year", result["error"])
+
+    def test_general_ledger_without_dates_returns_safe_filter_error(self):
+        result = self._execute_client({"report_name": "General Ledger"})
+        self.assertEqual(result["code"], "REPORT_FILTER_REQUIRED")
+        self.assertIn("from_date", result["error"])
+
+    def test_ar_ap_have_no_mandatory_filter_keys(self):
+        from aios_v1.lib.erpnext_financial_reports import _missing_report_filters
+
+        self.assertEqual(_missing_report_filters("Accounts Receivable", {}), [])
+        self.assertEqual(_missing_report_filters("Accounts Payable", {}), [])
+
+    def test_trial_balance_runs_real_as_administrator(self):
+        fiscal_years = frappe.get_all(
+            "Fiscal Year", order_by="year_start_date desc", limit_page_length=1, pluck="name"
+        )
+        if not fiscal_years:
+            self.skipTest("Site tanpa Fiscal Year")
+        result = self._execute_admin(
+            {"report_name": "Trial Balance", "filters": {"fiscal_year": fiscal_years[0]}}
+        )
+        self.assertIsNone(result.get("success"))
+        self.assertIn("columns", result)
+        self.assertIsInstance(result.get("result"), list)
+
+    def test_accounts_receivable_runs_real_as_administrator_with_default_report_date(self):
+        result = self._execute_admin({"report_name": "Accounts Receivable"})
+        self.assertIsNone(result.get("success"))
+        self.assertIn("result", result)
+
+    def test_client_filter_error_is_distinguishable_from_permission_error(self):
+        # Tanpa fiscal_year: validasi filter menolak sebelum permission.
+        missing = self._execute_client({"report_name": "Trial Balance"})
+        self.assertEqual(missing["code"], "REPORT_FILTER_REQUIRED")
+        # Dengan fiscal_year: ditolak di Report.is_permitted (role AIOS Client belum
+        # diizinkan pada dokumen Report; keputusan Custom Role union masih menunggu
+        # owner). Assertion ini membedakan error filter dari error permission; bila
+        # keputusan Custom Role sudah dijalankan, ubah assertion ini menjadi sukses.
+        fiscal_year = frappe.get_all(
+            "Fiscal Year", order_by="year_start_date desc", limit_page_length=1, pluck="name"
+        ) or ["2026"]
+        granted = self._execute_client(
+            {"report_name": "Trial Balance", "filters": {"fiscal_year": fiscal_year[0]}}
+        )
+        self.assertEqual(granted["code"], "TOOL_FAILED")
+        self.assertEqual(granted["error"], "Tool gagal dijalankan.")

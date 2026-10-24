@@ -4,6 +4,7 @@ Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
 import json
+from copy import deepcopy
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +13,8 @@ import frappe
 import aios_v1.lib.ai_manager_tools  # noqa: F401 - mendaftarkan tools ke registry
 from aios_v1.lib.tool_registry import _TOOL_REGISTRY, execute_tool, get_all_tools_schema, get_tools_schema_for_worker
 from aios_v1.lib.draft_manager import create_draft
+from aios_v1.managers.base_manager import BaseManager
+from aios_v1.plugin_manager.registry import get_branch, get_worker
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -186,3 +189,105 @@ class TestAIManagerTools(IntegrationTestCase):
             Path(__file__).resolve().parents[1] / "lib" / "ai_manager_tools.py"
         ).read_text(encoding="utf-8")
         self.assertNotIn("tenant_id", source)
+
+
+class TestDelegationWorkerKey(IntegrationTestCase):
+    """Regresi bug 2026-10-24: delegasi kirim 'financial_analyst' (underscore),
+    registry pakai 'financial-analyst' (hyphen) -> SUBAGENT_UNAVAILABLE."""
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.manager = BaseManager(get_branch("finance"))
+        self.doc = MagicMock()
+
+    def tearDown(self):
+        frappe.db.commit = self._orig_commit
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def test_registry_normalizes_worker_key_variants(self):
+        self.assertEqual(get_worker("finance", "financial_analyst")["key"], "financial-analyst")
+        self.assertEqual(get_worker("finance", "Financial Analyst")["key"], "financial-analyst")
+        self.assertEqual(get_worker("finance", "financial-analyst")["key"], "financial-analyst")
+        self.assertIsNone(get_worker("finance", "tidak-ada"))
+        self.assertIsNone(get_worker("finance", None))
+
+    def test_delegation_schema_does_not_suggest_underscore_example(self):
+        parameters = _TOOL_REGISTRY["orchestrator_delegate_to_subagent"]["parameters"]
+        description = parameters["worker_key"]["description"]
+        self.assertNotIn("financial_analyst", description)
+        self.assertIn("financial-analyst", description)
+
+    def _handle_stream_with_delegation(self, worker_key):
+        snapshots = []
+        turns = []
+
+        def chat(messages, usage=None, tools=None, tool_calls=None):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            snapshots.append(deepcopy(messages))
+            turns.append(1)
+            if len(turns) == 1:
+                tool_calls.append({
+                    "id": "call_del_1",
+                    "type": "function",
+                    "function": {
+                        "name": "orchestrator_delegate_to_subagent",
+                        "arguments": json.dumps({
+                            "branch": "finance",
+                            "worker_key": worker_key,
+                            "task_instruction": "_Test instruksi delegasi",
+                            "context_data": {},
+                        }),
+                    },
+                })
+                return iter(())
+            return iter(["jawaban setelah delegasi"])
+
+        def fake_runner(worker_key_arg, instruction, context_data, user, usage_records,
+                        result_holder, conversation_id=None):
+            result_holder.append(json.dumps({"status": "success", "summary": "hasil worker"}))
+            yield {"type": "trace_subagent_result", "agent": worker_key_arg}
+
+        with (
+            patch.object(self.manager, "ensure_conversation", return_value=7),
+            patch.object(self.manager, "get_worker_def", return_value=None),
+            patch.object(self.manager, "build_system_prompt", return_value="_Test prompt"),
+            patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", return_value=[]),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=chat),
+            patch("aios_v1.managers.base_manager.frappe.new_doc", return_value=self.doc),
+            patch("aios_v1.managers.base_manager.frappe.get_list", return_value=[]),
+            patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+            patch("aios_v1.managers.base_manager.log_exception") as log_exception,
+            patch.object(self.manager, "_run_subagent", side_effect=fake_runner) as run_subagent,
+        ):
+            events = list(self.manager.handle_stream(
+                "_Test permintaan delegasi", conversation_id=7, user="_test@example.com"))
+        return events, run_subagent, log_exception, snapshots
+
+    def test_handle_stream_delegation_with_underscore_key_uses_canonical_worker(self):
+        events, run_subagent, log_exception, _snapshots = self._handle_stream_with_delegation(
+            "financial_analyst")
+        self.assertEqual(run_subagent.call_args.args[0], "financial-analyst")
+        trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        delegate = [event for event in trace if event["type"] == "trace_delegate_start"]
+        self.assertEqual(len(delegate), 1)
+        self.assertEqual(delegate[0]["to"], "Financial Analyst")
+        self.assertNotIn("SUBAGENT_UNAVAILABLE", "".join(events))
+        log_exception.assert_not_called()
+
+    def test_handle_stream_delegation_with_unknown_key_returns_safe_error_without_runner(self):
+        events, run_subagent, log_exception, snapshots = self._handle_stream_with_delegation(
+            "tidak-ada")
+        run_subagent.assert_not_called()
+        tool_messages = [message for message in snapshots[-1] if message.get("role") == "tool"]
+        self.assertEqual(len(tool_messages), 1)
+        payload = json.loads(tool_messages[0]["content"])
+        self.assertFalse(payload["success"])
+        self.assertEqual(payload["code"], "DELEGATION_INVALID")
+        self.assertIn("tidak-ada", payload["error"])
+        self.assertIn("financial-analyst", payload["error"])
+        self.assertNotIn("trace_delegate_start", "".join(events))
+        self.assertTrue(any("jawaban setelah delegasi" in event for event in events))
+        log_exception.assert_called_once()

@@ -55,6 +55,7 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
 
     for attempt in range(1, max_attempts + 1):
         collected_calls = {}
+        finish_reason = ""
         try:
             res = requests.post(url, headers=headers, json=payload, stream=True, timeout=req_timeout)
             if not res.ok:
@@ -81,6 +82,8 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
                 choices = chunk.get("choices") or []
                 if not choices:
                     continue
+                if choices[0].get("finish_reason"):
+                    finish_reason = choices[0]["finish_reason"]
                 delta_obj = choices[0].get("delta") or {}
                 delta = delta_obj.get("content", "")
                 if delta:
@@ -99,6 +102,8 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
                     if function.get("arguments"):
                         call["function"]["arguments"] += function["arguments"]
 
+            if finish_reason and usage is not None:
+                usage["finish_reason"] = finish_reason
             if tool_calls is not None:
                 tool_calls.extend(collected_calls[index] for index in sorted(collected_calls))
 

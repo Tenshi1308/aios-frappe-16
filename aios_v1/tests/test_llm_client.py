@@ -112,6 +112,91 @@ class TestLLMClient(unittest.TestCase):
 
     @patch('aios_v1.lib.llm_client.requests.post')
     @patch('aios_v1.lib.llm_client.get_llm_config')
+    def test_chat_stream_captures_finish_reason_length(self, mock_get_config, mock_post):
+        mock_get_config.return_value = {
+            "base_url": "http://mock-api.com",
+            "api_key": "mock_key",
+            "model": "mock-model",
+            "temperature": 0.5,
+            "timeout": 10
+        }
+
+        mock_response = MagicMock()
+        mock_response.ok = True
+
+        def iter_lines(decode_unicode=True):
+            yield 'data: {"choices": [{"delta": {"content": "jawaban terpotong"}}]}'
+            yield 'data: {"choices": [{"delta": {}, "finish_reason": "length"}]}'
+            yield 'data: [DONE]'
+
+        mock_response.iter_lines = iter_lines
+        mock_post.return_value = mock_response
+
+        usage = {}
+        result = "".join(list(chat_stream([{"role": "user", "content": "Tes"}], usage=usage)))
+
+        self.assertEqual(result, "jawaban terpotong")
+        self.assertEqual(usage["finish_reason"], "length")
+
+    @patch('aios_v1.lib.llm_client.requests.post')
+    @patch('aios_v1.lib.llm_client.get_llm_config')
+    def test_chat_stream_captures_finish_reason_stop(self, mock_get_config, mock_post):
+        mock_get_config.return_value = {
+            "base_url": "http://mock-api.com",
+            "api_key": "mock_key",
+            "model": "mock-model",
+            "temperature": 0.5,
+            "timeout": 10
+        }
+
+        mock_response = MagicMock()
+        mock_response.ok = True
+
+        def iter_lines(decode_unicode=True):
+            yield 'data: {"choices": [{"delta": {"content": "jawaban lengkap"}}]}'
+            yield 'data: {"choices": [{"delta": {}, "finish_reason": "stop"}]}'
+            yield 'data: [DONE]'
+
+        mock_response.iter_lines = iter_lines
+        mock_post.return_value = mock_response
+
+        usage = {}
+        result = "".join(list(chat_stream([{"role": "user", "content": "Tes"}], usage=usage)))
+
+        self.assertEqual(result, "jawaban lengkap")
+        self.assertEqual(usage["finish_reason"], "stop")
+
+    @patch('aios_v1.lib.llm_client.requests.post')
+    @patch('aios_v1.lib.llm_client.get_llm_config')
+    def test_chat_stream_without_finish_reason_keeps_usage_shape(self, mock_get_config, mock_post):
+        mock_get_config.return_value = {
+            "base_url": "http://mock-api.com",
+            "api_key": "mock_key",
+            "model": "mock-model",
+            "temperature": 0.5,
+            "timeout": 10
+        }
+
+        mock_response = MagicMock()
+        mock_response.ok = True
+
+        def iter_lines(decode_unicode=True):
+            yield 'data: {"choices": [{"delta": {"content": "Halo"}}]}'
+            yield 'data: {"choices": [], "usage": {"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10}}'
+            yield 'data: [DONE]'
+
+        mock_response.iter_lines = iter_lines
+        mock_post.return_value = mock_response
+
+        usage = {}
+        result = "".join(list(chat_stream([{"role": "user", "content": "Tes"}], usage=usage)))
+
+        self.assertEqual(result, "Halo")
+        self.assertEqual(usage["prompt_tokens"], 7)
+        self.assertNotIn("finish_reason", usage)
+
+    @patch('aios_v1.lib.llm_client.requests.post')
+    @patch('aios_v1.lib.llm_client.get_llm_config')
     @patch('aios_v1.lib.llm_client.frappe.log_error')
     def test_chat_stream_failure(self, mock_log_error, mock_get_config, mock_post):
         mock_get_config.return_value = {

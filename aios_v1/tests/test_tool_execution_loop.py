@@ -313,3 +313,97 @@ class TestToolExecutionLoop(IntegrationTestCase):
             ):
                 list(self.manager.handle_stream("hai", conversation_id=None, user="_test@example.com"))
         ensure.assert_called_once_with("_test@example.com")
+
+
+class TestTruncationMarker(IntegrationTestCase):
+    """Regresi bug 2026-10-24: jawaban manager terpotong mid-word (finish_reason
+    length) tanpa penanda jujur; marker hanya mengikuti turn jawaban terakhir."""
+
+    def setUp(self):
+        super().setUp()
+        self.original_commit = frappe.db.commit
+        frappe.db.commit = lambda *args, **kwargs: None
+        self.manager = BaseManager({"key": "finance", "name": "Finance"})
+        self.doc = MagicMock()
+        self.llm_message_snapshots = []
+
+    def tearDown(self):
+        frappe.db.commit = self.original_commit
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def _run_with_truncation(self, chat_side_effect):
+        self.llm_message_snapshots = []
+
+        def chat(messages, usage=None, tools=None, tool_calls=None):
+            self.llm_message_snapshots.append(deepcopy(messages))
+            return chat_side_effect(len(self.llm_message_snapshots), usage, tool_calls)
+
+        with (
+            patch.object(self.manager, "ensure_conversation", return_value=7),
+            patch.object(self.manager, "get_worker_def", return_value=None),
+            patch.object(self.manager, "build_system_prompt", return_value="_Test prompt"),
+            patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", return_value=[]),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=chat),
+            patch("aios_v1.managers.base_manager.frappe.new_doc", return_value=self.doc),
+            patch("aios_v1.managers.base_manager.frappe.get_list", return_value=[]),
+            patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+            patch("aios_v1.managers.base_manager.execute_tool", return_value='{"ok": true}'),
+            patch("aios_v1.managers.base_manager.frappe.log_error") as log_error,
+        ):
+            events = list(self.manager.handle_stream("_Test request", conversation_id=7, user="_test@example.com"))
+        return events, log_error
+
+    def test_truncated_final_answer_gets_honest_marker(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append({
+                    "id": "call_0", "type": "function",
+                    "function": {"name": "erpnext_doc_list", "arguments": '{"doctype":"Sales Order"}'},
+                })
+                usage["finish_reason"] = "length"
+                return iter(())
+            usage["finish_reason"] = "length"
+            return iter(["jawaban panjang yang terpotong"])
+
+        events, log_error = self._run_with_truncation(scripted)
+        self.assertTrue(any("Jawaban terpotong karena batas output model" in event for event in events))
+        log_error.assert_called_once()
+        title = str(log_error.call_args.args[0])
+        self.assertEqual(title, "AIOS LLM Output Truncated")
+
+    def test_final_turn_with_stop_has_no_marker(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append({
+                    "id": "call_0", "type": "function",
+                    "function": {"name": "erpnext_doc_list", "arguments": '{"doctype":"Sales Order"}'},
+                })
+                usage["finish_reason"] = "length"
+                return iter(())
+            usage["finish_reason"] = "stop"
+            return iter(["jawaban lengkap"])
+
+        events, log_error = self._run_with_truncation(scripted)
+        self.assertTrue(any("jawaban lengkap" in event for event in events))
+        self.assertNotIn("Jawaban terpotong", "".join(events))
+        log_error.assert_not_called()
+
+    def test_final_turn_without_finish_reason_clears_earlier_length(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append({
+                    "id": "call_0", "type": "function",
+                    "function": {"name": "erpnext_doc_list", "arguments": '{"doctype":"Sales Order"}'},
+                })
+                usage["finish_reason"] = "length"
+                return iter(())
+            return iter(["jawaban final tanpa finish_reason"])
+
+        events, log_error = self._run_with_truncation(scripted)
+        self.assertTrue(any("jawaban final tanpa finish_reason" in event for event in events))
+        self.assertNotIn("Jawaban terpotong", "".join(events))
+        log_error.assert_not_called()
