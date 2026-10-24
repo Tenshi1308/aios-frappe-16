@@ -56,20 +56,24 @@ class BaseManager:
     def manager_persona(self) -> str:
         return self.branch.get("manager_persona") or f"Anda adalah AI Manager bidang {self.branch['name']} di AIOS — manajer yang mengoordinasikan seluruh spesialis/worker di bidang ini."
 
-    def ensure_conversation(self, user: str) -> int:
-        existing = frappe.get_list(
-            "AIOS Conversation",
-            filters={"user": user, "branch": self.branch["key"]},
-            order_by="modified desc",
-            limit=1
-        )
-        if existing:
-            return int(existing[0].name)
+    def ensure_conversation(self, user: str, force_new: bool = False) -> int:
+        if not force_new:
+            existing = frappe.get_list(
+                "AIOS Conversation",
+                filters={"user": user, "branch": self.branch["key"]},
+                order_by="modified desc",
+                limit=1
+            )
+            if existing:
+                return int(existing[0].name)
 
         doc = frappe.new_doc("AIOS Conversation")
         doc.user = user
         doc.branch = self.branch["key"]
-        doc.title = f"Sesi {self.branch['name']}"
+        if force_new:
+            doc.title = f"Sesi {self.branch['name']} — {frappe.utils.now_datetime().strftime('%d %b %H:%M')}"
+        else:
+            doc.title = f"Sesi {self.branch['name']}"
         doc.insert(ignore_permissions=True)
         frappe.db.commit()
         return int(doc.name)
@@ -276,12 +280,16 @@ class BaseManager:
             result_holder.append(result)
 
     def handle_stream(self, user_message: str, worker_key: str = None, conversation_id: int = None,
-                      user: str = None, attachments: list | None = None):
+                      user: str = None, attachments: list | None = None, new_conversation: bool = False):
         user = user or frappe.session.user
         # 0. Flush initial buffer untuk bypass proxy/nginx buffering
         yield f": {' ' * 1024}\n\n"
 
-        if not conversation_id:
+        if new_conversation:
+            # Flag menang atas conversation_id: sesi baru tidak boleh bercampur
+            # dengan percakapan lama.
+            conversation_id = self.ensure_conversation(user, force_new=True)
+        elif not conversation_id:
             conversation_id = self.ensure_conversation(user)
 
         # 1. Kirim Meta Event

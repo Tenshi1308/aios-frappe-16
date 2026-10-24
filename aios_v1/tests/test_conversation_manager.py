@@ -79,3 +79,33 @@ class TestEnsureConversation(IntegrationTestCase):
         self.assertEqual(
             frappe.db.get_value("AIOS Conversation", alpha_conv, "user"), self.ALPHA
         )
+
+    def test_force_new_creates_distinct_conversation_with_timestamp_title(self):
+        frappe.set_user(self.ALPHA)
+        first = self.manager.ensure_conversation(self.ALPHA)
+        second = self.manager.ensure_conversation(self.ALPHA, force_new=True)
+        third = self.manager.ensure_conversation(self.ALPHA, force_new=True)
+        self.assertNotEqual(first, second)
+        self.assertNotEqual(second, third)
+        self.assertEqual(
+            frappe.db.get_value("AIOS Conversation", second, "user"), self.ALPHA
+        )
+        # Judul sesi baru bertimestamp agar bisa dibedakan di riwayat.
+        self.assertIn(" — ", frappe.db.get_value("AIOS Conversation", second, "title"))
+        self.assertTrue(
+            frappe.db.get_value("AIOS Conversation", third, "title").startswith("Sesi ")
+        )
+
+    def test_force_new_leaves_existing_conversation_untouched(self):
+        frappe.set_user(self.ALPHA)
+        existing = self.manager.ensure_conversation(self.ALPHA)
+        before_title = frappe.db.get_value("AIOS Conversation", existing, "title")
+        before_messages = frappe.db.count("AIOS Message", {"conversation": str(existing)})
+        self.manager.ensure_conversation(self.ALPHA, force_new=True)
+        self.assertEqual(
+            frappe.db.get_value("AIOS Conversation", existing, "title"), before_title
+        )
+        self.assertEqual(
+            frappe.db.count("AIOS Message", {"conversation": str(existing)}),
+            before_messages,
+        )

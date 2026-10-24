@@ -1,0 +1,111 @@
+/* Token visual Ekasa Desk — dipindah 1:1 dari ekasa-desk-prototype/index.html.
+   Satu-satunya tempat warna/radius/bayangan/spacing boleh ditulis. */
+:root {
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+  --wall-base: #dce6ea;
+  --wall-1: #f2c27f;
+  --wall-2: #86c7c1;
+  --wall-3: #b8cbe4;
+  --glass: rgba(246, 248, 250, 0.74);
+  --glass-strong: rgba(249, 250, 251, 0.9);
+  --glass-line: rgba(20, 32, 44, 0.1);
+  --surface: #ffffff;
+  --surface-2: #f2f5f7;
+  --line: #e0e6eb;
+  --fg: #14202c;
+  --muted: #56687a;
+  --faint: #8696a5;
+  --accent: #c97d12;
+  --accent-strong: #a8650a;
+  --accent-soft: rgba(201, 125, 18, 0.13);
+  --on-accent: #1b1206;
+  --ok: #1d8656;
+  --ok-soft: rgba(29, 134, 86, 0.12);
+  --warn: #b26f08;
+  --warn-soft: rgba(178, 111, 8, 0.13);
+  --bad: #c23a49;
+  --bad-soft: rgba(194, 58, 73, 0.11);
+  --hover: rgba(20, 32, 44, 0.06);
+  --press: rgba(20, 32, 44, 0.1);
+  --shadow: 0 22px 60px -14px rgba(16, 28, 40, 0.38), 0 2px 8px rgba(16, 28, 40, 0.08);
+  --shadow-sm: 0 6px 20px -8px rgba(16, 28, 40, 0.3);
+  --taskbar-h: 52px;
+
+  /* Token map accent agent berdasarkan branch.key (keputusan owner: (a));
+     branch tak dikenal memakai fallback --accent pada .agent-dot. */
+  --agent-accent-finance: var(--ok);
+  --agent-accent-sales: var(--accent);
+}
+
+[data-branch='finance'] {
+  --agent-accent: var(--agent-accent-finance);
+}
+
+[data-branch='sales'] {
+  --agent-accent: var(--agent-accent-sales);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --wall-base: #0b131b;
+    --wall-1: #6e430f;
+    --wall-2: #0d5552;
+    --wall-3: #1b2c4b;
+    --glass: rgba(20, 28, 38, 0.72);
+    --glass-strong: rgba(22, 30, 40, 0.9);
+    --glass-line: rgba(255, 255, 255, 0.08);
+    --surface: #16202a;
+    --surface-2: #1d2833;
+    --line: #283643;
+    --fg: #e7edf2;
+    --muted: #9bacba;
+    --faint: #6b7d8c;
+    --accent: #f0a43a;
+    --accent-strong: #f6bb63;
+    --accent-soft: rgba(240, 164, 58, 0.16);
+    --on-accent: #1b1206;
+    --ok: #43c08a;
+    --ok-soft: rgba(67, 192, 138, 0.14);
+    --warn: #f0b443;
+    --warn-soft: rgba(240, 180, 67, 0.14);
+    --bad: #f2727e;
+    --bad-soft: rgba(242, 114, 126, 0.14);
+    --hover: rgba(255, 255, 255, 0.07);
+    --press: rgba(255, 255, 255, 0.12);
+    --shadow: 0 24px 70px -14px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --wall-base: #0b131b;
+  --wall-1: #6e430f;
+  --wall-2: #0d5552;
+  --wall-3: #1b2c4b;
+  --glass: rgba(20, 28, 38, 0.72);
+  --glass-strong: rgba(22, 30, 40, 0.9);
+  --glass-line: rgba(255, 255, 255, 0.08);
+  --surface: #16202a;
+  --surface-2: #1d2833;
+  --line: #283643;
+  --fg: #e7edf2;
+  --muted: #9bacba;
+  --faint: #6b7d8c;
+  --accent: #f0a43a;
+  --accent-strong: #f6bb63;
+  --accent-soft: rgba(240, 164, 58, 0.16);
+  --on-accent: #1b1206;
+  --ok: #43c08a;
+  --ok-soft: rgba(67, 192, 138, 0.14);
+  --warn: #f0b443;
+  --warn-soft: rgba(240, 180, 67, 0.14);
+  --bad: #f2727e;
+  --bad-soft: rgba(242, 114, 126, 0.14);
+  --hover: rgba(255, 255, 255, 0.07);
+  --press: rgba(255, 255, 255, 0.12);
+  --shadow: 0 24px 70px -14px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}

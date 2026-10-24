@@ -269,3 +269,47 @@ class TestToolExecutionLoop(IntegrationTestCase):
         self.assertIn("_Test Company Persona", prompt)
         self.assertIn("finance", prompt)
         self.assertIn("_Test user context", prompt)
+    def test_new_conversation_flag_reaches_ensure_conversation(self):
+        def chat(messages, usage=None, tools=None, tool_calls=None):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            return iter(["ok"])
+
+        base_patches = dict(
+            get_worker_def=patch.object(self.manager, "get_worker_def", return_value=None),
+            build_system_prompt=patch.object(self.manager, "build_system_prompt", return_value="_Test prompt"),
+            schema=patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", return_value=[]),
+            chat=patch("aios_v1.managers.base_manager.chat_stream", side_effect=chat),
+            new_doc=patch("aios_v1.managers.base_manager.frappe.new_doc", return_value=self.doc),
+            get_list=patch("aios_v1.managers.base_manager.frappe.get_list", return_value=[]),
+            usage=patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+        )
+
+        with patch.object(self.manager, "ensure_conversation", return_value=7) as ensure:
+            with (
+                base_patches["get_worker_def"],
+                base_patches["build_system_prompt"],
+                base_patches["schema"],
+                base_patches["chat"],
+                base_patches["new_doc"],
+                base_patches["get_list"],
+                base_patches["usage"],
+            ):
+                list(
+                    self.manager.handle_stream(
+                        "hai", conversation_id=None, user="_test@example.com", new_conversation=True
+                    )
+                )
+        ensure.assert_called_once_with("_test@example.com", force_new=True)
+
+        with patch.object(self.manager, "ensure_conversation", return_value=7) as ensure:
+            with (
+                base_patches["get_worker_def"],
+                base_patches["build_system_prompt"],
+                base_patches["schema"],
+                base_patches["chat"],
+                base_patches["new_doc"],
+                base_patches["get_list"],
+                base_patches["usage"],
+            ):
+                list(self.manager.handle_stream("hai", conversation_id=None, user="_test@example.com"))
+        ensure.assert_called_once_with("_test@example.com")

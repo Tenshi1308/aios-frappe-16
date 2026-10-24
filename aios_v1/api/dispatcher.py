@@ -33,6 +33,11 @@ class CustomAPIResponse(HTTPException):
 # Batas total request unggahan: isi file + overhead multipart.
 MAX_UPLOAD_REQUEST_BYTES = MAX_WORKSPACE_BYTES + 1 * 1024 * 1024
 
+
+def _parse_bool_flag(value) -> bool:
+    """Flag API hanya menerima true/1/"true"/"1" — string "0"/"false" tidak boleh jadi True."""
+    return value in (True, 1, "true", "1")
+
 def _current_request():
     """Request aktif, atau None di luar konteks HTTP (mis. cron/test)."""
     return getattr(frappe.local, "request", None)
@@ -158,15 +163,22 @@ def _handle_chat_upload(sess: dict):
         form = getattr(frappe.request, "form", None)
         conversation_id = (form.get("conversationId") or "").strip() if form is not None else ""
         branch = (form.get("branch") or "").strip() if form is not None else ""
+        new_conversation = _parse_bool_flag(form.get("new_conversation") if form is not None else None)
 
+        conv_branch = branch
         if conversation_id:
-            get_owned_conversation(conversation_id, sess["user"])
-        else:
-            if not branch:
+            owned = get_owned_conversation(conversation_id, sess["user"])
+            if not conv_branch:
+                conv_branch = owned.branch
+        if new_conversation or not conversation_id:
+            # Percakapan baru atas nama session user; conversationId yang ikut
+            # dikirim diabaikan agar file tidak mendarat di sesi lama. Branch
+            # diambil dari form, atau dari conversation milik sendiri bila ada.
+            if not conv_branch:
                 return json_error(400, "BRANCH_REQUIRED", "Cabang wajib dipilih untuk unggahan baru.")
-            if not is_branch_enabled(branch):
+            if not is_branch_enabled(conv_branch):
                 return json_error(404, "BRANCH_DISABLED", "Cabang ini belum tersedia.")
-            conversation_id = str(get_manager(branch).ensure_conversation(sess["user"]))
+            conversation_id = str(get_manager(conv_branch).ensure_conversation(sess["user"], force_new=new_conversation))
 
         uploaded = None
         if hasattr(frappe.request, "files") and frappe.request.files:
@@ -538,10 +550,30 @@ def _handle_api_request():
                 convs = frappe.get_list(
                     "AIOS Conversation",
                     filters={"user": sess["user"], "branch": branch},
-                    fields=["name as id", "title", "modified as updatedAt"],
+                    fields=["name as id", "title", "modified as modified_at"],
                     order_by="modified desc",
-                    limit=20
+                    limit_page_length=0
                 )
+                # Waktu pesan terakhir adalah aktivitas riil; modified dokumen
+                # Conversation tidak berubah saat pesan baru masuk.
+                last_at = {}
+                conv_ids = [str(c["id"]) for c in convs]
+                if conv_ids:
+                    rows = frappe.get_all(
+                        "AIOS Message",
+                        filters={"conversation": ["in", conv_ids]},
+                        fields=["conversation", "creation"],
+                        limit_page_length=0,
+                    )
+                    for row in rows:
+                        key = str(row["conversation"])
+                        if row["creation"] and (key not in last_at or row["creation"] > last_at[key]):
+                            last_at[key] = row["creation"]
+                for c in convs:
+                    c["updatedAt"] = last_at.get(str(c["id"])) or c["modified_at"]
+                    del c["modified_at"]
+                convs.sort(key=lambda c: c["updatedAt"], reverse=True)
+                convs = convs[:20]
                 return json_response({"conversations": convs})
 
             # GET /api/chat/<branch>/conversations/<id>
@@ -586,11 +618,12 @@ def _handle_api_request():
                 worker_key = body.get("workerKey") or None
                 conversation_id = body.get("conversationId") or None
                 file_ids = body.get("file_ids") or []
+                new_conversation = _parse_bool_flag(body.get("new_conversation"))
 
                 if not message:
                     return json_response({"error": "Pesan tidak boleh kosong"}, 400)
 
-                if conversation_id:
+                if conversation_id and not new_conversation:
                     if not frappe.db.exists("AIOS Conversation", conversation_id):
                         return json_response({"error": "Percakapan tidak ditemukan"}, 404)
                     conv = frappe.get_doc("AIOS Conversation", conversation_id)
@@ -614,6 +647,7 @@ def _handle_api_request():
                     conversation_id=conversation_id,
                     user=sess["user"],
                     attachments=attachments,
+                    new_conversation=new_conversation,
                 )
 
                 res = Response(stream_generator, mimetype="text/event-stream; charset=utf-8")

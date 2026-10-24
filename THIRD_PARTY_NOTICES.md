@@ -68,6 +68,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## Bundled fonts (Ekasa Desk)
+
+The Ekasa Desk frontend (`desk/`) bundles two typefaces as local WOFF2 assets
+(`desk/src/assets/fonts/`, license text in `desk/src/assets/fonts/OFL.txt`).
+They are assets, not package dependencies, and are loaded without any CDN.
+
+### Plus Jakarta Sans
+
+- Author: Tokotype (Gumpita Rahayu), commissioned by the Jakarta city government
+- Source repository: [tokotype/PlusJakartaSans](https://github.com/tokotype/PlusJakartaSans) (`fonts/webfonts`)
+- Files: Regular, Medium, SemiBold, Bold, ExtraBold (woff2)
+- License: SIL Open Font License 1.1 (full text in `desk/src/assets/fonts/OFL.txt`)
+
+### JetBrains Mono
+
+- Author: JetBrains
+- Source repository: [JetBrains/JetBrainsMono](https://github.com/JetBrains/JetBrainsMono) (`fonts/webfonts`)
+- Files: Regular, Medium (woff2)
+- License: SIL Open Font License 1.1 (full text in `desk/src/assets/fonts/OFL.txt`)
+
 ## Frappe API references
 
 The AIOS wrappers use these official Frappe APIs:

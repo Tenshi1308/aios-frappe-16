@@ -4,13 +4,14 @@ Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
 import json
+import os
 from io import BytesIO
 
 import frappe
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
-from aios_v1.api.dispatcher import MAX_PDF_BYTES, CustomAPIResponse, handle_api_request
+from aios_v1.api.dispatcher import MAX_PDF_BYTES, CustomAPIResponse, _parse_bool_flag, handle_api_request
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -82,12 +83,45 @@ class TestChatEndpointIsolation(IntegrationTestCase):
                 "title": "_Test Beta endpoint",
             }
         ).insert(ignore_permissions=True)
+        self._physical_files = []
 
     def tearDown(self):
         frappe.db.commit = self._orig_commit
         frappe.local.request = None
         frappe.set_user("Administrator")
         frappe.db.rollback()
+        for path in self._physical_files:
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+
+    def _track_private_file(self, file_url):
+        import frappe.utils
+
+        self._physical_files.append(
+            os.path.join(
+                frappe.utils.get_site_path("private", "files"),
+                os.path.basename(file_url or ""),
+            )
+        )
+
+    def _upload_multipart(self, form):
+        data = dict(form)
+        data["file"] = (BytesIO(b"kolom\nnilai\n"), "_test upload flag.csv")
+        builder = EnvironBuilder(
+            path="/api/chat/upload",
+            method="POST",
+            data=data,
+        )
+        frappe.local.request = Request(builder.get_environ())
+        try:
+            handle_api_request()
+        except CustomAPIResponse as exc:
+            return exc._custom_response
+        finally:
+            frappe.local.request = None
+        raise AssertionError("upload tidak mengembalikan response")
 
     def test_list_only_own_conversations(self):
         frappe.set_user(self.ALPHA)
@@ -213,3 +247,100 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         body = json.loads(response.get_data(as_text=True))
         self.assertEqual(body["pages"], 1)
         self.assertIn("PoC PDF text", body["text"])
+
+    def test_parse_bool_flag_accepts_only_true_forms(self):
+        for value in (True, 1, "true", "1"):
+            with self.subTest(value=value):
+                self.assertTrue(_parse_bool_flag(value))
+        for value in (False, 0, "0", "false", "False", "", None, "yes", 2, [1]):
+            with self.subTest(value=value):
+                self.assertFalse(_parse_bool_flag(value))
+
+    def test_upload_with_new_conversation_flag_creates_fresh_conversation(self):
+        frappe.set_user(self.ALPHA)
+        before_files = frappe.db.count("File", {"attached_to_name": str(self.alpha_conv.name)})
+        response = self._upload_multipart({"branch": "sales", "new_conversation": "1"})
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.get_data(as_text=True))
+        new_conv = str(body["conversationId"])
+        self.assertNotEqual(new_conv, str(self.alpha_conv.name))
+        self.assertEqual(
+            frappe.db.get_value("AIOS Conversation", new_conv, "user"), self.ALPHA
+        )
+        # File terikat ke conversation BARU, bukan yang lama.
+        self.assertEqual(
+            frappe.db.get_value("File", body["attachment"]["id"], "attached_to_name"),
+            new_conv,
+        )
+        self.assertEqual(
+            frappe.db.count("File", {"attached_to_name": str(self.alpha_conv.name)}),
+            before_files,
+        )
+        self._track_private_file(
+            frappe.db.get_value("File", body["attachment"]["id"], "file_url")
+        )
+
+    def test_upload_flag_wins_over_provided_conversation_id(self):
+        frappe.set_user(self.ALPHA)
+        response = self._upload_multipart(
+            {"conversationId": str(self.alpha_conv.name), "new_conversation": "1"}
+        )
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.get_data(as_text=True))
+        self.assertNotEqual(str(body["conversationId"]), str(self.alpha_conv.name))
+        self._track_private_file(
+            frappe.db.get_value("File", body["attachment"]["id"], "file_url")
+        )
+
+    def test_upload_flag_is_user_scoped(self):
+        frappe.set_user(self.BETA)
+        response = self._upload_multipart({"branch": "sales", "new_conversation": "1"})
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.get_data(as_text=True))
+        new_conv = str(body["conversationId"])
+        self.assertEqual(frappe.db.get_value("AIOS Conversation", new_conv, "user"), self.BETA)
+        self.assertNotEqual(new_conv, str(self.alpha_conv.name))
+        self._track_private_file(
+            frappe.db.get_value("File", body["attachment"]["id"], "file_url")
+        )
+
+    def test_conversations_list_orders_by_last_message_and_updates_timestamp(self):
+        # alpha_conv dimundurkan modified-nya (raw SQL: set_value menimpa
+        # modified dengan now), lalu diberi pesan HARI INI — updatedAt harus
+        # mengikuti pesan dan urutannya pertama di atas dokumen yang lebih baru.
+        import datetime
+
+        frappe.db.sql(
+            "update `tabAIOS Conversation` set modified=%s where name=%s",
+            (datetime.datetime.now() - datetime.timedelta(days=3), str(self.alpha_conv.name)),
+        )
+        extra_conv = frappe.get_doc(
+            {
+                "doctype": "AIOS Conversation",
+                "user": self.ALPHA,
+                "branch": "sales",
+                "title": "_Test Alpha newer doc",
+            }
+        ).insert(ignore_permissions=True)
+        frappe.get_doc(
+            {
+                "doctype": "AIOS Message",
+                "conversation": str(self.alpha_conv.name),
+                "role": "user",
+                "worker_key": "manager",
+                "content": "_test last message",
+            }
+        ).insert(ignore_permissions=True)
+
+        frappe.set_user(self.ALPHA)
+        response = _call("/api/chat/sales/conversations")
+        self.assertEqual(response.status_code, 200)
+        body = json.loads(response.get_data(as_text=True))
+        ids = [str(c["id"]) for c in body["conversations"]]
+        self.assertEqual(ids[0], str(self.alpha_conv.name))
+        self.assertIn(str(extra_conv.name), ids)
+        first = body["conversations"][0]
+        # updatedAt pesan hari ini, bukan modified yang sudah dimundurkan 3 hari.
+        self.assertGreater(str(first["updatedAt"]), str(extra_conv.modified))
+        # Pesan milik user lain tidak bocor ke list ALPHA.
+        self.assertNotIn(str(self.beta_conv.name), ids)
