@@ -6,8 +6,10 @@ from pathlib import PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 from aios_v1.lib.error_utils import log_exception, safe_error
-from aios_v1.lib.tool_registry import ai_tool
+from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 import frappe
+
+CONVERSATION_DOCTYPE = "AIOS Conversation"
 
 DEFAULT_MAX_ROWS = 200
 MAX_ROWS = 1000
@@ -193,7 +195,10 @@ def extract_document_content(
 
 @ai_tool(
 	name="document_extract",
-	description="Mengekstrak teks PDF atau baris CSV/XLSX dari File privat milik pengguna.",
+	description=(
+		"Membaca isi file privat yang dilampirkan pada percakapan aktif; "
+		"hanya file milik pengguna dan terikat ke AIOS Conversation yang sama."
+	),
 	branch=["finance", "sales"],
 	roles=[],
 	plugin_key="document-intelligence",
@@ -222,6 +227,9 @@ def document_extract(file_id, format=None, sheet_name=None, max_rows=DEFAULT_MAX
 		return _file_error("INVALID_VALUES", f"max_rows harus integer 1..{MAX_ROWS}.")
 	if not isinstance(file_id, str) or not file_id.strip():
 		return _file_error("FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
+	conversation_id = str(get_tool_context().get("conversation_id") or "").strip()
+	if not conversation_id:
+		return _file_error("CONVERSATION_REQUIRED", "File hanya dapat dibaca dari percakapan yang sama.")
 
 	try:
 		file_doc = frappe.get_doc("File", file_id)
@@ -234,6 +242,10 @@ def document_extract(file_id, format=None, sheet_name=None, max_rows=DEFAULT_MAX
 	user = getattr(frappe.session, "user", None)
 	if user != "Administrator" and file_doc.owner != user:
 		return _file_error("FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
+	if file_doc.get("attached_to_doctype") != CONVERSATION_DOCTYPE or str(
+		file_doc.get("attached_to_name") or ""
+	) != conversation_id:
+		return _file_error("FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
 	try:
 		declared_size = int(file_doc.get("file_size") or 0)
 	except (TypeError, ValueError) as exc:

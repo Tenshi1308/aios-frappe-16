@@ -99,6 +99,7 @@ class TestToolExecutionLoop(IntegrationTestCase):
                 "branch": "finance",
                 "worker_key": "manager",
                 "delegation_depth": 0,
+                "conversation_id": "7",
             },
         )
         self.assertEqual(len(self.llm_message_snapshots), 2)
@@ -156,6 +157,47 @@ class TestToolExecutionLoop(IntegrationTestCase):
             "type": "APPROVAL_CARD", "draft_id": "DRF-_Test-1",
             "action_type": "UPDATE_DRAFT", "doctype": "Sales Order", "branch": "finance",
         })
+
+    def test_workspace_create_file_emits_file_artifact_without_file_id(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name="workspace_create_file"))
+                return iter(())
+            return iter(["file kerja sudah dibuat"])
+
+        result = json.dumps({
+            "status": "created",
+            "file_name": "laporan.xlsx",
+            "format": "xlsx",
+            "artifact": {
+                "type": "FILE",
+                "file_name": "laporan.xlsx",
+                "file_url": "/private/files/laporan.xlsx",
+                "format": "xlsx",
+                "size": 1234,
+                "conversation_id": "7",
+                "file_id": "SHOULD-NOT-LEAK",
+            },
+        })
+        events, _, _, _ = self._run_manager(scripted, tool_result=result)
+        trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        artifacts = [event for event in trace if event.get("type") == "artifact_created"]
+        self.assertEqual(len(artifacts), 1)
+        self.assertEqual(artifacts[0]["artifact"], {
+            "type": "FILE",
+            "file_name": "laporan.xlsx",
+            "file_url": "/private/files/laporan.xlsx",
+            "format": "xlsx",
+            "size": 1234,
+            "conversation_id": "7",
+        })
+
+        failed = self._run_manager(
+            scripted, tool_result=json.dumps({"success": False, "code": "WORKSPACE_ARTIFACT_FAILED"})
+        )
+        failed_trace = [json.loads(event[6:]) for event in failed[0] if event.startswith("data: {")]
+        self.assertEqual([event for event in failed_trace if event.get("type") == "artifact_created"], [])
 
     def test_tool_error_result_does_not_stop_loop(self):
         def scripted(round_number, usage, calls):

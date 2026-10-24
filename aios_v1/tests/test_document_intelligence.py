@@ -8,6 +8,7 @@ import frappe
 from openpyxl import Workbook
 
 from aios_v1.lib.document_intelligence import document_extract, extract_document_content
+from aios_v1.lib.tool_registry import tool_context
 
 try:
 	from frappe.tests import IntegrationTestCase
@@ -53,6 +54,7 @@ def _xlsx_fixture():
 
 class TestDocumentIntelligence(IntegrationTestCase):
 	USER = "_test.document.intelligence@example.com"
+	CONVERSATION = "_Test Conversation 77"
 
 	def setUp(self):
 		super().setUp()
@@ -73,6 +75,8 @@ class TestDocumentIntelligence(IntegrationTestCase):
 			"file_size": 16,
 			"is_private": 1,
 			"owner": self.USER,
+			"attached_to_doctype": "AIOS Conversation",
+			"attached_to_name": self.CONVERSATION,
 		}
 		values.update(overrides)
 		doc = frappe._dict(values)
@@ -83,6 +87,7 @@ class TestDocumentIntelligence(IntegrationTestCase):
 		with (
 			patch("aios_v1.lib.document_intelligence.frappe.get_doc", return_value=file_doc),
 			patch("frappe.log_error"),
+			tool_context({"conversation_id": self.CONVERSATION}),
 		):
 			return document_extract(file_doc.name, **kwargs)
 
@@ -127,7 +132,9 @@ class TestDocumentIntelligence(IntegrationTestCase):
 		file_doc = self._file()
 		with (
 			patch("aios_v1.lib.document_intelligence.frappe.get_doc", return_value=file_doc),
+			patch("frappe.log_error"),
 			patch.object(builtins, "open", side_effect=AssertionError("unexpected disk access")),
+			tool_context({"conversation_id": self.CONVERSATION}),
 		):
 			result = document_extract(file_doc.name)
 		self.assertEqual(result["format"], "csv")
@@ -144,6 +151,28 @@ class TestDocumentIntelligence(IntegrationTestCase):
 		result = self._extract_file(public_file)
 		self.assertEqual(result.get("code"), "FILE_NOT_PRIVATE")
 		public_file.get_content.assert_not_called()
+
+	def test_file_bound_to_other_conversation_is_rejected(self):
+		file_doc = self._file(attached_to_name="_Test Conversation 78")
+		result = self._extract_file(file_doc)
+		self.assertEqual(result.get("code"), "FILE_FORBIDDEN")
+		file_doc.get_content.assert_not_called()
+
+		unbound = self._file(attached_to_doctype=None, attached_to_name=None)
+		result = self._extract_file(unbound)
+		self.assertEqual(result.get("code"), "FILE_FORBIDDEN")
+		unbound.get_content.assert_not_called()
+
+	def test_extract_without_conversation_context_is_rejected(self):
+		file_doc = self._file()
+		with (
+			patch("aios_v1.lib.document_intelligence.frappe.get_doc", return_value=file_doc),
+			patch("frappe.log_error"),
+			tool_context({}),
+		):
+			result = document_extract(file_doc.name)
+		self.assertEqual(result.get("code"), "CONVERSATION_REQUIRED")
+		file_doc.get_content.assert_not_called()
 
 	def test_administrator_may_read_private_file_with_different_owner(self):
 		frappe.set_user("Administrator")

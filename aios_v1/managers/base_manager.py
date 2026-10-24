@@ -10,12 +10,14 @@ from aios_v1.lib.tool_registry import (
     execute_tool,
     get_tools_schema_for_worker,
 )
+from aios_v1.lib.workspace import build_attachment_context
 from aios_v1.plugin_manager.registry import get_worker, is_branch_enabled
 from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
 from aios_v1.shared.trace_events import (
     approval_card_artifact,
+    file_artifact,
     trace_cross_branch,
     trace_delegate_start,
     trace_subagent_prompt,
@@ -26,6 +28,26 @@ from aios_v1.shared.trace_events import (
 MAX_TOOL_ROUNDS = 6
 TOOL_CONTEXT_ERROR_MESSAGE = "Konteks sesi untuk menjalankan tool tidak valid. Silakan mulai percakapan kembali."
 MAX_TOOL_ROUNDS_MESSAGE = "Batas langkah penggunaan tool tercapai. Silakan persempit permintaan dan coba lagi."
+
+
+def _workspace_artifact_event(tool_name, result_json):
+    """Event `artifact_created` FILE dari hasil `workspace_create_file`; None bila bukan/belum dibuat."""
+    if tool_name != "workspace_create_file":
+        return None
+    try:
+        payload = json.loads(result_json)
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Workspace Artifact Event", exc=exc)
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("status") != "created"
+        or not isinstance(payload.get("artifact"), dict)
+    ):
+        log_exception("AIOS Workspace Artifact Event", context="payload artefak file tidak valid")
+        return None
+    return file_artifact(payload["artifact"])
+
 
 class BaseManager:
     def __init__(self, branch_def):
@@ -150,7 +172,8 @@ class BaseManager:
         return prompt
 
     def _run_subagent(self, worker_key: str, task_instruction: str, context_data: dict,
-                      user: str, usage_records: list, result_holder: list | None = None):
+                      user: str, usage_records: list, result_holder: list | None = None,
+                      conversation_id=None):
         """Jalankan loop worker internal; hanya trace yang keluar dari generator."""
         import time
 
@@ -213,11 +236,17 @@ class BaseManager:
                         log_exception("AIOS Sub-agent Tool Arguments", exc=exc)
                         args = {}
                     yield trace_subagent_tool(branch, worker_key, name, args)
-                    result = execute_tool(name, function.get("arguments") or "{}", context={
+                    subagent_tool_context = {
                         "user": user, "branch": branch, "worker_key": worker_key,
                         "delegation_depth": MAX_DELEGATION_DEPTH - 1,
-                    })
+                    }
+                    if conversation_id is not None:
+                        subagent_tool_context["conversation_id"] = str(conversation_id)
+                    result = execute_tool(name, function.get("arguments") or "{}", context=subagent_tool_context)
                     tool_progress = True
+                    artifact_event = _workspace_artifact_event(name, result)
+                    if artifact_event is not None:
+                        yield artifact_event
                     messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
                 if round_number == MAX_TOOL_ROUNDS - 1:
                     break
@@ -246,7 +275,8 @@ class BaseManager:
         if result_holder is not None:
             result_holder.append(result)
 
-    def handle_stream(self, user_message: str, worker_key: str = None, conversation_id: int = None, user: str = None):
+    def handle_stream(self, user_message: str, worker_key: str = None, conversation_id: int = None,
+                      user: str = None, attachments: list | None = None):
         user = user or frappe.session.user
         # 0. Flush initial buffer untuk bypass proxy/nginx buffering
         yield f": {' ' * 1024}\n\n"
@@ -308,6 +338,14 @@ class BaseManager:
             })
 
         data_used = []
+
+        if attachments:
+            if not isinstance(attachments, list) or not all(isinstance(item, dict) for item in attachments):
+                log_exception("AIOS Attachments", context="attachments bukan list of dict; metadata diabaikan")
+            else:
+                attachment_context = build_attachment_context(attachments)
+                if attachment_context:
+                    llm_messages.append({"role": "system", "content": attachment_context})
 
         llm_messages.append({"role": "user", "content": user_message})
 
@@ -379,7 +417,7 @@ class BaseManager:
                             result_holder = []
                             runner = self._run_subagent(
                                 target_worker, instruction, args.get("context_data") or {}, user,
-                                usage_records, result_holder)
+                                usage_records, result_holder, conversation_id=conversation_id)
                             for trace_event in runner:
                                 yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
                             result = result_holder[0]
@@ -392,6 +430,7 @@ class BaseManager:
                                 "branch": self.branch.get("key"),
                                 "worker_key": worker_key or "manager",
                                 "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
+                                "conversation_id": str(conversation_id),
                             },
                         )
                         if worker_def is None and tool_name == "cross_branch_consultation":
@@ -433,6 +472,9 @@ class BaseManager:
                                     draft_result.get("doctype", ""), self.branch.get("key", ""),
                                 )
                                 yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+                        file_event = _workspace_artifact_event(tool_name, result)
+                        if file_event is not None:
+                            yield "data: " + json.dumps(file_event, ensure_ascii=False) + "\n\n"
                 except ToolContextError as exc:
                     log_exception("AIOS Tool Context", exc=exc)
                     error = safe_error(TOOL_CONTEXT_ERROR_MESSAGE, "TOOL_CONTEXT_INVALID")

@@ -144,6 +144,7 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         cases = (
             ("GET", "/api/chatbot/sessions", None),
             ("POST", "/api/chat/parse-pdf", {}),
+            ("POST", "/api/chat/upload", None),
             ("GET", "/api/chat/sales/conversations", None),
         )
         for method, path, body in cases:

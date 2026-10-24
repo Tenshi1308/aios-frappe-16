@@ -120,11 +120,12 @@ class TestPluginManager(IntegrationTestCase):
 
 	def test_phase_two_plugins_are_seeded_and_enforced(self):
 		ensure_builtin_plugins()
-		self.assertEqual(frappe.db.count("AIOS Plugin"), 6)
-		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), 12)
+		self.assertEqual(frappe.db.count("AIOS Plugin"), len(BUILTIN_PLUGIN_SEEDS))
+		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), 2 * len(BUILTIN_PLUGIN_SEEDS))
 		for plugin_key, tool_name in (
 			("quant-calculator", "quant_calculate"),
 			("document-intelligence", "document_extract"),
+			("workspace-artifact-builder", "workspace_create_file"),
 		):
 			with self.subTest(plugin_key=plugin_key):
 				name = frappe.db.get_value("AIOS Plugin", {"plugin_key": plugin_key}, "name")

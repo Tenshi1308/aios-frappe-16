@@ -73,3 +73,13 @@ def approval_card_artifact(draft_id: str, action_type: str, doctype: str, branch
             "branch": str(branch),
         },
     }
+
+
+def file_artifact(artifact: dict) -> dict:
+    """Build a workspace file artifact event; whitelist only, no file_id or paths."""
+    allowed = ("file_name", "file_url", "format", "size", "conversation_id")
+    clean = {"type": "FILE"}
+    for key in allowed:
+        if artifact.get(key) is not None:
+            clean[key] = artifact[key]
+    return {"type": "artifact_created", "artifact": clean}

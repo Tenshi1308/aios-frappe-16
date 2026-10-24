@@ -9,6 +9,15 @@ MAX_PDF_BYTES = 5 * 1024 * 1024
 
 from aios_v1.lib.auth import verify_session_token, SESSION_COOKIE
 from aios_v1.lib.error_utils import log_exception, safe_error
+from aios_v1.lib.workspace import (
+    ATTACHMENT_EXTENSIONS,
+    MAX_WORKSPACE_BYTES,
+    WorkspaceError,
+    get_owned_conversation,
+    sanitize_filename,
+    save_private_file,
+    validate_attachments,
+)
 from aios_v1.plugin_manager.registry import get_branches, is_branch_enabled
 from aios_v1.managers import get_manager
 from aios_v1.services.usage import check_site_token_quota
@@ -20,6 +29,9 @@ class CustomAPIResponse(HTTPException):
 
     def get_response(self, environ=None):
         return self._custom_response
+
+# Batas total request unggahan: isi file + overhead multipart.
+MAX_UPLOAD_REQUEST_BYTES = MAX_WORKSPACE_BYTES + 1 * 1024 * 1024
 
 def _current_request():
     """Request aktif, atau None di luar konteks HTTP (mis. cron/test)."""
@@ -132,6 +144,59 @@ def require_session(role: str | None = None) -> dict:
     if role and sess.get("role") != role:
         json_response({"error": "Akses ditolak"}, 403)
     return sess
+
+
+def _handle_chat_upload(sess: dict):
+    """POST /api/chat/upload — lampiran chat sebagai Private File terikat conversation."""
+    content_length = getattr(frappe.request, "content_length", None) or 0
+    if content_length > MAX_UPLOAD_REQUEST_BYTES:
+        return json_error(
+            413, "FILE_TOO_LARGE", f"Ukuran unggahan melebihi batas {MAX_WORKSPACE_BYTES // (1024 * 1024)} MB."
+        )
+
+    try:
+        form = getattr(frappe.request, "form", None)
+        conversation_id = (form.get("conversationId") or "").strip() if form is not None else ""
+        branch = (form.get("branch") or "").strip() if form is not None else ""
+
+        if conversation_id:
+            get_owned_conversation(conversation_id, sess["user"])
+        else:
+            if not branch:
+                return json_error(400, "BRANCH_REQUIRED", "Cabang wajib dipilih untuk unggahan baru.")
+            if not is_branch_enabled(branch):
+                return json_error(404, "BRANCH_DISABLED", "Cabang ini belum tersedia.")
+            conversation_id = str(get_manager(branch).ensure_conversation(sess["user"]))
+
+        uploaded = None
+        if hasattr(frappe.request, "files") and frappe.request.files:
+            uploaded = frappe.request.files.get("file")
+        if uploaded is None or not (getattr(uploaded, "filename", "") or "").strip():
+            return json_error(400, "FILE_REQUIRED", "File lampiran wajib diunggah.")
+        file_bytes = uploaded.read(MAX_WORKSPACE_BYTES + 1)
+        if not file_bytes:
+            return json_error(400, "FILE_EMPTY", "File lampiran kosong.")
+        if len(file_bytes) > MAX_WORKSPACE_BYTES:
+            return json_error(
+                413, "FILE_TOO_LARGE", f"Ukuran file melebihi batas {MAX_WORKSPACE_BYTES // (1024 * 1024)} MB."
+            )
+
+        sanitize_filename(uploaded.filename, ATTACHMENT_EXTENSIONS)
+        saved = save_private_file(uploaded.filename, file_bytes, conversation_id, sess["user"])
+        frappe.db.commit()
+    except WorkspaceError as exc:
+        log_exception("AIOS Chat Upload", context=exc.code)
+        return json_error(exc.status, exc.code, exc.message)
+
+    return json_response({
+        "conversationId": int(conversation_id) if str(conversation_id).isdigit() else conversation_id,
+        "attachment": {
+            "id": saved["file_id"],
+            "file_name": saved["file_name"],
+            "file_size": saved["file_size"],
+            "format": saved["format"],
+        },
+    })
 
 def handle_api_request():
     try:
@@ -457,6 +522,11 @@ def _handle_api_request():
                 "text": full_text
             })
 
+        # POST /api/chat/upload (Lampiran chat → Private File terikat AIOS Conversation)
+        if path == "api/chat/upload" and method == "POST":
+            sess = require_session()
+            return _handle_chat_upload(sess)
+
         parts = path.split("/")
         if len(parts) >= 3:
             branch = parts[2]
@@ -515,6 +585,7 @@ def _handle_api_request():
                 message = (body.get("message") or "").strip()
                 worker_key = body.get("workerKey") or None
                 conversation_id = body.get("conversationId") or None
+                file_ids = body.get("file_ids") or []
 
                 if not message:
                     return json_response({"error": "Pesan tidak boleh kosong"}, 400)
@@ -526,12 +597,23 @@ def _handle_api_request():
                     if not frappe.has_permission("AIOS Conversation", "read", doc=conv):
                         return json_response({"error": "Percakapan tidak ditemukan"}, 404)
 
+                attachments = []
+                if file_ids:
+                    if not conversation_id:
+                        return json_error(400, "CONVERSATION_REQUIRED", "Percakapan wajib dipilih saat mengirim lampiran.")
+                    try:
+                        attachments = validate_attachments(file_ids, conversation_id, sess["user"])
+                    except WorkspaceError as exc:
+                        log_exception("AIOS Chat Stream Attachments", context=exc.code)
+                        return json_error(exc.status, exc.code, exc.message)
+
                 mgr = get_manager(branch)
                 stream_generator = mgr.handle_stream(
                     user_message=message,
                     worker_key=worker_key,
                     conversation_id=conversation_id,
                     user=sess["user"],
+                    attachments=attachments,
                 )
 
                 res = Response(stream_generator, mimetype="text/event-stream; charset=utf-8")

@@ -40,6 +40,22 @@ def _resolve_allowed_company() -> str:
     return str(company).strip()
 
 
+def _normalize_conversation_id(value) -> str | None:
+    """Normalkan conversation_id ke str; None bila absen/tipe tidak valid."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        log_exception("AIOS Tool Context", context="conversation_id diabaikan: tipe bool.")
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    if isinstance(value, int):
+        return str(value)
+    log_exception("AIOS Tool Context", context="conversation_id diabaikan: tipe tidak valid.")
+    return None
+
+
 def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if context is not None:
         if not isinstance(context, dict):
@@ -76,6 +92,8 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
         "branch": context.get("branch") if context else None,
         "worker_key": context.get("worker_key") if context else None,
         "delegation_depth": context.get("delegation_depth", 0) if context else 0,
+        # Context server, bukan argumen LLM; hanya tool yang membutuhkan yang menolak bila kosong.
+        "conversation_id": _normalize_conversation_id(context.get("conversation_id")) if context else None,
     }
 
 
@@ -127,6 +145,7 @@ def _ensure_tools_loaded():
     import aios_v1.lib.erpnext_financial_reports  # noqa: F401
     import aios_v1.lib.quant_calculator  # noqa: F401
     import aios_v1.lib.document_intelligence  # noqa: F401
+    import aios_v1.lib.workspace_artifacts  # noqa: F401
     import aios_v1.lib.web_market_research
     import aios_v1.lib.mcp_client
 

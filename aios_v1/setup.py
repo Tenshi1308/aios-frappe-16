@@ -82,6 +82,7 @@ BUILTIN_PLUGIN_SEEDS = (
     ("quant-calculator", "Quant Calculator"),
     ("document-intelligence", "Document Intelligence"),
     ("web-market-research", "Web Market Research"),
+    ("workspace-artifact-builder", "Workspace Artifact Builder"),
 )
 
 
