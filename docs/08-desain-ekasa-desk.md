@@ -35,7 +35,7 @@ Form email + password, ditambah tautan ke pendaftaran mandiri. Kegagalan menampi
 
 ### 2.4. Panel Agent
 
-Menempel di sisi kanan. Berisi riwayat percakapan, composer, pemilih agent, dan **Live Agent Trace** (§3). Panel bisa dilebarkan, tidak bisa ditutup total — agent adalah inti produk.
+Menempel di sisi kanan. Berisi riwayat percakapan, composer, pemilih agent, dan **Live Agent Trace** (§3). Panel bisa dilebarkan dan ditutup lewat tombol X; saat ditutup, buka lagi dari taskbar atau `Ctrl+J`. Agent tetap inti produk, jadi tidak ada mode tanpa akses agent.
 
 #### Lampiran chat
 
@@ -45,7 +45,7 @@ Upload membuat Private `File` dengan `owner = frappe.session.user`, `is_private 
 
 Backend menolak file milik user lain, file publik, file dari conversation lain, dan file yang melampaui batas ukuran atau format. Respons ke client tidak membocorkan isi file; File ID tidak boleh muncul di pesan error maupun event — ia hanya state internal frontend.
 
-**Status backend (H5 fase 1, `b07975f`, 2026-10-24):** endpoint upload `POST /api/chat/upload`, validasi `file_ids` sebelum konteks model dibentuk, dan binding `document_extract` ke conversation aktif sudah ada. **UI composer, chip lampiran, progress upload, dan aksi hapus menyusul di #12.**
+**Status backend (H5 fase 1, `b07975f`, 2026-10-24):** endpoint upload `POST /api/chat/upload`, validasi `file_ids` sebelum konteks model dibentuk, dan binding `document_extract` ke conversation aktif sudah ada. **UI composer, chip lampiran, progress upload, dan aksi hapus chip (lokal) sudah ada di #12 fase 1 (`a4f4113`); endpoint hapus lampiran, jendela artefak, chart/Mermaid/iframe menyusul.**
 
 **Acceptance:** client dapat melampirkan CSV, PDF, atau XLSX tanpa mengetik ID; model membaca isi file; file user lain ditolak; file publik ditolak.
 
