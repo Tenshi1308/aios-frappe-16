@@ -5,7 +5,6 @@ import EkasaMark from '../base/EkasaMark.vue';
 import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
 import AboutWindow from '../windows/AboutWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
-import TraceDetailWindow from '../windows/TraceDetailWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
 
@@ -45,7 +44,6 @@ defineExpose({ openAbout });
         <AboutWindow v-if="w.id === 'about'" />
         <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
         <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
-        <TraceDetailWindow v-else-if="w.id.startsWith('trace:')" :message-id="w.id.slice(6)" />
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />
     </div>

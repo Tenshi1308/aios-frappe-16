@@ -6,8 +6,9 @@ import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
-import { formatDurationMs, traceStepLabel } from '../../utils/format';
+import { formatDurationMs } from '../../utils/format';
 import type { ChatMessage } from '../../types';
+import AgentStep from './AgentStep.vue';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
 
@@ -15,13 +16,12 @@ const session = useSessionStore();
 const branches = useBranchesStore();
 const chat = useChatStore();
 const ui = useUiStore();
-const wm = useWindowManager();
 
 const draft = ref('');
 const fileInput = ref<HTMLInputElement | null>(null);
 const threadEl = ref<HTMLElement | null>(null);
 const uploading = ref(false);
-const expandedMessageId = ref<string | null>(null);
+const traceOpenId = ref<string | null>(null);
 
 void branches.load();
 void chat.loadPendingDrafts();
@@ -63,12 +63,11 @@ function summaryText(m: ChatMessage) {
   return parts.join(' · ');
 }
 
-function openTrace(m: ChatMessage) {
-  wm.open(`trace:${m.id}`, 'Detail Langkah Agent');
-}
+const lastStepsLength = computed(() => messages.value[messages.value.length - 1]?.steps?.length ?? 0);
+const lastArtifactsLength = computed(() => messages.value[messages.value.length - 1]?.artifacts?.length ?? 0);
 
 function openPendingDrafts() {
-  wm.open('pending-drafts', 'Persetujuan Tertunda');
+  useWindowManager().open('pending-drafts', 'Persetujuan Tertunda');
 }
 
 function fmtDate(value: string) {
@@ -79,7 +78,13 @@ function fmtDate(value: string) {
 }
 
 watch(
-  () => [messages.value.length, messages.value[messages.value.length - 1]?.text, chat.uploadProgress[branchKey.value]],
+  () => [
+    messages.value.length,
+    messages.value[messages.value.length - 1]?.text,
+    messages.value[messages.value.length - 1]?.steps?.length,
+    messages.value[messages.value.length - 1]?.artifacts?.length,
+    chat.uploadProgress[branchKey.value],
+  ],
   () => {
     void nextTick(() => {
       const el = threadEl.value;
@@ -211,29 +216,30 @@ async function onFilesPicked(e: Event) {
         </div>
         <div class="bubble"><RichText :text="greeting" /></div>
       </div>
-      <template v-for="(m, i) in messages" :key="i">
+      <template v-for="m in messages" :key="m.id">
         <div class="msg" :class="m.role">
           <div v-if="m.role === 'agent'" class="msg-who">
             <span v-if="branch" class="agent-dot xs" :data-branch="branch.key">{{ branch.name.charAt(0).toUpperCase() }}</span>
             {{ branch?.name ?? 'Agent' }}
           </div>
-          <div class="bubble"><RichText :text="m.text" /></div>
-          <div v-if="m.role === 'agent' && hasSummary(m)" class="msg-steps">
-            <span class="msg-steps-text">{{ summaryText(m) }}</span>
-            <button
-              v-if="m.steps?.length"
-              class="msg-steps-toggle"
-              @click="expandedMessageId = expandedMessageId === m.id ? null : m.id"
-            >
-              {{ expandedMessageId === m.id ? 'Sembunyikan detail' : 'Lihat detail' }}
+          <div v-if="m.role === 'agent' && m.steps?.length" class="trace-block" :class="{ live: m.live }">
+            <button class="trace-head" @click="traceOpenId = traceOpenId === m.id ? null : m.id">
+              <span v-if="m.live" class="trace-live-dot" aria-hidden="true" />
+              <b>{{ m.live ? 'Langkah agent' : 'Langkah agent' }} · {{ m.steps.length }}</b>
+              <span v-if="m.live" class="trace-live-label">berjalan…</span>
+              <span v-else class="trace-summary">{{ summaryText(m) }}</span>
+              <span class="trace-toggle">{{ traceOpenId === m.id ? 'Sembunyikan' : 'Lihat detail' }}</span>
             </button>
-            <button class="msg-steps-toggle" @click="openTrace(m)">Jendela detail</button>
+            <div v-if="traceOpenId === m.id || m.live" class="trace-steps">
+              <AgentStep
+                v-for="(step, si) in m.steps"
+                :key="si"
+                :step="step"
+                :default-open="!!m.live && si === (m.steps?.length ?? 0) - 1"
+              />
+            </div>
           </div>
-          <div v-if="m.role === 'agent' && expandedMessageId === m.id && m.steps?.length" class="msg-steps-list">
-            <span v-for="(step, si) in m.steps" :key="si" class="msg-steps-item">
-              {{ si + 1 }}. {{ traceStepLabel(step) }}
-            </span>
-          </div>
+          <div class="bubble"><RichText :text="m.text" /></div>
           <div v-if="m.role === 'agent' && m.artifacts?.length" class="msg-artifacts">
             <span v-for="(a, ai) in m.artifacts" :key="ai" class="msg-artifact">
               {{ a.type === 'APPROVAL_CARD' ? `Persetujuan ${a.action_type}` : `Artefak ${a.type}` }}

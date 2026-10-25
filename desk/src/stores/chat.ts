@@ -41,14 +41,6 @@ export const useChatStore = defineStore('chat', {
     thread: (s) => (branch: string) => s.threads[branch] ?? [],
     files: (s) => (branch: string) => s.pendingFiles[branch] ?? [],
     isStreaming: (s) => (branch: string) => s.streaming[branch] ?? false,
-    /** Cari pesan live/histori berdasarkan id stabil (untuk jendela detail trace). */
-    findMessage: (s) => (messageId: string): ChatMessage | null => {
-      for (const list of Object.values(s.threads)) {
-        const found = list.find((m) => m.id === messageId);
-        if (found) return found;
-      }
-      return null;
-    },
   },
   actions: {
     async loadPendingDrafts() {
@@ -136,7 +128,7 @@ export const useChatStore = defineStore('chat', {
       this.streaming[branch] = true;
       const fileIds = this.files(branch).map((f) => f.id);
       this.pendingFiles[branch] = [];
-      const placeholder: ChatMessage = { id: newMessageId(), role: 'agent', text: '' };
+      const placeholder: ChatMessage = { id: newMessageId(), role: 'agent', text: '', live: true };
       const threadKey = branch;
       const threadAtStart = this.threads[threadKey] ?? [];
       this.threads[threadKey] = [...threadAtStart, placeholder];
@@ -190,6 +182,7 @@ export const useChatStore = defineStore('chat', {
               if (!list || !list[index]) return;
               list[index] = {
                 ...list[index],
+                live: false,
                 tokens: tokens ?? list[index].tokens,
                 durationMs: Math.round(performance.now() - startedAt),
               };
@@ -200,7 +193,7 @@ export const useChatStore = defineStore('chat', {
         const message = err instanceof Error ? err.message : 'Pesan gagal terkirim.';
         const list = this.threads[threadKey];
         if (list && list[index] && !list[index].text) {
-          list[index] = { ...list[index], text: message };
+          list[index] = { ...list[index], live: false, text: message };
         } else {
           this.threads[threadKey] = [...(list ?? []), { id: newMessageId(), role: 'agent', text: message }];
         }
@@ -209,7 +202,10 @@ export const useChatStore = defineStore('chat', {
         // senyap — tampilkan pesan aman yang jujur.
         const list = this.threads[threadKey];
         if (list && list[index] && !list[index].text) {
-          list[index] = { ...list[index], text: 'Jawaban tidak dapat ditampilkan. Silakan coba lagi.' };
+          list[index] = { ...list[index], live: false, text: 'Jawaban tidak dapat ditampilkan. Silakan coba lagi.' };
+        }
+        if (list && list[index]) {
+          list[index] = { ...list[index], live: false };
         }
         this.streaming[branch] = false;
       }

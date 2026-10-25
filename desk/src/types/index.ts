@@ -33,6 +33,8 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
   text: string;
+  /** True saat jawaban masih di-stream; blok trace tampil live di atas bubble. */
+  live?: boolean;
   steps?: TraceEvent[];
   tokens?: number;
   durationMs?: number;
