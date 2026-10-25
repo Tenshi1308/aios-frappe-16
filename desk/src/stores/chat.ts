@@ -144,14 +144,15 @@ export const useChatStore = defineStore('chat', {
         if (!list || !list[index]) return;
         list[index] = { ...list[index], steps: [...(list[index].steps ?? []), event] };
       };
+      const turnDraftIds: string[] = [];
       const appendArtifact = (artifact: ArtifactEvent) => {
         const list = this.threads[threadKey];
         if (!list || !list[index]) return;
         list[index] = { ...list[index], artifacts: [...(list[index].artifacts ?? []), artifact] };
         if (artifact.type === 'APPROVAL_CARD') {
-          // Kartu persetujuan = prioritas tertinggi (docs/08 §5): langsung buka jendela.
-          useWindowManager().open(`approval:${artifact.draft_id}`, 'Persetujuan Aksi');
-          void this.loadPendingDrafts();
+          // Kartu diantrekan: backend commit transaksinya tepat sebelum event
+          // `done`, jadi jendela kartu dibuka di onDone pertama, bukan saat event.
+          turnDraftIds.push(artifact.draft_id);
         }
       };
       try {
@@ -186,6 +187,15 @@ export const useChatStore = defineStore('chat', {
                 tokens: tokens ?? list[index].tokens,
                 durationMs: Math.round(performance.now() - startedAt),
               };
+              if (tokens !== undefined && turnDraftIds.length) {
+                // Commit backend terjadi tepat sebelum event `done`; buka kartu
+                // terakhir turn ini (multi-kartu: sisanya lewat daftar pending).
+                useWindowManager().open(
+                  `approval:${turnDraftIds[turnDraftIds.length - 1]}`,
+                  'Persetujuan Aksi',
+                );
+                void this.loadPendingDrafts();
+              }
             },
           },
         );
