@@ -4,6 +4,7 @@ import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
 import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
 import AboutWindow from '../windows/AboutWindow.vue';
+import ArtifactWindow from '../windows/ArtifactWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
@@ -44,6 +45,7 @@ defineExpose({ openAbout });
         <AboutWindow v-if="w.id === 'about'" />
         <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
         <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
+        <ArtifactWindow v-else-if="w.id.startsWith('artifact:')" :file-url="w.id.slice(9)" />
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />
     </div>

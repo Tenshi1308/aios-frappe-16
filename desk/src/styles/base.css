@@ -1544,6 +1544,13 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--surface-2);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.msg-artifact:hover {
+  background: var(--hover);
 }
 .icon-btn.approvals {
   position: relative;

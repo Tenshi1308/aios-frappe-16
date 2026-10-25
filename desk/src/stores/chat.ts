@@ -36,6 +36,8 @@ export const useChatStore = defineStore('chat', {
     historyOpen: {} as Record<string, boolean>,
     historyLoading: {} as Record<string, boolean>,
     pendingDrafts: [] as PendingDraft[],
+    /** Artefak FILE yang jendelanya pernah dibuka (key = file_url). */
+    artifactWindows: {} as Record<string, ArtifactEvent>,
   }),
   getters: {
     /** Thread percakapan aktif (cache per conversationId — trace tidak tertimpa saat pindah sesi). */
@@ -47,6 +49,12 @@ export const useChatStore = defineStore('chat', {
     isStreaming: (s) => (branch: string) => s.streaming[branch] ?? false,
   },
   actions: {
+    /** Buka jendela artefak FILE dari chip pesan (tidak auto-open saat event tiba). */
+    openArtifact(artifact: ArtifactEvent) {
+      if (artifact.type !== 'FILE') return;
+      this.artifactWindows[artifact.file_url] = artifact;
+      useWindowManager().open(`artifact:${artifact.file_url}`, artifact.file_name);
+    },
     async loadPendingDrafts() {
       const session = useSessionStore();
       try {

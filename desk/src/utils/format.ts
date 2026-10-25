@@ -91,3 +91,11 @@ export function traceStepSubtext(event: { type: string; [key: string]: unknown }
   const clean = raw.replace(/\s+/g, ' ').trim();
   return clean.length > 80 ? `${clean.slice(0, 77)}…` : clean;
 }
+
+/** Ukuran berkas manusiawi (B/KB/MB). */
+export function formatBytes(bytes: number | undefined): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

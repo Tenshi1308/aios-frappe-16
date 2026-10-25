@@ -7,7 +7,7 @@ import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { formatDurationMs } from '../../utils/format';
-import type { ChatMessage } from '../../types';
+import type { ArtifactEvent, ChatMessage } from '../../types';
 import AgentStep from './AgentStep.vue';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
@@ -94,6 +94,14 @@ function workingText(m: ChatMessage): string {
 
 function openPendingDrafts() {
   useWindowManager().open('pending-drafts', 'Persetujuan Tertunda');
+}
+
+function openArtifactChip(artifact: ArtifactEvent) {
+  if (artifact.type === 'APPROVAL_CARD') {
+    useWindowManager().open(`approval:${artifact.draft_id}`, 'Persetujuan Aksi');
+  } else {
+    chat.openArtifact(artifact);
+  }
 }
 
 function fmtDate(value: string) {
@@ -271,9 +279,15 @@ async function onFilesPicked(e: Event) {
           </div>
           <div class="bubble"><RichText :text="m.text" /></div>
           <div v-if="m.role === 'agent' && m.artifacts?.length" class="msg-artifacts">
-            <span v-for="(a, ai) in m.artifacts" :key="ai" class="msg-artifact">
+            <button
+              v-for="(a, ai) in m.artifacts"
+              :key="ai"
+              class="msg-artifact"
+              type="button"
+              @click="openArtifactChip(a)"
+            >
               {{ a.type === 'APPROVAL_CARD' ? `Persetujuan ${a.action_type}` : `Artefak ${a.type}` }}
-            </span>
+            </button>
           </div>
         </div>
       </template>
