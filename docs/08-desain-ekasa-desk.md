@@ -84,10 +84,10 @@ File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tam
 | Approval Card | Event backend H4; jendela kartu persetujuan di UI #12 (prioritas tertinggi), tanpa `File` |
 | Tabel & grafik | Jendela data interaktif |
 | Dokumen eksekutif + Mermaid | Jendela dokumen, bisa cetak/ekspor PDF |
-| Spreadsheet `.xlsx` / `.csv` | Jendela preview + unduh |
+| Spreadsheet `.xlsx` / `.csv` | Jendela preview + unduh — **ter implement #12 fase 2b**: `.csv`/`.md` pratinjau teks (fetch, auto-escape, tanpa render tabel/markdown), `.pdf` embed iframe, `.xlsx`/format lain hanya metadata + unduh; file > 2 MB tidak di-fetch; tombol unduh memakai `file_url` |
 | Presentasi HTML | Jendela slide terisolasi |
 
-Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut. **Status backend (H5 fase 1, `b07975f`):** file privat `.csv`/`.xlsx`/`.md`/`.pdf` dibuat oleh `workspace_create_file` dan event `artifact_created` (`FILE`) sudah dikirim backend; jendela artefak, grafik interaktif, Mermaid, dan iframe menyusul di #12.
+Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut. **Status backend (H5 fase 1, `b07975f`):** file privat `.csv`/`.xlsx`/`.md`/`.pdf` dibuat oleh `workspace_create_file` dan event `artifact_created` (`FILE`) sudah dikirim backend; **jendela artefak FILE ada di #12 fase 2b** (chip dibuka manual dari pesan, tidak auto-open saat event; pratinjau `.csv`/`.md` teks, `.pdf` embed iframe, `.xlsx`/other unduh saja; file > 2 MB tanpa fetch; artefak ikut hilang saat reload — batas Opsi A cache memori, sama seperti trace). Grafik interaktif, Mermaid, dan iframe presentasi menyusul.
 
 ---
 
