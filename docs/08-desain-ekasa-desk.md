@@ -55,12 +55,12 @@ Backend menolak file milik user lain, file publik, file dari conversation lain, 
 
 Kontrak event ada di `docs/02` §3.1. Tata letaknya:
 
-**Status implementasi:** H4 menyediakan event SSE backend untuk empat event delegasi, `trace_cross_branch`, dan `artifact_created`; #12 fase 2a menambah trace tool Orchestrator (`agent = "Orchestrator"`) serta kartu dari Sub-Agent. UI Live Agent Trace (baris langkah di bawah jawaban + jendela detail) dan jendela kartu persetujuan (get_draft + Setujui/Tolak + daftar draft pending `list_pending_drafts`) dibuat di #12 fase 2a. Jendela artefak file tetap menyusul (fase 2b).
+**Status implementasi:** H4 menyediakan event SSE backend untuk empat event delegasi, `trace_cross_branch`, dan `artifact_created`; #12 fase 2a menambah trace tool Orchestrator (`agent = "Orchestrator"`) serta kartu dari Sub-Agent. UI #12 fase 2a: blok trace **live di atas bubble jawaban** (bertumbuh tiap event, detail inline per langkah, mengecil jadi baris ringkas setelah `done`) dan jendela kartu persetujuan (get_draft + Setujui/Tolak + daftar draft pending `list_pending_drafts`; kartu dibuka setelah `done`). Jendela artefak file tetap menyusul (fase 2b).
 
-1. Di bawah setiap jawaban agent ada baris ringkas: **jumlah langkah · token · durasi**, dengan tombol **Lihat detail**.
-2. Menekan baris tersebut mekarkan daftar langkah (delegasi, panggilan tool, hasil).
-3. Menekan satu langkah membuka isi lengkapnya: instruksi tugas, nama tool, **argumen asli**, dan hasil.
-4. **Lihat detail** membuka jendela penuh di desktop.
+1. **Selagi jawaban mengalir**, blok trace tampil **di atas bubble jawaban** dan bertumbuh tiap event SSE: header "Langkah agent · N" dengan indikator berjalan, dan langkah terbaru terbuka otomatis.
+2. Setelah stream selesai, blok mengecil menjadi baris ringkas di atas jawaban: **jumlah langkah · token · durasi**, dengan tombol **Lihat detail**.
+3. Expand menampilkan daftar langkah (delegasi, panggilan tool, hasil); **tiap langkah terbuka inline** di blok trace: instruksi tugas, nama tool, **argumen asli**, dan hasil.
+4. Tidak ada jendela detail trace — semua detail inline; jendela desktop dipakai untuk Approval Card dan daftar persetujuan.
 
 **Wajib:** instruksi tugas, argumen tool, dan hasil terlihat apa adanya.
 **Dilarang:** menampilkan *system prompt* internal AIOS (ETHOS, guard, instruksi dasar).
