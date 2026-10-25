@@ -1,17 +1,62 @@
 """Read-only ERPNext document tools, scoped to the configured site company."""
 
-from aios_v1.permissions import ERP_CLIENT_DOCTYPES
-from aios_v1.lib.error_utils import log_exception
-from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 import frappe
+
+from aios_v1.lib.error_utils import log_exception, safe_error
+from aios_v1.lib.tool_registry import ai_tool, get_tool_context
+from aios_v1.permissions import ERP_CLIENT_DOCTYPES
 
 DEFAULT_LIST_LIMIT = 20
 MAX_LIST_LIMIT = 100
 
+# Satu sumber teks daftar DocType untuk deskripsi tool dan pesan error —
+# jangan pernah menuliskan daftarnya secara manual di tempat lain.
+_ALLOWED_DOCTYPE_TEXT = ", ".join(ERP_CLIENT_DOCTYPES)
 
-def _validate_doctype(doctype: str) -> None:
+
+def _spend_hint() -> str:
+    """Hint belanja untuk deskripsi tool; kondisional terhadap sumber allowlist.
+
+    Hint hanya muncul bila `Purchase Invoice` ada di `ERP_CLIENT_DOCTYPES` dan
+    `Accounts Payable` ada di `ALLOWED_REPORTS`; kegagalan import report module
+    hanya melewatkan hint report (dicatat), tidak menggagalkan import tool.
+    """
+    hint = ""
+    if "Purchase Invoice" in ERP_CLIENT_DOCTYPES:
+        hint = " Untuk realisasi pengeluaran/pembelian gunakan Purchase Invoice."
+    try:
+        from aios_v1.lib.erpnext_financial_reports import ALLOWED_REPORTS
+
+        if "Accounts Payable" in ALLOWED_REPORTS:
+            hint += " Report Accounts Payable juga tersedia."
+    except ImportError as exc:
+        log_exception("AIOS ERPNext Core Data Hint", exc=exc)
+    return hint
+
+
+_DOC_LIST_DESCRIPTION = (
+    f"Membaca daftar dokumen ERPNext untuk company aktif. "
+    f"DocType yang diizinkan: {_ALLOWED_DOCTYPE_TEXT}.{_spend_hint()}"
+)
+_DOC_GET_DESCRIPTION = (
+    f"Membaca detail satu dokumen ERPNext yang diizinkan. "
+    f"DocType yang diizinkan: {_ALLOWED_DOCTYPE_TEXT}.{_spend_hint()}"
+)
+_DOC_SCHEMA_DESCRIPTION = (
+    f"Membaca field yang tersedia pada DocType ERPNext yang diizinkan. "
+    f"DocType yang diizinkan: {_ALLOWED_DOCTYPE_TEXT}.{_spend_hint()}"
+)
+
+
+def _validate_doctype(doctype: str):
+    """Kembalikan `safe_error` bila DocType di luar allowlist; None bila diizinkan."""
     if doctype not in ERP_CLIENT_DOCTYPES:
-        frappe.throw("DocType ini tidak diizinkan untuk pembacaan AIOS.")
+        return safe_error(
+            f"DocType '{doctype}' tidak diizinkan. DocType yang tersedia: "
+            f"{_ALLOWED_DOCTYPE_TEXT}. Gunakan salah satu DocType tersebut; jangan menebak.",
+            "DOCTYPE_NOT_ALLOWED",
+        )
+    return None
 
 
 def _company() -> str:
@@ -34,7 +79,7 @@ def _validate_fields(doctype: str, values, label: str, allow_empty: bool = True)
 
 @ai_tool(
     name="erpnext_doc_list",
-    description="Membaca daftar dokumen ERPNext untuk company aktif.",
+    description=_DOC_LIST_DESCRIPTION,
     branch=["finance", "sales"],
     plugin_key="erpnext-core-data",
     parameters={
@@ -47,7 +92,9 @@ def _validate_fields(doctype: str, values, label: str, allow_empty: bool = True)
     },
 )
 def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, order_by=None):
-    _validate_doctype(doctype)
+    error = _validate_doctype(doctype)
+    if error:
+        return error
     meta = frappe.get_meta(doctype)
     fields = _validate_fields(doctype, fields, "fields")
     if filters is not None and not isinstance(filters, dict):
@@ -91,7 +138,7 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
 
 @ai_tool(
     name="erpnext_doc_get",
-    description="Membaca detail satu dokumen ERPNext yang diizinkan.",
+    description=_DOC_GET_DESCRIPTION,
     branch=["finance", "sales"],
     plugin_key="erpnext-core-data",
     parameters={
@@ -100,7 +147,9 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
     },
 )
 def erpnext_doc_get(doctype, name):
-    _validate_doctype(doctype)
+    error = _validate_doctype(doctype)
+    if error:
+        return error
     doc = frappe.get_doc(doctype, name, check_permission="read")
     if doctype == "Company" and name != _company():
         frappe.throw("Dokumen tidak ditemukan untuk company aktif.")
@@ -111,13 +160,15 @@ def erpnext_doc_get(doctype, name):
 
 @ai_tool(
     name="erpnext_doctype_schema",
-    description="Membaca field yang tersedia pada DocType ERPNext yang diizinkan.",
+    description=_DOC_SCHEMA_DESCRIPTION,
     branch=["finance", "sales"],
     plugin_key="erpnext-core-data",
     parameters={"doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"}},
 )
 def erpnext_doctype_schema(doctype):
-    _validate_doctype(doctype)
+    error = _validate_doctype(doctype)
+    if error:
+        return error
     meta = frappe.get_meta(doctype)
     return {
         "doctype": doctype,

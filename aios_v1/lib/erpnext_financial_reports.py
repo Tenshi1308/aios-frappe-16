@@ -62,6 +62,14 @@ _REPORT_FILTER_DESCRIPTION = (
     "Accounts Receivable dan Accounts Payable: report_date opsional (default hari ini)."
 )
 
+# Hint kondisional terhadap sumber allowlist — bukan teks tetap.
+_REPORT_SPEND_HINT = (
+    " Untuk total pengeluaran pembelian, gunakan report Accounts Payable."
+    if "Accounts Payable" in ALLOWED_REPORTS
+    else ""
+)
+_REPORT_DESCRIPTION = _REPORT_FILTER_DESCRIPTION + _REPORT_SPEND_HINT
+
 
 def _missing_report_filters(report_name, filters):
     """Kembalikan daftar filter wajib yang belum diisi; kosong bila lengkap."""
@@ -80,7 +88,7 @@ def _missing_report_filters(report_name, filters):
 
 @ai_tool(
     name="erpnext_report_run",
-    description=_REPORT_FILTER_DESCRIPTION,
+    description=_REPORT_DESCRIPTION,
     branch=["finance", "sales"],
     plugin_key="erpnext-financial-reports",
     parameters={

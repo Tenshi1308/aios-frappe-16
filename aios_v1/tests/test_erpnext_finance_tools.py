@@ -123,6 +123,32 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         self.assertNotIn("ToDo", ERP_CLIENT_DOCTYPES)
         result = self._execute("erpnext_doc_list", {"doctype": "ToDo"})
         self.assertFalse(result.get("success", True))
+        self.assertEqual(result.get("code"), "DOCTYPE_NOT_ALLOWED")
+        self.assertIn("Sales Order", result.get("error", ""), "error harus memuat daftar valid")
+        self.assertNotIn("Purchase Order", result.get("error", ""))
+
+    def test_purchase_order_rejected_with_doctype_not_allowed(self):
+        result = self._execute("erpnext_doc_list", {"doctype": "Purchase Order"})
+        self.assertEqual(result.get("code"), "DOCTYPE_NOT_ALLOWED")
+        self.assertNotEqual(result.get("code"), "TOOL_FAILED")
+
+    def test_tool_descriptions_carry_allowlist_and_spend_hint(self):
+        from aios_v1.lib.tool_registry import _TOOL_REGISTRY, _ensure_tools_loaded
+
+        _ensure_tools_loaded()
+        purposes = {
+            "erpnext_doc_list": "Membaca daftar dokumen",
+            "erpnext_doc_get": "Membaca detail satu dokumen",
+            "erpnext_doctype_schema": "Membaca field yang tersedia",
+        }
+        for name, purpose in purposes.items():
+            description = _TOOL_REGISTRY[name]["description"]
+            self.assertIn(purpose, description, name)
+            self.assertIn("Purchase Invoice", description, name)
+            self.assertIn("Report Accounts Payable", description, name)
+            self.assertNotIn("Purchase Order", description, name)
+        report_desc = _TOOL_REGISTRY["erpnext_report_run"]["description"]
+        self.assertIn("gunakan report Accounts Payable", report_desc)
 
     def test_report_outside_allowlist_is_rejected(self):
         result = self._execute("erpnext_report_run", {"report_name": "_Test Unapproved Report"})
