@@ -37,6 +37,8 @@ def _spend_hint() -> str:
 _DOC_LIST_DESCRIPTION = (
     f"Membaca daftar dokumen ERPNext untuk company aktif. "
     f"DocType yang diizinkan: {_ALLOWED_DOCTYPE_TEXT}.{_spend_hint()}"
+    " Saat menggunakan hasil tool ini, sebutkan filter yang kamu pakai dan "
+    "cakupannya; jangan menyebut hasil terfilter sebagai seluruh data."
 )
 _DOC_GET_DESCRIPTION = (
     f"Membaca detail satu dokumen ERPNext yang diizinkan. "

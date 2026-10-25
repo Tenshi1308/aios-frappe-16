@@ -150,6 +150,24 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         report_desc = _TOOL_REGISTRY["erpnext_report_run"]["description"]
         self.assertIn("gunakan report Accounts Payable", report_desc)
 
+    def test_doc_list_description_requires_filter_disclosure(self):
+        from aios_v1.lib.tool_registry import _TOOL_REGISTRY, _ensure_tools_loaded
+
+        _ensure_tools_loaded()
+        doc_list_desc = _TOOL_REGISTRY["erpnext_doc_list"]["description"]
+        self.assertIn(
+            "jangan menyebut hasil terfilter sebagai seluruh data",
+            doc_list_desc,
+            "deskripsi erpnext_doc_list wajib menuntut disclosure filter/cakupan",
+        )
+        for name in ("erpnext_doc_get", "erpnext_doctype_schema"):
+            description = _TOOL_REGISTRY[name]["description"]
+            self.assertNotIn(
+                "jangan menyebut hasil terfilter sebagai seluruh data",
+                description,
+                f"kalimat disclosure hanya untuk erpnext_doc_list, bukan {name}",
+            )
+
     def test_report_outside_allowlist_is_rejected(self):
         result = self._execute("erpnext_report_run", {"report_name": "_Test Unapproved Report"})
         self.assertFalse(result.get("success", True))
