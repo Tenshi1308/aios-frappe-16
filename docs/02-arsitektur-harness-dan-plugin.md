@@ -136,10 +136,4 @@ Semua event dikirim sebagai satu baris `data: <json>\n\n` pada response
 | `artifact_created` Approval Card | `{"type": "artifact_created", "artifact": {"type": "APPROVAL_CARD", "draft_id": ..., "action_type": ..., "doctype": ..., "branch": ...}}` | H4 fase 2; event backend, UI #12 |
 | `artifact_created` file/workspace | `{"type": "artifact_created", "artifact": {"type": "FILE", "file_name": ..., "file_url": ..., "format": ..., "size": ..., "conversation_id": ...}}` — whitelist tanpa `file_id`, tanpa path filesystem, tanpa isi file | **H5 fase 1** (`b07975f`); dikirim manager maupun sub-agent setelah `workspace_create_file` sukses; UI #12 |
 
-**Diputuskan 2026-10-23: event tool call tingkat Orchestrator tidak dikirim di `#8`.**
-Loop `tool_calls` di Orchestrator (bukan Sub-Agent) hanya menampilkan hasil akhir lewat
-`delta` dan `done`. Bila nanti dibutuhkan, ada dua opsi: memakai ulang
-`trace_subagent_tool` dengan `agent` = Orchestrator, atau menambah event baru
-`trace_orchestrator_tool` — keputusan itu menyusul H4. Loop dibatasi
-`MAX_TOOL_ROUNDS = 6`; bila habis, stream mengirim pesan aman dan mencatatnya ke `Error Log`.
-Ketentuan tanpa event tool-call juga berlaku untuk tool eksternal MCP pada H2; nonce manual dapat membuktikan panggilan, tetapi tidak menciptakan audit trail.
+**Diperbarui #12 fase 2a (2026-10-25): event tool call tingkat Orchestrator kini dikirim** memakai ulang `trace_subagent_tool` dengan `agent = "Orchestrator"` (tanpa event baru; `cross_branch_consultation` dikecualikan karena sudah punya `trace_cross_branch`). **`artifact_created` APPROVAL_CARD kini juga dikirim dari loop Sub-Agent** (sebelumnya hanya Orchestrator), dengan bentuk payload yang sama. Method `list_pending_drafts` (whitelisted, owner-scoped, hanya `PENDING_APPROVAL`) tersedia untuk UI kartu setelah reload. Loop dibatasi `MAX_TOOL_ROUNDS = 6`; bila habis, stream mengirim pesan aman dan mencatatnya ke `Error Log`. Ketentuan tanpa audit trail untuk tool eksternal MCP pada H2 tetap berlaku; nonce manual dapat membuktikan panggilan, tetapi tidak menciptakan audit trail.

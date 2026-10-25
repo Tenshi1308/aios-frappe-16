@@ -55,7 +55,7 @@ Backend menolak file milik user lain, file publik, file dari conversation lain, 
 
 Kontrak event ada di `docs/02` §3.1. Tata letaknya:
 
-**Status implementasi:** H4 menyediakan event SSE backend untuk empat event delegasi dan `trace_cross_branch`. Event `artifact_created` Approval Card juga dikirim backend dengan `draft_id`; UI Live Agent Trace dan tampilan kartu belum dibuat dan masuk #12. File/workspace tetap H5.
+**Status implementasi:** H4 menyediakan event SSE backend untuk empat event delegasi, `trace_cross_branch`, dan `artifact_created`; #12 fase 2a menambah trace tool Orchestrator (`agent = "Orchestrator"`) serta kartu dari Sub-Agent. UI Live Agent Trace (baris langkah di bawah jawaban + jendela detail) dan jendela kartu persetujuan (get_draft + Setujui/Tolak + daftar draft pending `list_pending_drafts`) dibuat di #12 fase 2a. Jendela artefak file tetap menyusul (fase 2b).
 
 1. Di bawah setiap jawaban agent ada baris ringkas: **jumlah langkah · token · durasi**, dengan tombol **Lihat detail**.
 2. Menekan baris tersebut mekarkan daftar langkah (delegasi, panggilan tool, hasil).
@@ -77,7 +77,7 @@ Agent dapat membuka modul dan membuat artefak. Aksi tulis **tidak pernah** langs
 
 ## 5. Artefak sebagai File & Jendela
 
-File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**. Approval Card H4 adalah event backend virtual; UI #12 mengambil detail dari `get_draft`, dan kartu tidak membuat `File`:
+File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**. Approval Card H4 adalah event backend virtual; UI #12 fase 2a mengambil detail dari `get_draft` (jendela kartu dengan Setujui/Tolak, termasuk hasil gagal `executed:false` yang dijelaskan dengan code+message), daftar draft pending milik pemilik lewat `list_pending_drafts`, dan kartu tidak membuat `File`:
 
 | Jenis | Tampilan |
 |---|---|
