@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { useChatStore } from '../../stores/chat';
 import type { FileArtifact } from '../../types';
 import { formatBytes } from '../../utils/format';
+import { renderMarkdown } from '../../utils/markdown';
 import AppIcon from '../base/AppIcon.vue';
 
 const props = defineProps<{ fileUrl: string }>();
@@ -13,24 +16,28 @@ const artifact = computed<FileArtifact | null>(() => {
   return a && a.type === 'FILE' ? a : null;
 });
 
-const PREVIEW_TEXT_FORMATS = new Set(['csv', 'md']);
 const PREVIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 const loading = ref(false);
 const error = ref('');
-const textContent = ref('');
+const csvRows = ref<string[][]>([]);
+const mdHtml = ref('');
+const sheetRows = ref<string[][]>([]);
 
-const mode = computed<'text' | 'pdf' | 'meta' | 'too-large' | 'unknown'>(() => {
+const mode = computed<'csv' | 'md' | 'pdf' | 'xlsx' | 'meta' | 'too-large' | 'unknown'>(() => {
   const a = artifact.value;
   if (!a) return 'unknown';
   if (a.size > PREVIEW_MAX_BYTES) return 'too-large';
-  if (PREVIEW_TEXT_FORMATS.has(a.format)) return 'text';
+  if (a.format === 'csv') return 'csv';
+  if (a.format === 'md') return 'md';
   if (a.format === 'pdf') return 'pdf';
+  if (a.format === 'xlsx') return 'xlsx';
   return 'meta';
 });
 
-async function loadText() {
-  if (mode.value !== 'text') return;
+async function loadPreview() {
+  const kind = mode.value;
+  if (kind !== 'csv' && kind !== 'md' && kind !== 'xlsx') return;
   loading.value = true;
   error.value = '';
   try {
@@ -39,7 +46,19 @@ async function loadText() {
       error.value = 'Pratinjau tidak dapat dimuat.';
       return;
     }
-    textContent.value = await res.text();
+    if (kind === 'csv') {
+      const raw = await res.text();
+      const parsed = Papa.parse<string[]>(raw, { skipEmptyLines: true });
+      csvRows.value = parsed.data;
+    } else if (kind === 'md') {
+      const raw = await res.text();
+      mdHtml.value = renderMarkdown(raw);
+    } else {
+      const buffer = await res.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      sheetRows.value = sheet ? (XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false }) as string[][]) : [];
+    }
   } catch {
     error.value = 'Pratinjau tidak dapat dimuat.';
   } finally {
@@ -47,7 +66,7 @@ async function loadText() {
   }
 }
 
-onMounted(loadText);
+onMounted(loadPreview);
 </script>
 
 <template>
@@ -68,13 +87,34 @@ onMounted(loadText);
         Terlalu besar untuk pratinjau — silakan unduh.
       </div>
 
-      <pre v-else-if="mode === 'text'" class="aw-text">{{ textContent }}</pre>
+      <div v-else-if="mode === 'csv' && csvRows.length" class="aw-table-wrap">
+        <table class="aw-table">
+          <thead>
+            <tr><th v-for="(h, i) in csvRows[0]" :key="i">{{ h }}</th></tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, ri) in csvRows.slice(1)" :key="ri">
+              <td v-for="(cell, ci) in row" :key="ci">{{ cell }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else-if="mode === 'md'" class="aw-md md-body" v-html="mdHtml" />
       <iframe
         v-else-if="mode === 'pdf'"
         :src="props.fileUrl"
         :title="artifact.file_name"
         class="aw-frame"
       />
+      <div v-else-if="mode === 'xlsx' && sheetRows.length" class="aw-table-wrap">
+        <table class="aw-table">
+          <tbody>
+            <tr v-for="(row, ri) in sheetRows" :key="ri">
+              <td v-for="(cell, ci) in row" :key="ci">{{ cell }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div v-else class="aw-note">Pratinjau untuk format ini belum tersedia — silakan unduh.</div>
 
       <a class="btn ghost aw-download" :href="props.fileUrl" :download="artifact.file_name">
@@ -166,5 +206,42 @@ onMounted(loadText);
 }
 .aw-download:hover {
   background: var(--hover);
+}
+.aw-table-wrap {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.aw-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  color: var(--fg);
+}
+.aw-table th,
+.aw-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.aw-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 600;
+}
+.aw-md {
+  flex: 1;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 12px;
 }
 </style>

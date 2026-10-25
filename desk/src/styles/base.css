@@ -1568,3 +1568,73 @@ textarea {
   line-height: 15px;
   text-align: center;
 }
+
+/* Markdown di bubble jawaban (markdown-it + DOMPurify). */
+.rt.md > :first-child {
+  margin-top: 0;
+}
+.rt.md > :last-child {
+  margin-bottom: 0;
+}
+.rt.md h1,
+.rt.md h2,
+.rt.md h3,
+.rt.md h4 {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.rt.md p {
+  margin: 4px 0;
+}
+.rt.md ul,
+.rt.md ol {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.rt.md li {
+  margin: 2px 0;
+}
+.rt.md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 11px;
+}
+.rt.md th,
+.rt.md td {
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+.rt.md th {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.rt.md code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.rt.md pre {
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+.rt.md pre code {
+  background: transparent;
+  padding: 0;
+}
+.rt.md a {
+  color: var(--accent);
+}
+.rt.md blockquote {
+  margin: 4px 0;
+  padding: 2px 10px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}

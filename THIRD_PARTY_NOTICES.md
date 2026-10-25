@@ -95,3 +95,29 @@ The AIOS wrappers use these official Frappe APIs:
 - [Database API (`frappe.get_list`)](https://docs.frappe.io/framework/user/en/api/database)
 - [Document API (`frappe.get_doc`)](https://docs.frappe.io/framework/user/en/api/document)
 - [`frappe.desk.query_report.run`, Frappe v16 source](https://github.com/frappe/frappe/blob/version-16/frappe/desk/query_report.py)
+
+## Desk runtime dependencies (render & preview)
+
+### markdown-it
+
+- Author: Vitaly Puzrin, Alex Kocharin
+- Source repository: [markdown-it/markdown-it](https://github.com/markdown-it/markdown-it)
+- License: MIT — used with `html: false` (raw HTML disabled); output sanitized with DOMPurify.
+
+### DOMPurify
+
+- Author: Mario Heiderich, CyanCut
+- Source repository: [cure53/DOMPurify](https://github.com/cure53/DOMPurify)
+- License: MPL-2.0 OR Apache-2.0 (dual-licensed)
+
+### Papa Parse
+
+- Author: Matt Holt
+- Source repository: [mholt/PapaParse](https://github.com/mholt/PapaParse)
+- License: MIT
+
+### SheetJS Community Edition (`xlsx`)
+
+- Author: SheetJS LLC
+- Source repository: [SheetJS/sheetjs](https://github.com/SheetJS/sheetjs)
+- License: Apache-2.0
