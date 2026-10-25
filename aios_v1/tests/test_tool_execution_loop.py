@@ -314,6 +314,44 @@ class TestToolExecutionLoop(IntegrationTestCase):
                 list(self.manager.handle_stream("hai", conversation_id=None, user="_test@example.com"))
         ensure.assert_called_once_with("_test@example.com")
 
+    def test_manager_tool_call_emits_orchestrator_trace(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name="erpnext_doc_list"))
+                return iter(())
+            return iter(["selesai"])
+
+        events, _, _, _ = self._run_manager(scripted)
+        trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        traces = [event for event in trace if event.get("type") == "trace_subagent_tool"]
+        self.assertEqual(len(traces), 1, "tool manager harus mengirim satu trace")
+        self.assertEqual(traces[0]["agent"], "Orchestrator")
+        self.assertEqual(traces[0]["tool"], "erpnext_doc_list")
+
+    def test_manager_delegate_and_cross_branch_have_no_double_trace(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name="cross_branch_consultation"))
+                calls[-1]["function"]["arguments"] = json.dumps(
+                    {"to_branch": "sales", "message_type": "consultation", "payload": {}}
+                )
+                return iter(())
+            return iter(["ok"])
+
+        events, _, _, _ = self._run_manager(scripted)
+        trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        self.assertEqual(
+            [event["type"] for event in trace if event["type"] == "trace_cross_branch"],
+            ["trace_cross_branch"],
+        )
+        self.assertEqual(
+            [event for event in trace if event["type"] == "trace_subagent_tool"],
+            [],
+            "cross_branch_consultation tidak boleh dobel trace",
+        )
+
 
 class TestTruncationMarker(IntegrationTestCase):
     """Regresi bug 2026-10-24: jawaban manager terpotong mid-word (finish_reason
@@ -407,3 +445,60 @@ class TestTruncationMarker(IntegrationTestCase):
         self.assertTrue(any("jawaban final tanpa finish_reason" in event for event in events))
         self.assertNotIn("Jawaban terpotong", "".join(events))
         log_error.assert_not_called()
+
+
+class TestPhase2aEvents(IntegrationTestCase):
+    """C2 fase 2a: kartu approval dari loop sub-agent."""
+
+    def setUp(self):
+        super().setUp()
+        self.original_commit = frappe.db.commit
+        frappe.db.commit = lambda *args, **kwargs: None
+
+    def tearDown(self):
+        frappe.db.commit = self.original_commit
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def test_subagent_draft_create_emits_approval_card(self):
+        from aios_v1.plugin_manager.registry import get_branch
+
+        draft_result = json.dumps({
+            "status": "PENDING_APPROVAL",
+            "draft_id": "DRF-_Test-2a",
+            "action_type": "CREATE",
+            "doctype": "Sales Order",
+        })
+
+        rounds = []
+
+        def fake_chat(messages, usage, tools, tool_calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            rounds.append(1)
+            if len(rounds) == 1:
+                tool_calls.append({
+                    "id": "t1", "type": "function",
+                    "function": {"name": "erpnext_action_draft_create", "arguments": "{}"},
+                })
+                return iter(())
+            return iter(["draft dibuat"])
+
+        manager = BaseManager(get_branch("finance"))
+        with (
+            patch.object(manager, "build_system_prompt", return_value="prompt"),
+            patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", return_value=[]),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat),
+            patch("aios_v1.managers.base_manager.execute_tool", return_value=draft_result),
+        ):
+            events = list(manager._run_subagent(
+                "treasurer", "buat draft", {}, "Administrator", [], result_holder=[],
+            ))
+        artifacts = [event for event in events if event.get("type") == "artifact_created"]
+        self.assertEqual(len(artifacts), 1, "sub-agent yang membuat draft harus meng-emit kartu")
+        self.assertEqual(artifacts[0]["artifact"], {
+            "type": "APPROVAL_CARD",
+            "draft_id": "DRF-_Test-2a",
+            "action_type": "CREATE",
+            "doctype": "Sales Order",
+            "branch": "finance",
+        })

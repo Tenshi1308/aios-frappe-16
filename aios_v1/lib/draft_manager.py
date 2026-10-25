@@ -330,6 +330,28 @@ def get_draft(draft_id: str) -> dict:
     return doc.as_dict()
 
 
+@frappe.whitelist()
+def list_pending_drafts(limit: int = 50) -> list:
+    """Daftar draft pending milik pemanggil (owner-scoped), terbaru dulu.
+
+    Detail isi draf diambil UI lewat `get_draft` — doctype/aksi ada di dalam
+    `payload` dan tidak di-expose di sini.
+    """
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Draft List Limit", exc=exc)
+        limit = 50
+    limit = max(1, min(limit, 100))
+    return frappe.get_all(
+        "Pending Action Draft",
+        filters={"user": frappe.session.user, "status": "PENDING_APPROVAL"},
+        fields=["name", "type", "branch", "status", "expires_at", "creation"],
+        order_by="creation desc",
+        limit_page_length=limit,
+    )
+
+
 def _assert_draft_owner(doc) -> None:
     user = frappe.session.user
     if user != "Administrator" and doc.user != user:

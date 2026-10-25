@@ -105,3 +105,65 @@ class TestDraftManager(IntegrationTestCase):
         draft.save(ignore_permissions=True)
         with self.assertRaises(frappe.ValidationError):
             approve_draft(draft.name)
+
+
+class TestListPendingDrafts(IntegrationTestCase):
+    """C3 fase 2a: daftar draft pending owner-scoped + hanya PENDING_APPROVAL."""
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.alpha = _make_test_user("_test.draft.list.a@example.com", "_Test List A")
+        self.beta = _make_test_user("_test.draft.list.b@example.com", "_Test List B")
+
+    def tearDown(self):
+        frappe.db.commit = self._orig_commit
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def _draft(self, user, task_id):
+        return frappe.get_doc(
+            {
+                "doctype": "Pending Action Draft",
+                "task_id": task_id,
+                "user": user,
+                "type": "CREATE",
+                "payload": '{"doctype": "Sales Order", "data": {}}',
+                "status": "PENDING_APPROVAL",
+                "expires_at": add_to_date(now_datetime(), hours=2),
+            }
+        ).insert(ignore_permissions=True)
+
+    def test_list_is_owner_scoped_and_pending_only(self):
+        from aios_v1.lib.draft_manager import list_pending_drafts, reject_draft
+
+        a1 = self._draft(self.alpha.name, "TEST-LIST-A1")
+        a2 = self._draft(self.alpha.name, "TEST-LIST-A2")
+        b1 = self._draft(self.beta.name, "TEST-LIST-B1")
+
+        frappe.set_user(self.alpha.name)
+        rows = list_pending_drafts()
+        names = {row["name"] for row in rows}
+        self.assertEqual(names, {a1.name, a2.name})
+        self.assertTrue(all(row["status"] == "PENDING_APPROVAL" for row in rows))
+        self.assertTrue(all({"name", "type", "branch", "status", "expires_at", "creation"} <= set(row) for row in rows))
+
+        frappe.set_user(self.beta.name)
+        rows_beta = list_pending_drafts()
+        self.assertEqual({row["name"] for row in rows_beta}, {b1.name})
+
+        frappe.set_user(self.alpha.name)
+        reject_draft(a1.name, "tidak sesuai")
+        rows_after = list_pending_drafts()
+        self.assertEqual({row["name"] for row in rows_after}, {a2.name})
+
+    def test_list_limit_is_clamped(self):
+        from aios_v1.lib.draft_manager import list_pending_drafts
+
+        self._draft(self.alpha.name, "TEST-LIST-C1")
+        frappe.set_user(self.alpha.name)
+        rows = list_pending_drafts(limit=500)
+        self.assertIsInstance(rows, list)
+        rows_default = list_pending_drafts()
+        self.assertEqual(len(rows_default), 1)

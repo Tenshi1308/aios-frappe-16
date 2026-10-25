@@ -50,6 +50,33 @@ def _workspace_artifact_event(tool_name, result_json):
     return file_artifact(payload["artifact"])
 
 
+def _approval_card_event(tool_name, result_json, branch):
+    """Event `artifact_created` APPROVAL_CARD dari hasil `erpnext_action_draft_create`; None bila bukan kartu.
+
+    Dipakai di loop manager dan loop sub-agent (fase 2a: kartu dari sub-agent
+    juga harus sampai ke stream).
+    """
+    if tool_name != "erpnext_action_draft_create":
+        return None
+    try:
+        payload = json.loads(result_json)
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Approval Card Event", exc=exc)
+        return None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("status") != "PENDING_APPROVAL"
+        or not payload.get("draft_id")
+    ):
+        return None
+    return approval_card_artifact(
+        payload["draft_id"],
+        payload.get("action_type", ""),
+        payload.get("doctype", ""),
+        branch or "",
+    )
+
+
 class BaseManager:
     def __init__(self, branch_def):
         self.branch = branch_def
@@ -252,6 +279,9 @@ class BaseManager:
                     artifact_event = _workspace_artifact_event(name, result)
                     if artifact_event is not None:
                         yield artifact_event
+                    card_event = _approval_card_event(name, result, branch)
+                    if card_event is not None:
+                        yield card_event
                     messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
                 if round_number == MAX_TOOL_ROUNDS - 1:
                     break
@@ -452,6 +482,21 @@ class BaseManager:
                                     yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
                                 result = result_holder[0]
                     else:
+                        # Trace tool Orchestrator (fase 2a, D1): pakai ulang
+                        # trace_subagent_tool dengan agent="Orchestrator";
+                        # cross_branch_consultation dikecualikan (sudah punya
+                        # trace_cross_branch sendiri).
+                        try:
+                            trace_args = json.loads(function.get("arguments") or "{}")
+                        except (TypeError, ValueError) as exc:
+                            log_exception("AIOS Orchestrator Trace Arguments", exc=exc)
+                            trace_args = {}
+                        if not isinstance(trace_args, dict):
+                            trace_args = {}
+                        if tool_name != "cross_branch_consultation":
+                            yield "data: " + json.dumps(trace_subagent_tool(
+                                self.branch.get("key", ""), "Orchestrator", tool_name, trace_args,
+                            ), ensure_ascii=False) + "\n\n"
                         result = execute_tool(
                             tool_name,
                             function.get("arguments", "{}"),
@@ -463,6 +508,9 @@ class BaseManager:
                                 "conversation_id": str(conversation_id),
                             },
                         )
+                        card_event = _approval_card_event(tool_name, result, self.branch.get("key", ""))
+                        if card_event is not None:
+                            yield "data: " + json.dumps(card_event, ensure_ascii=False) + "\n\n"
                         if worker_def is None and tool_name == "cross_branch_consultation":
                             try:
                                 trace_args = json.loads(function.get("arguments", "{}"))
@@ -487,21 +535,6 @@ class BaseManager:
                                 result=trace_result,
                             )
                             yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
-                        elif worker_def is None and tool_name == "erpnext_action_draft_create":
-                            try:
-                                draft_result = json.loads(result)
-                            except (TypeError, ValueError) as exc:
-                                log_exception("AIOS Approval Card Trace Result", exc=exc)
-                                draft_result = {}
-                            if not isinstance(draft_result, dict):
-                                log_exception("AIOS Approval Card Trace Result", context="JSON result bukan object.")
-                                draft_result = {}
-                            if draft_result.get("status") == "PENDING_APPROVAL" and draft_result.get("draft_id"):
-                                event = approval_card_artifact(
-                                    draft_result["draft_id"], draft_result.get("action_type", ""),
-                                    draft_result.get("doctype", ""), self.branch.get("key", ""),
-                                )
-                                yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
                         file_event = _workspace_artifact_event(tool_name, result)
                         if file_event is not None:
                             yield "data: " + json.dumps(file_event, ensure_ascii=False) + "\n\n"
