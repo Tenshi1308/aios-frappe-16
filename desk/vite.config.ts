@@ -16,6 +16,12 @@ export default defineConfig({
         changeOrigin: false,
         headers: { Host: 'aios-v16.localhost' },
       },
+      // File privat artefak (/private/files/...) juga dilayani backend Frappe.
+      '/private': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: false,
+        headers: { Host: 'aios-v16.localhost' },
+      },
     },
   },
 });
