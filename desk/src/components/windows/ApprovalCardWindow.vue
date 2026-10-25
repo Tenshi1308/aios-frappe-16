@@ -27,7 +27,7 @@ function loadErrorText(err: unknown): string {
   return err instanceof Error && err.message.trim() ? err.message : 'Draft tidak ditemukan.';
 }
 
-async function load() {
+async function load(retry = 0) {
   loading.value = true;
   error.value = '';
   try {
@@ -39,7 +39,16 @@ async function load() {
       payload.value = null;
     }
   } catch (err) {
-    error.value = loadErrorText(err);
+    // Kartu bisa terbuka saat stream masih berjalan (commit transaksi terjadi
+    // tepat sebelum event `done`), jadi "not found" awal di-retry, bukan final.
+    const message = loadErrorText(err);
+    if (retry < 4 && /not found|tidak ditemukan/i.test(message)) {
+      loading.value = false;
+      error.value = 'Menunggu draft tersinkron…';
+      setTimeout(() => void load(retry + 1), 1500);
+      return;
+    }
+    error.value = message;
     draft.value = null;
   } finally {
     loading.value = false;
