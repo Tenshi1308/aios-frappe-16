@@ -57,10 +57,10 @@ Kontrak event ada di `docs/02` §3.1. Tata letaknya:
 
 **Status implementasi:** H4 menyediakan event SSE backend untuk empat event delegasi, `trace_cross_branch`, dan `artifact_created`; #12 fase 2a menambah trace tool Orchestrator (`agent = "Orchestrator"`) serta kartu dari Sub-Agent. UI #12 fase 2a: blok trace **live di atas bubble jawaban** (bertumbuh tiap event, detail inline per langkah, mengecil jadi baris ringkas setelah `done`) dan jendela kartu persetujuan (get_draft + Setujui/Tolak + daftar draft pending `list_pending_drafts`; kartu dibuka setelah `done`). Jendela artefak file tetap menyusul (fase 2b).
 
-1. **Selagi jawaban mengalir**, blok trace tampil **di atas bubble jawaban** dan bertumbuh tiap event SSE: header "Langkah agent · N" dengan indikator berjalan, dan langkah terbaru terbuka otomatis.
+1. **Selagi jawaban mengalir**, blok trace tampil **di atas bubble jawaban** bergaya *activity feed* (flat, seperti harness populer): header **"Working for …"** dengan timer hidup, tiap event menjadi **item berikon** (delegasi/peran, tool, hasil, konsultasi) dengan subteks ringkas dari argumen, durasi per item dihitung klien, dan item terakhir ber-status berjalan (spinner).
 2. Setelah stream selesai, blok mengecil menjadi baris ringkas di atas jawaban: **jumlah langkah · token · durasi**, dengan tombol **Lihat detail**.
-3. Expand menampilkan daftar langkah (delegasi, panggilan tool, hasil); **tiap langkah terbuka inline** di blok trace: instruksi tugas, nama tool, **argumen asli**, dan hasil.
-4. Tidak ada jendela detail trace — semua detail inline; jendela desktop dipakai untuk Approval Card dan daftar persetujuan.
+3. Expand menampilkan daftar item; **tiap item terbuka inline** di blok trace: instruksi tugas, nama tool, **argumen asli**, dan hasil.
+4. Tidak ada jendela detail trace — semua detail inline; jendela desktop dipakai untuk Approval Card dan daftar persetujuan. Tidak ada item "thought" — model tidak mengirim reasoning via stream.
 
 **Wajib:** instruksi tugas, argumen tool, dan hasil terlihat apa adanya.
 **Dilarang:** menampilkan *system prompt* internal AIOS (ETHOS, guard, instruksi dasar).
