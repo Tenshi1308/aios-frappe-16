@@ -128,7 +128,14 @@ export const useChatStore = defineStore('chat', {
       this.streaming[branch] = true;
       const fileIds = this.files(branch).map((f) => f.id);
       this.pendingFiles[branch] = [];
-      const placeholder: ChatMessage = { id: newMessageId(), role: 'agent', text: '', live: true };
+      const placeholder: ChatMessage = {
+        id: newMessageId(),
+        role: 'agent',
+        text: '',
+        live: true,
+        startedAt: performance.now(),
+        stepTimes: [],
+      };
       const threadKey = branch;
       const threadAtStart = this.threads[threadKey] ?? [];
       this.threads[threadKey] = [...threadAtStart, placeholder];
@@ -142,7 +149,13 @@ export const useChatStore = defineStore('chat', {
       const appendTrace = (event: TraceEvent) => {
         const list = this.threads[threadKey];
         if (!list || !list[index]) return;
-        list[index] = { ...list[index], steps: [...(list[index].steps ?? []), event] };
+        const msg = list[index];
+        // Timing klien untuk durasi per item activity feed.
+        list[index] = {
+          ...msg,
+          steps: [...(msg.steps ?? []), event],
+          stepTimes: [...(msg.stepTimes ?? []), performance.now()],
+        };
       };
       const turnDraftIds: string[] = [];
       const appendArtifact = (artifact: ArtifactEvent) => {
@@ -181,10 +194,14 @@ export const useChatStore = defineStore('chat', {
             onDone: (tokens) => {
               const list = this.threads[threadKey];
               if (!list || !list[index]) return;
+              // Waktu akhir turn: penutup durasi item terakhir activity feed.
+              const msg = list[index];
+              const stepTimes = [...(msg.stepTimes ?? []), performance.now()];
               list[index] = {
-                ...list[index],
+                ...msg,
                 live: false,
-                tokens: tokens ?? list[index].tokens,
+                stepTimes,
+                tokens: tokens ?? msg.tokens,
                 durationMs: Math.round(performance.now() - startedAt),
               };
               if (tokens !== undefined && turnDraftIds.length) {

@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import type { TraceEvent } from '../../types';
-import { formatDurationMs, prettyJson, traceStepLabel } from '../../utils/format';
+import { prettyJson, traceStepIcon, traceStepLabel, traceStepSubtext } from '../../utils/format';
+import AppIcon from '../base/AppIcon.vue';
 
-const props = defineProps<{ step: TraceEvent; defaultOpen?: boolean }>();
+const props = defineProps<{
+  step: TraceEvent;
+  defaultOpen?: boolean;
+  /** Item terakhir yang masih berjalan (live) — durasi dihitung klien. */
+  running?: boolean;
+  /** Teks durasi item (dihitung parent dari timing klien). */
+  durationText?: string;
+}>();
 
 const open = ref(!!props.defaultOpen);
 
@@ -30,15 +38,13 @@ const sections = computed<TraceSection[]>(() => {
         { label: 'Peran penerima', text: step.agent },
         { label: 'Tugas', text: step.task_prompt },
       ];
-    case 'trace_subagent_tool': {
-      const parts = [{ label: 'Argumen', text: prettyJson(step.args) }];
-      return parts;
-    }
+    case 'trace_subagent_tool':
+      return [{ label: 'Argumen', text: prettyJson(step.args) }];
     case 'trace_subagent_result':
       return [
         { label: 'Ringkasan', text: step.summary },
         { label: 'Status', text: step.status },
-        { label: 'Durasi', text: formatDurationMs(step.duration_ms) },
+        { label: 'Durasi (server)', text: formatServerDuration(step.duration_ms) },
       ];
     case 'trace_cross_branch':
       return [
@@ -50,20 +56,24 @@ const sections = computed<TraceSection[]>(() => {
   }
 });
 
-const meta = computed(() => {
-  const step = props.step;
-  if (step.type === 'trace_subagent_result') return formatDurationMs(step.duration_ms);
-  return '';
-});
+function formatServerDuration(ms: number): string {
+  if (!ms && ms !== 0) return '—';
+  return `${(ms / 1000).toFixed(1)} dtk`;
+}
+
+const subtext = computed(() => traceStepSubtext(props.step));
 </script>
 
 <template>
-  <div class="as-item" :class="{ open }">
+  <div class="as-item" :class="{ open, running: props.running }">
     <button class="as-head" @click="open = !open">
-      <span class="as-label">{{ traceStepLabel(step) }}</span>
-      <span v-if="meta" class="as-meta">{{ meta }}</span>
+      <span class="as-icon"><AppIcon :name="traceStepIcon(props.step)" :size="13" /></span>
+      <span class="as-label">{{ traceStepLabel(props.step) }}</span>
+      <span v-if="props.running" class="as-running" aria-hidden="true"><i /><i /><i /></span>
+      <span v-else-if="props.durationText" class="as-meta">{{ props.durationText }}</span>
       <span class="as-chev">{{ open ? '−' : '+' }}</span>
     </button>
+    <div v-if="open" class="as-sub" >{{ subtext }}</div>
     <div v-if="open" class="as-body">
       <div v-for="(section, i) in sections" :key="i" class="as-section">
         <span class="as-section-label">{{ section.label }}</span>
@@ -85,10 +95,13 @@ const meta = computed(() => {
   background: var(--surface);
   overflow: hidden;
 }
+.as-item.running {
+  border-color: var(--ok);
+}
 .as-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   padding: 5px 9px;
   background: transparent;
   border: none;
@@ -101,6 +114,13 @@ const meta = computed(() => {
 .as-head:hover {
   background: var(--hover);
 }
+.as-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+.as-item.running .as-icon {
+  color: var(--ok);
+}
 .as-label {
   flex: 1;
   min-width: 0;
@@ -108,17 +128,47 @@ const meta = computed(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.as-running {
+  display: inline-flex;
+  gap: 2px;
+}
+.as-running i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: as-blink 1s ease-in-out infinite;
+}
+.as-running i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.as-running i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes as-blink {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
 .as-meta {
   color: var(--faint);
+  font-variant-numeric: tabular-nums;
 }
 .as-chev {
   color: var(--faint);
+}
+.as-sub {
+  padding: 0 9px 5px 29px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .as-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 6px 9px;
+  padding: 6px 9px 8px 29px;
   border-top: 1px solid var(--line);
   background: var(--surface-2);
 }

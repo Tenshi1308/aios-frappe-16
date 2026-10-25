@@ -36,6 +36,10 @@ export interface ChatMessage {
   /** True saat jawaban masih di-stream; blok trace tampil live di atas bubble. */
   live?: boolean;
   steps?: TraceEvent[];
+  /** performance.now() saat tiap event trace diterima klien (durasi per item). */
+  stepTimes?: number[];
+  /** performance.now() saat turn dimulai (header "Working for …"). */
+  startedAt?: number;
   tokens?: number;
   durationMs?: number;
   artifacts?: ArtifactEvent[];

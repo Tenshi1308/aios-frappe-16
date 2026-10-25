@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useBranchesStore } from '../../stores/branches';
 import { useChatStore } from '../../stores/chat';
 import { useSessionStore } from '../../stores/session';
@@ -65,6 +65,32 @@ function summaryText(m: ChatMessage) {
 
 const lastStepsLength = computed(() => messages.value[messages.value.length - 1]?.steps?.length ?? 0);
 const lastArtifactsLength = computed(() => messages.value[messages.value.length - 1]?.artifacts?.length ?? 0);
+
+// Tick 1 detik untuk durasi live (header Working for + durasi item berjalan).
+const tick = ref(0);
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  tickTimer = setInterval(() => {
+    tick.value += 1;
+  }, 1000);
+});
+onUnmounted(() => {
+  if (tickTimer) clearInterval(tickTimer);
+});
+
+function stepDurationText(m: ChatMessage, i: number): string {
+  const times = m.stepTimes ?? [];
+  const start = times[i];
+  if (start === undefined) return '';
+  const end = times[i + 1] ?? (m.live ? performance.now() : (m.startedAt ?? start) + (m.durationMs ?? 0));
+  return formatDurationMs(Math.max(0, end - start));
+}
+
+function workingText(m: ChatMessage): string {
+  void tick.value;
+  if (!m.startedAt) return 'Working…';
+  return `Working for ${formatDurationMs(performance.now() - m.startedAt)}`;
+}
 
 function openPendingDrafts() {
   useWindowManager().open('pending-drafts', 'Persetujuan Tertunda');
@@ -225,9 +251,11 @@ async function onFilesPicked(e: Event) {
           <div v-if="m.role === 'agent' && m.steps?.length" class="trace-block" :class="{ live: m.live }">
             <button class="trace-head" @click="traceOpenId = traceOpenId === m.id ? null : m.id">
               <span v-if="m.live" class="trace-live-dot" aria-hidden="true" />
-              <b>{{ m.live ? 'Langkah agent' : 'Langkah agent' }} · {{ m.steps.length }}</b>
-              <span v-if="m.live" class="trace-live-label">berjalan…</span>
-              <span v-else class="trace-summary">{{ summaryText(m) }}</span>
+              <b v-if="m.live">{{ workingText(m) }}</b>
+              <template v-else>
+                <b>Langkah agent · {{ m.steps.length }}</b>
+                <span class="trace-summary">{{ summaryText(m) }}</span>
+              </template>
               <span class="trace-toggle">{{ traceOpenId === m.id ? 'Sembunyikan' : 'Lihat detail' }}</span>
             </button>
             <div v-if="traceOpenId === m.id || m.live" class="trace-steps">
@@ -236,6 +264,8 @@ async function onFilesPicked(e: Event) {
                 :key="si"
                 :step="step"
                 :default-open="!!m.live && si === (m.steps?.length ?? 0) - 1"
+                :running="!!m.live && si === (m.steps?.length ?? 0) - 1"
+                :duration-text="stepDurationText(m, si)"
               />
             </div>
           </div>

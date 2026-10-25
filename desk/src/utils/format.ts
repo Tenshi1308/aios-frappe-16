@@ -51,3 +51,43 @@ export function traceStepLabel(event: { type: string; [key: string]: unknown }):
       return event.type;
   }
 }
+
+/** Ikon kategori untuk item activity feed trace. */
+export function traceStepIcon(event: { type: string }): string {
+  switch (event.type) {
+    case 'trace_delegate_start':
+    case 'trace_subagent_prompt':
+      return 'users';
+    case 'trace_subagent_tool':
+      return 'wrench';
+    case 'trace_subagent_result':
+      return 'check';
+    case 'trace_cross_branch':
+      return 'arrow-right';
+    default:
+      return 'sparkle';
+  }
+}
+
+/** Subteks satu baris dari isi event (args/summary/instrusi), tanpa key internal. */
+export function traceStepSubtext(event: { type: string; [key: string]: unknown }): string {
+  let raw = '';
+  if (event.type === 'trace_delegate_start') raw = String(event.instruction ?? '');
+  else if (event.type === 'trace_subagent_prompt') raw = String(event.task_prompt ?? '');
+  else if (event.type === 'trace_subagent_tool') {
+    const args = (event.args ?? {}) as Record<string, unknown>;
+    raw = Object.entries(args)
+      .filter(([, v]) => typeof v === 'string' || typeof v === 'number')
+      .map(([, v]) => String(v))
+      .join(' · ');
+  } else if (event.type === 'trace_subagent_result') raw = String(event.summary ?? '');
+  else if (event.type === 'trace_cross_branch') {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    raw = Object.values(payload)
+      .filter((v) => typeof v === 'string' || typeof v === 'number')
+      .map((v) => String(v))
+      .join(' · ');
+  }
+  const clean = raw.replace(/\s+/g, ' ').trim();
+  return clean.length > 80 ? `${clean.slice(0, 77)}…` : clean;
+}
