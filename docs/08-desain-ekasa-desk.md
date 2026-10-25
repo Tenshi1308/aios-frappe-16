@@ -84,10 +84,10 @@ File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tam
 | Approval Card | Event backend H4; jendela kartu persetujuan di UI #12 (prioritas tertinggi), tanpa `File` |
 | Tabel & grafik | Jendela data interaktif |
 | Dokumen eksekutif + Mermaid | Jendela dokumen, bisa cetak/ekspor PDF |
-| Spreadsheet `.xlsx` / `.csv` | Jendela preview + unduh — **ter implement #12 fase 2b**: `.csv`/`.md` pratinjau teks (fetch, auto-escape, tanpa render tabel/markdown), `.pdf` embed iframe, `.xlsx`/format lain hanya metadata + unduh; file > 2 MB tidak di-fetch; tombol unduh memakai `file_url` |
+| Spreadsheet `.xlsx` / `.csv` | Jendela preview + unduh — **ter implement #12 fase 2b (diperkaya)**: `.csv` dirender sebagai **tabel** (Papa Parse, header sticky), `.md` dirender **markdown** (markdown-it `html:false` + DOMPurify), `.pdf` embed iframe, `.xlsx` dirender sebagai **tabel** (SheetJS, sheet pertama), format lain hanya metadata + unduh; file > 2 MB tidak di-fetch; tombol unduh memakai `file_url` |
 | Presentasi HTML | Jendela slide terisolasi |
 
-Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut. **Status backend (H5 fase 1, `b07975f`):** file privat `.csv`/`.xlsx`/`.md`/`.pdf` dibuat oleh `workspace_create_file` dan event `artifact_created` (`FILE`) sudah dikirim backend; **jendela artefak FILE ada di #12 fase 2b** (chip dibuka manual dari pesan, tidak auto-open saat event; pratinjau `.csv`/`.md` teks, `.pdf` embed iframe, `.xlsx`/other unduh saja; file > 2 MB tanpa fetch; artefak ikut hilang saat reload — batas Opsi A cache memori, sama seperti trace). Grafik interaktif, Mermaid, dan iframe presentasi menyusul.
+Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut. **Status backend (H5 fase 1, `b07975f`):** file privat `.csv`/`.xlsx`/`.md`/`.pdf` dibuat oleh `workspace_create_file` dan event `artifact_created` (`FILE`) sudah dikirim backend; **jendela artefak FILE ada di #12 fase 2b** (chip dibuka manual dari pesan, tidak auto-open saat event; pratinjau `.csv`/`.xlsx` tabel, `.md` markdown ter-sanitasi, `.pdf` embed iframe; file > 2 MB tanpa fetch; artefak ikut hilang saat reload — batas Opsi A cache memori, sama seperti trace). **Bubble jawaban agent kini merender markdown penuh** (markdown-it `html:false` + DOMPurify via `v-html` — persetujuan owner mengganti guard no-v-html lama). Grafik interaktif, Mermaid, dan iframe presentasi menyusul.
 
 ---
 
