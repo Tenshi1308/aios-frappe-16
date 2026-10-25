@@ -28,7 +28,7 @@ void chat.loadPendingDrafts();
 
 const branch = computed(() => branches.selected);
 const branchKey = computed(() => branch.value?.key ?? '');
-const messages = computed(() => chat.thread(branchKey.value));
+const messages = computed(() => chat.threadFor(branchKey.value));
 const streaming = computed(() => chat.isStreaming(branchKey.value));
 const files = computed(() => chat.files(branchKey.value));
 const uploadPercent = computed(() => chat.uploadProgress[branchKey.value]);

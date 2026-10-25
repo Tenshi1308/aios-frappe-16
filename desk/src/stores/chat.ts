@@ -38,7 +38,11 @@ export const useChatStore = defineStore('chat', {
     pendingDrafts: [] as PendingDraft[],
   }),
   getters: {
-    thread: (s) => (branch: string) => s.threads[branch] ?? [],
+    /** Thread percakapan aktif (cache per conversationId — trace tidak tertimpa saat pindah sesi). */
+    threadFor: (s) => (branch: string) => {
+      const conv = s.currentConversation[branch];
+      return s.threads[conv ?? `new:${branch}`] ?? [];
+    },
     files: (s) => (branch: string) => s.pendingFiles[branch] ?? [],
     isStreaming: (s) => (branch: string) => s.streaming[branch] ?? false,
   },
@@ -76,14 +80,18 @@ export const useChatStore = defineStore('chat', {
       this.pendingNew[branch] = false;
       this.currentConversation[branch] = conversationId;
       this.historyOpen[branch] = false;
-      this.threads[branch] = await fetchConversationMessages(branch, conversationId);
+      // Cache per conversationId dipertahankan: pindah sesi lalu balik
+      // tetap menampilkan trace/langkah yang sudah di-stream.
+      if (!this.threads[conversationId]) {
+        this.threads[conversationId] = await fetchConversationMessages(branch, conversationId);
+      }
     },
     newConversation(branch: string) {
       // Klien saja: conversation baru benar-benar dibuat backend saat pesan/
       // lampiran pertama terkirim dengan flag `new_conversation`.
       this.pendingNew[branch] = true;
       this.currentConversation[branch] = null;
-      this.threads[branch] = [];
+      this.threads[`new:${branch}`] = [];
       this.historyOpen[branch] = false;
       this.pendingFiles[branch] = [];
     },
@@ -124,7 +132,8 @@ export const useChatStore = defineStore('chat', {
       const session = useSessionStore();
       const trimmed = text.trim();
       if (!trimmed || this.isStreaming(branch)) return;
-      this.threads[branch] = [...this.thread(branch), { id: newMessageId(), role: 'user', text: trimmed }];
+      const threadKey0 = this.currentConversation[branch] ?? `new:${branch}`;
+      this.threads[threadKey0] = [...(this.threads[threadKey0] ?? []), { id: newMessageId(), role: 'user', text: trimmed }];
       this.streaming[branch] = true;
       const fileIds = this.files(branch).map((f) => f.id);
       this.pendingFiles[branch] = [];
@@ -136,7 +145,7 @@ export const useChatStore = defineStore('chat', {
         startedAt: performance.now(),
         stepTimes: [],
       };
-      const threadKey = branch;
+      let threadKey = this.currentConversation[branch] ?? `new:${branch}`;
       const threadAtStart = this.threads[threadKey] ?? [];
       this.threads[threadKey] = [...threadAtStart, placeholder];
       const index = (this.threads[threadKey] ?? []).length - 1;
@@ -181,8 +190,16 @@ export const useChatStore = defineStore('chat', {
           session.csrfToken,
           {
             onMeta: (conversationId) => {
-              if (this.currentConversation[branch] !== conversationId) {
+              const previous = this.currentConversation[branch];
+              if (previous !== conversationId) {
                 this.currentConversation[branch] = conversationId;
+                // Sesi baru materialize: pindahkan thread sementara (`new:<branch>`)
+                // ke cache conversationId agar trace ikut saat pindah sesi.
+                if (threadKey !== conversationId && threadKey === (previous ?? `new:${branch}`)) {
+                  this.threads[conversationId] = this.threads[threadKey] ?? [];
+                  delete this.threads[threadKey];
+                  threadKey = conversationId;
+                }
                 void this.loadConversations(branch);
               }
               // Sesi baru sudah materialize; flag tidak perlu dibawa lagi.
