@@ -1,12 +1,28 @@
 import { defineStore } from 'pinia';
 import {
+  approveDraft,
   fetchConversationMessages,
   fetchConversations,
+  fetchPendingDrafts,
+  rejectDraft,
   streamChat,
   uploadAttachment,
 } from '../api/chat';
 import { useSessionStore } from './session';
-import type { AttachmentMeta, ChatMessage, ConversationItem } from '../types';
+import type {
+  ArtifactEvent,
+  AttachmentMeta,
+  ChatMessage,
+  ConversationItem,
+  PendingDraft,
+  TraceEvent,
+} from '../types';
+import { useWindowManager } from '../composables/useWindowManager';
+
+function newMessageId(): string {
+  const rnd = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : '';
+  return rnd || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
 
 export const useChatStore = defineStore('chat', {
   state: () => ({
@@ -19,13 +35,42 @@ export const useChatStore = defineStore('chat', {
     streaming: {} as Record<string, boolean>,
     historyOpen: {} as Record<string, boolean>,
     historyLoading: {} as Record<string, boolean>,
+    pendingDrafts: [] as PendingDraft[],
   }),
   getters: {
     thread: (s) => (branch: string) => s.threads[branch] ?? [],
     files: (s) => (branch: string) => s.pendingFiles[branch] ?? [],
     isStreaming: (s) => (branch: string) => s.streaming[branch] ?? false,
+    /** Cari pesan live/histori berdasarkan id stabil (untuk jendela detail trace). */
+    findMessage: (s) => (messageId: string): ChatMessage | null => {
+      for (const list of Object.values(s.threads)) {
+        const found = list.find((m) => m.id === messageId);
+        if (found) return found;
+      }
+      return null;
+    },
   },
   actions: {
+    async loadPendingDrafts() {
+      const session = useSessionStore();
+      try {
+        this.pendingDrafts = await fetchPendingDrafts(session.csrfToken);
+      } catch {
+        this.pendingDrafts = [];
+      }
+    },
+    async approveDraft(draftId: string) {
+      const session = useSessionStore();
+      const result = await approveDraft(draftId, session.csrfToken);
+      await this.loadPendingDrafts();
+      return result;
+    },
+    async rejectDraft(draftId: string, reason: string) {
+      const session = useSessionStore();
+      const result = await rejectDraft(draftId, reason, session.csrfToken);
+      await this.loadPendingDrafts();
+      return result;
+    },
     async loadConversations(branch: string) {
       this.historyLoading[branch] = true;
       try {
@@ -87,19 +132,35 @@ export const useChatStore = defineStore('chat', {
       const session = useSessionStore();
       const trimmed = text.trim();
       if (!trimmed || this.isStreaming(branch)) return;
-      this.threads[branch] = [...this.thread(branch), { role: 'user', text: trimmed }];
+      this.threads[branch] = [...this.thread(branch), { id: newMessageId(), role: 'user', text: trimmed }];
       this.streaming[branch] = true;
       const fileIds = this.files(branch).map((f) => f.id);
       this.pendingFiles[branch] = [];
-      const placeholder: ChatMessage = { role: 'agent', text: '' };
+      const placeholder: ChatMessage = { id: newMessageId(), role: 'agent', text: '' };
       const threadKey = branch;
       const threadAtStart = this.threads[threadKey] ?? [];
       this.threads[threadKey] = [...threadAtStart, placeholder];
       const index = (this.threads[threadKey] ?? []).length - 1;
+      const startedAt = performance.now();
       const appendDelta = (chunk: string) => {
         const list = this.threads[threadKey];
         if (!list || !list[index]) return;
         list[index] = { ...list[index], text: list[index].text + chunk };
+      };
+      const appendTrace = (event: TraceEvent) => {
+        const list = this.threads[threadKey];
+        if (!list || !list[index]) return;
+        list[index] = { ...list[index], steps: [...(list[index].steps ?? []), event] };
+      };
+      const appendArtifact = (artifact: ArtifactEvent) => {
+        const list = this.threads[threadKey];
+        if (!list || !list[index]) return;
+        list[index] = { ...list[index], artifacts: [...(list[index].artifacts ?? []), artifact] };
+        if (artifact.type === 'APPROVAL_CARD') {
+          // Kartu persetujuan = prioritas tertinggi (docs/08 §5): langsung buka jendela.
+          useWindowManager().open(`approval:${artifact.draft_id}`, 'Persetujuan Aksi');
+          void this.loadPendingDrafts();
+        }
       };
       try {
         await streamChat(
@@ -122,6 +183,17 @@ export const useChatStore = defineStore('chat', {
               this.pendingNew[branch] = false;
             },
             onDelta: appendDelta,
+            onTrace: appendTrace,
+            onArtifact: appendArtifact,
+            onDone: (tokens) => {
+              const list = this.threads[threadKey];
+              if (!list || !list[index]) return;
+              list[index] = {
+                ...list[index],
+                tokens: tokens ?? list[index].tokens,
+                durationMs: Math.round(performance.now() - startedAt),
+              };
+            },
           },
         );
       } catch (err) {
@@ -130,7 +202,7 @@ export const useChatStore = defineStore('chat', {
         if (list && list[index] && !list[index].text) {
           list[index] = { ...list[index], text: message };
         } else {
-          this.threads[threadKey] = [...(list ?? []), { role: 'agent', text: message }];
+          this.threads[threadKey] = [...(list ?? []), { id: newMessageId(), role: 'agent', text: message }];
         }
       } finally {
         // Stream selesai tanpa satu pun delta: jangan biarkan bubble kosong

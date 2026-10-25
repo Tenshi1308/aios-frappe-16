@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useBranchesStore } from '../../stores/branches';
 import { useChatStore } from '../../stores/chat';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
+import { useWindowManager } from '../../composables/useWindowManager';
+import { formatDurationMs, traceStepLabel } from '../../utils/format';
+import type { ChatMessage } from '../../types';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
 
@@ -12,13 +15,16 @@ const session = useSessionStore();
 const branches = useBranchesStore();
 const chat = useChatStore();
 const ui = useUiStore();
+const wm = useWindowManager();
 
 const draft = ref('');
 const fileInput = ref<HTMLInputElement | null>(null);
 const threadEl = ref<HTMLElement | null>(null);
 const uploading = ref(false);
+const expandedMessageId = ref<string | null>(null);
 
 void branches.load();
+void chat.loadPendingDrafts();
 
 const branch = computed(() => branches.selected);
 const branchKey = computed(() => branch.value?.key ?? '');
@@ -45,6 +51,24 @@ const canSend = computed(() => !!draft.value.trim() && !streaming.value);
 
 function shortName(name: string) {
   return name.split(/\s+/)[0] ?? name;
+}
+
+function hasSummary(m: ChatMessage) {
+  return !!(m.steps?.length || m.tokens || m.durationMs);
+}
+
+function summaryText(m: ChatMessage) {
+  const parts = [`${m.steps?.length ?? 0} langkah`, `${m.tokens ?? 0} token`];
+  if (m.durationMs) parts.push(formatDurationMs(m.durationMs));
+  return parts.join(' · ');
+}
+
+function openTrace(m: ChatMessage) {
+  wm.open(`trace:${m.id}`, 'Detail Langkah Agent');
+}
+
+function openPendingDrafts() {
+  wm.open('pending-drafts', 'Persetujuan Tertunda');
 }
 
 function fmtDate(value: string) {
@@ -123,6 +147,16 @@ async function onFilesPicked(e: Event) {
         </div>
         <div v-else><b>AI Agents</b><small>Memuat agent dari backend…</small></div>
       </div>
+      <button
+        v-if="chat.pendingDrafts.length"
+        class="icon-btn approvals"
+        :aria-label="`Persetujuan tertunda: ${chat.pendingDrafts.length}`"
+        title="Persetujuan tertunda"
+        @click="openPendingDrafts"
+      >
+        <AppIcon name="file" :size="18" />
+        <span class="badge">{{ chat.pendingDrafts.length }}</span>
+      </button>
       <button class="icon-btn" aria-label="Riwayat percakapan" @click="chat.toggleHistory(branchKey)">
         <AppIcon name="history" :size="18" />
       </button>
@@ -184,6 +218,27 @@ async function onFilesPicked(e: Event) {
             {{ branch?.name ?? 'Agent' }}
           </div>
           <div class="bubble"><RichText :text="m.text" /></div>
+          <div v-if="m.role === 'agent' && hasSummary(m)" class="msg-steps">
+            <span class="msg-steps-text">{{ summaryText(m) }}</span>
+            <button
+              v-if="m.steps?.length"
+              class="msg-steps-toggle"
+              @click="expandedMessageId = expandedMessageId === m.id ? null : m.id"
+            >
+              {{ expandedMessageId === m.id ? 'Sembunyikan detail' : 'Lihat detail' }}
+            </button>
+            <button class="msg-steps-toggle" @click="openTrace(m)">Jendela detail</button>
+          </div>
+          <div v-if="m.role === 'agent' && expandedMessageId === m.id && m.steps?.length" class="msg-steps-list">
+            <span v-for="(step, si) in m.steps" :key="si" class="msg-steps-item">
+              {{ si + 1 }}. {{ traceStepLabel(step) }}
+            </span>
+          </div>
+          <div v-if="m.role === 'agent' && m.artifacts?.length" class="msg-artifacts">
+            <span v-for="(a, ai) in m.artifacts" :key="ai" class="msg-artifact">
+              {{ a.type === 'APPROVAL_CARD' ? `Persetujuan ${a.action_type}` : `Artefak ${a.type}` }}
+            </span>
+          </div>
         </div>
       </template>
       <div v-if="showTyping" class="msg agent">

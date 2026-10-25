@@ -1,5 +1,14 @@
 import { ApiError, apiFetch, unwrapMessage } from './client';
-import type { AttachmentMeta, ChatMessage, ConversationItem } from '../types';
+import type {
+  ArtifactEvent,
+  AttachmentMeta,
+  ChatMessage,
+  ConversationItem,
+  DraftActionResult,
+  DraftDetail,
+  PendingDraft,
+  TraceEvent,
+} from '../types';
 
 /** Cermin batas backend (MAX_WORKSPACE_BYTES) untuk umpan balik cepat di klien;
  *  sumber kebenaran tetap divalidasi server. */
@@ -9,7 +18,9 @@ export const UPLOAD_EXTENSIONS = ['csv', 'pdf', 'xlsx'];
 export interface StreamHandlers {
   onMeta?: (conversationId: string) => void;
   onDelta?: (text: string) => void;
-  onDone?: () => void;
+  onTrace?: (event: TraceEvent) => void;
+  onArtifact?: (artifact: ArtifactEvent) => void;
+  onDone?: (tokens?: number) => void;
 }
 
 interface RawConversationList {
@@ -39,7 +50,11 @@ export async function fetchConversationMessages(branch: string, conversationId: 
   const list = raw?.conversation?.messages ?? [];
   return list
     .filter((m) => typeof m.content === 'string')
-    .map((m) => ({ role: m.role === 'user' ? 'user' : 'agent', text: m.content as string }));
+    .map((m, i) => ({
+      id: `hist-${conversationId}-${i}`,
+      role: m.role === 'user' ? ('user' as const) : ('agent' as const),
+      text: m.content as string,
+    }));
 }
 
 export async function uploadAttachment(
@@ -168,13 +183,73 @@ export async function streamChat(
           handlers.onMeta?.(String(event.conversationId));
         } else if (event.type === 'delta' && typeof event.text === 'string') {
           handlers.onDelta?.(event.text);
+        } else if (typeof event.type === 'string' && event.type.startsWith('trace_')) {
+          handlers.onTrace?.(event as unknown as TraceEvent);
+        } else if (event.type === 'artifact_created' && event.artifact) {
+          handlers.onArtifact?.(event.artifact as ArtifactEvent);
         } else if (event.type === 'done') {
-          handlers.onDone?.();
+          const tokens = typeof event.tokens === 'number' ? event.tokens : undefined;
+          handlers.onDone?.(tokens);
         }
-        // trace_* dan artifact_created diabaikan di fase 1.
       }
       boundary = buffer.indexOf('\n\n');
     }
   }
   handlers.onDone?.();
+}
+
+// ---------------------------------------------------------------------------
+// Pending Action Draft (docs/04 Alur 5) — dipakai Approval Card UI #12 fase 2a.
+// ---------------------------------------------------------------------------
+
+const DRAFT_API = '/api/method/aios_v1.lib.draft_manager';
+
+export async function fetchPendingDrafts(csrfToken: string): Promise<PendingDraft[]> {
+  const raw = unwrapMessage<PendingDraft[]>(
+    await apiFetch(`${DRAFT_API}.list_pending_drafts`, {
+      headers: { 'X-Frappe-CSRF-Token': csrfToken },
+    }),
+  );
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((d) => d && typeof d.name === 'string');
+}
+
+export async function fetchDraft(draftId: string, csrfToken: string): Promise<DraftDetail> {
+  const raw = unwrapMessage<DraftDetail>(
+    await apiFetch(
+      `${DRAFT_API}.get_draft?draft_id=${encodeURIComponent(draftId)}`,
+      { headers: { 'X-Frappe-CSRF-Token': csrfToken } },
+    ),
+  );
+  if (!raw || typeof raw.name !== 'string') throw new ApiError('Draft tidak ditemukan.');
+  return raw;
+}
+
+export async function approveDraft(
+  draftId: string,
+  csrfToken: string,
+): Promise<DraftActionResult> {
+  const raw = unwrapMessage<DraftActionResult>(
+    await apiFetch(`${DRAFT_API}.approve_and_execute_draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ draft_id: draftId }),
+    }),
+  );
+  return raw ?? {};
+}
+
+export async function rejectDraft(
+  draftId: string,
+  reason: string,
+  csrfToken: string,
+): Promise<DraftActionResult> {
+  const raw = unwrapMessage<DraftActionResult>(
+    await apiFetch(`${DRAFT_API}.reject_draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ draft_id: draftId, reason }),
+    }),
+  );
+  return raw ?? {};
 }

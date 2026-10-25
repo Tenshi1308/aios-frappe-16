@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { useSessionStore } from '../../stores/session';
 import { useWindowManager } from '../../composables/useWindowManager';
 import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
+import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
+import AboutWindow from '../windows/AboutWindow.vue';
+import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
+import TraceDetailWindow from '../windows/TraceDetailWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
 
-const session = useSessionStore();
 const wm = useWindowManager();
 const activeId = wm.activeId;
 
@@ -40,24 +42,10 @@ defineExpose({ openAbout });
         </div>
       </header>
       <div class="win-body">
-        <div class="about">
-          <EkasaMark :size="44" />
-          <div class="about-word">Ekasa Desk</div>
-          <div class="about-line">
-            Desktop AIOS untuk bisnis: tanyakan data dan pekerjaanmu kepada agent, lampirkan berkas,
-            dan pantau semuanya dari satu layar.
-          </div>
-          <div class="about-meta">
-            <span><b>Pengguna:</b> {{ session.context?.full_name ?? session.context?.user }}</span>
-            <span v-if="session.context?.aios_company_name"><b>Perusahaan:</b> {{ session.context.aios_company_name }}</span>
-            <span v-if="session.context?.company"><b>Company ERP:</b> {{ session.context.company }}</span>
-          </div>
-          <div class="about-keys">
-            <span><kbd>Ctrl K</kbd> Pencarian</span>
-            <span><kbd>Ctrl J</kbd> Agent</span>
-            <span><kbd>Esc</kbd> Tutup</span>
-          </div>
-        </div>
+        <AboutWindow v-if="w.id === 'about'" />
+        <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
+        <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
+        <TraceDetailWindow v-else-if="w.id.startsWith('trace:')" :message-id="w.id.slice(6)" />
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />
     </div>
