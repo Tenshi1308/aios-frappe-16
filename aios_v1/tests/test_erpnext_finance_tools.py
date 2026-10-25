@@ -16,6 +16,32 @@ except ImportError:
     from frappe.tests.utils import FrappeTestCase as IntegrationTestCase  # type: ignore
 
 
+def _ensure_client_user(email):
+    """User client test: buat bila belum ada, pastikan role `AIOS Client` terpasang.
+
+    User lama di site bisa ada tanpa role (dibuat oleh run test lama), sehingga
+    pemeriksaan `exists` saja tidak cukup untuk uji yang bergantung pada role.
+    """
+    if not frappe.db.exists("User", email):
+        frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": "_Test Finance Tools",
+                "enabled": 1,
+                "send_welcome_email": 0,
+                "user_type": "Website User",
+                "aios_status": "Active",
+                "roles": [{"role": "AIOS Client"}],
+            }
+        ).insert(ignore_permissions=True)
+        return
+    doc = frappe.get_doc("User", email)
+    if "AIOS Client" not in [d.role for d in doc.get("roles") or []]:
+        doc.append("roles", {"role": "AIOS Client"})
+        doc.save(ignore_permissions=True)
+
+
 class TestERPNextFinanceTools(IntegrationTestCase):
     USER = "_test.finance.tools@example.com"
     COMPANY = "_Test Finance Company"
@@ -24,19 +50,7 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
-        if not frappe.db.exists("User", self.USER):
-            frappe.get_doc(
-                {
-                    "doctype": "User",
-                    "email": self.USER,
-                    "first_name": "_Test Finance Tools",
-                    "enabled": 1,
-                    "send_welcome_email": 0,
-                    "user_type": "Website User",
-                    "aios_status": "Active",
-                    "roles": [{"role": "AIOS Client"}],
-                }
-            ).insert(ignore_permissions=True)
+        _ensure_client_user(self.USER)
         frappe.set_user(self.USER)
         self.context = {
             "user": self.USER,
@@ -228,19 +242,12 @@ class TestReportFilterGuide(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
-        if not frappe.db.exists("User", TestERPNextFinanceTools.USER):
-            frappe.get_doc(
-                {
-                    "doctype": "User",
-                    "email": TestERPNextFinanceTools.USER,
-                    "first_name": "_Test Finance Tools",
-                    "enabled": 1,
-                    "send_welcome_email": 0,
-                    "user_type": "Website User",
-                    "aios_status": "Active",
-                    "roles": [{"role": "AIOS Client"}],
-                }
-            ).insert(ignore_permissions=True)
+        from aios_v1.permissions import ensure_aios_permissions
+
+        # Rollback antar test menghapus `Custom Role` hasil B/C; setiap class
+        # yang bergantung padanya wajib memasang ulang di setUp-nya.
+        ensure_aios_permissions()
+        _ensure_client_user(TestERPNextFinanceTools.USER)
 
     def tearDown(self):
         frappe.db.commit = self.original_commit
@@ -251,7 +258,7 @@ class TestReportFilterGuide(IntegrationTestCase):
         frappe.set_user(TestERPNextFinanceTools.USER)
         context = {
             "user": TestERPNextFinanceTools.USER,
-            "allowed_company": TestERPNextFinanceTools.COMPANY,
+            "allowed_company": _resolve_allowed_company(),
             "branch": "finance",
             "worker_key": "manager",
         }
@@ -313,13 +320,135 @@ class TestReportFilterGuide(IntegrationTestCase):
         self.assertEqual(missing["code"], "REPORT_FILTER_REQUIRED")
         # Dengan fiscal_year: ditolak di Report.is_permitted (role AIOS Client belum
         # diizinkan pada dokumen Report; keputusan Custom Role union masih menunggu
-        # owner). Assertion ini membedakan error filter dari error permission; bila
-        # keputusan Custom Role sudah dijalankan, ubah assertion ini menjadi sukses.
+        # owner). Assertion ini membedakan error filter dari error permission; setelah
+        # B/C (Custom Role rebuild + Purchase Invoice) client dengan fiscal_year
+        # diharapkan SUKSES — assertion diperbarui sesuai catatan di atas.
         fiscal_year = frappe.get_all(
             "Fiscal Year", order_by="year_start_date desc", limit_page_length=1, pluck="name"
         ) or ["2026"]
         granted = self._execute_client(
             {"report_name": "Trial Balance", "filters": {"fiscal_year": fiscal_year[0]}}
         )
-        self.assertEqual(granted["code"], "TOOL_FAILED")
-        self.assertEqual(granted["error"], "Tool gagal dijalankan.")
+        self.assertIsNone(granted.get("success"))
+        self.assertIn("columns", granted)
+        self.assertIsInstance(granted.get("result"), list)
+
+
+class TestReportClientAccess(IntegrationTestCase):
+    """B/C: report nyata + Purchase Invoice sebagai `AIOS Client`.
+
+    Regression-before-fix: TB/P&L/AP sebagai client gagal PermissionError di
+    `Report.is_permitted()` dan PI ditolak allowlist tool sebelum B/C.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.original_commit = frappe.db.commit
+        frappe.db.commit = lambda *args, **kwargs: None
+        from aios_v1.permissions import ensure_aios_permissions
+
+        ensure_aios_permissions()
+        _ensure_client_user(TestERPNextFinanceTools.USER)
+        self.company = _resolve_allowed_company()
+
+    def tearDown(self):
+        frappe.db.commit = self.original_commit
+        frappe.set_user("Administrator")
+        frappe.db.rollback()
+
+    def _execute_client(self, arguments):
+        frappe.set_user(TestERPNextFinanceTools.USER)
+        context = {
+            "user": TestERPNextFinanceTools.USER,
+            "allowed_company": self.company,
+            "branch": "finance",
+            "worker_key": "manager",
+        }
+        return json.loads(execute_tool("erpnext_report_run", json.dumps(arguments), context=context))
+
+    def _execute_doc_tool(self, name, arguments):
+        frappe.set_user(TestERPNextFinanceTools.USER)
+        context = {
+            "user": TestERPNextFinanceTools.USER,
+            "allowed_company": self.company,
+            "branch": "finance",
+            "worker_key": "manager",
+        }
+        return json.loads(execute_tool(name, json.dumps(arguments), context=context))
+
+    def _fiscal_year(self):
+        years = frappe.get_all(
+            "Fiscal Year", order_by="year_start_date desc", limit_page_length=1, pluck="name"
+        )
+        self.assertTrue(years, "Site tanpa Fiscal Year untuk uji report nyata.")
+        return years[0]
+
+    def test_trial_balance_real_run_as_client(self):
+        result = self._execute_client(
+            {"report_name": "Trial Balance", "filters": {"fiscal_year": self._fiscal_year()}}
+        )
+        self.assertIsNone(result.get("success"))
+        self.assertIn("columns", result)
+        self.assertIsInstance(result.get("result"), list)
+
+    def test_profit_and_loss_real_run_as_client(self):
+        fiscal_year = self._fiscal_year()
+        result = self._execute_client(
+            {
+                "report_name": "Profit and Loss Statement",
+                "filters": {
+                    "from_fiscal_year": fiscal_year,
+                    "to_fiscal_year": fiscal_year,
+                    "periodicity": "Monthly",
+                    "filter_based_on": "Fiscal Year",
+                },
+            }
+        )
+        self.assertIsNone(result.get("success"))
+        self.assertIn("result", result)
+
+    def test_accounts_payable_real_run_as_client(self):
+        result = self._execute_client({"report_name": "Accounts Payable"})
+        self.assertIsNone(result.get("success"))
+        self.assertIn("result", result)
+
+    def test_purchase_register_still_rejected_for_client(self):
+        result = self._execute_client({"report_name": "Purchase Register"})
+        self.assertFalse(result.get("success", True))
+        self.assertEqual(result.get("code"), "TOOL_FAILED")
+
+    def test_purchase_invoice_list_and_get_as_client(self):
+        rows = self._execute_doc_tool(
+            "erpnext_doc_list",
+            {"doctype": "Purchase Invoice", "fields": ["name", "company"], "limit": 2},
+        )
+        self.assertEqual(rows["company"], self.company)
+        self.assertTrue(rows["data"])
+        detail = self._execute_doc_tool(
+            "erpnext_doc_get", {"doctype": "Purchase Invoice", "name": rows["data"][0]["name"]}
+        )
+        self.assertEqual(detail["company"], self.company)
+
+    def test_purchase_order_still_rejected_for_client(self):
+        result = self._execute_doc_tool("erpnext_doc_list", {"doctype": "Purchase Order"})
+        self.assertFalse(result.get("success", True))
+
+    def test_sales_analytics_runs_without_error_as_client(self):
+        # Script Sales Analytics mengakses `doc_type`/`tree_type` langsung
+        # (sales_analytics.py:66) sehingga filter UI-nya wajib dari pemanggil;
+        # guard hanya menuntut from_date/to_date. Isi data hasil run tidak
+        # diklaim benar di sini — cukup tidak error.
+        result = self._execute_client(
+            {
+                "report_name": "Sales Analytics",
+                "filters": {
+                    "from_date": "2026-01-01",
+                    "to_date": "2026-12-31",
+                    "tree_type": "Customer",
+                    "doc_type": "Sales Invoice",
+                    "value_quantity": "Value",
+                },
+            }
+        )
+        self.assertNotEqual(result.get("code"), "TOOL_FAILED")
+        self.assertIn("columns", result)

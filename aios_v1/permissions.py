@@ -35,6 +35,7 @@ CONTROL_PERMS = {
 ERP_CLIENT_DOCTYPES = (
 	"Sales Order",
 	"Sales Invoice",
+	"Purchase Invoice",
 	"Delivery Note",
 	"Payment Entry",
 	"Journal Entry",
@@ -237,4 +238,60 @@ def ensure_aios_permissions() -> None:
 	for doctype in set(CLIENT_PERMS) | set(ERP_CLIENT_DOCTYPES):
 		_remove_role_perm(doctype, "AIOS Admin")
 
+	ensure_report_roles()
+
 	frappe.clear_cache()
+
+
+def ensure_report_roles() -> None:
+	"""Rebuild `Custom Role` untuk report di `ALLOWED_REPORTS` (docs/03 §2.1).
+
+	Role hasil rebuild = `Has Role` milik Report + `AIOS Client`; role stale yang
+	sudah tidak ada di Report tidak dipertahankan (owner: rebuild, bukan append).
+	Report tanpa `Has Role` tidak disentuh sama sekali — Custom Role existing
+	tetap utuh dan tidak ada yang dibuat — agar report yang terbuka tidak
+	tersempit dan role lama tidak terhapus saat sumber Has Role kosong. Report
+	tanpa `Has Role` dan tanpa `Custom Role` pun dibiarkan terbuka. Dipanggil
+	dari `ensure_aios_permissions()` (install + migrate), jadi edit manual
+	`Custom Role` lewat UI bisa tertimpa. Tidak membuat `Role` baru dan tidak
+	menyentuh `Has Role` standard Report.
+	"""
+	from aios_v1.lib.erpnext_financial_reports import ALLOWED_REPORTS
+
+	for report_name in sorted(ALLOWED_REPORTS):
+		report = frappe.db.get_value(
+			"Report", report_name, ["name", "ref_doctype", "disabled"], as_dict=True
+		)
+		if not report or report.disabled:
+			continue
+		has_role = [
+			d.role
+			for d in frappe.get_all(
+				"Has Role",
+				fields=["role"],
+				filters={"parent": report_name, "parenttype": "Report"},
+			)
+		]
+		if not has_role:
+			continue
+		custom = frappe.db.get_value("Custom Role", {"report": report_name}, "name")
+		desired = list(dict.fromkeys([*has_role, "AIOS Client"]))
+		if custom:
+			doc = frappe.get_doc("Custom Role", custom)
+			current = [d.role for d in doc.get("roles") or []]
+			if current == desired and doc.ref_doctype == report.ref_doctype:
+				continue
+			doc.ref_doctype = report.ref_doctype
+			doc.set("roles", [])
+			for role in desired:
+				doc.append("roles", {"role": role})
+			doc.save(ignore_permissions=True)
+		else:
+			frappe.get_doc(
+				{
+					"doctype": "Custom Role",
+					"report": report_name,
+					"ref_doctype": report.ref_doctype,
+					"roles": [{"role": role} for role in desired],
+				}
+			).insert(ignore_permissions=True)
