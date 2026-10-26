@@ -10,6 +10,7 @@ import {
   uploadAttachment,
 } from '../api/chat';
 import { useSessionStore } from './session';
+import { useModulesStore } from './modules';
 import type {
   ArtifactEvent,
   AttachmentMeta,
@@ -262,6 +263,9 @@ export const useChatStore = defineStore('chat', {
             onDelta: appendDelta,
             onTrace: appendTrace,
             onArtifact: appendArtifact,
+            onOpenModule: (moduleKey) => {
+              void useModulesStore().openModule(moduleKey);
+            },
             onDone: (tokens) => {
               const list = this.threads[threadKey];
               const completedConversationId = this.currentConversation[branch];

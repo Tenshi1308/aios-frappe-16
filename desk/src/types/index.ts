@@ -143,3 +143,111 @@ export interface AttachmentMeta {
   file_size: number;
   format: string;
 }
+
+export type ModuleColumnFormat = 'text' | 'date' | 'currency' | 'number' | 'boolean';
+export type ModuleCardFormat = 'number' | 'currency';
+export type ModuleCardScope = 'company' | 'site';
+export type ModuleFilterType = 'date' | 'text';
+export type ModuleFilterKey = 'date_from' | 'date_to' | 'status' | 'party';
+
+export interface ModuleColumn {
+  key: string;
+  label: string;
+  field: string;
+  format: ModuleColumnFormat;
+}
+
+export interface ModuleFilterDef {
+  key: ModuleFilterKey;
+  label: string;
+  type: ModuleFilterType;
+}
+
+export interface ModuleCardMeta {
+  key: string;
+  label: string;
+  format: ModuleCardFormat;
+  scope: ModuleCardScope;
+}
+
+export interface ModuleMeta {
+  key: string;
+  label: string;
+  group: string;
+  icon: string;
+  doctype: string;
+  columns: ModuleColumn[];
+  filters: ModuleFilterDef[];
+  cards: ModuleCardMeta[];
+}
+
+export interface ModuleCard extends ModuleCardMeta {
+  value: number;
+  currency?: string;
+}
+
+export type ModuleRowValue = string | number | boolean | null;
+export type ModuleRow = Record<string, ModuleRowValue>;
+
+export interface Pagination {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+export interface ModuleDoctypeMeta {
+  doctype: string;
+  label: string;
+  columns: ModuleColumn[];
+}
+
+export interface ModuleFilters {
+  date_from?: string;
+  date_to?: string;
+  status?: string;
+  party?: string;
+}
+
+export interface ModuleDetailData {
+  module: ModuleMeta;
+  cards: ModuleCard[];
+  doctypes: ModuleDoctypeMeta[];
+  rows: ModuleRow[];
+  pagination: Pagination;
+}
+
+export interface ModuleListData {
+  module: ModuleMeta;
+  doctype: string;
+  rows: ModuleRow[];
+  pagination: Pagination;
+}
+
+export type SearchResult =
+  | {
+      kind: 'module';
+      module: ModuleMeta;
+    }
+  | {
+      kind: 'document';
+      module: ModuleMeta;
+      doctype: string;
+      name: string;
+      row: ModuleRow;
+    };
+
+export interface BootstrapData {
+  user: {
+    id: string;
+    name: string;
+  };
+  company: {
+    id: string;
+    name: string;
+    currency: string;
+  };
+  agents: Branch[];
+  modules: ModuleMeta[];
+  csrf_token: string;
+}

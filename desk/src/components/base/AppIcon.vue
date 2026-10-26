@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue';
+
 const ICONS: Record<string, string[]> = {
   search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M21 21l-4.3-4.3'],
   sparkle: [
@@ -36,7 +38,7 @@ const ICONS: Record<string, string[]> = {
 };
 
 const props = withDefaults(defineProps<{ name: string; size?: number | string }>(), { size: 18 });
-const paths = ICONS[props.name] ?? [];
+const paths = computed(() => ICONS[props.name] ?? ICONS.file ?? []);
 </script>
 
 <template>

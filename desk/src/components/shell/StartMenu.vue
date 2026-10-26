@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useBranchesStore } from '../../stores/branches';
+import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import AppIcon from '../base/AppIcon.vue';
-import EkasaMark from '../base/EkasaMark.vue';
 
 const session = useSessionStore();
 const branches = useBranchesStore();
+const modules = useModulesStore();
 const ui = useUiStore();
+
+onMounted(() => {
+  void modules.loadBootstrap();
+});
 
 const powerOpen = ref(false);
 const siteLabel = computed(() => session.context?.aios_company_name || 'AIOS');
@@ -22,6 +27,11 @@ const roleLabel = computed(() => {
 function openAgent(branchKey: string) {
   branches.selectBranch(branchKey);
   ui.openAgent();
+}
+
+function openModule(key: string) {
+  ui.closeFlyouts();
+  void modules.openModule(key);
 }
 </script>
 
@@ -46,8 +56,28 @@ function openAgent(branchKey: string) {
       </div>
       <div class="fl-head">
         <h4>Modul</h4>
+        <span v-if="modules.modules.length">{{ modules.modules.length }} modul</span>
       </div>
-      <div class="empty-note">Modul ERPNext menyusul di fase berikutnya.</div>
+      <template v-if="modules.grouped.length">
+        <div v-for="grp in modules.grouped" :key="grp.group" class="sr-group">
+          <h5>{{ grp.group }}</h5>
+          <div class="agent-row">
+            <button
+              v-for="m in grp.items"
+              :key="m.key"
+              class="agent-pill"
+              type="button"
+              @click="openModule(m.key)"
+            >
+              <span class="tile sm neutral"><AppIcon :name="m.icon || 'file'" :size="13" /></span>
+              {{ m.label }}
+            </button>
+          </div>
+        </div>
+      </template>
+      <div v-else class="empty-note">
+        {{ modules.loading ? 'Memuat modul…' : 'Belum ada modul tersedia.' }}
+      </div>
     </div>
     <div class="start-foot">
       <div class="me">

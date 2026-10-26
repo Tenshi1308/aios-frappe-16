@@ -22,6 +22,7 @@ export interface StreamHandlers {
   onDelta?: (text: string) => void;
   onTrace?: (event: TraceEvent) => void;
   onArtifact?: (artifact: ArtifactEvent) => void;
+  onOpenModule?: (moduleKey: string) => void;
   onDone?: (tokens?: number) => void;
 }
 
@@ -272,6 +273,8 @@ export async function streamChat(
           handlers.onTrace?.(event as unknown as TraceEvent);
         } else if (event.type === 'artifact_created' && event.artifact) {
           handlers.onArtifact?.(event.artifact as ArtifactEvent);
+        } else if (event.type === 'open_module' && typeof event.module === 'string' && event.module.trim()) {
+          handlers.onOpenModule?.(event.module.trim());
         } else if (event.type === 'done') {
           const tokens = typeof event.tokens === 'number' ? event.tokens : undefined;
           handlers.onDone?.(tokens);

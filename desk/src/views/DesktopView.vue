@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useBranchesStore } from '../stores/branches';
+import { useModulesStore } from '../stores/modules';
 import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
 import { setWindowBounds, useWindowManager } from '../composables/useWindowManager';
@@ -16,6 +17,7 @@ const props = defineProps<{ narrow: boolean }>();
 
 const session = useSessionStore();
 const branches = useBranchesStore();
+const modules = useModulesStore();
 const ui = useUiStore();
 const wm = useWindowManager();
 
@@ -25,6 +27,7 @@ const windowHost = ref<InstanceType<typeof WindowHost> | null>(null);
 onMounted(() => {
   setWindowBounds(bounds);
   void branches.load();
+  void modules.loadBootstrap();
   window.addEventListener('keydown', onKey);
 });
 onUnmounted(() => {

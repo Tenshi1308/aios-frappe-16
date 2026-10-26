@@ -8,6 +8,7 @@ import AboutWindow from '../windows/AboutWindow.vue';
 import ArtifactWindow from '../windows/ArtifactWindow.vue';
 import FilesWindow from '../windows/FilesWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
+import ModuleWindow from '../module/ModuleWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
 
@@ -58,6 +59,10 @@ defineExpose({ openAbout });
           v-else-if="w.id.startsWith('artifact:')"
           :artifact-key="w.id.slice(9)"
           :file-url="artifactFileUrl(w.id)"
+        />
+        <ModuleWindow
+          v-else-if="w.id.startsWith('module:')"
+          :module-key="w.id.slice(7)"
         />
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />

@@ -99,3 +99,47 @@ export function formatBytes(bytes: number | undefined): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** Format angka tampilan untuk kartu/sel modul (tidak menghitung ulang). */
+export function formatNumber(value: number | string | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '0';
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  return num.toLocaleString('id-ID');
+}
+
+/** Format mata uang tampilan dari server currency (tanpa kalkulasi klien). */
+export function formatCurrency(
+  value: number | string | null | undefined,
+  currency?: string,
+): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const num = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(num)) return String(value);
+  const code = (currency || '').trim().toUpperCase();
+  if (code) {
+    try {
+      return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: code,
+        maximumFractionDigits: 0,
+      }).format(num);
+    } catch {
+      return `${code} ${num.toLocaleString('id-ID')}`;
+    }
+  }
+  return num.toLocaleString('id-ID');
+}
+
+/** Format tanggal YYYY-MM-DD dari server menjadi tampilan lokal ringkas. */
+export function formatShortDate(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const str = String(value);
+  const d = new Date(str.includes('T') ? str : `${str}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return str;
+  return d.toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
