@@ -1,14 +1,40 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useModulesStore } from '../../stores/modules';
+import type { SettingsTheme } from '../../types';
 import { formatNumber } from '../../utils/format';
+import { resolveTheme } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
+
+const THEME_LABELS: Record<SettingsTheme, string> = {
+  Automatic: 'Ikuti sistem',
+  Light: 'Terang',
+  Dark: 'Gelap',
+};
 
 const modules = useModulesStore();
 
 const data = computed(() => modules.settings);
 const loading = computed(() => modules.settingsLoading);
 const error = computed(() => modules.settingsError);
+const themeSaving = computed(() => modules.themeSaving);
+
+function themeLabel(opt: SettingsTheme): string {
+  return THEME_LABELS[opt];
+}
+
+const activeThemeBadge = computed(() => {
+  if (themeSaving.value) return 'Menyimpan…';
+  const current = data.value?.theme.value;
+  if (!current) return '';
+  const resolved = resolveTheme(current);
+  return resolved === 'dark' ? THEME_LABELS.Dark : THEME_LABELS.Light;
+});
+
+function selectTheme(opt: SettingsTheme) {
+  if (themeSaving.value || data.value?.theme.value === opt) return;
+  void modules.setTheme(opt);
+}
 
 const remainingSeconds = ref<number | null>(null);
 let countdownTimer: ReturnType<typeof setInterval> | null = null;
@@ -94,7 +120,7 @@ function refresh() {
         </span>
         <div>
           <h4 class="settings-title">Pengaturan</h4>
-          <span class="settings-sub">Profil, company, dan kuota site · Baca saja</span>
+          <span class="settings-sub">Profil, company, kuota site, dan tema</span>
         </div>
       </div>
       <button
@@ -138,6 +164,28 @@ function refresh() {
             <dd>{{ data.profile.status }}</dd>
           </div>
         </dl>
+      </section>
+
+      <section class="settings-card" aria-label="Tema tampilan">
+        <div class="card-head">
+          <h5>Tema tampilan</h5>
+          <span class="theme-pill">{{ activeThemeBadge }}</span>
+        </div>
+        <div class="theme-group" role="radiogroup" aria-label="Pilihan tema tampilan">
+          <button
+            v-for="opt in data.theme.options"
+            :key="opt"
+            type="button"
+            role="radio"
+            class="theme-opt-btn"
+            :class="{ active: data.theme.value === opt }"
+            :aria-checked="data.theme.value === opt"
+            :disabled="themeSaving"
+            @click="selectTheme(opt)"
+          >
+            {{ themeLabel(opt) }}
+          </button>
+        </div>
       </section>
 
       <section class="settings-card" aria-label="Company aktif">
@@ -337,6 +385,7 @@ function refresh() {
 
 .status-pill,
 .currency-pill,
+.theme-pill,
 .quota-pct {
   padding: var(--space-2) var(--space-8);
   border-radius: var(--radius-pill);
@@ -344,6 +393,49 @@ function refresh() {
   font-weight: var(--fw-600);
   background: var(--surface-2);
   color: var(--muted);
+}
+
+.theme-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: var(--space-6);
+  padding: var(--space-4);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.theme-opt-btn {
+  padding: var(--space-6) var(--space-10);
+  border-radius: var(--radius-6);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-600);
+  cursor: pointer;
+  transition:
+    background var(--dur-15) ease,
+    color var(--dur-15) ease,
+    border-color var(--dur-15) ease;
+}
+
+.theme-opt-btn:hover:not(:disabled):not(.active) {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.theme-opt-btn.active {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-opt-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .quota-pct {

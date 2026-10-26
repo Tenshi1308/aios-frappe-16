@@ -24,9 +24,12 @@ import type {
   SearchResult,
   SettingsData,
   SettingsResetSource,
+  SettingsTheme,
 } from '../types';
+import { ALLOWED_THEMES, isSettingsTheme, normalizeTheme } from '../utils/theme';
 
 const DESKTOP_API = '/api/method/aios_v1.api.desktop';
+const SWITCH_THEME_API = '/api/method/frappe.core.doctype.user.user.switch_theme';
 
 const ALLOWED_FILTER_KEYS: ReadonlySet<ModuleFilterKey> = new Set([
   'date_from',
@@ -410,6 +413,13 @@ export async function fetchSettings(): Promise<SettingsData> {
   const atLabelRaw = asString(raw.reset.at_label);
   const secondsRaw = asNullableNumber(raw.reset.seconds_remaining);
 
+  const themeRecord = isRecord(raw.theme) ? raw.theme : null;
+  const themeValue = normalizeTheme(themeRecord?.value);
+  const rawOptions = Array.isArray(themeRecord?.options)
+    ? themeRecord.options.filter(isSettingsTheme)
+    : [];
+  const themeOptions: SettingsTheme[] = rawOptions.length > 0 ? rawOptions : [...ALLOWED_THEMES];
+
   return {
     profile: {
       name: profileName,
@@ -434,7 +444,22 @@ export async function fetchSettings(): Promise<SettingsData> {
       source: asResetSource(raw.reset.source),
       scheduler_active: Boolean(raw.reset.scheduler_active),
     },
+    theme: {
+      value: themeValue,
+      options: themeOptions,
+    },
   };
+}
+
+export async function saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void> {
+  await apiFetch(SWITCH_THEME_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({ theme }),
+  });
 }
 
 export const modulesApi = {
@@ -443,4 +468,5 @@ export const modulesApi = {
   fetchList,
   search,
   fetchSettings,
+  saveTheme,
 } satisfies ModulesApi;

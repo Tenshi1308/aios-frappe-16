@@ -7,7 +7,11 @@ import type {
   ModulesApi,
   SearchResult,
   SettingsData,
+  SettingsTheme,
 } from '../../types';
+import { ALLOWED_THEMES, normalizeTheme } from '../../utils/theme';
+
+let mockThemeValue: SettingsTheme = 'Automatic';
 
 const MOCK_MODULES: ModuleMeta[] = [
   {
@@ -151,7 +155,15 @@ export async function fetchSettings(): Promise<SettingsData> {
       source: 'scheduled',
       scheduler_active: true,
     },
+    theme: {
+      value: mockThemeValue,
+      options: [...ALLOWED_THEMES],
+    },
   };
+}
+
+export async function saveTheme(theme: SettingsTheme, _csrfToken: string): Promise<void> {
+  mockThemeValue = normalizeTheme(theme);
 }
 
 export const modulesApi = {
@@ -160,4 +172,5 @@ export const modulesApi = {
   fetchList,
   search,
   fetchSettings,
+  saveTheme,
 } satisfies ModulesApi;

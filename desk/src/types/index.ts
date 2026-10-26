@@ -253,6 +253,7 @@ export interface BootstrapData {
 }
 
 export type SettingsResetSource = 'scheduled' | 'unknown';
+export type SettingsTheme = 'Automatic' | 'Light' | 'Dark';
 
 export interface SettingsData {
   profile: {
@@ -278,6 +279,10 @@ export interface SettingsData {
     source: SettingsResetSource;
     scheduler_active: boolean;
   };
+  theme: {
+    value: SettingsTheme;
+    options: SettingsTheme[];
+  };
 }
 
 export interface ModulesApi {
@@ -293,4 +298,5 @@ export interface ModulesApi {
   ): Promise<ModuleListData>;
   search(q: string, limit?: number): Promise<SearchResult[]>;
   fetchSettings(): Promise<SettingsData>;
+  saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void>;
 }

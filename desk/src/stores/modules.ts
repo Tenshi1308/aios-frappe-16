@@ -4,16 +4,20 @@ import {
   fetchList,
   fetchModule,
   fetchSettings,
+  saveTheme,
   search as apiSearch,
 } from '@modules-api';
 import { useWindowManager } from '../composables/useWindowManager';
+import { useSessionStore } from './session';
 import type {
   ModuleDetailData,
   ModuleFilters,
   ModuleMeta,
   SearchResult,
   SettingsData,
+  SettingsTheme,
 } from '../types';
+import { applyTheme } from '../utils/theme';
 
 export interface ModuleEntryState extends ModuleDetailData {
   filters: ModuleFilters;
@@ -34,6 +38,7 @@ export const useModulesStore = defineStore('modules', {
     settings: null as SettingsData | null,
     settingsLoading: false,
     settingsError: '',
+    themeSaving: false,
     bootstrapped: false,
     _reqSeq: {} as Record<string, number>,
     _searchSeq: 0,
@@ -262,6 +267,27 @@ export const useModulesStore = defineStore('modules', {
     async openSettings() {
       useWindowManager().open('settings', 'Pengaturan');
       await this.loadSettings(true);
+    },
+
+    async setTheme(value: SettingsTheme) {
+      if (this.themeSaving) return;
+      this.themeSaving = true;
+      this.settingsError = '';
+      try {
+        const session = useSessionStore();
+        await saveTheme(value, session.csrfToken);
+        applyTheme(value);
+        if (this.settings) {
+          this.settings.theme.value = value;
+        }
+      } catch (err) {
+        this.settingsError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Tema tidak dapat disimpan.';
+      } finally {
+        this.themeSaving = false;
+      }
     },
   },
 });
