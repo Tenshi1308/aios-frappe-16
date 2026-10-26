@@ -97,7 +97,7 @@ File yang sudah ada sebelum relasi per pesan diterapkan tetap ditampilkan sebaga
 
 Jendela **Files** menyediakan Explorer baca-saja dengan tree virtual `root → cabang → percakapan → file`. Tree dibentuk dari `AIOS Conversation` dan `File`; ini representasi relasi percakapan, bukan struktur folder fisik. File tetap berada di `Home/Attachments`. Explorer menampilkan semua file percakapan yang dimiliki user, termasuk unggahan lampiran dan artefak agent, karena DocType `File` tidak membedakan kedua asal tersebut.
 
-Backend hanya mengembalikan file privat milik user yang terikat ke percakapan miliknya, dan mengecualikan baris folder. Payload daftar file berisi metadata untuk Explorer serta `file_url` yang dibutuhkan jendela `ArtifactWindow`; payload tidak memuat File ID, path filesystem, atau isi file. Memilih file membuka preview dan unduh melalui jendela artefak yang sama.
+Backend hanya mengembalikan file privat milik user yang terikat ke percakapan miliknya, dan mengecualikan baris folder. Payload listing Explorer dan detail percakapan boleh memuat `file_id` (`File.name`) sebagai identitas row internal; UI tidak menampilkannya. `file_url` tetap locator yang dipakai jendela `ArtifactWindow` untuk preview dan unduh. Payload tidak memuat path filesystem atau isi file. Event SSE `artifact_created` tetap tidak memuat `file_id`.
 
 Explorer tidak mengubah, memindahkan, menghapus, atau membagikan file. Unduh memenuhi kebutuhan share. Rename dan hapus file adalah fase berikut dan memerlukan mutasi `File` serta audit trail.
 
