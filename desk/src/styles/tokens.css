@@ -37,6 +37,18 @@
   --agent-accent-finance: var(--ok);
   --agent-accent-sales: var(--accent);
 
+  --domain-sales: #d9772b;
+  --domain-finance: #1f8a70;
+  --domain-purchasing: #3d7bd9;
+  --domain-inventory: #7c5cc4;
+  --domain-manufacturing: #5e6b7d;
+  --domain-projects: #c2457a;
+  --domain-crm: #c9921b;
+  --domain-assets: #3f8597;
+  --domain-support: #2e8f8f;
+  --domain-quality: #5f8233;
+  --domain-accounting: #2f6cb3;
+
   --space-1: 1px;
   --space-2: 2px;
   --space-3: 3px;
@@ -175,6 +187,17 @@
     --boot-log: #5f6c78;
     --boot-log-ok: #43c08a;
     --boot-skip: #4d5964;
+    --domain-sales: #f0944d;
+    --domain-finance: #3bc4a2;
+    --domain-purchasing: #6ba3f5;
+    --domain-inventory: #a68af0;
+    --domain-manufacturing: #8fa0b5;
+    --domain-projects: #e873a4;
+    --domain-crm: #eab344;
+    --domain-assets: #5eb5c9;
+    --domain-support: #4ec2c2;
+    --domain-quality: #89b356;
+    --domain-accounting: #5b9ae0;
     color-scheme: dark;
   }
 }
@@ -214,6 +237,17 @@
   --boot-log: #5f6c78;
   --boot-log-ok: #43c08a;
   --boot-skip: #4d5964;
+  --domain-sales: #f0944d;
+  --domain-finance: #3bc4a2;
+  --domain-purchasing: #6ba3f5;
+  --domain-inventory: #a68af0;
+  --domain-manufacturing: #8fa0b5;
+  --domain-projects: #e873a4;
+  --domain-crm: #eab344;
+  --domain-assets: #5eb5c9;
+  --domain-support: #4ec2c2;
+  --domain-quality: #89b356;
+  --domain-accounting: #5b9ae0;
   color-scheme: dark;
 }
 
@@ -225,5 +259,16 @@
   --boot-log: var(--faint);
   --boot-log-ok: var(--ok);
   --boot-skip: var(--faint);
+  --domain-sales: #d9772b;
+  --domain-finance: #1f8a70;
+  --domain-purchasing: #3d7bd9;
+  --domain-inventory: #7c5cc4;
+  --domain-manufacturing: #5e6b7d;
+  --domain-projects: #c2457a;
+  --domain-crm: #c9921b;
+  --domain-assets: #3f8597;
+  --domain-support: #2e8f8f;
+  --domain-quality: #5f8233;
+  --domain-accounting: #2f6cb3;
   color-scheme: light;
 }
