@@ -6,6 +6,8 @@ from functools import wraps
 
 import frappe
 from frappe.sessions import get_csrf_token
+from frappe.utils import format_datetime, now_datetime
+from frappe.utils.scheduler import is_scheduler_inactive
 
 from aios_v1.lib.desktop_modules import (
     get_module_catalog,
@@ -20,6 +22,7 @@ DEFAULT_PAGE_SIZE = 25
 MAX_PAGE_SIZE = 100
 DEFAULT_SEARCH_LIMIT = 20
 MAX_SEARCH_LIMIT = 100
+RESET_JOB_METHOD = "aios_v1.services.usage.reset_daily_counters"
 _ALLOWED_FILTER_KEYS = frozenset({"date_from", "date_to", "status", "party"})
 
 
@@ -372,3 +375,86 @@ def search(q: str, limit=DEFAULT_SEARCH_LIMIT):
                 }
             )
     return {"results": results[:result_limit]}
+
+
+def _site_quota() -> dict:
+    raw_limit = frappe.db.get_single_value("AIOS Setting", "site_token_limit")
+    raw_used = frappe.db.get_single_value("AIOS Setting", "site_tokens_used")
+    limit = max(0, int(raw_limit or 0))
+    used = max(0, int(raw_used or 0))
+    if limit <= 0:
+        return {
+            "limit": limit,
+            "used": used,
+            "remaining": None,
+            "percent_used": None,
+        }
+    return {
+        "limit": limit,
+        "used": used,
+        "remaining": max(0, limit - used),
+        "percent_used": round(used / limit * 100, 2),
+    }
+
+
+def _reset_status() -> dict:
+    scheduler_active = not bool(is_scheduler_inactive(verbose=False))
+    if not scheduler_active:
+        return {
+            "at": None,
+            "at_label": None,
+            "seconds_remaining": None,
+            "source": "unknown",
+            "scheduler_active": False,
+        }
+
+    job_name = frappe.db.get_value(
+        "Scheduled Job Type",
+        {"method": RESET_JOB_METHOD, "stopped": 0},
+        "name",
+    )
+    if not job_name:
+        return {
+            "at": None,
+            "at_label": None,
+            "seconds_remaining": None,
+            "source": "unknown",
+            "scheduler_active": True,
+        }
+
+    job = frappe.get_doc("Scheduled Job Type", job_name)
+    at = job.get_next_execution()
+    if not at:
+        return {
+            "at": None,
+            "at_label": None,
+            "seconds_remaining": None,
+            "source": "unknown",
+            "scheduler_active": True,
+        }
+
+    seconds_remaining = max(0, int((at - now_datetime()).total_seconds()))
+    return {
+        "at": at.isoformat(),
+        "at_label": format_datetime(at, "HH:mm"),
+        "seconds_remaining": seconds_remaining,
+        "source": "scheduled",
+        "scheduler_active": True,
+    }
+
+
+@_safe_api_errors("desktop.settings")
+def settings():
+    user, user_state = _require_active_client()
+    company = _company_context()
+    persona = frappe.db.get_value("User", user, "aios_persona")
+    return {
+        "profile": {
+            "name": user_state.full_name or user,
+            "persona": persona or None,
+            "status": user_state.aios_status,
+        },
+        "company": company,
+        "quota": _site_quota(),
+        "reset": _reset_status(),
+    }
