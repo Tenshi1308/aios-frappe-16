@@ -113,6 +113,17 @@ Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya d
 - Modul bersifat **baca saja**. Penulisan tetap lewat approval.
 - Angka pada kartu adalah agregat yang dihitung server (`COUNT`/`SUM`), bukan dihitung di browser; klien hanya memformat angka/mata uang/tanggal untuk tampilan. Refresh modul mempertahankan data lama di layar selagi pemuatan berlangsung.
 
+### 6.1. Jendela Pengaturan (*Settings*)
+
+Jendela **Pengaturan** (`desk/src/components/windows/SettingsWindow.vue`, window ID `settings`, dibuka dari Start Menu) menampilkan informasi akun dan kuota secara **baca saja** tanpa form input atau aksi mutasi:
+
+- **Profil pengguna:** `name` (`User.full_name` atau `user`), `persona` (`User.aios_persona`), dan `status` (`User.aios_status`).
+- **Company aktif:** `name` dan `currency` dari company tingkat site (`AIOS Setting.default_company` / `Global Defaults`).
+- **Kuota site:** menampilkan plafon tingkat site (`AIOS Setting.site_token_limit` dan `site_tokens_used`, bukan per user) dengan label eksplisit **Kuota site**, progress bar (`percent_used`, dibatasi 100% untuk lebar bar), nilai `terpakai / limit`, serta `remaining` (bernilai `null` bila `limit <= 0`).
+- **Jadwal reset kuota site:** waktu reset berikutnya diambil server dari method internal Frappe `ScheduledJobType.get_next_execution()` untuk job `aios_v1.services.usage.reset_daily_counters` (method internal scheduler Frappe, bukan API publik, dipakai agar tidak menduplikasi parsing cron). Karena keduanya berzona waktu naive site (`Asia/Jakarta`), server menghitung `seconds_remaining` (`int`) dan `at_label` (`HH:mm`) sehingga browser tidak menafsirkan ulang zona waktu dari string ISO. Scheduler Frappe memeriksa antrean tiap `DEFAULT_SCHEDULER_TICK = 4 * 60` detik (4 menit sejajar kelipatan jam), sehingga eksekusi nyata berlangsung 0–4 menit setelah `00:00`; ketika hitung mundur mencapai `0`, UI menampilkan **"Menunggu reset berikutnya"**. Bila scheduler tidak aktif (`is_scheduler_inactive(verbose=False)`) atau job tidak ditemukan (`source === "unknown"` / `at === null`), UI wajib menampilkan peringatan **"Reset belum terjadwal"** tanpa angka hitung mundur.
+- **Kerahasiaan `AIOS Setting`:** endpoint `desktop.settings` hanya membaca `site_token_limit` dan `site_tokens_used` lewat `get_single_value`; field sensitif/konfigurasi internal (`api_key`, `company_context_persona`, `system_ethos`, `model_name`, `base_url`, `temperature`) tidak pernah disertakan dalam respons maupun direferensikan di komponen UI.
+- **Adapter API (`@modules-api`):** pemilihan adapter dilakukan saat build di `desk/vite.config.ts` lewat `VITE_DESKTOP_ADAPTER=real|mock` (default `real`), di mana `desk/src/api/modules.ts` dan `desk/src/api/mock/modules.ts` keduanya memenuhi kontrak TypeScript `ModulesApi` (`satisfies ModulesApi`) tanpa impor `api/mock` di bundle produksi.
+
 ---
 
 ## 7. Aturan *Zero Hardcoded*
@@ -200,6 +211,7 @@ Folder kerja bernama `desk/` selama migrasi. Setelah paritas, `frontend/` (Next.
 | `GET /api/method/aios_v1.api.desktop.module` | `module`, `cards[]`, `doctypes[]`, `rows[]`, `pagination` (`page`, `page_size`, `total`, `total_pages`); menerima `module`, `page`, `page_size`, `filters` JSON (`date_from`, `date_to`, `status`, `party` sesuai allowlist modul) |
 | `GET /api/method/aios_v1.api.desktop.list` | `module`, `doctype`, `rows[]`, `pagination`; menerima `module`, `doctype`, `page`, `page_size`, `filters` |
 | `GET /api/method/aios_v1.api.desktop.search` | `results[]` berisi item modul (`type: "module"`, `module`) dan dokumen (`type: "document"`, `module`, `doctype`, `name`, `row`) yang di-scope ke company aktif; di UI (`desk/src/api/modules.ts`) dinormalisasi menjadi `SearchResult` (`kind: "module" \| "document"`), klik item modul maupun dokumen membuka jendela `module:<key>` |
+| `GET /api/method/aios_v1.api.desktop.settings` | `profile{name,persona,status}`, `company{id,name,currency}`, `quota{limit,used,remaining,percent_used}`, `reset{at,at_label,seconds_remaining,source,scheduler_active}`; baca-saja untuk `AIOS Client` aktif tanpa mengekspos field rahasia `AIOS Setting` |
 | `POST /api/chat/<branch>/stream` | stream SSE; memakai ulang dispatcher `/stream`; request membawa `file_ids[]` opsional untuk lampiran; mendukung event kontrol UI `{"type": "open_module", "module": "<key>"}` dari manager |
 | `POST /api/chat/upload` | multipart `file` + `conversationId` (atau `branch` bila belum ada conversation); membuat Private `File` awalnya terikat conversation; respons `conversationId` + metadata `attachment` — H5 fase 1 |
 
