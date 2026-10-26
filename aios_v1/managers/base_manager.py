@@ -2,6 +2,7 @@ import json
 
 import frappe
 
+from aios_v1.lib.desktop_modules import get_module_definition
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.llm_client import chat_stream
 from aios_v1.lib.tool_registry import (
@@ -75,6 +76,24 @@ def _approval_card_event(tool_name, result_json, branch):
         payload.get("doctype", ""),
         branch or "",
     )
+
+
+def _open_module_event(tool_name, result_json):
+    """Build a UI control event only from a successful, catalog-valid tool result."""
+    if tool_name != "open_module":
+        return None
+    try:
+        payload = json.loads(result_json)
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Open Module Event", exc=exc)
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        return None
+    module_key = payload.get("module")
+    if not isinstance(module_key, str) or not get_module_definition(module_key):
+        log_exception("AIOS Open Module Event", context="hasil tool tidak berisi key modul katalog.")
+        return None
+    return {"type": "open_module", "module": module_key}
 
 
 class BaseManager:
@@ -507,7 +526,7 @@ class BaseManager:
                             trace_args = {}
                         if not isinstance(trace_args, dict):
                             trace_args = {}
-                        if tool_name != "cross_branch_consultation":
+                        if tool_name not in {"cross_branch_consultation", "open_module"}:
                             yield "data: " + json.dumps(trace_subagent_tool(
                                 self.branch.get("key", ""), "Orchestrator", tool_name, trace_args,
                             ), ensure_ascii=False) + "\n\n"
@@ -526,6 +545,9 @@ class BaseManager:
                         card_event = _approval_card_event(tool_name, result, self.branch.get("key", ""))
                         if card_event is not None:
                             yield "data: " + json.dumps(card_event, ensure_ascii=False) + "\n\n"
+                        open_module_event = _open_module_event(tool_name, result)
+                        if open_module_event is not None:
+                            yield "data: " + json.dumps(open_module_event, ensure_ascii=False) + "\n\n"
                         if worker_def is None and tool_name == "cross_branch_consultation":
                             try:
                                 trace_args = json.loads(function.get("arguments", "{}"))

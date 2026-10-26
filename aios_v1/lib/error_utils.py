@@ -64,7 +64,13 @@ def sanitize_text(value) -> str:
     return text
 
 
-def log_exception(title: str, exc: BaseException | None = None, context: str | None = None) -> None:
+def log_exception(
+    title: str,
+    exc: BaseException | None = None,
+    context: str | None = None,
+    *,
+    defer_insert: bool = False,
+) -> None:
     """Catat kegagalan ke Error Log Frappe dengan pesan tersanitasi."""
     parts = []
     if context:
@@ -78,6 +84,7 @@ def log_exception(title: str, exc: BaseException | None = None, context: str | N
     frappe.log_error(
         title=sanitize_text(title)[:140],
         message=sanitize_text("\n".join(part for part in parts if part)),
+        defer_insert=defer_insert,
     )
 
 

@@ -4,13 +4,17 @@ Mendukung delegasi sub-agent, koordinasi lintas cabang (Swarm Router),
 eskalasi draf manusia (Draft Manager), pemantauan task ledger, dan manajemen kebijakan.
 """
 
-import frappe
 import uuid
-from typing import Dict, Any, Optional
-from aios_v1.lib.tool_registry import ai_tool, get_tool_context
+from typing import Any, Dict, Optional
+
+import frappe
+
+from aios_v1.lib.desktop_modules import get_module_definition, get_module_keys
 from aios_v1.lib.draft_manager import create_draft
+from aios_v1.lib.error_utils import safe_error
 from aios_v1.lib.swarm_router import get_swarm_router
 from aios_v1.lib.task_ledger import get_task_ledger
+from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 
 
 def _user_id_from_context() -> str:
@@ -51,6 +55,26 @@ def _user_id_from_context() -> str:
 def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruction: str, context_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     return {"error": "Delegasi hanya dapat dijalankan oleh runner internal.",
             "code": "DELEGATION_RUNNER_REQUIRED"}
+
+
+@ai_tool(
+    name="open_module",
+    description="Membuka jendela modul ERPNext baca-saja yang tersedia di Ekasa Desk untuk pengguna.",
+    branch="ai_manager",
+    roles=["ai_manager", "orchestrator"],
+    parameters={
+        "module": {
+            "type": "string",
+            "enum": get_module_keys(),
+            "description": "Key modul dari katalog desktop",
+        }
+    },
+)
+def open_module(module: str) -> dict[str, Any]:
+    """Return a validated UI command; data access remains in Desktop API."""
+    if not isinstance(module, str) or not get_module_definition(module):
+        return safe_error("Modul tidak tersedia.", "MODULE_NOT_ALLOWED")
+    return {"ok": True, "module": module}
 
 # =========================================================================
 # 2. CROSS BRANCH CONSULTATION
