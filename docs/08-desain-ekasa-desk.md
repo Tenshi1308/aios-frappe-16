@@ -20,7 +20,7 @@ Kontrak harness (trace, tool, approval) ada di `docs/02` §3 dan `docs/04` Alur 
 
 ### 2.1. Boot
 
-Layar gelap penuh dengan progres bertahap: menyambung ke site, memulihkan sesi, mengambil `frappe.boot`, memuat workspace & izin, mendaftarkan agent, membuka kanal realtime, menyiapkan desktop. Progres harus mencerminkan langkah nyata, bukan animasi palsu.
+Layar penuh dengan progres bertahap yang mengikuti tema aktif (`--boot-*`): menyambung ke site, memulihkan sesi, mengambil `frappe.boot`, memuat workspace & izin, mendaftarkan agent, membuka kanal realtime, menyiapkan desktop. Progres harus mencerminkan langkah nyata, bukan animasi palsu.
 
 ### 2.2. Sign-In
 
@@ -146,16 +146,25 @@ Endpoint `/api/branches` memproyeksikan data di server untuk tampilan saja: caba
 
 ## 8. Token Visual & CSS
 
+**Aturan mutlak:** nilai visual hanya boleh ditulis di `desk/src/styles/tokens.css`. Berkas `base.css` maupun komponen `.vue` dilarang menulis literal warna, ukuran font, ketebalan font, radius, spacing, z-index, durasi transisi/animasi, efek blur kaca, atau lebar panel — semuanya wajib mereferensikan `var(--token)`.
+
 Dua lapis token di `styles/tokens.css`:
 
-1. **Primitives** — nilai mentah (hex, px, font). Hanya boleh dipakai di berkas token.
-2. **Semantic** — `--surface`, `--text`, `--accent`, `--ok`, `--warn`, `--bad`, `--shadow`, `--radius`. Inilah yang dipakai komponen.
+1. **Primitives & skala terukur** — nilai mentah (hex, rgba, px, ms/s, font) yang hanya boleh didefinisikan di `tokens.css`:
+   - **Font family:** `--font-ui`, `--font-mono`.
+   - **Spacing (`padding`/`margin`/`gap`):** `--space-{1,2,3,4,5,6,7,8,9,10,11,12,13,14,16,18,20,24,28,29}`.
+   - **Radius:** `--radius-{3,4,5,6,8,9,10,12,13,14,20}`, `--radius-pill` (`999px`), `--radius-circle` (`50%`), `--radius-window-foot` (`0 0 14px 14px`).
+   - **Ukuran font:** `--fs-{10,11,11-5,12,12-5,13,13-5,14,14-5,15,17,18,20,24,30}`.
+   - **Ketebalan font:** `--fw-{400,500,600,700,800}`.
+   - **Z-index:** `--z-base` (`1`), `--z-raised` (`2`), `--z-taskbar` (`50`), `--z-panel` (`55`), `--z-flyout` (`60`), `--z-toast` (`70`).
+   - **Durasi:** `--dur-{12,15,18,20,22,30,40,45,50,90}` (`0.12s`…`0.9s`), `--dur-100` (`1s`), `--dur-110` (`1.1s`), `--dur-240` (`2.4s`), `--dur-instant` (`0.01ms`).
+   - **Glass blur (`backdrop-filter` & `-webkit-backdrop-filter`):** `--glass-blur-sm` (`blur(24px) saturate(1.3)`), `--glass-blur-md` (`blur(26px) saturate(1.4)`), `--glass-blur-lg` (`blur(30px) saturate(1.4)`).
+   - **Dimensi shell:** `--taskbar-h` (`52px`), `--panel-w` (`410px`).
+2. **Semantic & tema** — `--wall-base`, `--wall-1..3`, `--glass`, `--glass-strong`, `--glass-line`, `--surface`, `--surface-2`, `--line`, `--fg`, `--muted`, `--faint`, `--accent`, `--accent-strong`, `--accent-soft`, `--on-accent`, `--ok`, `--ok-soft`, `--warn`, `--warn-soft`, `--bad`, `--bad-soft`, `--hover`, `--press`, `--shadow`, `--shadow-sm`, `--agent-accent-*`, serta token layar boot yang mengikuti tema (`--boot-bg`, `--boot-fg`, `--boot-bar`, `--boot-status`, `--boot-log`, `--boot-log-ok`, `--boot-skip`) lengkap di `:root`, `@media (prefers-color-scheme: dark) :root:not([data-theme='light'])`, `:root[data-theme='dark']`, dan `:root[data-theme='light']`.
 
-Yang dijadikan token: warna, font family/ukuran/weight, radius, bayangan, blur, skala spasi, z-index, durasi animasi, tinggi taskbar, lebar panel.
+Yang **tidak** perlu token: nilai sekali pakai seperti lebar kolom tabel di satu tempat, serta nilai struktural `0`, `auto`, `100%`, dan `1px` pada `border: 1px solid var(--line)`.
 
-Yang **tidak** perlu token: nilai sekali pakai seperti lebar kolom tabel di satu tempat.
-
-**Pemeriksaan otomatis:** `grep -rE "#[0-9a-fA-F]{3,6}|rgba?\(" src/components/ src/views/` harus kosong.
+**Pemeriksaan otomatis:** `aios_v1/tests/test_frontend_no_hardcode.py` memindai `desk/src/components/{module,shell,windows}` dan `desk/src/styles/base.css` (mengecualikan `styles/tokens.css` sebagai sumber kebenaran) terhadap warna literal hex/rgb/rgba.
 
 **Gaya penulisan:** CSS *scoped* per komponen. **Tailwind tidak dipakai** — desain sudah final dan efek visualnya (glass, gradient, shadow berlapis) lebih tepat ditulis langsung.
 
