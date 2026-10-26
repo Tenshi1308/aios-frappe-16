@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useBranchesStore } from '../stores/branches';
 import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
-import { setWindowBounds } from '../composables/useWindowManager';
+import { setWindowBounds, useWindowManager } from '../composables/useWindowManager';
 import AgentPanel from '../components/agent/AgentPanel.vue';
 import AppIcon from '../components/base/AppIcon.vue';
 import Toasts from '../components/base/Toasts.vue';
@@ -17,6 +17,7 @@ const props = defineProps<{ narrow: boolean }>();
 const session = useSessionStore();
 const branches = useBranchesStore();
 const ui = useUiStore();
+const wm = useWindowManager();
 
 const deskEl = ref<HTMLElement | null>(null);
 const windowHost = ref<InstanceType<typeof WindowHost> | null>(null);
@@ -45,6 +46,7 @@ interface DeskIcon {
 }
 const desktopIcons = computed<DeskIcon[]>(() => [
   { id: 'agents', label: 'AI Agents', icon: 'sparkle', neutral: false, run: () => ui.openAgent() },
+  { id: 'files', label: 'Files', icon: 'folder', neutral: true, run: () => wm.open('files', 'Files') },
   {
     id: 'about',
     label: 'Tentang AIOS',

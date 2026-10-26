@@ -7,7 +7,7 @@ import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { formatDurationMs } from '../../utils/format';
-import type { ArtifactEvent, ChatMessage } from '../../types';
+import type { ArtifactEvent, ChatMessage, FileEntry } from '../../types';
 import AgentStep from './AgentStep.vue';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
@@ -34,6 +34,27 @@ const files = computed(() => chat.files(branchKey.value));
 const uploadPercent = computed(() => chat.uploadProgress[branchKey.value]);
 const suggestions = computed(() => branches.suggestions(branchKey.value));
 const conversations = computed(() => chat.conversations[branchKey.value] ?? []);
+const conversationFileEntries = computed(() => {
+  const conversationId = chat.currentConversation[branchKey.value];
+  return conversationId ? chat.conversationFiles[conversationId] ?? [] : [];
+});
+const conversationFileCount = computed(() => new Set(conversationFileEntries.value.map((file) => file.file_url)).size);
+const liveFileUrls = computed(
+  () =>
+    new Set(
+      messages.value.flatMap((message) =>
+        (message.artifacts ?? []).flatMap((artifact) => (artifact.type === 'FILE' ? [artifact.file_url] : [])),
+      ),
+    ),
+);
+const conversationFileChips = computed(() => {
+  const seen = new Set<string>();
+  return conversationFileEntries.value.filter((file) => {
+    if (seen.has(file.file_url) || liveFileUrls.value.has(file.file_url)) return false;
+    seen.add(file.file_url);
+    return true;
+  });
+});
 
 const firstName = computed(() => session.firstName);
 const greeting = computed(() => {
@@ -102,6 +123,17 @@ function openArtifactChip(artifact: ArtifactEvent) {
   } else {
     chat.openArtifact(artifact);
   }
+}
+
+function openConversationFile(file: FileEntry) {
+  chat.openArtifact({
+    type: 'FILE',
+    file_name: file.file_name,
+    file_url: file.file_url,
+    format: file.format,
+    size: file.file_size,
+    conversation_id: file.conversation_id,
+  });
 }
 
 function fmtDate(value: string) {
@@ -242,6 +274,21 @@ async function onFilesPicked(e: Event) {
       </div>
     </div>
 
+    <div v-if="conversationFileCount" class="ap-conversation-files">
+      <b>File percakapan ({{ conversationFileCount }})</b>
+      <div class="ap-conversation-file-chips">
+        <button
+          v-for="file in conversationFileChips"
+          :key="file.file_url"
+          class="msg-artifact"
+          type="button"
+          @click="openConversationFile(file)"
+        >
+          <AppIcon name="file" :size="12" />
+          <span>{{ file.file_name }}</span>
+        </button>
+      </div>
+    </div>
     <div ref="threadEl" class="ap-thread">
       <div v-if="showGreeting" class="msg agent">
         <div class="msg-who">

@@ -6,6 +6,7 @@ import type {
   ConversationItem,
   DraftActionResult,
   DraftDetail,
+  FileEntry,
   PendingDraft,
   TraceEvent,
 } from '../types';
@@ -31,6 +32,17 @@ interface RawConversationDetail {
   conversation?: { id?: unknown; title?: unknown; messages?: { role?: unknown; content?: unknown }[] };
 }
 
+interface RawFileEntry {
+  conversation_id?: unknown;
+  conversation_title?: unknown;
+  branch?: unknown;
+  file_name?: unknown;
+  file_url?: unknown;
+  file_size?: unknown;
+  format?: unknown;
+  creation?: unknown;
+}
+
 export async function fetchConversations(branch: string): Promise<ConversationItem[]> {
   const raw = unwrapMessage<RawConversationList>(await apiFetch(`/api/chat/${encodeURIComponent(branch)}/conversations`));
   const list = raw?.conversations ?? [];
@@ -40,6 +52,33 @@ export async function fetchConversations(branch: string): Promise<ConversationIt
       id: String(c.id),
       title: typeof c.title === 'string' && c.title ? c.title : 'Percakapan',
       updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : '',
+    }));
+}
+
+/** Daftar file privat conversation dari endpoint server-side, bukan cache browser. */
+export async function fetchMyFiles(conversationId?: string): Promise<FileEntry[]> {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : '';
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`/api/method/aios_v1.lib.workspace.list_my_files${query}`),
+  );
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((row): row is RawFileEntry => !!row && typeof row === 'object')
+    .filter(
+      (row) =>
+        typeof row.conversation_id === 'string' &&
+        typeof row.file_name === 'string' &&
+        typeof row.file_url === 'string',
+    )
+    .map((row) => ({
+      conversation_id: row.conversation_id as string,
+      conversation_title: typeof row.conversation_title === 'string' ? row.conversation_title : '',
+      branch: typeof row.branch === 'string' ? row.branch : '',
+      file_name: row.file_name as string,
+      file_url: row.file_url as string,
+      file_size: typeof row.file_size === 'number' ? row.file_size : Number(row.file_size) || 0,
+      format: typeof row.format === 'string' ? row.format : '',
+      creation: typeof row.creation === 'string' ? row.creation : '',
     }));
 }
 

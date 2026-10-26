@@ -1154,6 +1154,38 @@ textarea {
   gap: 12px;
   min-height: 0;
 }
+.ap-conversation-files {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin: 0 14px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.ap-conversation-files > b {
+  color: var(--fg);
+}
+.ap-conversation-file-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ap-conversation-file-chips .msg-artifact {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+}
+.ap-conversation-file-chips .msg-artifact span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .msg {
   display: flex;
   flex-direction: column;

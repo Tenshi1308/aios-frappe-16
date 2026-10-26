@@ -5,6 +5,7 @@ import EkasaMark from '../base/EkasaMark.vue';
 import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
 import AboutWindow from '../windows/AboutWindow.vue';
 import ArtifactWindow from '../windows/ArtifactWindow.vue';
+import FilesWindow from '../windows/FilesWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
@@ -44,6 +45,7 @@ defineExpose({ openAbout });
       <div class="win-body">
         <AboutWindow v-if="w.id === 'about'" />
         <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
+        <FilesWindow v-else-if="w.id === 'files'" />
         <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
         <ArtifactWindow v-else-if="w.id.startsWith('artifact:')" :file-url="w.id.slice(9)" />
       </div>

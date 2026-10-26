@@ -29,6 +29,17 @@ export interface ConversationItem {
   updatedAt: string;
 }
 
+export interface FileEntry {
+  conversation_id: string;
+  conversation_title: string;
+  branch: string;
+  file_name: string;
+  file_url: string;
+  file_size: number;
+  format: string;
+  creation: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
