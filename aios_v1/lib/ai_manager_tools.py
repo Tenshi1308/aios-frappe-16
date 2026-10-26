@@ -60,26 +60,45 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
 
 @ai_tool(
     name="open_module",
-    description="Membuka jendela bidang (domain) atau modul ERPNext baca-saja yang tersedia di Ekasa Desk untuk pengguna.",
+    description="Membuka jendela modul ERPNext baca-saja yang tersedia di Ekasa Desk untuk pengguna (khusus modul; untuk membuka bidang gunakan open_domain).",
     branch="ai_manager",
     roles=["ai_manager", "orchestrator"],
     parameters={
         "module": {
             "type": "string",
-            "enum": [*get_domain_keys(), *get_module_keys()],
-            "description": "Key bidang aktif (mis. 'sales', 'finance') atau key modul dari katalog desktop",
+            "enum": get_module_keys(),
+            "description": "Key modul dari katalog desktop (mis. 'sales_invoice', 'sales_order', 'payment_entry')",
         }
     },
 )
 def open_module(module: str) -> dict[str, Any]:
     """Return a validated UI command; data access remains in Desktop API."""
-    if not isinstance(module, str):
-        return safe_error("Modul tidak tersedia.", "MODULE_NOT_ALLOWED")
-    domain_def = get_domain_definition(module)
-    is_active_domain = bool(domain_def and domain_def.get("status") == "active")
-    if not is_active_domain and not get_module_definition(module):
+    if not isinstance(module, str) or not get_module_definition(module):
         return safe_error("Modul tidak tersedia.", "MODULE_NOT_ALLOWED")
     return {"ok": True, "module": module}
+
+
+@ai_tool(
+    name="open_domain",
+    description="Membuka jendela bidang (domain) ERPNext baca-saja yang aktif di Ekasa Desk untuk pengguna (khusus bidang; untuk membuka modul gunakan open_module).",
+    branch="ai_manager",
+    roles=["ai_manager", "orchestrator"],
+    parameters={
+        "domain": {
+            "type": "string",
+            "enum": get_domain_keys(),
+            "description": "Key bidang aktif dari katalog desktop (mis. 'sales', 'finance')",
+        }
+    },
+)
+def open_domain(domain: str) -> dict[str, Any]:
+    """Return a validated UI command to open an active domain window."""
+    if not isinstance(domain, str):
+        return safe_error("Bidang tidak tersedia.", "DOMAIN_NOT_ALLOWED")
+    domain_def = get_domain_definition(domain)
+    if not domain_def or domain_def.get("status") != "active":
+        return safe_error("Bidang tidak tersedia.", "DOMAIN_NOT_ALLOWED")
+    return {"ok": True, "domain": domain}
 
 # =========================================================================
 # 2. CROSS BRANCH CONSULTATION

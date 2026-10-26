@@ -80,7 +80,7 @@ def _approval_card_event(tool_name, result_json, branch):
 
 
 def _open_module_event(tool_name, result_json):
-    """Build a UI control event only from a successful, catalog-valid tool result."""
+    """Build a UI control event only from a successful, catalog-valid module tool result."""
     if tool_name != "open_module":
         return None
     try:
@@ -91,15 +91,32 @@ def _open_module_event(tool_name, result_json):
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         return None
     module_key = payload.get("module")
-    if not isinstance(module_key, str):
-        log_exception("AIOS Open Module Event", context="hasil tool tidak berisi key modul katalog.")
-        return None
-    domain_def = get_domain_definition(module_key)
-    is_active_domain = bool(domain_def and domain_def.get("status") == "active")
-    if not is_active_domain and not get_module_definition(module_key):
+    if not isinstance(module_key, str) or not get_module_definition(module_key):
         log_exception("AIOS Open Module Event", context="hasil tool tidak berisi key modul katalog.")
         return None
     return {"type": "open_module", "module": module_key}
+
+
+def _open_domain_event(tool_name, result_json):
+    """Build a UI control event only from a successful, active-domain tool result."""
+    if tool_name != "open_domain":
+        return None
+    try:
+        payload = json.loads(result_json)
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Open Domain Event", exc=exc)
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        return None
+    domain_key = payload.get("domain")
+    if not isinstance(domain_key, str):
+        log_exception("AIOS Open Domain Event", context="hasil tool tidak berisi key bidang aktif.")
+        return None
+    domain_def = get_domain_definition(domain_key)
+    if not domain_def or domain_def.get("status") != "active":
+        log_exception("AIOS Open Domain Event", context="hasil tool tidak berisi key bidang aktif.")
+        return None
+    return {"type": "open_domain", "domain": domain_key}
 
 
 class BaseManager:
@@ -532,7 +549,7 @@ class BaseManager:
                             trace_args = {}
                         if not isinstance(trace_args, dict):
                             trace_args = {}
-                        if tool_name not in {"cross_branch_consultation", "open_module"}:
+                        if tool_name not in {"cross_branch_consultation", "open_module", "open_domain"}:
                             yield "data: " + json.dumps(trace_subagent_tool(
                                 self.branch.get("key", ""), "Orchestrator", tool_name, trace_args,
                             ), ensure_ascii=False) + "\n\n"
@@ -554,6 +571,9 @@ class BaseManager:
                         open_module_event = _open_module_event(tool_name, result)
                         if open_module_event is not None:
                             yield "data: " + json.dumps(open_module_event, ensure_ascii=False) + "\n\n"
+                        open_domain_event = _open_domain_event(tool_name, result)
+                        if open_domain_event is not None:
+                            yield "data: " + json.dumps(open_domain_event, ensure_ascii=False) + "\n\n"
                         if worker_def is None and tool_name == "cross_branch_consultation":
                             try:
                                 trace_args = json.loads(function.get("arguments", "{}"))
