@@ -88,6 +88,7 @@ function formatDate(value: string) {
 function openFile(file: FileEntry) {
   chat.openArtifact({
     type: 'FILE',
+    file_id: file.file_id,
     file_name: file.file_name,
     file_url: file.file_url,
     format: file.format,
@@ -164,7 +165,7 @@ onMounted(() => {
           </div>
           <button
             v-for="file in selectedFiles"
-            :key="file.file_url"
+            :key="file.file_id || file.file_url"
             class="files-row"
             type="button"
             :aria-label="`Buka ${file.file_name}`"

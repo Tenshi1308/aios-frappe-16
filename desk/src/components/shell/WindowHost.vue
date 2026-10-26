@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useWindowManager } from '../../composables/useWindowManager';
+import { useChatStore } from '../../stores/chat';
 import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
 import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
@@ -11,7 +12,13 @@ import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
 const props = defineProps<{ narrow: boolean }>();
 
 const wm = useWindowManager();
+const chat = useChatStore();
 const activeId = wm.activeId;
+
+function artifactFileUrl(windowId: string) {
+  const artifact = chat.artifactWindows[windowId.slice(9)];
+  return artifact?.type === 'FILE' ? artifact.file_url : '';
+}
 
 function openAbout() {
   wm.open('about', 'Tentang AIOS');
@@ -47,7 +54,11 @@ defineExpose({ openAbout });
         <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
         <FilesWindow v-else-if="w.id === 'files'" />
         <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
-        <ArtifactWindow v-else-if="w.id.startsWith('artifact:')" :file-url="w.id.slice(9)" />
+        <ArtifactWindow
+          v-else-if="w.id.startsWith('artifact:')"
+          :artifact-key="w.id.slice(9)"
+          :file-url="artifactFileUrl(w.id)"
+        />
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />
     </div>

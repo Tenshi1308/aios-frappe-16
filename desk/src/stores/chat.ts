@@ -42,7 +42,7 @@ export const useChatStore = defineStore('chat', {
     historyOpen: {} as Record<string, boolean>,
     historyLoading: {} as Record<string, boolean>,
     pendingDrafts: [] as PendingDraft[],
-    /** Artefak FILE yang jendelanya pernah dibuka (key = file_url). */
+    /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
     artifactWindows: {} as Record<string, ArtifactEvent>,
   }),
   getters: {
@@ -58,8 +58,9 @@ export const useChatStore = defineStore('chat', {
     /** Buka jendela artefak FILE dari chip pesan (tidak auto-open saat event tiba). */
     openArtifact(artifact: ArtifactEvent) {
       if (artifact.type !== 'FILE') return;
-      this.artifactWindows[artifact.file_url] = artifact;
-      useWindowManager().open(`artifact:${artifact.file_url}`, artifact.file_name);
+      const artifactKey = artifact.file_id || artifact.file_url;
+      this.artifactWindows[artifactKey] = artifact;
+      useWindowManager().open(`artifact:${artifactKey}`, artifact.file_name);
     },
     async loadPendingDrafts() {
       const session = useSessionStore();
@@ -217,7 +218,9 @@ export const useChatStore = defineStore('chat', {
         const currentArtifacts = list[index].artifacts ?? [];
         if (
           artifact.type === 'FILE' &&
-          currentArtifacts.some((item) => item.type === 'FILE' && item.file_url === artifact.file_url)
+          currentArtifacts.some(
+            (item) => item.type === 'FILE' && (item.file_id || item.file_url) === (artifact.file_id || artifact.file_url),
+          )
         ) {
           return;
         }

@@ -8,11 +8,11 @@ import { formatBytes } from '../../utils/format';
 import { renderMarkdown } from '../../utils/markdown';
 import AppIcon from '../base/AppIcon.vue';
 
-const props = defineProps<{ fileUrl: string }>();
+const props = defineProps<{ artifactKey?: string; fileUrl: string }>();
 
 const chat = useChatStore();
 const artifact = computed<FileArtifact | null>(() => {
-  const a = chat.artifactWindows[props.fileUrl];
+  const a = chat.artifactWindows[props.artifactKey || props.fileUrl];
   return a && a.type === 'FILE' ? a : null;
 });
 

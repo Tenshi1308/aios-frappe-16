@@ -111,6 +111,7 @@ function openArtifactChip(artifact: ArtifactEvent) {
 function openConversationFile(file: FileEntry) {
   chat.openArtifact({
     type: 'FILE',
+    file_id: file.file_id,
     file_name: file.file_name,
     file_url: file.file_url,
     format: file.format,
@@ -296,7 +297,7 @@ async function onFilesPicked(e: Event) {
           <div v-if="m.artifacts?.length" class="msg-artifacts">
             <button
               v-for="a in m.artifacts"
-              :key="a.type === 'FILE' ? a.file_url : a.draft_id"
+              :key="a.type === 'FILE' ? (a.file_id || a.file_url) : a.draft_id"
               class="msg-artifact"
               type="button"
               @click="openArtifactChip(a)"
@@ -315,7 +316,7 @@ async function onFilesPicked(e: Event) {
         <div class="legacy-file-list">
           <button
             v-for="file in legacyFiles"
-            :key="file.file_url"
+            :key="file.file_id || file.file_url"
             class="msg-artifact"
             type="button"
             @click="openConversationFile(file)"

@@ -30,6 +30,7 @@ export interface ConversationItem {
 }
 
 export interface FileEntry {
+  file_id?: string;
   conversation_id: string;
   conversation_title: string;
   branch: string;
@@ -94,6 +95,7 @@ export interface ApprovalCardArtifact {
 
 export interface FileArtifact {
   type: 'FILE';
+  file_id?: string;
   file_name: string;
   file_url: string;
   format: string;
@@ -135,6 +137,7 @@ export interface DraftActionResult {
 
 export interface AttachmentMeta {
   id: string;
+  file_id?: string;
   file_name: string;
   file_url: string;
   file_size: number;

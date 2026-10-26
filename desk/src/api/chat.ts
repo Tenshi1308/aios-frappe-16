@@ -39,6 +39,7 @@ interface RawConversationDetail {
 }
 
 interface RawFileEntry {
+  file_id?: unknown;
   conversation_id?: unknown;
   conversation_title?: unknown;
   branch?: unknown;
@@ -70,6 +71,7 @@ function toFileEntry(row: RawFileEntry): FileEntry | null {
     return null;
   }
   return {
+    file_id: typeof row.file_id === 'string' ? row.file_id : undefined,
     conversation_id: row.conversation_id,
     conversation_title: typeof row.conversation_title === 'string' ? row.conversation_title : '',
     branch: typeof row.branch === 'string' ? row.branch : '',
@@ -88,6 +90,7 @@ function toFileArtifacts(value: unknown, conversationId: string): FileArtifact[]
     .filter((item) => item.type === 'FILE' && typeof item.file_name === 'string' && typeof item.file_url === 'string')
     .map((item) => ({
       type: 'FILE' as const,
+      file_id: typeof item.file_id === 'string' ? item.file_id : undefined,
       file_name: item.file_name as string,
       file_url: item.file_url as string,
       format: typeof item.format === 'string' ? item.format : '',
@@ -183,6 +186,7 @@ export async function uploadAttachment(
           conversationId: String(body.conversationId),
           attachment: {
             id: attachment.id,
+            file_id: attachment.id,
             file_name: typeof attachment.file_name === 'string' ? attachment.file_name : 'lampiran',
             file_url: typeof attachment.file_url === 'string' ? attachment.file_url : '',
             file_size: typeof attachment.file_size === 'number' ? attachment.file_size : 0,
