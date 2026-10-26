@@ -303,24 +303,55 @@ class TestDesktopDomains(IntegrationTestCase):
         planned_resp = self._http_get("domain", {"domain": "purchasing"})
         self.assertNotEqual(planned_resp.status_code, 200)
 
-    def test_open_module_tool_accepts_active_domains_and_rejects_planned(self):
+    def test_open_module_and_open_domain_full_path_and_separation(self):
+        import aios_v1.lib.ai_manager_tools as ai_manager_tools
+        import aios_v1.managers.base_manager as base_manager
         from aios_v1.lib.ai_manager_tools import open_module
         from aios_v1.lib.tool_registry import _TOOL_REGISTRY
         from aios_v1.managers.base_manager import _open_module_event
 
-        enum_values = _TOOL_REGISTRY["open_module"]["parameters"]["module"]["enum"]
-        self.assertIn("sales", enum_values)
-        self.assertIn("finance", enum_values)
-        self.assertNotIn("purchasing", enum_values)
-
-        self.assertEqual(open_module("sales"), {"ok": True, "module": "sales"})
-        self.assertEqual(open_module("sales_invoice"), {"ok": True, "module": "sales_invoice"})
-        self.assertEqual(open_module("purchasing")["code"], "MODULE_NOT_ALLOWED")
-
+        # 1. open_module rejects domain keys ("sales") and accepts module keys ("sales_invoice")
+        mod_sales = open_module("sales")
+        self.assertEqual(mod_sales.get("code"), "MODULE_NOT_ALLOWED", f"open_module('sales') seharusnya ditolak, dapat: {mod_sales}")
         self.assertEqual(
-            _open_module_event("open_module", json.dumps({"ok": True, "module": "sales"})),
-            {"type": "open_module", "module": "sales"},
+            _TOOL_REGISTRY["open_module"]["parameters"]["module"]["enum"],
+            get_module_keys(),
         )
-        self.assertIsNone(
-            _open_module_event("open_module", json.dumps({"ok": True, "module": "purchasing"}))
+        self.assertNotIn("sales", _TOOL_REGISTRY["open_module"]["parameters"]["module"]["enum"])
+
+        # 2. open_domain exists, accepts active domains ("sales", "finance"), rejects modules & planned domains
+        open_domain = getattr(ai_manager_tools, "open_domain", None)
+        self.assertTrue(callable(open_domain), "Tool open_domain belum terdaftar")
+        self.assertIn("open_domain", _TOOL_REGISTRY)
+        self.assertEqual(
+            _TOOL_REGISTRY["open_domain"]["parameters"]["domain"]["enum"],
+            get_domain_keys(),
         )
+        self.assertEqual(open_domain("sales"), {"ok": True, "domain": "sales"})
+        self.assertEqual(open_domain("finance"), {"ok": True, "domain": "finance"})
+        self.assertEqual(open_domain("sales_invoice").get("code"), "DOMAIN_NOT_ALLOWED")
+        self.assertEqual(open_domain("purchasing").get("code"), "DOMAIN_NOT_ALLOWED")
+
+        # 3. _open_module_event and _open_domain_event do not cross-accept each other's payloads
+        _open_domain_event = getattr(base_manager, "_open_domain_event", None)
+        self.assertTrue(callable(_open_domain_event), "_open_domain_event belum tersedia di base_manager")
+        self.assertIsNone(_open_module_event("open_module", json.dumps({"ok": True, "module": "sales"})))
+        self.assertIsNone(_open_module_event("open_domain", json.dumps({"ok": True, "domain": "sales"})))
+        self.assertIsNone(_open_domain_event("open_module", json.dumps({"ok": True, "module": "sales_invoice"})))
+        self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"})))
+        self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales_invoice"})))
+
+        # 4. Full path (tool -> SSE event -> HTTP endpoint):
+        mod_res = open_module("sales_invoice")
+        self.assertEqual(mod_res, {"ok": True, "module": "sales_invoice"})
+        mod_ev = _open_module_event("open_module", json.dumps(mod_res))
+        self.assertEqual(mod_ev, {"type": "open_module", "module": "sales_invoice"})
+        mod_http = self._http_get("module", {"module": mod_ev["module"], "page_size": 1})
+        self.assertEqual(mod_http.status_code, 200, mod_http.get_data(as_text=True))
+
+        dom_res = open_domain("sales")
+        self.assertEqual(dom_res, {"ok": True, "domain": "sales"})
+        dom_ev = _open_domain_event("open_domain", json.dumps(dom_res))
+        self.assertEqual(dom_ev, {"type": "open_domain", "domain": "sales"})
+        dom_http = self._http_get("domain", {"domain": dom_ev["domain"]})
+        self.assertEqual(dom_http.status_code, 200, dom_http.get_data(as_text=True))

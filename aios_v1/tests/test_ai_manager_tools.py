@@ -61,6 +61,8 @@ class TestAIManagerTools(IntegrationTestCase):
     def test_all_seven_tools_registered(self):
         expected_tools = [
             "orchestrator_delegate_to_subagent",
+            "open_module",
+            "open_domain",
             "cross_branch_consultation",
             "escalate_to_human_approval",
             "monitor_global_task_ledger",
@@ -68,6 +70,10 @@ class TestAIManagerTools(IntegrationTestCase):
             "broadcast_policy_update",
             "summarize_branch_status",
         ]
+        ai_manager_tools = [
+            name for name, meta in _TOOL_REGISTRY.items() if meta.get("branch") == "ai_manager"
+        ]
+        self.assertEqual(len(ai_manager_tools), len(expected_tools))
         for tool in expected_tools:
             self.assertIn(tool, _TOOL_REGISTRY, f"Tool {tool} belum terdaftar")
 

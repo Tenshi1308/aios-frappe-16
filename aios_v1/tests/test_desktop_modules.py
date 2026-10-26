@@ -432,21 +432,40 @@ class TestDesktopModules(IntegrationTestCase):
 
     def test_open_module_tool_is_manager_only_and_event_requires_valid_catalog_key(self):
         from aios_v1.lib.tool_registry import _TOOL_REGISTRY, get_tools_schema_for_worker
-        from aios_v1.managers.base_manager import _open_module_event
+        from aios_v1.managers.base_manager import _open_domain_event, _open_module_event
         from aios_v1.plugin_manager.registry import get_branch
 
         manager_tools = get_tools_schema_for_worker("sales", "manager")
+        manager_tool_names = {item["function"]["name"] for item in manager_tools}
         self.assertEqual(_TOOL_REGISTRY["open_module"]["roles"], ["ai_manager", "orchestrator"])
-        self.assertIn("open_module", {item["function"]["name"] for item in manager_tools})
+        self.assertEqual(_TOOL_REGISTRY["open_domain"]["roles"], ["ai_manager", "orchestrator"])
+        self.assertIn("open_module", manager_tool_names)
+        self.assertIn("open_domain", manager_tool_names)
         subagent_key = get_branch("sales")["workers"][0]["key"]
         subagent_tools = get_tools_schema_for_worker("sales", subagent_key)
-        self.assertNotIn("open_module", {item["function"]["name"] for item in subagent_tools})
+        subagent_tool_names = {item["function"]["name"] for item in subagent_tools}
+        self.assertNotIn("open_module", subagent_tool_names)
+        self.assertNotIn("open_domain", subagent_tool_names)
 
         self.assertEqual(
             _open_module_event("open_module", json.dumps({"ok": True, "module": "sales_invoice"})),
             {"type": "open_module", "module": "sales_invoice"},
         )
         self.assertIsNone(
+            _open_module_event("open_module", json.dumps({"ok": True, "module": "sales"}))
+        )
+        self.assertIsNone(
             _open_module_event("open_module", json.dumps({"ok": True, "module": "purchase_order"}))
         )
         self.assertIsNone(_open_module_event("erpnext_doc_list", json.dumps({"ok": True, "module": "sales_invoice"})))
+
+        self.assertEqual(
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales"})),
+            {"type": "open_domain", "domain": "sales"},
+        )
+        self.assertIsNone(
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales_invoice"}))
+        )
+        self.assertIsNone(
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"}))
+        )
