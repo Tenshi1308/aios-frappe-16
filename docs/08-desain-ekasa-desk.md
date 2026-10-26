@@ -126,6 +126,8 @@ Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya d
 
 **Aturan yang bisa diuji:** tidak ada nama agent, nama modul, atau nama doctype yang ditulis sebagai teks di berkas komponen. Data contoh hanya boleh hidup di lapisan `api/mock/` dan tidak pernah diimpor jalur produksi.
 
+Endpoint `/api/branches` memproyeksikan data di server untuk tampilan saja: cabang mengirim `key`, `name`, `description`, `tagline`, `enabled`; worker mengirim `key`, `branch`, `jobRole`, `description`, `exampleQuestions`, `enabled`. Materi prompt internal tidak pernah dikirim ke browser.
+
 **Aturan yang sama berlaku untuk gaya:** komponen dilarang menulis warna, font, bayangan, atau radius secara langsung. Semua lewat token (§8).
 
 ---

@@ -108,6 +108,8 @@ Kontrak trace: `trace_delegate_start` memuat `from`, `to`, `instruction`; `trace
 
 **Yang tidak boleh ditampilkan:** *system prompt* internal AIOS (instruksi dasar, ETHOS, guard). Trace menampilkan **tugas, tool, dan hasil** — bukan resep produk.
 
+Route `GET /api/branches` juga menerapkan proyeksi server-side sebelum data mencapai browser. Payload publik hanya memuat `key`, `name`, `description`, `tagline`, `enabled` pada cabang serta `key`, `branch`, `jobRole`, `description`, `exampleQuestions`, `enabled` pada worker. `manager_persona` dan materi prompt internal worker tetap tersedia pada registry server untuk prompt builder, tetapi tidak pernah dikirim ke client.
+
 ### 3.2. Approval Card dan Artefak File
 
 Event `artifact_created` untuk Approval Card adalah kartu virtual backend H4, berisi `artifact.type = "APPROVAL_CARD"` dan `draft_id`; kartu mengambil nilai sebelum/sesudah dari `get_draft`. Event ini tidak membuat file. **Artefak file diimplementasikan pada H5 fase 1 (`b07975f`):** plugin `workspace-artifact-builder` membuat Private File (`is_private=1`) milik `frappe.session.user` melalui `aios_v1/lib/workspace.py` (sanitasi nama, cek kepemilikan percakapan, verifikasi pasca-insert, tanpa commit di helper). File yang dibuat agent dikaitkan ke pesan agent melalui relasi attachment bawaan Frappe; unggahan user dikaitkan ke pesan user saat dikirim. Conversation untuk pemeriksaan akses diturunkan dari `AIOS Message.conversation`. File lama yang masih langsung terikat ke conversation tetap valid dan tidak dihapus. `document_extract` hanya membaca File privat milik user yang terkait ke conversation aktif. Bentuk tampilan UI diatur di `docs/08` §5 dan masuk #12.
