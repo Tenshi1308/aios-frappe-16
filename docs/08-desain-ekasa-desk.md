@@ -89,6 +89,14 @@ File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tam
 
 Berkas yang dibuat pada satu percakapan hanya terlihat oleh pemilik percakapan tersebut. **Status backend (H5 fase 1, `b07975f`):** file privat `.csv`/`.xlsx`/`.md`/`.pdf` dibuat oleh `workspace_create_file` dan event `artifact_created` (`FILE`) sudah dikirim backend; **jendela artefak FILE ada di #12 fase 2b** (chip dibuka manual dari pesan, tidak auto-open saat event; pratinjau `.csv`/`.xlsx` tabel, `.md` markdown ter-sanitasi, `.pdf` embed iframe; file > 2 MB tanpa fetch; artefak ikut hilang saat reload — batas Opsi A cache memori, sama seperti trace). **Bubble jawaban agent kini merender markdown penuh** (markdown-it `html:false` + DOMPurify via `v-html` — persetujuan owner mengganti guard no-v-html lama). Grafik interaktif, Mermaid, dan iframe presentasi menyusul.
 
+### File Explorer
+
+Jendela **Files** menyediakan Explorer baca-saja dengan tree virtual `root → cabang → percakapan → file`. Tree dibentuk dari `AIOS Conversation` dan `File`; ini representasi relasi percakapan, bukan struktur folder fisik. File tetap berada di `Home/Attachments`. Explorer menampilkan semua file percakapan yang dimiliki user, termasuk unggahan lampiran dan artefak agent, karena DocType `File` tidak membedakan kedua asal tersebut.
+
+Backend hanya mengembalikan file privat milik user yang terikat ke percakapan miliknya, dan mengecualikan baris folder. Payload daftar file berisi metadata untuk Explorer serta `file_url` yang dibutuhkan jendela `ArtifactWindow`; payload tidak memuat File ID, path filesystem, atau isi file. Memilih file membuka preview dan unduh melalui jendela artefak yang sama.
+
+Explorer tidak mengubah, memindahkan, menghapus, atau membagikan file. Unduh memenuhi kebutuhan share. Rename dan hapus file adalah fase berikut dan memerlukan mutasi `File` serta audit trail.
+
 ---
 
 ## 6. Modul
