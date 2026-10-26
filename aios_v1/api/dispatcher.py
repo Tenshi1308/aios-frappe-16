@@ -605,7 +605,7 @@ def _handle_api_request():
                             "is_private": 1,
                             "is_folder": 0,
                         },
-                        fields=["file_name", "file_url", "file_size", "attached_to_name"],
+                        fields=["name as file_id", "file_name", "file_url", "file_size", "attached_to_name"],
                         order_by="creation asc",
                         limit=500,
                         ignore_permissions=True,
@@ -615,6 +615,7 @@ def _handle_api_request():
                         attachments_by_message.setdefault(message_key, []).append(
                             {
                                 "type": "FILE",
+                                "file_id": file_doc.file_id,
                                 "file_name": file_doc.file_name or "",
                                 "file_url": file_doc.file_url or "",
                                 "format": _extension_of(file_doc.file_name or "", file_doc.file_url or ""),
@@ -634,7 +635,7 @@ def _handle_api_request():
                         "is_private": 1,
                         "is_folder": 0,
                     },
-                    fields=["file_name", "file_url", "file_size", "creation"],
+                    fields=["name as file_id", "file_name", "file_url", "file_size", "creation"],
                     order_by="creation asc",
                     limit=500,
                     ignore_permissions=True,
@@ -644,6 +645,7 @@ def _handle_api_request():
                         "conversation_id": str(conv.name),
                         "conversation_title": conv.title or "",
                         "branch": conv.branch or "",
+                        "file_id": file_doc.file_id,
                         "file_name": file_doc.file_name or "",
                         "file_url": file_doc.file_url or "",
                         "file_size": int(file_doc.file_size or 0),

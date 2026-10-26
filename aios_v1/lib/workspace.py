@@ -131,6 +131,7 @@ def attach_private_files_to_message(file_ids, message_id, conversation_id, user:
 
 def _file_list_row(file_doc, conversation, conversation_id: str) -> dict:
     return {
+        "file_id": str(file_doc.file_id),
         "conversation_id": str(conversation_id),
         "conversation_title": conversation.title or "",
         "branch": conversation.branch or "",
@@ -180,7 +181,7 @@ def list_my_files(conversation_id: str | None = None) -> list[dict]:
         # Permission checks are bypassed only after scoping each File query by
         # owner, private status, and either an owned conversation or its messages.
         common_filters = {"owner": user, "is_private": 1, "is_folder": 0}
-        fields = ["file_name", "file_url", "file_size", "attached_to_name", "creation"]
+        fields = ["name as file_id", "file_name", "file_url", "file_size", "attached_to_name", "creation"]
         legacy_files = frappe.get_all(
             "File",
             filters={
@@ -221,16 +222,7 @@ def list_my_files(conversation_id: str | None = None) -> list[dict]:
                 )
 
         rows.sort(key=lambda row: str(row["creation"] or ""), reverse=True)
-        unique_rows = []
-        seen_urls = set()
-        for row in rows:
-            if row["file_url"] in seen_urls:
-                continue
-            seen_urls.add(row["file_url"])
-            unique_rows.append(row)
-            if len(unique_rows) == 500:
-                break
-        return unique_rows
+        return rows[:500]
     except Exception as exc:
         log_exception("AIOS Workspace File List", exc=exc)
         frappe.throw("Daftar file percakapan tidak dapat dimuat.")
@@ -275,6 +267,12 @@ def save_private_file(file_name, content, conversation_id, user) -> dict:
                 "attached_to_name": str(conversation.name),
             }
         )
+        # File.name is the identity: identical bytes still require independent
+        # disk paths so deleting one File cannot invalidate another. These are
+        # Frappe's supported escape hatches for its content-hash dedupe checks.
+        saved.flags.new_file = True
+        saved.flags.ignore_duplicate_entry_error = True
+        saved.save_file(content=content, ignore_existing_file_check=True)
         saved.insert(ignore_permissions=True)
     except Exception as exc:
         log_exception("AIOS Workspace Save", exc=exc)

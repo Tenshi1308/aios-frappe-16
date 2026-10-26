@@ -164,7 +164,7 @@ class TestWorkspaceFiles(IntegrationTestCase):
         self.assertEqual(list_my_files(str(self.conv_b.name)), [])
         self.assertNotEqual(first["file_name"], second["file_name"])
 
-    def test_payload_has_no_file_id_filesystem_path_or_content(self):
+    def test_payload_has_file_id_but_no_filesystem_path_or_content(self):
         saved, content_marker = self._save(self.conv_a, self.USER_A, "private-content-marker")
         frappe.set_user(self.USER_A)
 
@@ -174,6 +174,7 @@ class TestWorkspaceFiles(IntegrationTestCase):
         self.assertEqual(
             set(files[0]),
             {
+                "file_id",
                 "conversation_id",
                 "conversation_title",
                 "branch",
@@ -185,11 +186,28 @@ class TestWorkspaceFiles(IntegrationTestCase):
             },
         )
         self.assertTrue(files[0]["file_url"].startswith("/private/files/"))
+        self.assertEqual(files[0]["file_id"], saved["file_id"])
         serialized = json.dumps(files, default=str)
-        self.assertNotIn("file_id", serialized)
-        self.assertNotIn(saved["file_id"], serialized)
         self.assertNotIn(content_marker, serialized)
         self.assertNotIn(frappe.get_site_path("private", "files"), serialized)
+
+    def test_identical_file_rows_have_unique_file_id_and_remain_listed(self):
+        marker = uuid.uuid4().hex[:8]
+        content = f"duplicate\n{marker}\n".encode()
+        frappe.set_user(self.USER_A)
+        first = save_private_file(f"identik-satu-{marker}.csv", content, self.conv_a.name, self.USER_A)
+        second = save_private_file(f"identik-dua-{marker}.csv", content, self.conv_a.name, self.USER_A)
+        self._physical_files.extend(
+            os.path.join(frappe.get_site_path("private", "files"), os.path.basename(file_url))
+            for file_url in (first["file_url"], second["file_url"])
+        )
+
+        frappe.set_user(self.USER_A)
+        listed = list_my_files(str(self.conv_a.name))
+        matching = [row for row in listed if row.get("file_id") in {first["file_id"], second["file_id"]}]
+
+        self.assertEqual({row["file_id"] for row in matching}, {first["file_id"], second["file_id"]})
+        self.assertEqual(len(matching), 2)
 
     def test_conversation_without_files_returns_empty_list(self):
         frappe.set_user(self.USER_A)

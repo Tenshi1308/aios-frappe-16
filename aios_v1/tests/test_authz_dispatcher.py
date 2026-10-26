@@ -145,6 +145,7 @@ class TestChatEndpointIsolation(IntegrationTestCase):
 
     def test_detail_returns_file_attachments_per_message(self):
         frappe.set_user(self.ALPHA)
+        marker = os.urandom(4).hex()
         message = frappe.get_doc(
             {
                 "doctype": "AIOS Message",
@@ -154,16 +155,24 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
         saved = save_private_file(
-            "_test_inline_attachment.csv",
+            f"_test_inline_attachment_{marker}.csv",
+            b"name\nalpha\n",
+            self.alpha_conv.name,
+            self.ALPHA,
+        )
+        duplicate = save_private_file(
+            f"_test_inline_attachment_copy_{marker}.csv",
             b"name\nalpha\n",
             self.alpha_conv.name,
             self.ALPHA,
         )
         self._track_private_file(saved["file_url"])
-        file_doc = frappe.get_doc("File", saved["file_id"])
-        file_doc.attached_to_doctype = "AIOS Message"
-        file_doc.attached_to_name = message.name
-        file_doc.save(ignore_permissions=True)
+        self._track_private_file(duplicate["file_url"])
+        for item in (saved, duplicate):
+            file_doc = frappe.get_doc("File", item["file_id"])
+            file_doc.attached_to_doctype = "AIOS Message"
+            file_doc.attached_to_name = message.name
+            file_doc.save(ignore_permissions=True)
 
         res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
 
@@ -175,15 +184,26 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             [
                 {
                     "type": "FILE",
+                    "file_id": saved["file_id"],
                     "file_name": saved["file_name"],
                     "file_url": saved["file_url"],
                     "format": "csv",
                     "size": saved["file_size"],
                     "conversation_id": str(self.alpha_conv.name),
-                }
+                },
+                {
+                    "type": "FILE",
+                    "file_id": duplicate["file_id"],
+                    "file_name": duplicate["file_name"],
+                    "file_url": duplicate["file_url"],
+                    "format": "csv",
+                    "size": duplicate["file_size"],
+                    "conversation_id": str(self.alpha_conv.name),
+                },
             ],
         )
-        self.assertNotIn("file_id", json.dumps(message_payload))
+        self.assertNotEqual(saved["file_url"], duplicate["file_url"])
+        self.assertIn(saved["file_id"], json.dumps(message_payload))
 
     def test_detail_keeps_legacy_files_attached_to_conversation(self):
         frappe.set_user(self.ALPHA)
@@ -203,10 +223,11 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         self.assertEqual(len(legacy_files), 1)
         legacy_file = legacy_files[0]
         self.assertEqual(
-            {key: legacy_file[key] for key in (
-                "conversation_id", "conversation_title", "branch", "file_name", "file_url", "file_size", "format"
+            {key: legacy_file.get(key) for key in (
+                "file_id", "conversation_id", "conversation_title", "branch", "file_name", "file_url", "file_size", "format"
             )},
             {
+                "file_id": saved["file_id"],
                 "conversation_id": str(self.alpha_conv.name),
                 "conversation_title": self.alpha_conv.title,
                 "branch": self.alpha_conv.branch,

@@ -167,6 +167,31 @@ class TestChatAttachments(IntegrationTestCase):
             "files",
         )
 
+    def test_uploading_identical_bytes_twice_creates_distinct_file_paths(self):
+        marker = uuid.uuid4().hex[:8]
+        content = f"name\nidentik-{marker}\n".encode()
+        first_name = f"unggah-identik-satu-{marker}.csv"
+        second_name = f"unggah-identik-dua-{marker}.csv"
+        first_response = self._upload(first_name, content, conversation_id=self.alpha_conv.name)
+        second_response = self._upload(second_name, content, conversation_id=self.alpha_conv.name)
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        first = json.loads(first_response.get_data(as_text=True))["attachment"]
+        second = json.loads(second_response.get_data(as_text=True))["attachment"]
+        self._track(
+            [os.path.basename(first["file_url"]), os.path.basename(second["file_url"])],
+            "private",
+            "files",
+        )
+
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertNotEqual(first["file_url"], second["file_url"])
+        first_content = frappe.get_doc("File", first["id"]).get_content()
+        second_content = frappe.get_doc("File", second["id"]).get_content()
+        self.assertEqual(first_content.encode("utf-8") if isinstance(first_content, str) else first_content, content)
+        self.assertEqual(second_content.encode("utf-8") if isinstance(second_content, str) else second_content, content)
+
     def test_upload_without_conversation_creates_one_from_branch(self):
         marker = uuid.uuid4().hex[:6]
         upload_name = f"awal {marker}.csv"
@@ -359,6 +384,7 @@ class TestChatAttachments(IntegrationTestCase):
             [
                 {
                     "type": "FILE",
+                    "file_id": saved["file_id"],
                     "file_name": saved["file_name"],
                     "file_url": saved["file_url"],
                     "format": "csv",
@@ -367,7 +393,7 @@ class TestChatAttachments(IntegrationTestCase):
                 }
             ],
         )
-        self.assertNotIn(saved["file_id"], json.dumps(message_payload))
+        self.assertIn(saved["file_id"], json.dumps(message_payload))
 
     def test_handle_stream_binds_generated_file_to_assistant_message_without_exposing_id(self):
         from aios_v1.managers.base_manager import BaseManager

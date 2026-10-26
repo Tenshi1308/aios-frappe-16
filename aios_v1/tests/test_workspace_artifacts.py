@@ -11,8 +11,10 @@ import uuid
 from unittest.mock import patch
 
 import frappe
+from frappe.utils.file_manager import get_content_hash
 
 from aios_v1.lib.tool_registry import execute_tool, tool_context
+from aios_v1.lib.workspace import list_my_files, save_private_file
 from aios_v1.lib.workspace_artifacts import workspace_create_file
 from aios_v1.setup import ensure_builtin_plugins
 
@@ -31,6 +33,11 @@ def _blank_pdf() -> bytes:
     buffer = io.BytesIO()
     writer.write(buffer)
     return buffer.getvalue()
+
+
+def _file_bytes(file_doc) -> bytes:
+    content = file_doc.get_content()
+    return content.encode("utf-8") if isinstance(content, str) else content
 
 
 def _make_user(email, first_name):
@@ -183,6 +190,47 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
         self.assertNotIn("file_id", serialized)
         file_id = self._find_file_id(result["file_name"])
         self.assertNotIn(file_id, serialized)
+
+    def test_identical_workspace_files_keep_separate_ids_paths_and_listing_rows(self):
+        frappe.set_user(self.USER)
+        marker = uuid.uuid4().hex[:8]
+        content = f"name\nidentik-{marker}\n".encode()
+        first = save_private_file(f"pertama-{marker}.csv", content, self.conversation.name, self.USER)
+        second = save_private_file(f"kedua-{marker}.csv", content, self.conversation.name, self.USER)
+        self._track_physical(
+            first["file_name"], os.path.basename(first["file_url"]),
+            second["file_name"], os.path.basename(second["file_url"]),
+        )
+
+        first_doc = frappe.get_doc("File", first["file_id"])
+        second_doc = frappe.get_doc("File", second["file_id"])
+        self.assertNotEqual(first_doc.name, second_doc.name)
+        self.assertNotEqual(first_doc.file_url, second_doc.file_url)
+        self.assertEqual(_file_bytes(first_doc), content)
+        self.assertEqual(_file_bytes(second_doc), content)
+        self.assertEqual(first_doc.content_hash, get_content_hash(content))
+        self.assertEqual(second_doc.content_hash, get_content_hash(content))
+
+        listed = list_my_files(str(self.conversation.name))
+        matching = [row for row in listed if row["file_id"] in {first_doc.name, second_doc.name}]
+        self.assertEqual({row["file_id"] for row in matching}, {first_doc.name, second_doc.name})
+        self.assertEqual({row["file_url"] for row in matching}, {first_doc.file_url, second_doc.file_url})
+
+    def test_deleting_one_identical_file_keeps_the_other_readable(self):
+        frappe.set_user(self.USER)
+        marker = uuid.uuid4().hex[:8]
+        content = f"name\ntersisa-{marker}\n".encode()
+        first = save_private_file(f"hapus-{marker}.csv", content, self.conversation.name, self.USER)
+        second = save_private_file(f"sisa-{marker}.csv", content, self.conversation.name, self.USER)
+        self._track_physical(
+            first["file_name"], os.path.basename(first["file_url"]),
+            second["file_name"], os.path.basename(second["file_url"]),
+        )
+
+        frappe.delete_doc("File", first["file_id"], ignore_permissions=True)
+
+        self.assertTrue(frappe.db.exists("File", second["file_id"]))
+        self.assertEqual(_file_bytes(frappe.get_doc("File", second["file_id"])), content)
 
     def test_builder_rejects_traversal_extension_and_format_mismatch(self):
         for file_name, file_format, expected in (
