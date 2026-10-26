@@ -18,6 +18,7 @@ DESK_SRC = REPO_ROOT / "desk" / "src"
 MODULE_DIR = DESK_SRC / "components" / "module"
 SHELL_DIR = DESK_SRC / "components" / "shell"
 WINDOWS_DIR = DESK_SRC / "components" / "windows"
+BASE_CSS = DESK_SRC / "styles" / "base.css"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
 
 FORBIDDEN_SETTING_FIELDS = (
@@ -69,14 +70,24 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertTrue(MODULE_DIR.exists(), "desk/src/components/module belum ada")
         self.assertTrue(SHELL_DIR.exists(), "desk/src/components/shell belum ada")
         self.assertTrue(WINDOWS_DIR.exists(), "desk/src/components/windows belum ada")
+        self.assertTrue(BASE_CSS.exists(), "desk/src/styles/base.css belum ada")
         offenders = []
-        for directory in (MODULE_DIR, SHELL_DIR, WINDOWS_DIR):
-            for path in _iter_source_files(directory):
-                text = path.read_text(encoding="utf-8")
-                for match in COLOR_LITERAL_RE.finditer(text):
-                    rel = path.relative_to(REPO_ROOT).as_posix()
-                    offenders.append(f"{rel}: {match.group(0)}")
-        self.assertEqual(offenders, [], f"Warna literal di komponen module/shell/windows: {offenders}")
+        paths = [
+            *(_iter_source_files(MODULE_DIR)),
+            *(_iter_source_files(SHELL_DIR)),
+            *(_iter_source_files(WINDOWS_DIR)),
+            BASE_CSS,
+        ]
+        for path in paths:
+            text = path.read_text(encoding="utf-8")
+            for match in COLOR_LITERAL_RE.finditer(text):
+                rel = path.relative_to(REPO_ROOT).as_posix()
+                offenders.append(f"{rel}: {match.group(0)}")
+        self.assertEqual(
+            offenders,
+            [],
+            f"Warna literal di komponen module/shell/windows atau base.css: {offenders}",
+        )
 
     def test_no_secret_field_literals_in_settings_window(self):
         self.assertTrue(SETTINGS_WINDOW.exists(), "desk/src/components/windows/SettingsWindow.vue belum ada")
