@@ -2,6 +2,8 @@
 
 Dokumen ini menetapkan desain antarmuka klien AIOS: **Ekasa Desk**, sebuah *desktop OS* di browser. Sifatnya **normatif** — kode menyesuaikan dokumen ini.
 
+> **Sumber kebenaran visual: `ekasa-desk-prototype/index.html`.** Prototype yang dibuat owner adalah **acuan tampilan**, bukan sekadar referensi. Dokumen ini menurunkan tata letak, komposisi, dan hierarki visual dari prototype tersebut; yang berubah hanyalah bahan (data nyata menggantikan mock) dan disiplin penulisan kode (nol hardcoded, token visual). Bila dokumen ini dan prototype berbeda dalam hal **susunan atau elemen yang tampak**, prototype yang menang dan dokumen ini harus dikoreksi — bukan sebaliknya. Prototype bukan acuan untuk cara menulis kode: ia satu berkas HTML dengan data mock dan warna hex inline, dan pola itu **dilarang** di `desk/` (§7, §8).
+
 Kontrak harness (trace, tool, approval) ada di `docs/02` §3 dan `docs/04` Alur 5. Dokumen ini hanya mengatur **permukaan dan tata letaknya**.
 
 ---
@@ -28,9 +30,11 @@ Form email + password, ditambah tautan ke pendaftaran mandiri. Kegagalan menampi
 
 ### 2.3. Desktop
 
-- **Taskbar** di bawah: tombol mulai, pencarian, daftar agent, jam, indikator status koneksi.
-- **Area desktop**: jendela-jendela yang bisa dibuka, dipindah, diperkecil, dan ditutup.
-- **Flyout**: pencarian (`Ctrl+K`) dan daftar agent (`Ctrl+J`). `Esc` menutup.
+- **Ikon desktop** (kiri atas, grid vertikal): **bidang ERP** — bukan modul dokumen. Tiap ikon = satu bidang (`Sales`, `Finance`, `Inventory`, `Reports`, dst), memakai tile besar + label di bawah. Pola visual dari prototype: `.desk-icons` (`display:grid; grid-auto-flow:row; gap:6px; width:88px`) dan `.desk-icon` (ikon 48px, label 12px, `border-radius:8px`, state `.sel` memakai `--accent-soft` + border `--accent`). Klik memilih, klik-ganda/Enter membuka; di layar sempit (`.os.narrow`) grid menjadi 4 kolom statis dan klik langsung membuka.
+- **Jendela bidang**: membuka satu bidang menampilkan **kartu KPI** + **shortcut modul** + kartu "tanya agent" — lihat §6.
+- **Taskbar** di bawah: tiga kolom (`1fr auto 1fr`). Kiri: nama site + status. Tengah: tombol mulai, pencarian, tombol agent, tombol app yang sedang berjalan. Kanan: status koneksi, jam + tanggal. Tombol app memakai tile berwarna bidang.
+- **Flyout**: pencarian (`Ctrl+K`), daftar agent (`Ctrl+J`), dan notifikasi. `Esc` menutup. Semua flyout muncul dari taskbar (`bottom: calc(var(--taskbar-h) + 10px)`), lebar `min(660px, 100% - 16px)`, sudut 14px.
+- **Start Menu** (§2.5): pencarian → **grid bidang** → AI agents → Recent → footer profil + tombol pengaturan + daya.
 - **Tema**: tiga opsi — `Automatic` (*Ikuti sistem*, default; menghapus atribut `data-theme` pada `<html>` sehingga mengikuti `prefers-color-scheme`), `Light` (`data-theme="light"`), dan `Dark` (`data-theme="dark"`). Preferensi disimpan di field bawaan Frappe `User.desk_theme` lewat endpoint `frappe.core.doctype.user.user.switch_theme` dan dibaca dari `desktop.settings` (`theme.value`, `theme.options`). Saat boot (`main.ts`), `localStorage` (`aios.desk.theme`) dibaca semata-mata untuk menghilangkan kedipan awal; `User.desk_theme` dari server tetap menjadi sumber kebenaran dan menimpa cache bila berbeda.
 
 ### 2.4. Panel Agent
@@ -50,6 +54,18 @@ Backend menolak file milik user lain, file publik, file dari conversation lain, 
 **Status backend:** endpoint upload `POST /api/chat/upload`, validasi `file_ids` sebelum konteks model dibentuk, dan binding `document_extract` ke conversation aktif tersedia sejak H5 fase 1 (`b07975f`). Revisi 46 menautkan unggahan dan file agent ke pesan terkait melalui attachment Frappe dan menjaga akses dokumen di cakupan conversation. **UI:** composer, chip lampiran, progress upload, dan aksi hapus chip (lokal) ada sejak #12 fase 1 (`a4f4113`); revisi 46 menampilkan chip file per pesan dan menyediakan entri untuk file historis tanpa pesan asal. Belum ada endpoint hapus lampiran.
 
 **Acceptance:** client dapat melampirkan CSV, PDF, atau XLSX tanpa mengetik ID; model membaca isi file; file user lain ditolak; file publik ditolak.
+
+---
+
+### 2.5. Start Menu
+
+Susunan dari atas ke bawah, sesuai prototype:
+
+1. **Tombol pencarian** selebar flyout, ikon + teks + `kbd` `Ctrl K`.
+2. **Grid bidang** — header `Bidang` + jumlah, lalu `.mod-grid` (`display:grid; grid-template-columns:repeat(7,1fr); gap:4px`) berisi tombol `.mod` (tile 44px, label 12px, `flex-direction:column`, `align-items:center`). Di layar sempit grid menjadi 4 kolom. **Ini bukan pill agent** — memakai komponen grid tersendiri.
+3. **AI agents** — deretan pill (`.agent-pill`) dengan titik warna per cabang.
+4. **Recent** — dua kolom, tiap entri: tile + nama dokumen + subteks "doctype · waktu".
+5. **Footer** — avatar + nama + peran · site; di kanan tombol Pengaturan dan tombol daya (Kunci / Muat ulang / Keluar).
 
 ---
 
@@ -103,17 +119,35 @@ Explorer tidak mengubah, memindahkan, menghapus, atau membagikan file. Unduh mem
 
 ---
 
-## 6. Modul
+## 6. Bidang, Modul & Jendela
 
-Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya dibaca langsung dari ERPNext site klien dengan izin user yang sedang login — tidak ada database perantara.
+### 6.1. Dua lapis: bidang lalu modul
 
-- Modul dibuka dari Start Menu (dikelompokkan per `group`: `Sales` / `Finance`), pencarian (`Ctrl+K`), **atau** oleh agent saat diminta ("buka Sales Invoice" → event SSE `open_module`).
-- Katalog modul server-owned (`aios_v1/lib/desktop_modules.py`) menyediakan 7 modul: `sales_invoice`, `sales_order`, `purchase_invoice`, `payment_entry`, `customer`, `supplier`, `item`. Daftar modul, ikon semantik, grup, doctype, kolom, filter, dan definisi kartu berasal dari backend (§7).
-- Jendela modul (`desk/src/components/module/ModuleWindow.vue`, window ID `module:<key>`) merender header + tombol refresh, kartu agregat (`label`, `value`, `currency` bila `format == "currency"`, `scope`: `company` | `site`), form filter sesuai deklarasi `module.filters` (`date_from`, `date_to`, `status`, `party` — hanya yang dikirim backend), tabel dengan kolom dari respons server, serta navigasi halaman prev/next.
-- Modul bersifat **baca saja**. Penulisan tetap lewat approval.
-- Angka pada kartu adalah agregat yang dihitung server (`COUNT`/`SUM`), bukan dihitung di browser; klien hanya memformat angka/mata uang/tanggal untuk tampilan. Refresh modul mempertahankan data lama di layar selagi pemuatan berlangsung.
+Tampilan mengikuti prototype yang memakai **dua lapis**, dan keduanya tidak boleh dicampur:
 
-### 6.1. Jendela Pengaturan (*Settings*)
+1. **Bidang** (*domain*) — kelompok kerja tingkat atas, mis. `Sales`, `Finance`, `Inventory`, `Reports`. Satu bidang = satu ikon desktop + satu entri grid di Start Menu. Membuka bidang menampilkan **jendela bidang** berisi kartu KPI, daftar shortcut modul, dan kartu "tanya agent". Ini yang digambarkan prototype sebagai *workspace* ERPNext (`Accounting`, `Selling`, `Stock`, dst).
+2. **Modul** — daftar dokumen satu DocType di dalam bidang, mis. `Sales Invoice` di dalam `Sales`. Klik shortcut membuka tampilan daftar; breadcrumb kembali ke bidang.
+
+Jendela bidang (window ID `domain:<key>`) merender:
+- **Kartu KPI** (`.cards`, grid `auto-fit minmax(170px, 1fr)`): label kecil, angka besar, delta opsional. Angka dihitung **server**, klien hanya memformat.
+- **Shortcut** (`.shortcuts`): satu tombol per modul anggota, berisi ikon + label + jumlah baris.
+- **Kartu agent** (`.ask-card`): agent pemilik bidang + dua saran prompt; klik membuka panel agent dengan konteks bidang.
+
+Jendela modul (window ID `module:<key>`) mempertahankan kontrak yang sudah ada: header + refresh, form filter sesuai deklarasi backend (`date_from`, `date_to`, `status`, `party`), tabel kolom dari server, navigasi halaman.
+
+### 6.2. Katalog server-owned
+
+Daftar bidang dan modul berasal dari backend (§7), bukan dari komponen. Katalog modul ada di `aios_v1/lib/desktop_modules.py` (7 modul: `sales_invoice`, `sales_order`, `purchase_invoice`, `payment_entry`, `customer`, `supplier`, `item`); definisi bidang beserta KPI-nya ditambahkan di lapisan yang sama. Setiap bidang menyatakan: `key`, `label`, `icon`, `token warna` (nama token, bukan hex — §8), daftar modul anggota, dan definisi KPI (`label`, agregat, field, filter, format).
+
+Bidang dibuka dari ikon desktop, grid Start Menu, pencarian (`Ctrl+K`), **atau** oleh agent ("buka Sales" → event SSE `open_module`).
+
+### 6.3. Aturan angka
+
+Kartu KPI adalah agregat yang dihitung server (`COUNT`/`SUM`), bukan dihitung di browser. Tidak ada jalur yang menembus izin: KPI dihitung dengan izin user yang sedang login (`frappe.get_list`), dan bila sebuah DocType tidak boleh dibaca user tersebut, KPI-nya tidak boleh ditampilkan. Tidak ada `ignore_permissions` untuk KPI.
+
+Modul dan bidang bersifat **baca saja**. Penulisan tetap lewat approval.
+
+### 6.4. Jendela Pengaturan (*Settings*)
 
 Jendela **Pengaturan** (`desk/src/components/windows/SettingsWindow.vue`, window ID `settings`, dibuka dari Start Menu) menampilkan informasi akun, company, dan kuota site secara **baca saja**, ditambah satu kontrol preferensi **Tema tampilan**:
 
@@ -132,12 +166,15 @@ Jendela **Pengaturan** (`desk/src/components/windows/SettingsWindow.vue`, window
 | Data | Sumber |
 |---|---|
 | Daftar agent, nama, deskripsi, saran prompt | Backend (`registry.py`) |
-| Daftar modul, ikon, warna, doctype | Backend |
+| Daftar bidang, label, ikon, nama token warna, modul anggota, definisi KPI | Backend (`aios_v1/lib/`, satu sumber dengan katalog modul) |
+| Daftar modul, ikon, doctype, kolom, filter, kartu | Backend |
 | Company aktif, mata uang | `AIOS Setting` |
 | Kuota & pemakaian token | `AIOS Setting.site_token_limit` (gerbang), `User.aios_tokens_used` (statistik) |
 | Versi & URL API | `frappe.boot` / environment |
 
-**Aturan yang bisa diuji:** tidak ada nama agent, nama modul, atau nama doctype yang ditulis sebagai teks di berkas komponen. Data contoh hanya boleh hidup di lapisan `api/mock/` dan tidak pernah diimpor jalur produksi.
+**Aturan yang bisa diuji:** tidak ada nama agent, nama bidang, nama modul, atau nama doctype yang ditulis sebagai teks di berkas komponen. Data contoh hanya boleh hidup di lapisan `api/mock/` dan tidak pernah diimpor jalur produksi.
+
+**Warna bidang tidak dikirim sebagai hex.** Prototype menulis `color:'#1F8A70'` inline; di `desk/` itu dilarang (§8). Backend mengirim **nama token** (mis. `domain-sales`), dan komponen memetakannya ke `var(--domain-sales)`. Token nilainya didefinisikan sekali di `tokens.css`.
 
 Endpoint `/api/branches` memproyeksikan data di server untuk tampilan saja: cabang mengirim `key`, `name`, `description`, `tagline`, `enabled`; worker mengirim `key`, `branch`, `jobRole`, `description`, `exampleQuestions`, `enabled`. Materi prompt internal tidak pernah dikirim ke browser.
 
@@ -193,23 +230,27 @@ desk/
     ├── main.ts
     ├── App.vue
     ├── router/index.ts
-    ├── stores/          session · agents · modules · conversations
+    ├── stores/          session · agents · modules · conversations · ui
     ├── api/
-    │   ├── client.ts    frappe.call + CSRF
-    │   ├── desktop.ts   bootstrap · module · list · search
-    │   ├── agent.ts     chat stream (SSE)
+    │   ├── client.ts    apiFetch + CSRF + pesan aman
+    │   ├── modules.ts   bootstrap · domain · module · list · search · settings
+    │   ├── chat.ts      chat stream (SSE)
     │   └── mock/        data contoh, tidak masuk jalur produksi
     ├── components/
-    │   ├── base/        Icon · Button · Card · Badge · Table · Flyout · Window
-    │   ├── shell/       BootScreen · SignIn · Taskbar · Clock · Desktop
-    │   ├── agent/       AgentPanel · AgentMessage · AgentTrace · AgentComposer
-    │   └── module/      ModuleWindow · ModuleCards · DocList
+    │   ├── base/        AppIcon · EkasaMark · RichText · Toasts
+    │   ├── shell/       BootScreen · Taskbar · StartMenu · SearchFlyout · WindowHost
+    │   ├── agent/       AgentPanel · AgentStep
+    │   ├── domain/      DomainWindow · DomainCards · DomainShortcuts
+    │   ├── module/      ModuleWindow
+    │   └── windows/     SettingsWindow · FilesWindow · ArtifactWindow · ApprovalCardWindow · PendingDraftsWindow · AboutWindow
     ├── views/           LoginView · RegisterView · PendingView · DesktopView
     ├── styles/          tokens.css · base.css
     └── types/index.ts
 ```
 
 Folder kerja bernama `desk/` selama migrasi. Setelah paritas, `frontend/` (Next.js) dihapus dan `desk/` di-*rename* menjadi `frontend/`.
+
+**Selisih yang disengaja terhadap prototype:** prototype adalah satu berkas HTML dengan data mock dan warna hex inline. `desk/` memisahkan komponen, mengambil semua data dari backend, dan memakai token visual (§7, §8). Yang **tidak boleh berbeda** adalah susunan dan elemen yang tampak.
 
 ---
 
@@ -244,6 +285,8 @@ Semua endpoint memakai sesi Frappe yang sedang login dan tunduk pada `docs/03` �
 | Payment | **Tidak diport** — sudah mati |
 | Dashboard developer | **Diport setelah `#11`**, bukan sekarang |
 
+Paritas visual diukur terhadap `ekasa-desk-prototype/index.html`, bukan terhadap `frontend/` lama. Daftar selisih yang belum tertutup dipelihara di `docs/05.1`.
+
 ---
 
 ## 12. Batasan yang Diakui
@@ -251,3 +294,6 @@ Semua endpoint memakai sesi Frappe yang sedang login dan tunduk pada `docs/03` �
 1. **Belum ada isolasi level OS.** UI berjalan di browser; keamanan tetap di lapisan server (`docs/02` §2.3).
 2. **Modul belum punya penulisan.** Semua aksi tulis lewat approval.
 3. **Dashboard developer belum dibangun** — menunggu backend `#11`.
+4. **`Classic Desk` tidak diport.** Prototype menampilkan tombol ke `/app` (Frappe Desk). Di `desk/` tombol itu **tidak boleh ada**: `AIOS Client` ber-`desk_access=0` dan `Administrator` tidak pernah dipakai jalur produk.
+5. **Notifikasi belum disambungkan.** Prototype menampilkan flyout notifikasi dengan data contoh; `desk/` belum punya sumber notifikasi nyata. Flyout tidak dirender sampai ada backend-nya.
+6. **Selisih kode vs prototype yang masih terbuka** dicatat di `docs/05.1`, bukan disembunyikan di sini.
