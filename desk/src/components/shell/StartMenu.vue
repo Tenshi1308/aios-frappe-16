@@ -92,25 +92,35 @@ function openSettings() {
           <small>{{ roleLabel }} · {{ siteLabel }}</small>
         </div>
       </div>
-      <div class="power-wrap">
+      <div class="foot-actions">
         <button class="tb-btn" aria-label="Pengaturan" @click="openSettings">
           <AppIcon name="gear" :size="18" />
         </button>
-        <button class="tb-btn" :class="{ on: powerOpen }" aria-label="Opsi daya" @click="powerOpen = !powerOpen">
-          <AppIcon name="power" :size="18" />
-        </button>
-        <div v-if="powerOpen" class="power-menu">
-          <button @click="powerOpen = false; session.lock()">
-            <AppIcon name="lock" :size="16" /> Kunci
+        <div class="power-wrap">
+          <button class="tb-btn" :class="{ on: powerOpen }" aria-label="Opsi daya" @click="powerOpen = !powerOpen">
+            <AppIcon name="power" :size="18" />
           </button>
-          <button @click="powerOpen = false; session.restart()">
-            <AppIcon name="refresh" :size="16" /> Muat ulang
-          </button>
-          <button @click="powerOpen = false; void session.logout()">
-            <AppIcon name="power" :size="16" /> Keluar
-          </button>
+          <div v-if="powerOpen" class="power-menu">
+            <button @click="powerOpen = false; session.lock()">
+              <AppIcon name="lock" :size="16" /> Kunci
+            </button>
+            <button @click="powerOpen = false; session.restart()">
+              <AppIcon name="refresh" :size="16" /> Muat ulang
+            </button>
+            <button @click="powerOpen = false; void session.logout()">
+              <AppIcon name="power" :size="16" /> Keluar
+            </button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+</style>
