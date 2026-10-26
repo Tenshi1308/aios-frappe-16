@@ -19,7 +19,7 @@ from aios_v1.lib.workspace import (
     save_private_file,
     validate_attachments,
 )
-from aios_v1.plugin_manager.registry import get_branches, is_branch_enabled
+from aios_v1.plugin_manager.registry import get_public_branches, is_branch_enabled
 from aios_v1.managers import get_manager
 from aios_v1.services.usage import check_site_token_quota
 
@@ -299,7 +299,7 @@ def _handle_api_request():
         sess = get_current_session()
         if not sess:
             return json_response({"error": "Belum login"}, 401)
-        return json_response({"branches": get_branches()})
+        return json_response({"branches": get_public_branches()})
 
     # 5. MONITORING ROUTES
     elif path.startswith("api/monitoring"):

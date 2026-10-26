@@ -13,6 +13,7 @@ from werkzeug.wrappers import Request
 
 from aios_v1.api.dispatcher import MAX_PDF_BYTES, CustomAPIResponse, _parse_bool_flag, handle_api_request
 from aios_v1.lib.workspace import save_private_file
+from aios_v1.plugin_manager.registry import get_branches
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -85,6 +86,42 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
         self._physical_files = []
+
+    def test_branches_endpoint_returns_display_fields_only(self):
+        frappe.set_user(self.ALPHA)
+
+        res = _call("/api/branches")
+
+        self.assertEqual(res.status_code, 200)
+        branches = json.loads(res.get_data(as_text=True))["branches"]
+        self.assertTrue(branches)
+        branch_fields = {"key", "name", "description", "tagline", "enabled", "workers"}
+        worker_fields = {"key", "branch", "jobRole", "description", "exampleQuestions", "enabled"}
+        forbidden_branch_fields = {"manager_persona", "icon"}
+        forbidden_worker_fields = {
+            "personality",
+            "priorities",
+            "antiPatterns",
+            "answerStructure",
+            "relevantEntities",
+        }
+
+        for branch in branches:
+            self.assertTrue(forbidden_branch_fields.isdisjoint(branch))
+            self.assertEqual(set(branch), branch_fields)
+            self.assertIsInstance(branch["enabled"], bool)
+            self.assertTrue(branch["workers"])
+            for worker in branch["workers"]:
+                self.assertTrue(forbidden_worker_fields.isdisjoint(worker))
+                self.assertEqual(set(worker), worker_fields)
+                self.assertIn("jobRole", worker)
+                self.assertIn("exampleQuestions", worker)
+
+    def test_internal_get_branches_keeps_prompt_persona(self):
+        branches = get_branches()
+
+        self.assertTrue(branches)
+        self.assertTrue(all(branch.get("manager_persona") for branch in branches))
 
     def tearDown(self):
         frappe.db.commit = self._orig_commit

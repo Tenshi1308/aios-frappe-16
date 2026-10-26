@@ -1013,6 +1013,31 @@ def is_branch_enabled(branch_key: str) -> bool:
 def get_branches():
     return [branch for branch in BRANCHES if branch.get("enabled")]
 
+def get_public_branches():
+    """Return display metadata only; keep prompt material inside the server."""
+    return [
+        {
+            "key": branch.get("key"),
+            "name": branch.get("name"),
+            "description": branch.get("description"),
+            "tagline": branch.get("tagline"),
+            "enabled": branch.get("enabled"),
+            "workers": [
+                {
+                    "key": worker.get("key"),
+                    "branch": worker.get("branch"),
+                    "jobRole": worker.get("jobRole"),
+                    "description": worker.get("description"),
+                    "exampleQuestions": worker.get("exampleQuestions"),
+                    "enabled": worker.get("enabled"),
+                }
+                for worker in branch.get("workers", [])
+            ],
+        }
+        for branch in get_branches()
+    ]
+
+
 def get_branch(branch_key: str):
     for b in BRANCHES:
         if b["key"] == branch_key:
