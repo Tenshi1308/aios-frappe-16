@@ -242,9 +242,16 @@ def document_extract(file_id, format=None, sheet_name=None, max_rows=DEFAULT_MAX
 	user = getattr(frappe.session, "user", None)
 	if user != "Administrator" and file_doc.owner != user:
 		return _file_error("FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
-	if file_doc.get("attached_to_doctype") != CONVERSATION_DOCTYPE or str(
-		file_doc.get("attached_to_name") or ""
-	) != conversation_id:
+	attached_to_doctype = file_doc.get("attached_to_doctype")
+	attached_to_name = str(file_doc.get("attached_to_name") or "")
+	if attached_to_doctype == CONVERSATION_DOCTYPE:
+		is_attached_to_conversation = attached_to_name == conversation_id
+	elif attached_to_doctype == "AIOS Message":
+		message_conversation = frappe.db.get_value("AIOS Message", attached_to_name, "conversation")
+		is_attached_to_conversation = str(message_conversation or "") == conversation_id
+	else:
+		is_attached_to_conversation = False
+	if not is_attached_to_conversation:
 		return _file_error("FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
 	try:
 		declared_size = int(file_doc.get("file_size") or 0)

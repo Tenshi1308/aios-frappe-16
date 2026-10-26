@@ -34,26 +34,9 @@ const files = computed(() => chat.files(branchKey.value));
 const uploadPercent = computed(() => chat.uploadProgress[branchKey.value]);
 const suggestions = computed(() => branches.suggestions(branchKey.value));
 const conversations = computed(() => chat.conversations[branchKey.value] ?? []);
-const conversationFileEntries = computed(() => {
+const legacyFiles = computed(() => {
   const conversationId = chat.currentConversation[branchKey.value];
-  return conversationId ? chat.conversationFiles[conversationId] ?? [] : [];
-});
-const conversationFileCount = computed(() => new Set(conversationFileEntries.value.map((file) => file.file_url)).size);
-const liveFileUrls = computed(
-  () =>
-    new Set(
-      messages.value.flatMap((message) =>
-        (message.artifacts ?? []).flatMap((artifact) => (artifact.type === 'FILE' ? [artifact.file_url] : [])),
-      ),
-    ),
-);
-const conversationFileChips = computed(() => {
-  const seen = new Set<string>();
-  return conversationFileEntries.value.filter((file) => {
-    if (seen.has(file.file_url) || liveFileUrls.value.has(file.file_url)) return false;
-    seen.add(file.file_url);
-    return true;
-  });
+  return conversationId ? chat.legacyFiles[conversationId] ?? [] : [];
 });
 
 const firstName = computed(() => session.firstName);
@@ -274,21 +257,6 @@ async function onFilesPicked(e: Event) {
       </div>
     </div>
 
-    <div v-if="conversationFileCount" class="ap-conversation-files">
-      <b>File percakapan ({{ conversationFileCount }})</b>
-      <div class="ap-conversation-file-chips">
-        <button
-          v-for="file in conversationFileChips"
-          :key="file.file_url"
-          class="msg-artifact"
-          type="button"
-          @click="openConversationFile(file)"
-        >
-          <AppIcon name="file" :size="12" />
-          <span>{{ file.file_name }}</span>
-        </button>
-      </div>
-    </div>
     <div ref="threadEl" class="ap-thread">
       <div v-if="showGreeting" class="msg agent">
         <div class="msg-who">
@@ -325,19 +293,38 @@ async function onFilesPicked(e: Event) {
             </div>
           </div>
           <div class="bubble"><RichText :text="m.text" /></div>
-          <div v-if="m.role === 'agent' && m.artifacts?.length" class="msg-artifacts">
+          <div v-if="m.artifacts?.length" class="msg-artifacts">
             <button
-              v-for="(a, ai) in m.artifacts"
-              :key="ai"
+              v-for="a in m.artifacts"
+              :key="a.type === 'FILE' ? a.file_url : a.draft_id"
               class="msg-artifact"
               type="button"
               @click="openArtifactChip(a)"
             >
-              {{ a.type === 'APPROVAL_CARD' ? `Persetujuan ${a.action_type}` : `Artefak ${a.type}` }}
+              <template v-if="a.type === 'FILE'">
+                <AppIcon name="file" :size="12" />
+                <span>{{ a.file_name }}</span>
+              </template>
+              <template v-else>{{ `Persetujuan ${a.action_type}` }}</template>
             </button>
           </div>
         </div>
       </template>
+      <div v-if="legacyFiles.length" class="msg legacy-files-entry">
+        <div class="legacy-files-heading">File lama dari percakapan ini; pesan asal tidak tercatat.</div>
+        <div class="legacy-file-list">
+          <button
+            v-for="file in legacyFiles"
+            :key="file.file_url"
+            class="msg-artifact"
+            type="button"
+            @click="openConversationFile(file)"
+          >
+            <AppIcon name="file" :size="12" />
+            <span>{{ file.file_name }}</span>
+          </button>
+        </div>
+      </div>
       <div v-if="showTyping" class="msg agent">
         <div class="bubble typing"><i /><i /><i /></div>
       </div>

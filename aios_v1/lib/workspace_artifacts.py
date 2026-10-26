@@ -153,6 +153,9 @@ def workspace_create_file(file_name, format, rows=None, content=None):
             raise WorkspaceError(413, "FILE_TOO_LARGE", "Ukuran file melebihi batas maksimum 10 MB.")
 
         saved = workspace.save_private_file(clean_name, payload, conversation_id, user_id)
+        created_file_ids = context.get("_created_file_ids")
+        if isinstance(created_file_ids, list) and saved.get("file_id"):
+            created_file_ids.append(saved["file_id"])
         artifact = {
             "type": "FILE",
             "file_name": saved["file_name"],

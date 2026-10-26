@@ -1154,12 +1154,12 @@ textarea {
   gap: 12px;
   min-height: 0;
 }
-.ap-conversation-files {
+.legacy-files-entry {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 0 0 auto;
-  margin: 0 14px;
+  align-self: flex-start;
+  max-width: 92%;
+  gap: 7px;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1167,21 +1167,23 @@ textarea {
   color: var(--muted);
   font-size: 11px;
 }
-.ap-conversation-files > b {
-  color: var(--fg);
+.legacy-files-heading {
+  font-weight: 600;
 }
-.ap-conversation-file-chips {
+.legacy-file-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.ap-conversation-file-chips .msg-artifact {
+.legacy-file-list .msg-artifact,
+.msg-artifacts .msg-artifact {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   max-width: 100%;
 }
-.ap-conversation-file-chips .msg-artifact span {
+.legacy-file-list .msg-artifact span,
+.msg-artifacts .msg-artifact span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

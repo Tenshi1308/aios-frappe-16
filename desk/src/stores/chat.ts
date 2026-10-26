@@ -32,7 +32,7 @@ export const useChatStore = defineStore('chat', {
     myFiles: [] as FileEntry[],
     myFilesLoading: false,
     myFilesError: '',
-    conversationFiles: {} as Record<string, FileEntry[]>,
+    legacyFiles: {} as Record<string, FileEntry[]>,
     threads: {} as Record<string, ChatMessage[]>,
     currentConversation: {} as Record<string, string | null>,
     pendingNew: {} as Record<string, boolean>,
@@ -101,13 +101,6 @@ export const useChatStore = defineStore('chat', {
         this.myFilesLoading = false;
       }
     },
-    async loadConversationFiles(conversationId: string) {
-      try {
-        this.conversationFiles[conversationId] = await fetchMyFiles(conversationId);
-      } catch {
-        this.conversationFiles[conversationId] = [];
-      }
-    },
     async openConversation(branch: string, conversationId: string) {
       // Membuka percakapan lama membatalkan niat "sesi baru".
       this.pendingNew[branch] = false;
@@ -115,15 +108,11 @@ export const useChatStore = defineStore('chat', {
       this.historyOpen[branch] = false;
       // Cache per conversationId dipertahankan: pindah sesi lalu balik
       // tetap menampilkan trace/langkah yang sudah di-stream.
-      const tasks: Promise<void>[] = [this.loadConversationFiles(conversationId)];
       if (!this.threads[conversationId]) {
-        tasks.push(
-          fetchConversationMessages(branch, conversationId).then((messages) => {
-            this.threads[conversationId] = messages;
-          }),
-        );
+        const history = await fetchConversationMessages(branch, conversationId);
+        this.threads[conversationId] = history.messages;
+        this.legacyFiles[conversationId] = history.legacyFiles;
       }
-      await Promise.all(tasks);
     },
     newConversation(branch: string) {
       // Klien saja: conversation baru benar-benar dibuat backend saat pesan/
@@ -158,7 +147,7 @@ export const useChatStore = defineStore('chat', {
           this.currentConversation[branch] = result.conversationId;
           this.pendingNew[branch] = false;
           this.pendingFiles[branch] = [...this.files(branch), result.attachment];
-          await this.loadConversationFiles(result.conversationId);
+          void this.loadMyFiles();
           void this.loadConversations(branch);
         } finally {
           delete this.uploadProgress[branch];
@@ -173,9 +162,24 @@ export const useChatStore = defineStore('chat', {
       const trimmed = text.trim();
       if (!trimmed || this.isStreaming(branch)) return;
       const threadKey0 = this.currentConversation[branch] ?? `new:${branch}`;
-      this.threads[threadKey0] = [...(this.threads[threadKey0] ?? []), { id: newMessageId(), role: 'user', text: trimmed }];
+      const pendingFiles = this.files(branch);
+      const conversationId = this.currentConversation[branch] ?? '';
+      const userArtifacts: ArtifactEvent[] = pendingFiles
+        .filter((file) => !!file.file_url)
+        .map((file) => ({
+          type: 'FILE',
+          file_name: file.file_name,
+          file_url: file.file_url,
+          format: file.format,
+          size: file.file_size,
+          conversation_id: conversationId,
+        }));
+      this.threads[threadKey0] = [
+        ...(this.threads[threadKey0] ?? []),
+        { id: newMessageId(), role: 'user', text: trimmed, artifacts: userArtifacts },
+      ];
       this.streaming[branch] = true;
-      const fileIds = this.files(branch).map((f) => f.id);
+      const fileIds = pendingFiles.map((f) => f.id);
       this.pendingFiles[branch] = [];
       const placeholder: ChatMessage = {
         id: newMessageId(),
@@ -207,11 +211,17 @@ export const useChatStore = defineStore('chat', {
         };
       };
       const turnDraftIds: string[] = [];
-      let conversationFilesLoaded = false;
       const appendArtifact = (artifact: ArtifactEvent) => {
         const list = this.threads[threadKey];
         if (!list || !list[index]) return;
-        list[index] = { ...list[index], artifacts: [...(list[index].artifacts ?? []), artifact] };
+        const currentArtifacts = list[index].artifacts ?? [];
+        if (
+          artifact.type === 'FILE' &&
+          currentArtifacts.some((item) => item.type === 'FILE' && item.file_url === artifact.file_url)
+        ) {
+          return;
+        }
+        list[index] = { ...list[index], artifacts: [...currentArtifacts, artifact] };
         if (artifact.type === 'APPROVAL_CARD') {
           // Kartu diantrekan: backend commit transaksinya tepat sebelum event
           // `done`, jadi jendela kartu dibuka di onDone pertama, bukan saat event.
@@ -252,10 +262,7 @@ export const useChatStore = defineStore('chat', {
             onDone: (tokens) => {
               const list = this.threads[threadKey];
               const completedConversationId = this.currentConversation[branch];
-              if (!conversationFilesLoaded && completedConversationId) {
-                conversationFilesLoaded = true;
-                void this.loadConversationFiles(completedConversationId);
-              }
+              if (completedConversationId) void this.loadMyFiles();
               if (!list || !list[index]) return;
               // Waktu akhir turn: penutup durasi item terakhir activity feed.
               const msg = list[index];

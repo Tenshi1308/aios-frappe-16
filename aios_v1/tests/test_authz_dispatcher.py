@@ -12,6 +12,7 @@ from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
 from aios_v1.api.dispatcher import MAX_PDF_BYTES, CustomAPIResponse, _parse_bool_flag, handle_api_request
+from aios_v1.lib.workspace import save_private_file
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -141,6 +142,86 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         frappe.set_user(self.ALPHA)
         res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
         self.assertEqual(res.status_code, 200)
+
+    def test_detail_returns_file_attachments_per_message(self):
+        frappe.set_user(self.ALPHA)
+        message = frappe.get_doc(
+            {
+                "doctype": "AIOS Message",
+                "conversation": self.alpha_conv.name,
+                "role": "user",
+                "content": "Lihat file ini",
+            }
+        ).insert(ignore_permissions=True)
+        saved = save_private_file(
+            "_test_inline_attachment.csv",
+            b"name\nalpha\n",
+            self.alpha_conv.name,
+            self.ALPHA,
+        )
+        self._track_private_file(saved["file_url"])
+        file_doc = frappe.get_doc("File", saved["file_id"])
+        file_doc.attached_to_doctype = "AIOS Message"
+        file_doc.attached_to_name = message.name
+        file_doc.save(ignore_permissions=True)
+
+        res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
+
+        self.assertEqual(res.status_code, 200)
+        body = json.loads(res.get_data(as_text=True))
+        message_payload = body["conversation"]["messages"][0]
+        self.assertEqual(
+            message_payload.get("artifacts"),
+            [
+                {
+                    "type": "FILE",
+                    "file_name": saved["file_name"],
+                    "file_url": saved["file_url"],
+                    "format": "csv",
+                    "size": saved["file_size"],
+                    "conversation_id": str(self.alpha_conv.name),
+                }
+            ],
+        )
+        self.assertNotIn("file_id", json.dumps(message_payload))
+
+    def test_detail_keeps_legacy_files_attached_to_conversation(self):
+        frappe.set_user(self.ALPHA)
+        saved = save_private_file(
+            "_test_legacy_file.csv",
+            b"name\nlegacy\n",
+            self.alpha_conv.name,
+            self.ALPHA,
+        )
+        self._track_private_file(saved["file_url"])
+
+        res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
+
+        self.assertEqual(res.status_code, 200)
+        body = json.loads(res.get_data(as_text=True))
+        legacy_files = body["conversation"]["legacyFiles"]
+        self.assertEqual(len(legacy_files), 1)
+        legacy_file = legacy_files[0]
+        self.assertEqual(
+            {key: legacy_file[key] for key in (
+                "conversation_id", "conversation_title", "branch", "file_name", "file_url", "file_size", "format"
+            )},
+            {
+                "conversation_id": str(self.alpha_conv.name),
+                "conversation_title": self.alpha_conv.title,
+                "branch": self.alpha_conv.branch,
+                "file_name": saved["file_name"],
+                "file_url": saved["file_url"],
+                "file_size": saved["file_size"],
+                "format": "csv",
+            },
+        )
+        self.assertIn("creation", legacy_file)
+        bound = frappe.db.get_value(
+            "File", saved["file_id"], ["attached_to_doctype", "attached_to_name"], as_dict=True
+        )
+        self.assertEqual(bound.attached_to_doctype, "AIOS Conversation")
+        self.assertEqual(str(bound.attached_to_name), str(self.alpha_conv.name))
 
     def test_stream_other_conversation_returns_404(self):
         frappe.set_user(self.ALPHA)

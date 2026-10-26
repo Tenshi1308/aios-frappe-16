@@ -8,7 +8,7 @@ from unittest.mock import patch
 import frappe
 
 from aios_v1.lib import workspace
-from aios_v1.lib.workspace import list_my_files, save_private_file
+from aios_v1.lib.workspace import attach_private_files_to_message, list_my_files, save_private_file
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -99,6 +99,59 @@ class TestWorkspaceFiles(IntegrationTestCase):
         self.assertEqual({row["file_name"] for row in files}, {own["file_name"], second["file_name"]})
         self.assertEqual({row["conversation_id"] for row in files}, {str(self.conv_a.name), str(self.conv_a2.name)})
         self.assertNotIn(self.USER_B, json.dumps(files, default=str))
+
+    def test_user_a_sees_files_attached_to_owned_messages(self):
+        message_a = frappe.get_doc(
+            {
+                "doctype": "AIOS Message",
+                "conversation": self.conv_a.name,
+                "role": "user",
+                "content": "Alpha message",
+            }
+        ).insert(ignore_permissions=True)
+        message_b = frappe.get_doc(
+            {
+                "doctype": "AIOS Message",
+                "conversation": self.conv_b.name,
+                "role": "user",
+                "content": "Beta message",
+            }
+        ).insert(ignore_permissions=True)
+        file_a, _ = self._save(self.conv_a, self.USER_A, "alpha-message-file")
+        file_b, _ = self._save(self.conv_b, self.USER_B, "beta-message-file")
+        frappe.set_user(self.USER_A)
+        attach_private_files_to_message([file_a["file_id"]], message_a.name, self.conv_a.name, self.USER_A)
+        frappe.set_user(self.USER_B)
+        attach_private_files_to_message([file_b["file_id"]], message_b.name, self.conv_b.name, self.USER_B)
+
+        frappe.set_user(self.USER_A)
+        files = list_my_files(str(self.conv_a.name))
+
+        self.assertEqual([row["file_name"] for row in files], [file_a["file_name"]])
+        self.assertEqual(files[0]["conversation_id"], str(self.conv_a.name))
+        self.assertEqual(files[0]["conversation_title"], "Alpha")
+        self.assertNotIn(file_b["file_url"], json.dumps(files, default=str))
+
+    def test_file_cannot_be_attached_to_another_users_message(self):
+        message_b = frappe.get_doc(
+            {
+                "doctype": "AIOS Message",
+                "conversation": self.conv_b.name,
+                "role": "user",
+                "content": "Beta message",
+            }
+        ).insert(ignore_permissions=True)
+        file_a, _ = self._save(self.conv_a, self.USER_A, "alpha-foreign-message")
+
+        frappe.set_user(self.USER_A)
+        with self.assertRaises(workspace.WorkspaceError):
+            attach_private_files_to_message([file_a["file_id"]], message_b.name, self.conv_b.name, self.USER_A)
+
+        bound = frappe.db.get_value(
+            "File", file_a["file_id"], ["attached_to_doctype", "attached_to_name"], as_dict=True
+        )
+        self.assertEqual(bound.attached_to_doctype, "AIOS Conversation")
+        self.assertEqual(str(bound.attached_to_name), str(self.conv_a.name))
 
     def test_conversation_filter_is_owner_scoped(self):
         first, _ = self._save(self.conv_a, self.USER_A, "alpha-filter-first")

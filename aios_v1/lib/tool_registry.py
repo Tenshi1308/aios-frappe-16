@@ -86,7 +86,7 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
         )
         raise ToolContextError("allowed_company belum dikonfigurasi")
 
-    return {
+    tool_context = {
         "user_id": user,
         "allowed_company": allowed_company,
         "branch": context.get("branch") if context else None,
@@ -95,6 +95,9 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
         # Context server, bukan argumen LLM; hanya tool yang membutuhkan yang menolak bila kosong.
         "conversation_id": _normalize_conversation_id(context.get("conversation_id")) if context else None,
     }
+    if context and isinstance(context.get("_created_file_ids"), list):
+        tool_context["_created_file_ids"] = context["_created_file_ids"]
+    return tool_context
 
 
 @contextmanager

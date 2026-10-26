@@ -74,25 +74,44 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
             except FileNotFoundError:
                 pass
 
-    def _create(self, file_name, file_format, rows=None, content=None, conversation_id=None, user=None):
+    def _create(
+        self, file_name, file_format, rows=None, content=None, conversation_id=None, user=None, created_file_ids=None
+    ):
         frappe.set_user(user or self.USER)
         requested_name = file_name
+        context = {
+            "user": user or self.USER,
+            "allowed_company": "_Test Company",
+            "branch": "finance",
+            "worker_key": "manager",
+            "conversation_id": str(conversation_id or self.conversation.name),
+        }
+        if created_file_ids is not None:
+            context["_created_file_ids"] = created_file_ids
         result = json.loads(
             execute_tool(
                 "workspace_create_file",
                 json.dumps({"file_name": file_name, "format": file_format, "rows": rows, "content": content}),
-                context={
-                    "user": user or self.USER,
-                    "allowed_company": "_Test Company",
-                    "branch": "finance",
-                    "worker_key": "manager",
-                    "conversation_id": str(conversation_id or self.conversation.name),
-                },
+                context=context,
             )
         )
         if result.get("status") == "created":
             self._track_physical(requested_name, result["file_name"])
         return result
+
+    def test_created_file_ids_are_collected_server_side_only(self):
+        marker = uuid.uuid4().hex[:8]
+        created_file_ids = []
+        result = self._create(
+            f"collector {marker}.md",
+            "md",
+            content=f"# Collector {marker}",
+            created_file_ids=created_file_ids,
+        )
+
+        self.assertEqual(result.get("status"), "created")
+        self.assertEqual(created_file_ids, [self._find_file_id(result["file_name"])])
+        self.assertNotIn(created_file_ids[0], json.dumps(result))
 
     def _track_physical(self, *names):
         # save_file Frappe dapat menulis dua nama fisik: nama input dan nama+hash doctype.

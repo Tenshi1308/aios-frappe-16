@@ -73,7 +73,7 @@ PoC dinyatakan selesai bila semua poin ini bisa diamati:
 5. **Draft & approval:** agent membuat `Pending Action Draft` (`CREATE`/`UPDATE_DRAFT`/`CANCEL_AND_AMEND`) dengan before → after; belum ada tulisan ke ERPNext.
 6. **Approve → posting:** manusia Approve; dokumen ERPNext terbentuk; dokumen `submitted` tidak diedit/dihapus; koreksi lewat `CANCEL_AND_AMEND`.
 7. **Token & biaya:** pemakaian token tercatat per user/agent/site; kuota dicek; biaya bisa dihitung.
-8. **Workspace:** file/artefak dibuat lewat Private `File` terikat `AIOS Conversation`; user lain tidak bisa akses; nama file disanitasi; artefak tampil sebagai jendela desktop.
+8. **Workspace:** file/artefak disimpan sebagai Private `File` milik user dan dikaitkan ke pesan melalui relasi attachment bawaan Frappe (`File` → `AIOS Message` → `AIOS Conversation`); file lama yang masih tertaut langsung ke percakapan tetap dipertahankan; user lain tidak bisa akses; nama file disanitasi; artefak tampil di alur chat dan sebagai jendela desktop.
 9. **Control plane:** `AIOS Admin` bisa melihat site, menyetujui user pending (hanya role `AIOS Client`), mengatur kuota, monitoring agregat.
 10. **Keamanan & izin:** `AIOS Client` read-only ERPNext; `AIOS Control` hanya read `User` + `AIOS Token Usage`, plus satu endpoint sync konfigurasi yang sempit; tidak ada `AIOS Admin` di site klien; `Administrator` tidak tersentuh.
 
@@ -133,6 +133,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-23 | `#8` menutup `CREATE` saja; `UPDATE_DRAFT` dan `CANCEL_AND_AMEND` dipindah ke H4. Loop tool maksimal 6 putaran; event tool call Orchestrator tidak dikirim di `#8`. |
 | 2026-10-23 | Plugin `workspace-artifact-builder` dipindah dari H2 ke H5; H2 melengkapi katalog tujuh plugin melalui plugin artefak H5. |
 | 2026-10-23 | H2 fase 2 (`cf77edf`) menambahkan `quant-calculator` dan `document-intelligence`; lima dari tujuh plugin terdaftar. `workspace-artifact-builder` di H5; `web-market-research` dan MCP menyusul fase 3. |
+| 2026-10-26 | File baru dikaitkan per pesan memakai attachment bawaan Frappe (`AIOS Message`); file lama yang langsung tertaut ke percakapan tidak dihapus dan tetap dapat diakses. |
 
 ---
 

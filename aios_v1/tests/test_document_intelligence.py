@@ -163,6 +163,28 @@ class TestDocumentIntelligence(IntegrationTestCase):
 		self.assertEqual(result.get("code"), "FILE_FORBIDDEN")
 		unbound.get_content.assert_not_called()
 
+	def test_message_bound_file_is_allowed_only_in_parent_conversation(self):
+		file_doc = self._file(attached_to_doctype="AIOS Message", attached_to_name="_Test Message 77")
+		with (
+			patch("aios_v1.lib.document_intelligence.frappe.get_doc", return_value=file_doc),
+			patch("aios_v1.lib.document_intelligence.frappe.db.get_value", return_value=self.CONVERSATION),
+			patch("frappe.log_error"),
+			tool_context({"conversation_id": self.CONVERSATION}),
+		):
+			result = document_extract(file_doc.name)
+		self.assertEqual(result["format"], "csv")
+
+		file_doc = self._file(attached_to_doctype="AIOS Message", attached_to_name="_Test Message 78")
+		with (
+			patch("aios_v1.lib.document_intelligence.frappe.get_doc", return_value=file_doc),
+			patch("aios_v1.lib.document_intelligence.frappe.db.get_value", return_value="_Test Conversation 78"),
+			patch("frappe.log_error"),
+			tool_context({"conversation_id": self.CONVERSATION}),
+		):
+			result = document_extract(file_doc.name)
+		self.assertEqual(result.get("code"), "FILE_FORBIDDEN")
+		file_doc.get_content.assert_not_called()
+
 	def test_extract_without_conversation_context_is_rejected(self):
 		file_doc = self._file()
 		with (

@@ -10,7 +10,7 @@ from aios_v1.lib.tool_registry import (
     execute_tool,
     get_tools_schema_for_worker,
 )
-from aios_v1.lib.workspace import build_attachment_context
+from aios_v1.lib.workspace import WorkspaceError, attach_private_files_to_message, build_attachment_context
 from aios_v1.plugin_manager.registry import get_branch, get_worker, is_branch_enabled
 from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
@@ -205,7 +205,7 @@ class BaseManager:
 
     def _run_subagent(self, worker_key: str, task_instruction: str, context_data: dict,
                       user: str, usage_records: list, result_holder: list | None = None,
-                      conversation_id=None):
+                      conversation_id=None, created_file_ids: list | None = None):
         """Jalankan loop worker internal; hanya trace yang keluar dari generator."""
         import time
 
@@ -271,6 +271,7 @@ class BaseManager:
                     subagent_tool_context = {
                         "user": user, "branch": branch, "worker_key": worker_key,
                         "delegation_depth": MAX_DELEGATION_DEPTH - 1,
+                        "_created_file_ids": created_file_ids,
                     }
                     if conversation_id is not None:
                         subagent_tool_context["conversation_id"] = str(conversation_id)
@@ -333,6 +334,17 @@ class BaseManager:
         user_msg_doc.worker_key = worker_key or "manager"
         user_msg_doc.content = user_message
         user_msg_doc.insert(ignore_permissions=True)
+        attachment_ids = (
+            [item.get("file_id") for item in attachments if isinstance(item, dict)]
+            if isinstance(attachments, list)
+            else []
+        )
+        if attachment_ids:
+            try:
+                attach_private_files_to_message(attachment_ids, user_msg_doc.name, conversation_id, user)
+            except WorkspaceError as exc:
+                # Keep the File attached to its conversation if a parent link cannot be made.
+                log_exception("AIOS User Message File Binding", exc=exc, context=exc.code)
         frappe.db.commit()
 
         # 3. Ambil Riwayat Percakapan
@@ -400,6 +412,7 @@ class BaseManager:
         delegated_to = worker_def["jobRole"] if worker_def else "Manager"
         accumulated_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         usage_records = []
+        created_file_ids = []
         failed = False
         last_finish_reason = ""
         tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager")
@@ -477,7 +490,8 @@ class BaseManager:
                                 result_holder = []
                                 runner = self._run_subagent(
                                     target_def["key"], instruction, args.get("context_data") or {}, user,
-                                    usage_records, result_holder, conversation_id=conversation_id)
+                                    usage_records, result_holder, conversation_id=conversation_id,
+                                    created_file_ids=created_file_ids)
                                 for trace_event in runner:
                                     yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
                                 result = result_holder[0]
@@ -506,6 +520,7 @@ class BaseManager:
                                 "worker_key": worker_key or "manager",
                                 "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
                                 "conversation_id": str(conversation_id),
+                                "_created_file_ids": created_file_ids,
                             },
                         )
                         card_event = _approval_card_event(tool_name, result, self.branch.get("key", ""))
@@ -585,6 +600,17 @@ class BaseManager:
         asst_msg_doc.content = full_reply
         asst_msg_doc.output_tokens = output_tokens
         asst_msg_doc.insert(ignore_permissions=True)
+        if created_file_ids:
+            try:
+                attach_private_files_to_message(
+                    created_file_ids,
+                    asst_msg_doc.name,
+                    conversation_id,
+                    user,
+                )
+            except WorkspaceError as exc:
+                # Preserve generated files as conversation-level files if binding fails.
+                log_exception("AIOS Assistant Message File Binding", exc=exc, context=exc.code)
 
         # 5b. Ledger per agent dan counter agregat dalam satu transaksi.
         usage_records.append({

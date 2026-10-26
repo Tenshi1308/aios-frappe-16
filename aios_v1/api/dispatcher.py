@@ -13,6 +13,7 @@ from aios_v1.lib.workspace import (
     ATTACHMENT_EXTENSIONS,
     MAX_WORKSPACE_BYTES,
     WorkspaceError,
+    _extension_of,
     get_owned_conversation,
     sanitize_filename,
     save_private_file,
@@ -205,6 +206,7 @@ def _handle_chat_upload(sess: dict):
         "attachment": {
             "id": saved["file_id"],
             "file_name": saved["file_name"],
+            "file_url": saved["file_url"],
             "file_size": saved["file_size"],
             "format": saved["format"],
         },
@@ -591,7 +593,75 @@ def _handle_api_request():
                     fields=["name as id", "role", "worker_key as workerKey", "content", "creation as createdAt"],
                     order_by="creation asc"
                 )
-                return json_response({"conversation": {"id": conv.name, "title": conv.title, "messages": msgs}})
+                message_names = [str(message.id) for message in msgs]
+                attachments_by_message = {}
+                if message_names:
+                    attached_files = frappe.get_all(
+                        "File",
+                        filters={
+                            "attached_to_doctype": "AIOS Message",
+                            "attached_to_name": ["in", message_names],
+                            "owner": conv.user,
+                            "is_private": 1,
+                            "is_folder": 0,
+                        },
+                        fields=["file_name", "file_url", "file_size", "attached_to_name"],
+                        order_by="creation asc",
+                        limit=500,
+                        ignore_permissions=True,
+                    )
+                    for file_doc in attached_files:
+                        message_key = str(file_doc.attached_to_name)
+                        attachments_by_message.setdefault(message_key, []).append(
+                            {
+                                "type": "FILE",
+                                "file_name": file_doc.file_name or "",
+                                "file_url": file_doc.file_url or "",
+                                "format": _extension_of(file_doc.file_name or "", file_doc.file_url or ""),
+                                "size": int(file_doc.file_size or 0),
+                                "conversation_id": str(conv.name),
+                            }
+                        )
+                for message in msgs:
+                    message["artifacts"] = attachments_by_message.get(str(message.id), [])
+
+                legacy_files = frappe.get_all(
+                    "File",
+                    filters={
+                        "attached_to_doctype": "AIOS Conversation",
+                        "attached_to_name": str(conv.name),
+                        "owner": conv.user,
+                        "is_private": 1,
+                        "is_folder": 0,
+                    },
+                    fields=["file_name", "file_url", "file_size", "creation"],
+                    order_by="creation asc",
+                    limit=500,
+                    ignore_permissions=True,
+                )
+                legacy_attachments = [
+                    {
+                        "conversation_id": str(conv.name),
+                        "conversation_title": conv.title or "",
+                        "branch": conv.branch or "",
+                        "file_name": file_doc.file_name or "",
+                        "file_url": file_doc.file_url or "",
+                        "file_size": int(file_doc.file_size or 0),
+                        "format": _extension_of(file_doc.file_name or "", file_doc.file_url or ""),
+                        "creation": file_doc.creation,
+                    }
+                    for file_doc in legacy_files
+                ]
+                return json_response(
+                    {
+                        "conversation": {
+                            "id": conv.name,
+                            "title": conv.title,
+                            "messages": msgs,
+                            "legacyFiles": legacy_attachments,
+                        }
+                    }
+                )
 
             # POST /api/chat/<branch>/stream
             if action == "stream" and method == "POST":

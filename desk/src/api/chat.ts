@@ -7,6 +7,7 @@ import type {
   DraftActionResult,
   DraftDetail,
   FileEntry,
+  FileArtifact,
   PendingDraft,
   TraceEvent,
 } from '../types';
@@ -29,7 +30,12 @@ interface RawConversationList {
 }
 
 interface RawConversationDetail {
-  conversation?: { id?: unknown; title?: unknown; messages?: { role?: unknown; content?: unknown }[] };
+  conversation?: {
+    id?: unknown;
+    title?: unknown;
+    messages?: { id?: unknown; role?: unknown; content?: unknown; artifacts?: unknown }[];
+    legacyFiles?: unknown;
+  };
 }
 
 interface RawFileEntry {
@@ -55,6 +61,42 @@ export async function fetchConversations(branch: string): Promise<ConversationIt
     }));
 }
 
+function toFileEntry(row: RawFileEntry): FileEntry | null {
+  if (
+    typeof row.conversation_id !== 'string' ||
+    typeof row.file_name !== 'string' ||
+    typeof row.file_url !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    conversation_id: row.conversation_id,
+    conversation_title: typeof row.conversation_title === 'string' ? row.conversation_title : '',
+    branch: typeof row.branch === 'string' ? row.branch : '',
+    file_name: row.file_name,
+    file_url: row.file_url,
+    file_size: typeof row.file_size === 'number' ? row.file_size : Number(row.file_size) || 0,
+    format: typeof row.format === 'string' ? row.format : '',
+    creation: typeof row.creation === 'string' ? row.creation : '',
+  };
+}
+
+function toFileArtifacts(value: unknown, conversationId: string): FileArtifact[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+    .filter((item) => item.type === 'FILE' && typeof item.file_name === 'string' && typeof item.file_url === 'string')
+    .map((item) => ({
+      type: 'FILE' as const,
+      file_name: item.file_name as string,
+      file_url: item.file_url as string,
+      format: typeof item.format === 'string' ? item.format : '',
+      size: typeof item.size === 'number' ? item.size : Number(item.size) || 0,
+      conversation_id:
+        typeof item.conversation_id === 'string' ? item.conversation_id : conversationId,
+    }));
+}
+
 /** Daftar file privat conversation dari endpoint server-side, bukan cache browser. */
 export async function fetchMyFiles(conversationId?: string): Promise<FileEntry[]> {
   const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : '';
@@ -64,36 +106,35 @@ export async function fetchMyFiles(conversationId?: string): Promise<FileEntry[]
   if (!Array.isArray(raw)) return [];
   return raw
     .filter((row): row is RawFileEntry => !!row && typeof row === 'object')
-    .filter(
-      (row) =>
-        typeof row.conversation_id === 'string' &&
-        typeof row.file_name === 'string' &&
-        typeof row.file_url === 'string',
-    )
-    .map((row) => ({
-      conversation_id: row.conversation_id as string,
-      conversation_title: typeof row.conversation_title === 'string' ? row.conversation_title : '',
-      branch: typeof row.branch === 'string' ? row.branch : '',
-      file_name: row.file_name as string,
-      file_url: row.file_url as string,
-      file_size: typeof row.file_size === 'number' ? row.file_size : Number(row.file_size) || 0,
-      format: typeof row.format === 'string' ? row.format : '',
-      creation: typeof row.creation === 'string' ? row.creation : '',
-    }));
+    .map(toFileEntry)
+    .filter((row): row is FileEntry => row !== null);
 }
 
-export async function fetchConversationMessages(branch: string, conversationId: string): Promise<ChatMessage[]> {
+export async function fetchConversationMessages(
+  branch: string,
+  conversationId: string,
+): Promise<{ messages: ChatMessage[]; legacyFiles: FileEntry[] }> {
   const raw = unwrapMessage<RawConversationDetail>(
     await apiFetch(`/api/chat/${encodeURIComponent(branch)}/conversations/${encodeURIComponent(conversationId)}`),
   );
   const list = raw?.conversation?.messages ?? [];
-  return list
+  const messages = list
     .filter((m) => typeof m.content === 'string')
     .map((m, i) => ({
-      id: `hist-${conversationId}-${i}`,
+      id: (typeof m.id === 'string' || typeof m.id === 'number') && String(m.id)
+        ? String(m.id)
+        : `hist-${conversationId}-${i}`,
       role: m.role === 'user' ? ('user' as const) : ('agent' as const),
       text: m.content as string,
+      artifacts: toFileArtifacts(m.artifacts, conversationId),
     }));
+  const legacyFiles = Array.isArray(raw?.conversation?.legacyFiles)
+    ? raw.conversation.legacyFiles
+        .filter((row): row is RawFileEntry => !!row && typeof row === 'object')
+        .map(toFileEntry)
+        .filter((row): row is FileEntry => row !== null)
+    : [];
+  return { messages, legacyFiles };
 }
 
 export async function uploadAttachment(
@@ -143,6 +184,7 @@ export async function uploadAttachment(
           attachment: {
             id: attachment.id,
             file_name: typeof attachment.file_name === 'string' ? attachment.file_name : 'lampiran',
+            file_url: typeof attachment.file_url === 'string' ? attachment.file_url : '',
             file_size: typeof attachment.file_size === 'number' ? attachment.file_size : 0,
             format: typeof attachment.format === 'string' ? attachment.format : '',
           },

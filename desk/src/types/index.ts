@@ -136,6 +136,7 @@ export interface DraftActionResult {
 export interface AttachmentMeta {
   id: string;
   file_name: string;
+  file_url: string;
   file_size: number;
   format: string;
 }

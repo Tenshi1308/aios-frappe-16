@@ -20,6 +20,7 @@ MAX_FILENAME_LENGTH = 140
 ATTACHMENT_EXTENSIONS = frozenset({"csv", "pdf", "xlsx"})
 ARTIFACT_EXTENSIONS = frozenset({"csv", "md", "xlsx", "pdf"})
 CONVERSATION_DOCTYPE = "AIOS Conversation"
+MESSAGE_DOCTYPE = "AIOS Message"
 
 
 class WorkspaceError(Exception):
@@ -70,6 +71,77 @@ def _extension_of(file_name: str, file_url: str = "") -> str:
     return name.rpartition(".")[2].lower()
 
 
+def attach_private_files_to_message(file_ids, message_id, conversation_id, user: str) -> None:
+    """Bind already validated private Files to one message in the owned conversation."""
+    if frappe.session.user != user:
+        raise WorkspaceError(403, "WORKSPACE_CONTEXT_MISMATCH", "Sesi tidak cocok dengan pengguna workspace.")
+    conversation = get_owned_conversation(conversation_id, user)
+    message_name = str(message_id or "").strip()
+    message_conversation = frappe.db.get_value(MESSAGE_DOCTYPE, message_name, "conversation") if message_name else None
+    if not message_conversation or str(message_conversation) != str(conversation.name):
+        raise WorkspaceError(403, "MESSAGE_FORBIDDEN", "Pesan tidak tersedia untuk percakapan ini.")
+    if not isinstance(file_ids, (list, tuple)) or any(
+        not isinstance(file_id, str) or not file_id.strip() for file_id in file_ids
+    ):
+        raise WorkspaceError(400, "FILE_IDS_INVALID", "Daftar lampiran tidak valid.")
+
+    unique_ids = list(dict.fromkeys(file_id.strip() for file_id in file_ids))
+    files_to_bind = []
+    for file_id in unique_ids:
+        try:
+            file_doc = frappe.get_doc("File", file_id)
+        except Exception as exc:
+            log_exception("AIOS Workspace Message File Lookup", exc=exc)
+            raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.") from exc
+
+        if int(file_doc.get("is_private") or 0) != 1 or int(file_doc.get("is_folder") or 0) == 1:
+            raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
+        if file_doc.owner != user:
+            raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
+
+        is_legacy_attachment = (
+            file_doc.get("attached_to_doctype") == CONVERSATION_DOCTYPE
+            and str(file_doc.get("attached_to_name") or "") == str(conversation.name)
+        )
+        is_already_bound = (
+            file_doc.get("attached_to_doctype") == MESSAGE_DOCTYPE
+            and str(file_doc.get("attached_to_name") or "") == message_name
+        )
+        if not is_legacy_attachment and not is_already_bound:
+            raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
+        files_to_bind.append((file_doc, is_already_bound))
+
+    if not files_to_bind:
+        return
+    save_point = "aios_message_file_binding"
+    frappe.db.savepoint(save_point)
+    try:
+        for file_doc, is_already_bound in files_to_bind:
+            if is_already_bound:
+                continue
+            file_doc.attached_to_doctype = MESSAGE_DOCTYPE
+            file_doc.attached_to_name = message_name
+            file_doc.attached_to_field = None
+            file_doc.save(ignore_permissions=True)
+    except Exception as exc:
+        frappe.db.rollback(save_point=save_point)
+        log_exception("AIOS Workspace Message File Bind", exc=exc)
+        raise WorkspaceError(500, "FILE_BIND_FAILED", "File tidak dapat dikaitkan ke pesan.") from exc
+
+
+def _file_list_row(file_doc, conversation, conversation_id: str) -> dict:
+    return {
+        "conversation_id": str(conversation_id),
+        "conversation_title": conversation.title or "",
+        "branch": conversation.branch or "",
+        "file_name": file_doc.file_name or "",
+        "file_url": file_doc.file_url or "",
+        "file_size": int(file_doc.file_size or 0),
+        "format": _extension_of(file_doc.file_name or "", file_doc.file_url or ""),
+        "creation": file_doc.creation,
+    }
+
+
 @frappe.whitelist()
 def list_my_files(conversation_id: str | None = None) -> list[dict]:
     """List the current user's private files attached to owned conversations."""
@@ -95,35 +167,70 @@ def list_my_files(conversation_id: str | None = None) -> list[dict]:
         if not conversation_names:
             return []
 
-        # Permission checks are bypassed only after scoping by session owner,
-        # private status, attached conversation, and excluding folder rows.
-        files = frappe.get_all(
+        # Message names come only from conversations owned by the current user.
+        messages = frappe.get_all(
+            MESSAGE_DOCTYPE,
+            filters={"conversation": ["in", conversation_names]},
+            fields=["name", "conversation"],
+            limit=0,
+            ignore_permissions=True,
+        )
+        conversation_by_message = {str(row.name): str(row.conversation) for row in messages}
+
+        # Permission checks are bypassed only after scoping each File query by
+        # owner, private status, and either an owned conversation or its messages.
+        common_filters = {"owner": user, "is_private": 1, "is_folder": 0}
+        fields = ["file_name", "file_url", "file_size", "attached_to_name", "creation"]
+        legacy_files = frappe.get_all(
             "File",
             filters={
+                **common_filters,
                 "attached_to_doctype": CONVERSATION_DOCTYPE,
                 "attached_to_name": ["in", conversation_names],
-                "owner": user,
-                "is_private": 1,
-                "is_folder": 0,
             },
-            fields=["file_name", "file_url", "file_size", "attached_to_name", "creation"],
+            fields=fields,
             order_by="creation desc",
             limit=500,
             ignore_permissions=True,
         )
-        return [
-            {
-                "conversation_id": str(row.attached_to_name),
-                "conversation_title": conversations_by_id[str(row.attached_to_name)].title or "",
-                "branch": conversations_by_id[str(row.attached_to_name)].branch or "",
-                "file_name": row.file_name or "",
-                "file_url": row.file_url or "",
-                "file_size": int(row.file_size or 0),
-                "format": _extension_of(row.file_name or "", row.file_url or ""),
-                "creation": row.creation,
-            }
-            for row in files
-        ]
+        message_files = []
+        message_names = list(conversation_by_message)
+        if message_names:
+            message_files = frappe.get_all(
+                "File",
+                filters={
+                    **common_filters,
+                    "attached_to_doctype": MESSAGE_DOCTYPE,
+                    "attached_to_name": ["in", message_names],
+                },
+                fields=fields,
+                order_by="creation desc",
+                limit=500,
+                ignore_permissions=True,
+            )
+
+        rows = []
+        for file_doc in legacy_files:
+            file_conversation_id = str(file_doc.attached_to_name)
+            rows.append(_file_list_row(file_doc, conversations_by_id[file_conversation_id], file_conversation_id))
+        for file_doc in message_files:
+            file_conversation_id = conversation_by_message.get(str(file_doc.attached_to_name))
+            if file_conversation_id in conversations_by_id:
+                rows.append(
+                    _file_list_row(file_doc, conversations_by_id[file_conversation_id], file_conversation_id)
+                )
+
+        rows.sort(key=lambda row: str(row["creation"] or ""), reverse=True)
+        unique_rows = []
+        seen_urls = set()
+        for row in rows:
+            if row["file_url"] in seen_urls:
+                continue
+            seen_urls.add(row["file_url"])
+            unique_rows.append(row)
+            if len(unique_rows) == 500:
+                break
+        return unique_rows
     except Exception as exc:
         log_exception("AIOS Workspace File List", exc=exc)
         frappe.throw("Daftar file percakapan tidak dapat dimuat.")

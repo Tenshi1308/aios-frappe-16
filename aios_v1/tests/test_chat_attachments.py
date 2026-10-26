@@ -289,6 +289,160 @@ class TestChatAttachments(IntegrationTestCase):
         system_messages = [m["content"] for m in messages if m["role"] == "system"]
         self.assertTrue(any("LAMPIRAN PENGGUNA" in content for content in system_messages))
 
+    def test_handle_stream_binds_uploaded_file_to_user_message_without_changing_file_data(self):
+        from aios_v1.managers.base_manager import BaseManager
+
+        saved = self._save_workspace_file(
+            self.alpha_conv,
+            self.ALPHA,
+            f"inline {uuid.uuid4().hex[:6]}.csv",
+            b"name\nalpha\n",
+        )
+        original_file = frappe.get_doc("File", saved["file_id"])
+        original_url = original_file.file_url
+        original_size = original_file.file_size
+        frappe.set_user(self.ALPHA)
+        manager = BaseManager({"key": "sales", "name": "Sales"})
+
+        def chat(messages, usage=None, tools=None, tool_calls=None):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            return iter(["File sudah saya periksa."])
+
+        with (
+            patch.object(manager, "ensure_conversation", return_value=self.alpha_conv.name),
+            patch.object(manager, "get_worker_def", return_value=None),
+            patch.object(manager, "build_system_prompt", return_value="_Test prompt"),
+            patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", return_value=[]),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=chat),
+            patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+        ):
+            list(
+                manager.handle_stream(
+                    "Periksa file",
+                    conversation_id=self.alpha_conv.name,
+                    user=self.ALPHA,
+                    attachments=[
+                        {
+                            "file_id": saved["file_id"],
+                            "file_name": saved["file_name"],
+                            "file_size": saved["file_size"],
+                            "format": "csv",
+                        }
+                    ],
+                )
+            )
+
+        user_message = frappe.get_all(
+            "AIOS Message",
+            filters={"conversation": self.alpha_conv.name, "role": "user"},
+            fields=["name", "content"],
+            order_by="creation desc",
+            limit=1,
+        )[0]
+        bound_file = frappe.get_doc("File", saved["file_id"])
+        self.assertEqual(user_message.content, "Periksa file")
+        self.assertEqual(bound_file.attached_to_doctype, "AIOS Message")
+        self.assertEqual(str(bound_file.attached_to_name), str(user_message.name))
+        self.assertEqual(bound_file.file_url, original_url)
+        self.assertEqual(bound_file.file_size, original_size)
+        self.assertEqual(int(bound_file.is_private), 1)
+        self.assertEqual(bound_file.owner, self.ALPHA)
+
+        detail = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
+        self.assertEqual(detail.status_code, 200)
+        detail_payload = json.loads(detail.get_data(as_text=True))
+        message_payload = next(
+            item for item in detail_payload["conversation"]["messages"] if str(item["id"]) == str(user_message.name)
+        )
+        self.assertEqual(
+            message_payload["artifacts"],
+            [
+                {
+                    "type": "FILE",
+                    "file_name": saved["file_name"],
+                    "file_url": saved["file_url"],
+                    "format": "csv",
+                    "size": saved["file_size"],
+                    "conversation_id": str(self.alpha_conv.name),
+                }
+            ],
+        )
+        self.assertNotIn(saved["file_id"], json.dumps(message_payload))
+
+    def test_handle_stream_binds_generated_file_to_assistant_message_without_exposing_id(self):
+        from aios_v1.managers.base_manager import BaseManager
+
+        saved = self._save_workspace_file(
+            self.alpha_conv,
+            self.ALPHA,
+            f"generated {uuid.uuid4().hex[:6]}.md",
+            b"# Generated report\n",
+        )
+        frappe.set_user(self.ALPHA)
+        manager = BaseManager({"key": "sales", "name": "Sales"})
+        stream_calls = []
+
+        def chat(messages, usage=None, tools=None, tool_calls=None):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if not stream_calls:
+                stream_calls.append("tool")
+                tool_calls.append(
+                    {
+                        "id": "call-file",
+                        "function": {"name": "workspace_create_file", "arguments": "{}"},
+                    }
+                )
+                return iter([])
+            return iter(["Laporan terlampir."])
+
+        def execute_tool(name, arguments_json, context=None):
+            self.assertEqual(name, "workspace_create_file")
+            context["_created_file_ids"].append(saved["file_id"])
+            return json.dumps(
+                {
+                    "status": "created",
+                    "artifact": {
+                        "type": "FILE",
+                        "file_name": saved["file_name"],
+                        "file_url": saved["file_url"],
+                        "format": "md",
+                        "size": saved["file_size"],
+                        "conversation_id": str(self.alpha_conv.name),
+                    },
+                }
+            )
+
+        with (
+            patch.object(manager, "ensure_conversation", return_value=self.alpha_conv.name),
+            patch.object(manager, "get_worker_def", return_value=None),
+            patch.object(manager, "build_system_prompt", return_value="_Test prompt"),
+            patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", return_value=[]),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=chat),
+            patch("aios_v1.managers.base_manager.execute_tool", side_effect=execute_tool),
+            patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+        ):
+            events = list(
+                manager.handle_stream(
+                    "Buat laporan",
+                    conversation_id=self.alpha_conv.name,
+                    user=self.ALPHA,
+                )
+            )
+
+        assistant_message = frappe.get_all(
+            "AIOS Message",
+            filters={"conversation": self.alpha_conv.name, "role": "manager"},
+            fields=["name", "content"],
+            order_by="creation desc",
+            limit=1,
+        )[0]
+        bound_file = frappe.get_doc("File", saved["file_id"])
+        self.assertEqual(assistant_message.content, "Laporan terlampir.")
+        self.assertEqual(bound_file.attached_to_doctype, "AIOS Message")
+        self.assertEqual(str(bound_file.attached_to_name), str(assistant_message.name))
+        self.assertEqual(bound_file.file_url, saved["file_url"])
+        self.assertNotIn(saved["file_id"], "".join(events))
+
 
 if __name__ == "__main__":
     import unittest
