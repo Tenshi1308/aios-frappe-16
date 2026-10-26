@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 import frappe
 
+from aios_v1.lib.desktop_domains import get_domain_definition, get_domain_keys
 from aios_v1.lib.desktop_modules import get_module_definition, get_module_keys
 from aios_v1.lib.draft_manager import create_draft
 from aios_v1.lib.error_utils import safe_error
@@ -59,20 +60,24 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
 
 @ai_tool(
     name="open_module",
-    description="Membuka jendela modul ERPNext baca-saja yang tersedia di Ekasa Desk untuk pengguna.",
+    description="Membuka jendela bidang (domain) atau modul ERPNext baca-saja yang tersedia di Ekasa Desk untuk pengguna.",
     branch="ai_manager",
     roles=["ai_manager", "orchestrator"],
     parameters={
         "module": {
             "type": "string",
-            "enum": get_module_keys(),
-            "description": "Key modul dari katalog desktop",
+            "enum": [*get_domain_keys(), *get_module_keys()],
+            "description": "Key bidang aktif (mis. 'sales', 'finance') atau key modul dari katalog desktop",
         }
     },
 )
 def open_module(module: str) -> dict[str, Any]:
     """Return a validated UI command; data access remains in Desktop API."""
-    if not isinstance(module, str) or not get_module_definition(module):
+    if not isinstance(module, str):
+        return safe_error("Modul tidak tersedia.", "MODULE_NOT_ALLOWED")
+    domain_def = get_domain_definition(module)
+    is_active_domain = bool(domain_def and domain_def.get("status") == "active")
+    if not is_active_domain and not get_module_definition(module):
         return safe_error("Modul tidak tersedia.", "MODULE_NOT_ALLOWED")
     return {"ok": True, "module": module}
 

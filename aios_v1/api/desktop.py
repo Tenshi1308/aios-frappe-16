@@ -9,6 +9,10 @@ from frappe.sessions import get_csrf_token
 from frappe.utils import format_datetime, now_datetime
 from frappe.utils.scheduler import is_scheduler_inactive
 
+from aios_v1.lib.desktop_domains import (
+    get_domain_catalog,
+    get_domain_definition,
+)
 from aios_v1.lib.desktop_modules import (
     get_module_catalog,
     get_module_definition,
@@ -277,6 +281,76 @@ def _public_module(module: dict) -> dict:
     return next(item for item in get_module_catalog() if item["key"] == module["key"])
 
 
+def _domain_definition(domain_key: str) -> dict:
+    if not isinstance(domain_key, str) or not domain_key:
+        frappe.throw("Bidang tidak tersedia.", frappe.ValidationError)
+    definition = get_domain_definition(domain_key)
+    if not definition or definition.get("status") != "active":
+        frappe.throw("Bidang tidak tersedia.", frappe.ValidationError)
+    for card in definition["cards"]:
+        doctype = card["doctype"]
+        if doctype not in ERP_CLIENT_DOCTYPES:
+            log_exception("AIOS Desktop Catalog", context="DocType kartu bidang di luar allowlist.")
+            frappe.throw("Bidang tidak tersedia.", frappe.ValidationError)
+        meta = frappe.get_meta(doctype)
+        allowed_fields = set(meta.get_valid_columns())
+        card_fields = {card["field"], *card["filters"]}
+        if not card_fields.issubset(allowed_fields):
+            log_exception(
+                "AIOS Desktop Catalog",
+                context=f"Field kartu bidang tidak valid untuk {doctype}.",
+            )
+            frappe.throw("Bidang tidak tersedia.", frappe.ValidationError)
+    return definition
+
+
+def _domain_card_value(card: dict, company_id: str, currency: str) -> dict:
+    doctype = card["doctype"]
+    filters = dict(card["filters"])
+    meta = frappe.get_meta(doctype)
+    if meta.has_field("company"):
+        filters["company"] = company_id
+    elif doctype not in {"Customer", "Supplier", "Item"}:
+        log_exception("AIOS Desktop Company", context=f"DocType {doctype} tanpa field company.")
+        frappe.throw("Cakupan company tidak dapat dipastikan.", frappe.ValidationError)
+
+    aggregate = card["aggregate"].upper()
+    field = card["field"]
+    rows = frappe.get_list(
+        doctype,
+        fields=[{aggregate: field, "as": "value"}],
+        filters=filters,
+        limit_page_length=1,
+    )
+    value = (rows[0].get("value") if rows else 0) or 0
+    item = {
+        "key": card["key"],
+        "label": card["label"],
+        "value": value,
+        "format": card["format"],
+    }
+    if card["format"] == "currency":
+        item["currency"] = currency
+    return item
+
+
+def _domain_module_summaries(module_keys: tuple[str, ...], company_id: str) -> list[dict]:
+    summaries = []
+    for mod_key in module_keys:
+        mod_def = _definition(mod_key)
+        mod_filters = _server_filters(mod_def, company_id)
+        row_count = _pagination_total(mod_def["doctype"], mod_filters)
+        summaries.append(
+            {
+                "key": mod_def["key"],
+                "label": mod_def["label"],
+                "icon": mod_def["icon"],
+                "row_count": row_count,
+            }
+        )
+    return summaries
+
+
 def _module_response(module: dict, company: dict, page, page_size, filters=None) -> dict:
     rows, pagination = _list_rows(module, company["id"], page, page_size, filters)
     doctype = {
@@ -301,8 +375,30 @@ def bootstrap():
         "user": {"id": user, "name": user_state.full_name or user},
         "company": company,
         "agents": get_public_branches(),
+        "domains": get_domain_catalog(),
         "modules": get_module_catalog(),
         "csrf_token": get_csrf_token(),
+    }
+
+
+@_safe_api_errors("desktop.domain")
+def domain(domain: str):
+    _require_active_client()
+    definition = _domain_definition(domain)
+    company = _company_context()
+    return {
+        "domain": {
+            "key": definition["key"],
+            "label": definition["label"],
+            "icon": definition["icon"],
+            "color_token": definition["color_token"],
+        },
+        "company": company,
+        "cards": [
+            _domain_card_value(card, company["id"], company["currency"])
+            for card in definition["cards"]
+        ],
+        "modules": _domain_module_summaries(definition["modules"], company["id"]),
     }
 
 

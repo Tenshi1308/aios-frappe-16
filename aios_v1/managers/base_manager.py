@@ -2,6 +2,7 @@ import json
 
 import frappe
 
+from aios_v1.lib.desktop_domains import get_domain_definition
 from aios_v1.lib.desktop_modules import get_module_definition
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.llm_client import chat_stream
@@ -90,7 +91,12 @@ def _open_module_event(tool_name, result_json):
     if not isinstance(payload, dict) or payload.get("ok") is not True:
         return None
     module_key = payload.get("module")
-    if not isinstance(module_key, str) or not get_module_definition(module_key):
+    if not isinstance(module_key, str):
+        log_exception("AIOS Open Module Event", context="hasil tool tidak berisi key modul katalog.")
+        return None
+    domain_def = get_domain_definition(module_key)
+    is_active_domain = bool(domain_def and domain_def.get("status") == "active")
+    if not is_active_domain and not get_module_definition(module_key):
         log_exception("AIOS Open Module Event", context="hasil tool tidak berisi key modul katalog.")
         return None
     return {"type": "open_module", "module": module_key}
