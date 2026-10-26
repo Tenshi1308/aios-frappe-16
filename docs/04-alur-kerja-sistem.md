@@ -356,23 +356,23 @@ sequenceDiagram
     participant API as Desktop API (aios_v1)
     participant ERP as ERPNext (site klien)
 
-    Client->>Desk: Buka modul Accounting / klik kartu "Receivables"
-    Desk->>API: GET desktop.module?module=accounting
+    Client->>Desk: Buka modul Sales Invoice dari Start Menu / Search
+    Desk->>API: GET desktop.module?module=sales_invoice
     API->>API: Cek sesi + role AIOS Client + aios_status == "Active"
     API->>API: Paksa company = default_company site (abaikan klaim klien)
     API->>ERP: frappe.get_list + agregat (izin user berlaku)
     ERP-->>API: Baris dokumen + angka agregat
-    API-->>Desk: { cards[], doctypes[], rows[] }
-    Desk-->>Client: Render jendela modul
+    API-->>Desk: { module, cards[], doctypes[], rows[], pagination }
+    Desk-->>Client: Render jendela modul (module:sales_invoice)
 
-    Note over Client,Desk: Agent juga bisa membuka modul:<br/>"buka Sales Invoice" → artifact_created / open_module
+    Note over Client,Desk: Agent juga bisa membuka modul:<br/>"buka Sales Invoice" → tool open_module → SSE {"type":"open_module","module":"sales_invoice"}
 ```
 
 ### Rincian Langkah Alur 7:
-1. **Pembukaan Modul:** Pengguna membuka modul dari taskbar atau pencarian, **atau** agent membukanya atas permintaan ("buka Sales Invoice", "lihat piutang jatuh tempo").
-2. **Verifikasi Sesi & Status:** Endpoint desktop memastikan `frappe.session.user != "Guest"` dan `User.aios_status == "Active"` — sama seperti jalur lain (`docs/03` §2.2).
+1. **Pembukaan Modul:** Pengguna membuka modul dari Start Menu (dikelompokkan per `Sales`/`Finance`) atau pencarian (`Ctrl+K` → `desktop.search`), **atau** agent membukanya atas permintaan ("buka Sales Invoice", "lihat piutang jatuh tempo").
+2. **Verifikasi Sesi & Status:** Endpoint desktop (`aios_v1.api.desktop.bootstrap`, `module`, `list`, `search`) memastikan sesi HTTP Frappe valid, `frappe.session.user != "Guest"`, bukan `Administrator`, memiliki role `AIOS Client`, dan `User.aios_status == "Active"` (`enabled = 1`) — sama seperti jalur lain (`docs/03` §2.2).
 3. **Pemaksaan `Company`:** `company` diambil dari `AIOS Setting.default_company` (fallback `Global Defaults`) di sisi server. Argumen dari klien **diabaikan**, sehingga tidak ada cara membaca company lain lewat modul.
-4. **Pembacaan Data:** Daftar dokumen memakai `frappe.get_list` dengan `check_permission` yang berlaku; kartu angka dihitung sebagai agregat di server (`SUM`, `COUNT`), bukan di browser.
+4. **Pembacaan Data:** Daftar dokumen memakai `frappe.get_list` dengan filter dasar katalog (`docstatus = 1` untuk transaksi, `disabled = 0` untuk master) dan filter klien yang diizinkan (`date_from`, `date_to`, `status`, `party` dipetakan server ke field doctype terkait); kartu angka dihitung sebagai agregat di server (`SUM`, `COUNT` dalam mata uang dasar `base_*` untuk transaksi atau cakupan `site` untuk master), bukan di browser.
 5. **Izin Tetap Berlaku:** Karena query berjalan dengan sesi user, `AIOS Client` hanya melihat dokumen yang diizinkan `Custom DocPerm` (`read = 1, report = 1`, `docs/03` §2.1).
 6. **Modul Bersifat Baca Saja:** Tidak ada tombol tulis di modul. Semua perubahan tetap lewat `Pending Action Draft` dan persetujuan manusia (Alur 5).
-7. **Agen Membuka Modul:** Saat agent membuka modul, UI menerima event dan membuka jendela yang sama — bukan jalur data terpisah, sehingga aturan izin dan `company` tetap satu.
+7. **Agen Membuka Modul:** Saat Orchestrator/AI Manager memanggil tool `open_module(module="<key>")` (sub-agent tidak memiliki tool ini), backend memvalidasi `<key>` terhadap katalog `desktop_modules.py` lalu mengirim event SSE `{"type": "open_module", "module": "<key>"}` (tanpa menambah item ke Live Agent Trace). UI menangkap event lewat `onOpenModule` dan memanggil `modules.openModule(key)` yang membuka jendela `module:<key>` serta memuat data lewat `desktop.module` — bukan jalur data terpisah, sehingga aturan izin dan `company` tetap satu.

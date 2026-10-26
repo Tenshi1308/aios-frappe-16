@@ -107,10 +107,11 @@ Explorer tidak mengubah, memindahkan, menghapus, atau membagikan file. Unduh mem
 
 Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya dibaca langsung dari ERPNext site klien dengan izin user yang sedang login — tidak ada database perantara.
 
-- Modul dibuka dari taskbar/pencarian, **atau** oleh agent saat diminta ("buka Sales Invoice").
-- Daftar modul, ikon, warna, dan doctype-nya berasal dari backend (§7).
+- Modul dibuka dari Start Menu (dikelompokkan per `group`: `Sales` / `Finance`), pencarian (`Ctrl+K`), **atau** oleh agent saat diminta ("buka Sales Invoice" → event SSE `open_module`).
+- Katalog modul server-owned (`aios_v1/lib/desktop_modules.py`) menyediakan 7 modul: `sales_invoice`, `sales_order`, `purchase_invoice`, `payment_entry`, `customer`, `supplier`, `item`. Daftar modul, ikon semantik, grup, doctype, kolom, filter, dan definisi kartu berasal dari backend (§7).
+- Jendela modul (`desk/src/components/module/ModuleWindow.vue`, window ID `module:<key>`) merender header + tombol refresh, kartu agregat (`label`, `value`, `currency` bila `format == "currency"`, `scope`: `company` | `site`), form filter sesuai deklarasi `module.filters` (`date_from`, `date_to`, `status`, `party` — hanya yang dikirim backend), tabel dengan kolom dari respons server, serta navigasi halaman prev/next.
 - Modul bersifat **baca saja**. Penulisan tetap lewat approval.
-- Angka pada kartu adalah agregat yang dihitung server, bukan dihitung di browser.
+- Angka pada kartu adalah agregat yang dihitung server (`COUNT`/`SUM`), bukan dihitung di browser; klien hanya memformat angka/mata uang/tanggal untuk tampilan. Refresh modul mempertahankan data lama di layar selagi pemuatan berlangsung.
 
 ---
 
@@ -195,11 +196,11 @@ Folder kerja bernama `desk/` selama migrasi. Setelah paritas, `frontend/` (Next.
 
 | Endpoint | Isi |
 |---|---|
-| `desktop.bootstrap` | `user`, `company`, `agents[]`, `modules[]`, `csrf_token` |
-| `desktop.module` | kartu agregat + daftar doctype satu modul |
-| `desktop.list` | baris dokumen (paging, filter) |
-| `desktop.search` | hasil pencarian `Ctrl+K` |
-| `desktop.chat` | stream SSE; memakai ulang dispatcher `/stream`; request membawa `file_ids[]` opsional untuk lampiran |
+| `GET /api/method/aios_v1.api.desktop.bootstrap` | `user{id,name}`, `company{id,name,currency}`, `agents[]`, `modules[]`, `csrf_token` |
+| `GET /api/method/aios_v1.api.desktop.module` | `module`, `cards[]`, `doctypes[]`, `rows[]`, `pagination` (`page`, `page_size`, `total`, `total_pages`); menerima `module`, `page`, `page_size`, `filters` JSON (`date_from`, `date_to`, `status`, `party` sesuai allowlist modul) |
+| `GET /api/method/aios_v1.api.desktop.list` | `module`, `doctype`, `rows[]`, `pagination`; menerima `module`, `doctype`, `page`, `page_size`, `filters` |
+| `GET /api/method/aios_v1.api.desktop.search` | `results[]` berisi item modul (`type: "module"`, `module`) dan dokumen (`type: "document"`, `module`, `doctype`, `name`, `row`) yang di-scope ke company aktif; di UI (`desk/src/api/modules.ts`) dinormalisasi menjadi `SearchResult` (`kind: "module" \| "document"`), klik item modul maupun dokumen membuka jendela `module:<key>` |
+| `POST /api/chat/<branch>/stream` | stream SSE; memakai ulang dispatcher `/stream`; request membawa `file_ids[]` opsional untuk lampiran; mendukung event kontrol UI `{"type": "open_module", "module": "<key>"}` dari manager |
 | `POST /api/chat/upload` | multipart `file` + `conversationId` (atau `branch` bila belum ada conversation); membuat Private `File` awalnya terikat conversation; respons `conversationId` + metadata `attachment` — H5 fase 1 |
 
 Backend memvalidasi setiap ID pada `file_ids` sebagai Private `File` milik session user dan terkait ke conversation chat yang sama; ukuran dan format harus dalam batas yang diizinkan. File tidak valid ditolak sebelum konteks model dibentuk. Setelah pesan user disimpan, attachment dipindahkan secara relasional ke `AIOS Message` lewat field attachment bawaan Frappe; file keluaran agent ditautkan ke pesan agent. Ini tidak menambah schema dan tidak memindahkan isi file. `attachment.id` pada respons upload hanya state internal frontend untuk mengirim `file_ids`: tidak ditampilkan ke user, tidak diketik user, dan tidak boleh muncul di pesan error maupun event `artifact_created`. Client tidak pernah menerima isi file melalui metadata maupun pesan error.
