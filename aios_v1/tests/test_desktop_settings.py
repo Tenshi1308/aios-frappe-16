@@ -157,7 +157,7 @@ class TestDesktopSettings(IntegrationTestCase):
         self.assertTrue(callable(method), "desktop.settings belum tersedia")
 
         result = frappe.call(method)
-        self.assertEqual(set(result.keys()), {"profile", "company", "quota", "reset"})
+        self.assertEqual(set(result.keys()), {"profile", "company", "quota", "reset", "theme"})
         self.assertEqual(set(result["profile"].keys()), {"name", "persona", "status"})
         self.assertEqual(set(result["company"].keys()), {"id", "name", "currency"})
         self.assertEqual(set(result["quota"].keys()), {"limit", "used", "remaining", "percent_used"})
@@ -165,6 +165,9 @@ class TestDesktopSettings(IntegrationTestCase):
             set(result["reset"].keys()),
             {"at", "at_label", "seconds_remaining", "source", "scheduler_active"},
         )
+        self.assertEqual(set(result["theme"].keys()), {"value", "options"})
+        self.assertEqual(result["theme"]["options"], ["Automatic", "Light", "Dark"])
+        self.assertIn(result["theme"]["value"], {"Automatic", "Light", "Dark"})
 
         self.assertEqual(result["profile"]["name"], "_Test Desktop Settings")
         self.assertEqual(result["profile"]["persona"], "finance")
@@ -178,6 +181,7 @@ class TestDesktopSettings(IntegrationTestCase):
             | set(result["company"].keys())
             | set(result["quota"].keys())
             | set(result["reset"].keys())
+            | set(result["theme"].keys())
         )
         self.assertTrue(all_keys.isdisjoint(FORBIDDEN_SETTING_KEYS))
         serialized = json.dumps(result)
@@ -347,7 +351,7 @@ class TestDesktopSettings(IntegrationTestCase):
         response = self._http_get("settings")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         message = response.json["message"]
-        self.assertEqual(set(message.keys()), {"profile", "company", "quota", "reset"})
+        self.assertEqual(set(message.keys()), {"profile", "company", "quota", "reset", "theme"})
         self.assertEqual(set(message["profile"].keys()), {"name", "persona", "status"})
         self.assertEqual(set(message["company"].keys()), {"id", "name", "currency"})
         self.assertEqual(set(message["quota"].keys()), {"limit", "used", "remaining", "percent_used"})
@@ -355,3 +359,83 @@ class TestDesktopSettings(IntegrationTestCase):
             set(message["reset"].keys()),
             {"at", "at_label", "seconds_remaining", "source", "scheduler_active"},
         )
+        self.assertEqual(set(message["theme"].keys()), {"value", "options"})
+        self.assertEqual(message["theme"]["options"], ["Automatic", "Light", "Dark"])
+
+    def test_theme_defaults_to_automatic_and_normalizes_invalid_values(self):
+        method = getattr(desktop_api, "settings", None)
+        self.assertTrue(callable(method), "desktop.settings belum tersedia")
+
+        frappe.db.set_value("User", self.user.name, "desk_theme", None)
+        result_none = frappe.call(method)
+        self.assertEqual(
+            result_none["theme"],
+            {"value": "Automatic", "options": ["Automatic", "Light", "Dark"]},
+        )
+
+        frappe.db.set_value("User", self.user.name, "desk_theme", "Dark")
+        result_dark = frappe.call(method)
+        self.assertEqual(
+            result_dark["theme"],
+            {"value": "Dark", "options": ["Automatic", "Light", "Dark"]},
+        )
+
+        frappe.db.set_value("User", self.user.name, "desk_theme", "Neon")
+        result_invalid = frappe.call(method)
+        self.assertEqual(
+            result_invalid["theme"],
+            {"value": "Automatic", "options": ["Automatic", "Light", "Dark"]},
+        )
+
+    def test_frappe_switch_theme_updates_valid_and_ignores_invalid(self):
+        from frappe.core.doctype.user.user import switch_theme
+
+        frappe.db.set_value("User", self.user.name, "desk_theme", "Light")
+        switch_theme("Dark")
+        self.assertEqual(frappe.db.get_value("User", self.user.name, "desk_theme"), "Dark")
+
+        switch_theme("Neon")
+        self.assertEqual(frappe.db.get_value("User", self.user.name, "desk_theme"), "Dark")
+
+    def test_http_post_switch_theme_with_csrf(self):
+        from frappe.auth import CookieManager, LoginManager
+        from frappe.sessions import get_csrf_token
+        from frappe.utils import set_request
+
+        frappe.db.set_value("User", self.user.name, "desk_theme", "Light")
+
+        set_request(path="/")
+        frappe.local.cookie_manager = CookieManager()
+        frappe.local.login_manager = LoginManager()
+        frappe.local.login_manager.login_as(self.user.name)
+        csrf_token = get_csrf_token()
+        sid = frappe.session.sid
+        site = frappe.local.site
+        main_db = frappe.local.db
+        client = get_test_client()
+        url = f"{get_url()}/api/method/frappe.core.doctype.user.user.switch_theme"
+        response = []
+
+        def share_test_db(set_admin_as_user=True):
+            frappe.local.db = main_db
+
+        def dispatch():
+            with (
+                patch("frappe.app.get_site_name", return_value=site),
+                patch("frappe.connect", side_effect=share_test_db),
+                patch("frappe.app.sync_database"),
+            ):
+                response.append(
+                    client.post(
+                        url,
+                        json={"sid": sid, "theme": "Dark"},
+                        headers={"X-Frappe-CSRF-Token": csrf_token},
+                    )
+                )
+
+        thread = Thread(target=dispatch)
+        thread.start()
+        thread.join()
+
+        self.assertEqual(response[0].status_code, 200, response[0].get_data(as_text=True))
+        self.assertEqual(frappe.db.get_value("User", self.user.name, "desk_theme"), "Dark")

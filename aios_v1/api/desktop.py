@@ -24,6 +24,8 @@ DEFAULT_SEARCH_LIMIT = 20
 MAX_SEARCH_LIMIT = 100
 RESET_JOB_METHOD = "aios_v1.services.usage.reset_daily_counters"
 _ALLOWED_FILTER_KEYS = frozenset({"date_from", "date_to", "status", "party"})
+_THEME_OPTIONS = ("Automatic", "Light", "Dark")
+_ALLOWED_THEMES = frozenset(_THEME_OPTIONS)
 
 
 def _safe_api_errors(method_name: str):
@@ -448,6 +450,8 @@ def settings():
     user, user_state = _require_active_client()
     company = _company_context()
     persona = frappe.db.get_value("User", user, "aios_persona")
+    raw_theme = frappe.db.get_value("User", user, "desk_theme")
+    theme_value = raw_theme if raw_theme in _ALLOWED_THEMES else "Automatic"
     return {
         "profile": {
             "name": user_state.full_name or user,
@@ -457,4 +461,8 @@ def settings():
         "company": company,
         "quota": _site_quota(),
         "reset": _reset_status(),
+        "theme": {
+            "value": theme_value,
+            "options": [*_THEME_OPTIONS],
+        },
     }
