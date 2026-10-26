@@ -70,6 +70,65 @@ def _extension_of(file_name: str, file_url: str = "") -> str:
     return name.rpartition(".")[2].lower()
 
 
+@frappe.whitelist()
+def list_my_files(conversation_id: str | None = None) -> list[dict]:
+    """List the current user's private files attached to owned conversations."""
+    user = frappe.session.user
+    if not user or user == "Guest":
+        frappe.throw("Silakan login untuk melihat file percakapan.")
+
+    requested_id = str(conversation_id or "").strip()
+    try:
+        conversations = frappe.get_all(
+            CONVERSATION_DOCTYPE,
+            filters={"user": user},
+            fields=["name", "title", "branch", "creation"],
+        )
+        conversations_by_id = {str(row.name): row for row in conversations}
+        if requested_id:
+            conversation = conversations_by_id.get(requested_id)
+            if not conversation:
+                return []
+            conversations_by_id = {requested_id: conversation}
+
+        conversation_names = list(conversations_by_id)
+        if not conversation_names:
+            return []
+
+        # Permission checks are bypassed only after scoping by session owner,
+        # private status, attached conversation, and excluding folder rows.
+        files = frappe.get_all(
+            "File",
+            filters={
+                "attached_to_doctype": CONVERSATION_DOCTYPE,
+                "attached_to_name": ["in", conversation_names],
+                "owner": user,
+                "is_private": 1,
+                "is_folder": 0,
+            },
+            fields=["file_name", "file_url", "file_size", "attached_to_name", "creation"],
+            order_by="creation desc",
+            limit=500,
+            ignore_permissions=True,
+        )
+        return [
+            {
+                "conversation_id": str(row.attached_to_name),
+                "conversation_title": conversations_by_id[str(row.attached_to_name)].title or "",
+                "branch": conversations_by_id[str(row.attached_to_name)].branch or "",
+                "file_name": row.file_name or "",
+                "file_url": row.file_url or "",
+                "file_size": int(row.file_size or 0),
+                "format": _extension_of(row.file_name or "", row.file_url or ""),
+                "creation": row.creation,
+            }
+            for row in files
+        ]
+    except Exception as exc:
+        log_exception("AIOS Workspace File List", exc=exc)
+        frappe.throw("Daftar file percakapan tidak dapat dimuat.")
+
+
 def _verify_saved_file(file_doc, conversation_id, user: str) -> bool:
     return (
         int(file_doc.get("is_private") or 0) == 1
