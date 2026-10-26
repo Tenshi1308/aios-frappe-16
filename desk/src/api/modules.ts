@@ -19,8 +19,11 @@ import type {
   ModuleMeta,
   ModuleRow,
   ModuleRowValue,
+  ModulesApi,
   Pagination,
   SearchResult,
+  SettingsData,
+  SettingsResetSource,
 } from '../types';
 
 const DESKTOP_API = '/api/method/aios_v1.api.desktop';
@@ -365,3 +368,79 @@ export async function search(q: string, limit?: number): Promise<SearchResult[]>
   }
   return out;
 }
+
+function asNullableNumber(value: unknown): number | null {
+  if (value === null || typeof value === 'undefined') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asResetSource(value: unknown): SettingsResetSource {
+  return value === 'scheduled' ? 'scheduled' : 'unknown';
+}
+
+export async function fetchSettings(): Promise<SettingsData> {
+  const raw = unwrapMessage<unknown>(await apiFetch(`${DESKTOP_API}.settings`));
+  if (
+    !isRecord(raw) ||
+    !isRecord(raw.profile) ||
+    !isRecord(raw.company) ||
+    !isRecord(raw.quota) ||
+    !isRecord(raw.reset)
+  ) {
+    throw new ApiError('Data pengaturan desktop tidak valid.');
+  }
+
+  const profileName = asString(raw.profile.name);
+  const profileStatus = asString(raw.profile.status);
+  const companyId = asString(raw.company.id);
+  const companyCurrency = asString(raw.company.currency);
+  if (!profileName || !companyId || !companyCurrency) {
+    throw new ApiError('Data pengaturan desktop tidak lengkap.');
+  }
+
+  const personaRaw = asString(raw.profile.persona);
+  const limit = Math.max(0, Math.trunc(asNumber(raw.quota.limit, 0)));
+  const used = Math.max(0, Math.trunc(asNumber(raw.quota.used, 0)));
+  const remainingRaw = asNullableNumber(raw.quota.remaining);
+  const percentRaw = asNullableNumber(raw.quota.percent_used);
+
+  const atRaw = asString(raw.reset.at);
+  const atLabelRaw = asString(raw.reset.at_label);
+  const secondsRaw = asNullableNumber(raw.reset.seconds_remaining);
+
+  return {
+    profile: {
+      name: profileName,
+      persona: personaRaw || null,
+      status: profileStatus,
+    },
+    company: {
+      id: companyId,
+      name: asString(raw.company.name, companyId),
+      currency: companyCurrency,
+    },
+    quota: {
+      limit,
+      used,
+      remaining: remainingRaw === null ? null : Math.max(0, Math.trunc(remainingRaw)),
+      percent_used: percentRaw,
+    },
+    reset: {
+      at: atRaw || null,
+      at_label: atLabelRaw || null,
+      seconds_remaining: secondsRaw === null ? null : Math.max(0, Math.trunc(secondsRaw)),
+      source: asResetSource(raw.reset.source),
+      scheduler_active: Boolean(raw.reset.scheduler_active),
+    },
+  };
+}
+
+export const modulesApi = {
+  fetchBootstrap,
+  fetchModule,
+  fetchList,
+  search,
+  fetchSettings,
+} satisfies ModulesApi;

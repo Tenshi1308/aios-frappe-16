@@ -1,11 +1,18 @@
 import { defineStore } from 'pinia';
-import { fetchBootstrap, fetchList, fetchModule, search as apiSearch } from '../api/modules';
+import {
+  fetchBootstrap,
+  fetchList,
+  fetchModule,
+  fetchSettings,
+  search as apiSearch,
+} from '@modules-api';
 import { useWindowManager } from '../composables/useWindowManager';
 import type {
   ModuleDetailData,
   ModuleFilters,
   ModuleMeta,
   SearchResult,
+  SettingsData,
 } from '../types';
 
 export interface ModuleEntryState extends ModuleDetailData {
@@ -24,9 +31,13 @@ export const useModulesStore = defineStore('modules', {
     error: '',
     errorByKey: {} as Record<string, string>,
     searchError: '',
+    settings: null as SettingsData | null,
+    settingsLoading: false,
+    settingsError: '',
     bootstrapped: false,
     _reqSeq: {} as Record<string, number>,
     _searchSeq: 0,
+    _settingsSeq: 0,
   }),
   getters: {
     byKey: (s) => (key: string) => s.modules.find((m) => m.key === key),
@@ -224,6 +235,33 @@ export const useModulesStore = defineStore('modules', {
           this.searchLoading = false;
         }
       }
+    },
+
+    async loadSettings(force = false) {
+      if (this.settingsLoading && !force) return;
+      const seq = ++this._settingsSeq;
+      this.settingsLoading = true;
+      this.settingsError = '';
+      try {
+        const data = await fetchSettings();
+        if (this._settingsSeq !== seq) return;
+        this.settings = data;
+      } catch (err) {
+        if (this._settingsSeq !== seq) return;
+        this.settingsError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Data pengaturan tidak dapat dimuat.';
+      } finally {
+        if (this._settingsSeq === seq) {
+          this.settingsLoading = false;
+        }
+      }
+    },
+
+    async openSettings() {
+      useWindowManager().open('settings', 'Pengaturan');
+      await this.loadSettings(true);
     },
   },
 });

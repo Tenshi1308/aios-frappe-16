@@ -251,3 +251,46 @@ export interface BootstrapData {
   modules: ModuleMeta[];
   csrf_token: string;
 }
+
+export type SettingsResetSource = 'scheduled' | 'unknown';
+
+export interface SettingsData {
+  profile: {
+    name: string;
+    persona: string | null;
+    status: string;
+  };
+  company: {
+    id: string;
+    name: string;
+    currency: string;
+  };
+  quota: {
+    limit: number;
+    used: number;
+    remaining: number | null;
+    percent_used: number | null;
+  };
+  reset: {
+    at: string | null;
+    at_label: string | null;
+    seconds_remaining: number | null;
+    source: SettingsResetSource;
+    scheduler_active: boolean;
+  };
+}
+
+export interface ModulesApi {
+  fetchBootstrap(): Promise<BootstrapData>;
+  fetchModule(
+    key: string,
+    params?: { page?: number; pageSize?: number; filters?: ModuleFilters },
+  ): Promise<ModuleDetailData>;
+  fetchList(
+    key: string,
+    doctype: string,
+    params?: { page?: number; pageSize?: number; filters?: ModuleFilters },
+  ): Promise<ModuleListData>;
+  search(q: string, limit?: number): Promise<SearchResult[]>;
+  fetchSettings(): Promise<SettingsData>;
+}

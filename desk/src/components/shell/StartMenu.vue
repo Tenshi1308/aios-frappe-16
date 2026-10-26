@@ -33,6 +33,11 @@ function openModule(key: string) {
   ui.closeFlyouts();
   void modules.openModule(key);
 }
+
+function openSettings() {
+  ui.closeFlyouts();
+  void modules.openSettings();
+}
 </script>
 
 <template>
@@ -88,6 +93,9 @@ function openModule(key: string) {
         </div>
       </div>
       <div class="power-wrap">
+        <button class="tb-btn" aria-label="Pengaturan" @click="openSettings">
+          <AppIcon name="gear" :size="18" />
+        </button>
         <button class="tb-btn" :class="{ on: powerOpen }" aria-label="Opsi daya" @click="powerOpen = !powerOpen">
           <AppIcon name="power" :size="18" />
         </button>

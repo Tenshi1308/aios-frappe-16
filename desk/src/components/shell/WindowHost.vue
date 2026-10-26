@@ -8,6 +8,7 @@ import AboutWindow from '../windows/AboutWindow.vue';
 import ArtifactWindow from '../windows/ArtifactWindow.vue';
 import FilesWindow from '../windows/FilesWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
+import SettingsWindow from '../windows/SettingsWindow.vue';
 import ModuleWindow from '../module/ModuleWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
@@ -52,6 +53,7 @@ defineExpose({ openAbout });
       </header>
       <div class="win-body">
         <AboutWindow v-if="w.id === 'about'" />
+        <SettingsWindow v-else-if="w.id === 'settings'" />
         <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
         <FilesWindow v-else-if="w.id === 'files'" />
         <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
