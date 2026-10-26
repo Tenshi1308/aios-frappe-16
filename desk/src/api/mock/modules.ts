@@ -1,5 +1,6 @@
 import type {
   BootstrapData,
+  DomainMeta,
   ModuleDetailData,
   ModuleFilters,
   ModuleListData,
@@ -12,6 +13,23 @@ import type {
 import { ALLOWED_THEMES, normalizeTheme } from '../../utils/theme';
 
 let mockThemeValue: SettingsTheme = 'Automatic';
+
+const MOCK_DOMAINS: DomainMeta[] = [
+  {
+    key: 'sales',
+    label: 'Sales',
+    icon: 'tag',
+    color_token: 'domain-sales',
+    module_count: 4,
+  },
+  {
+    key: 'finance',
+    label: 'Finance',
+    icon: 'wallet',
+    color_token: 'domain-finance',
+    module_count: 3,
+  },
+];
 
 const MOCK_MODULES: ModuleMeta[] = [
   {
@@ -62,6 +80,7 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
       currency: 'IDR',
     },
     agents: [],
+    domains: MOCK_DOMAINS,
     modules: MOCK_MODULES,
     csrf_token: 'mock-csrf-token',
   };

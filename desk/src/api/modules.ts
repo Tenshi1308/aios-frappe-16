@@ -3,6 +3,7 @@ import type {
   BootstrapData,
   Branch,
   BranchWorker,
+  DomainMeta,
   ModuleCard,
   ModuleCardFormat,
   ModuleCardMeta,
@@ -116,6 +117,18 @@ function mapCardMetas(raw: unknown): ModuleCardMeta[] {
       format: asCardFormat(c.format),
       scope: asCardScope(c.scope),
     }));
+}
+
+function mapDomainMeta(raw: unknown): DomainMeta | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.key !== 'string' || !raw.key) return null;
+  return {
+    key: raw.key,
+    label: asString(raw.label, raw.key),
+    icon: asString(raw.icon, 'tag'),
+    color_token: asString(raw.color_token, `domain-${raw.key}`),
+    module_count: Math.max(0, Math.trunc(asNumber(raw.module_count, 0))),
+  };
 }
 
 function mapModuleMeta(raw: unknown): ModuleMeta | null {
@@ -261,6 +274,9 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
   if (!userId || !companyId || !currency || !csrfToken) {
     throw new ApiError('Data bootstrap desktop tidak lengkap.');
   }
+  const domains = Array.isArray(raw.domains)
+    ? raw.domains.map(mapDomainMeta).filter((d): d is DomainMeta => d !== null)
+    : [];
   const modules = Array.isArray(raw.modules)
     ? raw.modules.map(mapModuleMeta).filter((m): m is ModuleMeta => m !== null)
     : [];
@@ -275,6 +291,7 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
       currency,
     },
     agents: mapBranches(raw.agents),
+    domains,
     modules,
     csrf_token: csrfToken,
   };

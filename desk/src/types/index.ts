@@ -170,6 +170,14 @@ export interface ModuleCardMeta {
   scope: ModuleCardScope;
 }
 
+export interface DomainMeta {
+  key: string;
+  label: string;
+  icon: string;
+  color_token: string;
+  module_count: number;
+}
+
 export interface ModuleMeta {
   key: string;
   label: string;
@@ -248,6 +256,7 @@ export interface BootstrapData {
     currency: string;
   };
   agents: Branch[];
+  domains: DomainMeta[];
   modules: ModuleMeta[];
   csrf_token: string;
 }

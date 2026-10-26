@@ -23,6 +23,7 @@ export interface StreamHandlers {
   onTrace?: (event: TraceEvent) => void;
   onArtifact?: (artifact: ArtifactEvent) => void;
   onOpenModule?: (moduleKey: string) => void;
+  onOpenDomain?: (domainKey: string) => void;
   onDone?: (tokens?: number) => void;
 }
 
@@ -275,6 +276,8 @@ export async function streamChat(
           handlers.onArtifact?.(event.artifact as ArtifactEvent);
         } else if (event.type === 'open_module' && typeof event.module === 'string' && event.module.trim()) {
           handlers.onOpenModule?.(event.module.trim());
+        } else if (event.type === 'open_domain' && typeof event.domain === 'string' && event.domain.trim()) {
+          handlers.onOpenDomain?.(event.domain.trim());
         } else if (event.type === 'done') {
           const tokens = typeof event.tokens === 'number' ? event.tokens : undefined;
           handlers.onDone?.(tokens);

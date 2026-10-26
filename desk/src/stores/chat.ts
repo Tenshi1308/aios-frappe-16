@@ -266,6 +266,9 @@ export const useChatStore = defineStore('chat', {
             onOpenModule: (moduleKey) => {
               void useModulesStore().openModule(moduleKey);
             },
+            onOpenDomain: (domainKey) => {
+              useModulesStore().openDomain(domainKey);
+            },
             onDone: (tokens) => {
               const list = this.threads[threadKey];
               const completedConversationId = this.currentConversation[branch];

@@ -10,6 +10,7 @@ import {
 import { useWindowManager } from '../composables/useWindowManager';
 import { useSessionStore } from './session';
 import type {
+  DomainMeta,
   ModuleDetailData,
   ModuleFilters,
   ModuleMeta,
@@ -25,6 +26,7 @@ export interface ModuleEntryState extends ModuleDetailData {
 
 export const useModulesStore = defineStore('modules', {
   state: () => ({
+    domains: [] as DomainMeta[],
     modules: [] as ModuleMeta[],
     activeKey: null as string | null,
     moduleData: {} as Record<string, ModuleEntryState>,
@@ -45,6 +47,7 @@ export const useModulesStore = defineStore('modules', {
     _settingsSeq: 0,
   }),
   getters: {
+    domainByKey: (s) => (key: string) => s.domains.find((d) => d.key === key),
     byKey: (s) => (key: string) => s.modules.find((m) => m.key === key),
     grouped: (s) => {
       const map = new Map<string, ModuleMeta[]>();
@@ -66,11 +69,13 @@ export const useModulesStore = defineStore('modules', {
       this.loading = true;
       try {
         const data = await fetchBootstrap();
+        this.domains = data.domains ?? [];
         this.modules = data.modules;
         this.bootstrapped = true;
       } catch {
         // Bootstrap modul tidak boleh menjatuhkan shell (mis. Administrator ditolak _require_active_client).
         if (!this.bootstrapped) {
+          this.domains = [];
           this.modules = [];
         }
       } finally {
@@ -111,6 +116,13 @@ export const useModulesStore = defineStore('modules', {
           this.loading = Object.values(this.loadingByKey).some(Boolean);
         }
       }
+    },
+
+    openDomain(key: string) {
+      if (!key) return;
+      const meta = this.domainByKey(key);
+      const title = meta?.label ?? key;
+      useWindowManager().open(`domain:${key}`, title);
     },
 
     async openModule(key: string) {

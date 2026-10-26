@@ -66,6 +66,10 @@ defineExpose({ openAbout });
           v-else-if="w.id.startsWith('module:')"
           :module-key="w.id.slice(7)"
         />
+        <!-- fase 3d-2 -->
+        <div v-else-if="w.id.startsWith('domain:')" class="win-placeholder">
+          Jendela bidang belum tersedia.
+        </div>
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />
     </div>
