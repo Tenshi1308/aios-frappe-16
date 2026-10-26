@@ -31,7 +31,7 @@ Form email + password, ditambah tautan ke pendaftaran mandiri. Kegagalan menampi
 - **Taskbar** di bawah: tombol mulai, pencarian, daftar agent, jam, indikator status koneksi.
 - **Area desktop**: jendela-jendela yang bisa dibuka, dipindah, diperkecil, dan ditutup.
 - **Flyout**: pencarian (`Ctrl+K`) dan daftar agent (`Ctrl+J`). `Esc` menutup.
-- **Tema**: terang dan gelap, mengikuti preferensi sistem, bisa dipaksa lewat atribut tema.
+- **Tema**: tiga opsi — `Automatic` (*Ikuti sistem*, default; menghapus atribut `data-theme` pada `<html>` sehingga mengikuti `prefers-color-scheme`), `Light` (`data-theme="light"`), dan `Dark` (`data-theme="dark"`). Preferensi disimpan di field bawaan Frappe `User.desk_theme` lewat endpoint `frappe.core.doctype.user.user.switch_theme` dan dibaca dari `desktop.settings` (`theme.value`, `theme.options`). Saat boot (`main.ts`), `localStorage` (`aios.desk.theme`) dibaca semata-mata untuk menghilangkan kedipan awal; `User.desk_theme` dari server tetap menjadi sumber kebenaran dan menimpa cache bila berbeda.
 
 ### 2.4. Panel Agent
 
@@ -115,9 +115,10 @@ Modul menampilkan **daftar dokumen** dan **kartu angka** dari ERPNext. Datanya d
 
 ### 6.1. Jendela Pengaturan (*Settings*)
 
-Jendela **Pengaturan** (`desk/src/components/windows/SettingsWindow.vue`, window ID `settings`, dibuka dari Start Menu) menampilkan informasi akun dan kuota secara **baca saja** tanpa form input atau aksi mutasi:
+Jendela **Pengaturan** (`desk/src/components/windows/SettingsWindow.vue`, window ID `settings`, dibuka dari Start Menu) menampilkan informasi akun, company, dan kuota site secara **baca saja**, ditambah satu kontrol preferensi **Tema tampilan**:
 
 - **Profil pengguna:** `name` (`User.full_name` atau `user`), `persona` (`User.aios_persona`), dan `status` (`User.aios_status`).
+- **Tema tampilan:** kontrol radio (`Ikuti sistem` / `Terang` / `Gelap`) yang di-render dari `data.theme.options` (`["Automatic", "Light", "Dark"]`) tanpa literal opsi di `<template>`. Perubahan tema memanggil `POST /api/method/frappe.core.doctype.user.user.switch_theme` dengan header `X-Frappe-CSRF-Token` (tanpa endpoint tulis baru di `aios_v1`); bila gagal, menampilkan `.settings-error` tanpa mengubah `data.theme.value` maupun atribut `data-theme`.
 - **Company aktif:** `name` dan `currency` dari company tingkat site (`AIOS Setting.default_company` / `Global Defaults`).
 - **Kuota site:** menampilkan plafon tingkat site (`AIOS Setting.site_token_limit` dan `site_tokens_used`, bukan per user) dengan label eksplisit **Kuota site**, progress bar (`percent_used`, dibatasi 100% untuk lebar bar), nilai `terpakai / limit`, serta `remaining` (bernilai `null` bila `limit <= 0`).
 - **Jadwal reset kuota site:** waktu reset berikutnya diambil server dari method internal Frappe `ScheduledJobType.get_next_execution()` untuk job `aios_v1.services.usage.reset_daily_counters` (method internal scheduler Frappe, bukan API publik, dipakai agar tidak menduplikasi parsing cron). Karena keduanya berzona waktu naive site (`Asia/Jakarta`), server menghitung `seconds_remaining` (`int`) dan `at_label` (`HH:mm`) sehingga browser tidak menafsirkan ulang zona waktu dari string ISO. Scheduler Frappe memeriksa antrean tiap `DEFAULT_SCHEDULER_TICK = 4 * 60` detik (4 menit sejajar kelipatan jam), sehingga eksekusi nyata berlangsung 0–4 menit setelah `00:00`; ketika hitung mundur mencapai `0`, UI menampilkan **"Menunggu reset berikutnya"**. Bila scheduler tidak aktif (`is_scheduler_inactive(verbose=False)`) atau job tidak ditemukan (`source === "unknown"` / `at === null`), UI wajib menampilkan peringatan **"Reset belum terjadwal"** tanpa angka hitung mundur.
@@ -220,7 +221,7 @@ Folder kerja bernama `desk/` selama migrasi. Setelah paritas, `frontend/` (Next.
 | `GET /api/method/aios_v1.api.desktop.module` | `module`, `cards[]`, `doctypes[]`, `rows[]`, `pagination` (`page`, `page_size`, `total`, `total_pages`); menerima `module`, `page`, `page_size`, `filters` JSON (`date_from`, `date_to`, `status`, `party` sesuai allowlist modul) |
 | `GET /api/method/aios_v1.api.desktop.list` | `module`, `doctype`, `rows[]`, `pagination`; menerima `module`, `doctype`, `page`, `page_size`, `filters` |
 | `GET /api/method/aios_v1.api.desktop.search` | `results[]` berisi item modul (`type: "module"`, `module`) dan dokumen (`type: "document"`, `module`, `doctype`, `name`, `row`) yang di-scope ke company aktif; di UI (`desk/src/api/modules.ts`) dinormalisasi menjadi `SearchResult` (`kind: "module" \| "document"`), klik item modul maupun dokumen membuka jendela `module:<key>` |
-| `GET /api/method/aios_v1.api.desktop.settings` | `profile{name,persona,status}`, `company{id,name,currency}`, `quota{limit,used,remaining,percent_used}`, `reset{at,at_label,seconds_remaining,source,scheduler_active}`; baca-saja untuk `AIOS Client` aktif tanpa mengekspos field rahasia `AIOS Setting` |
+| `GET /api/method/aios_v1.api.desktop.settings` | `profile{name,persona,status}`, `company{id,name,currency}`, `quota{limit,used,remaining,percent_used}`, `reset{at,at_label,seconds_remaining,source,scheduler_active}`, `theme{value,options}`; baca-saja untuk `AIOS Client` aktif tanpa mengekspos field rahasia `AIOS Setting` (`User.desk_theme` kosong/invalid dinormalisasi ke `"Automatic"`, perubahan tema ditulis lewat `POST /api/method/frappe.core.doctype.user.user.switch_theme`) |
 | `POST /api/chat/<branch>/stream` | stream SSE; memakai ulang dispatcher `/stream`; request membawa `file_ids[]` opsional untuk lampiran; mendukung event kontrol UI `{"type": "open_module", "module": "<key>"}` dari manager |
 | `POST /api/chat/upload` | multipart `file` + `conversationId` (atau `branch` bila belum ada conversation); membuat Private `File` awalnya terikat conversation; respons `conversationId` + metadata `attachment` — H5 fase 1 |
 
