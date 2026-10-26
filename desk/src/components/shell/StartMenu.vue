@@ -121,6 +121,6 @@ function openSettings() {
 .foot-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-4);
 }
 </style>

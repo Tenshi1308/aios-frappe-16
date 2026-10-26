@@ -158,7 +158,7 @@ onMounted(load);
 .approval-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
   height: 100%;
   overflow: auto;
 }
@@ -168,32 +168,32 @@ onMounted(load);
 .ac-result {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 12px;
-  padding: 8px 10px;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-8) var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .ac-meta span b {
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--fw-600);
 }
 .ac-json {
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
 }
 .ac-json b {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-transform: uppercase;
 }
 .ac-json pre {
   margin: 0;
   overflow: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg);
   white-space: pre-wrap;
   word-break: break-word;
@@ -214,28 +214,28 @@ onMounted(load);
 }
 .ac-code {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--faint);
 }
 .ac-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
   margin-top: auto;
 }
 .ac-actions textarea {
   resize: vertical;
-  padding: 6px 8px;
+  padding: var(--space-6) var(--space-8);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface);
   color: var(--fg);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .ac-btns {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   justify-content: flex-end;
 }
 .ac-btns .btn.primary {

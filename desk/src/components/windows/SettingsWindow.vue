@@ -222,9 +222,9 @@ function refresh() {
 .settings-win {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
   height: 100%;
-  padding: 14px 16px;
+  padding: var(--space-14) var(--space-16);
   color: var(--fg);
   font-family: var(--font-ui);
   overflow-y: auto;
@@ -234,28 +234,28 @@ function refresh() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 10px;
+  gap: var(--space-12);
+  padding-bottom: var(--space-10);
   border-bottom: 1px solid var(--line);
 }
 
 .settings-title-wrap {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .settings-title {
   margin: 0;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-700);
   line-height: 1.2;
 }
 
 .settings-sub {
   display: block;
-  margin-top: 2px;
-  font-size: 11.5px;
+  margin-top: var(--space-2);
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
@@ -263,15 +263,15 @@ function refresh() {
 .settings-retry-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 11px;
-  border-radius: 8px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-11);
+  border-radius: var(--radius-8);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--fg);
   font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
   cursor: pointer;
 }
 
@@ -289,34 +289,34 @@ function refresh() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 12px;
-  border-radius: 9px;
+  gap: var(--space-10);
+  padding: var(--space-9) var(--space-12);
+  border-radius: var(--radius-9);
   border: 1px solid var(--bad);
   background: var(--bad-soft);
   color: var(--bad);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 .settings-state {
-  padding: 28px 14px;
+  padding: var(--space-28) var(--space-14);
   text-align: center;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 .settings-sections {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .settings-card {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 14px;
-  border-radius: 10px;
+  gap: var(--space-10);
+  padding: var(--space-12) var(--space-14);
+  border-radius: var(--radius-10);
   border: 1px solid var(--line);
   background: var(--surface);
 }
@@ -325,23 +325,23 @@ function refresh() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .card-head h5 {
   margin: 0;
-  font-size: 12.5px;
-  font-weight: 700;
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-700);
   color: var(--fg);
 }
 
 .status-pill,
 .currency-pill,
 .quota-pct {
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-600);
   background: var(--surface-2);
   color: var(--muted);
 }
@@ -353,26 +353,26 @@ function refresh() {
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 10px;
+  gap: var(--space-10);
   margin: 0;
 }
 
 .meta-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-3);
 }
 
 .meta-item dt {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-600);
   color: var(--muted);
 }
 
 .meta-item dd {
   margin: 0;
-  font-size: 13.5px;
-  font-weight: 600;
+  font-size: var(--fs-13-5);
+  font-weight: var(--fw-600);
   color: var(--fg);
 }
 
@@ -383,16 +383,16 @@ function refresh() {
 .quota-bar-track {
   width: 100%;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 
 .quota-bar-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
-  transition: width 0.2s ease;
+  transition: width var(--dur-20) ease;
 }
 
 .quota-bar-fill[data-state='warn'] {
@@ -404,30 +404,30 @@ function refresh() {
 }
 
 .reset-warn {
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-8);
   background: var(--warn-soft);
   color: var(--warn);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-600);
 }
 
 .reset-info {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 13px;
+  gap: var(--space-10);
+  font-size: var(--fs-13);
 }
 
 .reset-time {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 
 .spin {
-  animation: settings-spin 0.9s linear infinite;
+  animation: settings-spin var(--dur-90) linear infinite;
 }
 
 @keyframes settings-spin {

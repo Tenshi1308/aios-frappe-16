@@ -186,7 +186,7 @@ onMounted(() => {
 .files-window {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
   height: 100%;
   min-height: 280px;
   color: var(--fg);
@@ -195,20 +195,20 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-10);
   min-height: 32px;
 }
 .files-breadcrumb {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-8);
   min-width: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .files-breadcrumb span:first-child {
   color: var(--fg);
-  font-weight: 700;
+  font-weight: var(--fw-700);
 }
 .files-crumb-current {
   overflow: hidden;
@@ -228,12 +228,12 @@ onMounted(() => {
 .files-refresh {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-9);
   border-color: var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .files-refresh:hover:not(:disabled),
 .files-row:hover {
@@ -250,39 +250,39 @@ onMounted(() => {
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--surface);
 }
 .files-sidebar {
   overflow: auto;
-  padding: 8px;
+  padding: var(--space-8);
   border-right: 1px solid var(--line);
   background: var(--surface-2);
 }
 .files-sidebar-title {
-  padding: 5px 7px 8px;
+  padding: var(--space-5) var(--space-7) var(--space-8);
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--fs-10);
+  font-weight: var(--fw-700);
   text-transform: uppercase;
 }
 .files-sidebar-note,
 .files-empty {
-  padding: 18px 12px;
+  padding: var(--space-18) var(--space-12);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .files-tree-branch,
 .files-tree-conversation {
   display: flex;
   align-items: center;
   width: 100%;
-  gap: 7px;
-  padding: 7px;
-  border-radius: 6px;
+  gap: var(--space-7);
+  padding: var(--space-7);
+  border-radius: var(--radius-6);
   background: transparent;
   text-align: left;
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .files-tree-branch span,
 .files-tree-conversation span {
@@ -295,7 +295,7 @@ onMounted(() => {
   background: var(--hover);
 }
 .files-tree-conversations {
-  padding-left: 12px;
+  padding-left: var(--space-12);
 }
 .files-tree-conversation.selected {
   border-color: var(--accent);
@@ -319,8 +319,8 @@ onMounted(() => {
   display: grid;
   grid-template-columns: minmax(130px, 1fr) 58px 72px minmax(112px, 0.7fr);
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-10);
   text-align: left;
 }
 .files-list-head {
@@ -329,14 +329,14 @@ onMounted(() => {
   border-bottom: 1px solid var(--line);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--fs-10);
+  font-weight: var(--fw-700);
 }
 .files-row {
   width: 100%;
   border-bottom: 1px solid var(--line);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .files-row > span:not(.files-name) {
   overflow: hidden;
@@ -348,7 +348,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   min-width: 0;
-  gap: 7px;
+  gap: var(--space-7);
 }
 .files-name :deep(svg) {
   flex: 0 0 auto;

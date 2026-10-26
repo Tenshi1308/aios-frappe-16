@@ -301,7 +301,7 @@ async function onNextPage() {
 .mod-win {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-12);
   height: 100%;
   min-height: 280px;
   color: var(--fg);
@@ -310,18 +310,18 @@ async function onNextPage() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-10);
 }
 .mod-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
   min-width: 0;
 }
 .mod-icon {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   display: grid;
   place-items: center;
   background: var(--accent-soft);
@@ -330,25 +330,25 @@ async function onNextPage() {
 }
 .mod-title h4 {
   margin: 0;
-  font-size: 14px;
-  font-weight: 700;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-700);
 }
 .mod-title small {
   display: block;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
 }
 .mod-refresh {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--surface-2);
   color: var(--fg);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
 }
 .mod-refresh:hover:not(:disabled) {
   background: var(--hover);
@@ -361,12 +361,12 @@ async function onNextPage() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-12);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-8);
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .mod-error {
   border-color: var(--bad);
@@ -376,95 +376,95 @@ async function onNextPage() {
 .mod-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 10px;
+  gap: var(--space-10);
 }
 .mod-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: var(--space-6);
+  padding: var(--space-10) var(--space-12);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   background: var(--surface-2);
 }
 .mod-card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: var(--space-6);
 }
 .mod-card-label {
   color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: var(--fs-11-5);
+  font-weight: var(--fw-600);
 }
 .mod-card-scope {
-  padding: 1px 6px;
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--faint);
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .mod-card-val {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-6);
 }
 .mod-card-val b {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: var(--fs-17);
+  font-weight: var(--fw-700);
   font-variant-numeric: tabular-nums;
 }
 .mod-card-val small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .mod-filters {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px;
-  padding: 10px;
+  gap: var(--space-8);
+  padding: var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   background: var(--surface-2);
 }
 .mod-filter-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-4);
   flex: 1 1 130px;
   min-width: 120px;
 }
 .mod-filter-field span {
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-600);
 }
 .mod-filter-field input {
-  padding: 6px 8px;
+  padding: var(--space-6) var(--space-8);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .mod-filter-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
 }
 .mod-state {
   flex: 1;
   display: grid;
   place-items: center;
-  padding: 24px 12px;
+  padding: var(--space-24) var(--space-12);
   border: 1px dashed var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   text-align: center;
 }
 .mod-table-wrap {
@@ -472,17 +472,17 @@ async function onNextPage() {
   min-height: 0;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-10);
   background: var(--surface);
 }
 .mod-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .mod-table th,
 .mod-table td {
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
@@ -492,8 +492,8 @@ async function onNextPage() {
   top: 0;
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-700);
 }
 .mod-table th.num,
 .mod-table td.num {
@@ -507,17 +507,17 @@ async function onNextPage() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding-top: 2px;
+  gap: var(--space-10);
+  padding-top: var(--space-2);
 }
 .mod-page-info {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
 }
 .mod-page-btns {
   display: flex;
-  gap: 6px;
+  gap: var(--space-6);
 }
 .mod-page-btns button:disabled {
   opacity: 0.5;

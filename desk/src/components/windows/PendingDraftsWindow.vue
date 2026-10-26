@@ -42,7 +42,7 @@ onMounted(() => {
 .pending-drafts {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
   height: 100%;
   overflow: auto;
 }
@@ -50,17 +50,17 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-8);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .pd-item {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  padding: 9px 11px;
+  gap: var(--space-3);
+  padding: var(--space-9) var(--space-11);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--fg);
   text-align: left;
@@ -70,14 +70,14 @@ onMounted(() => {
   background: var(--hover);
 }
 .pd-item b {
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .pd-item small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 .pd-empty {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 </style>

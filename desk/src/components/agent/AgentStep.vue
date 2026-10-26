@@ -91,7 +91,7 @@ const subtext = computed(() => traceStepSubtext(props.step));
   display: flex;
   flex-direction: column;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface);
   overflow: hidden;
 }
@@ -101,13 +101,13 @@ const subtext = computed(() => traceStepSubtext(props.step));
 .as-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 5px 9px;
+  gap: var(--space-7);
+  padding: var(--space-5) var(--space-9);
   background: transparent;
   border: none;
   color: var(--fg);
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-align: left;
   cursor: pointer;
 }
@@ -130,20 +130,20 @@ const subtext = computed(() => traceStepSubtext(props.step));
 }
 .as-running {
   display: inline-flex;
-  gap: 2px;
+  gap: var(--space-2);
 }
 .as-running i {
   width: 4px;
   height: 4px;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
   background: var(--ok);
-  animation: as-blink 1s ease-in-out infinite;
+  animation: as-blink var(--dur-100) ease-in-out infinite;
 }
 .as-running i:nth-child(2) {
-  animation-delay: 0.2s;
+  animation-delay: var(--dur-20);
 }
 .as-running i:nth-child(3) {
-  animation-delay: 0.4s;
+  animation-delay: var(--dur-40);
 }
 @keyframes as-blink {
   0%, 100% { opacity: 0.25; }
@@ -157,9 +157,9 @@ const subtext = computed(() => traceStepSubtext(props.step));
   color: var(--faint);
 }
 .as-sub {
-  padding: 0 9px 5px 29px;
+  padding: 0 var(--space-9) var(--space-5) var(--space-29);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -167,26 +167,26 @@ const subtext = computed(() => traceStepSubtext(props.step));
 .as-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 9px 8px 29px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-9) var(--space-8) var(--space-29);
   border-top: 1px solid var(--line);
   background: var(--surface-2);
 }
 .as-section {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
 }
 .as-section-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-10);
   text-transform: uppercase;
 }
 .as-section pre {
   margin: 0;
   overflow: auto;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg);
   white-space: pre-wrap;
   word-break: break-word;
@@ -194,9 +194,9 @@ const subtext = computed(() => traceStepSubtext(props.step));
 }
 .as-status {
   align-self: flex-start;
-  padding: 1px 8px;
-  border-radius: 8px;
-  font-size: 10px;
+  padding: var(--space-1) var(--space-8);
+  border-radius: var(--radius-8);
+  font-size: var(--fs-10);
   color: var(--ok);
   background: var(--ok-soft);
 }

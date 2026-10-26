@@ -36,6 +36,99 @@
      branch tak dikenal memakai fallback --accent pada .agent-dot. */
   --agent-accent-finance: var(--ok);
   --agent-accent-sales: var(--accent);
+
+  --space-1: 1px;
+  --space-2: 2px;
+  --space-3: 3px;
+  --space-4: 4px;
+  --space-5: 5px;
+  --space-6: 6px;
+  --space-7: 7px;
+  --space-8: 8px;
+  --space-9: 9px;
+  --space-10: 10px;
+  --space-11: 11px;
+  --space-12: 12px;
+  --space-13: 13px;
+  --space-14: 14px;
+  --space-16: 16px;
+  --space-18: 18px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-28: 28px;
+  --space-29: 29px;
+
+  --radius-3: 3px;
+  --radius-4: 4px;
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-8: 8px;
+  --radius-9: 9px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-13: 13px;
+  --radius-14: 14px;
+  --radius-20: 20px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+  --radius-window-foot: 0 0 14px 14px;
+
+  --fs-10: 10px;
+  --fs-11: 11px;
+  --fs-11-5: 11.5px;
+  --fs-12: 12px;
+  --fs-12-5: 12.5px;
+  --fs-13: 13px;
+  --fs-13-5: 13.5px;
+  --fs-14: 14px;
+  --fs-14-5: 14.5px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+  --fs-24: 24px;
+  --fs-30: 30px;
+
+  --fw-400: 400;
+  --fw-500: 500;
+  --fw-600: 600;
+  --fw-700: 700;
+  --fw-800: 800;
+
+  --z-base: 1;
+  --z-raised: 2;
+  --z-taskbar: 50;
+  --z-panel: 55;
+  --z-flyout: 60;
+  --z-toast: 70;
+
+  --dur-12: 0.12s;
+  --dur-15: 0.15s;
+  --dur-18: 0.18s;
+  --dur-20: 0.2s;
+  --dur-22: 0.22s;
+  --dur-30: 0.3s;
+  --dur-40: 0.4s;
+  --dur-45: 0.45s;
+  --dur-50: 0.5s;
+  --dur-90: 0.9s;
+  --dur-100: 1s;
+  --dur-110: 1.1s;
+  --dur-240: 2.4s;
+  --dur-instant: 0.01ms;
+
+  --glass-blur-sm: blur(24px) saturate(1.3);
+  --glass-blur-md: blur(26px) saturate(1.4);
+  --glass-blur-lg: blur(30px) saturate(1.4);
+  --panel-w: 410px;
+
+  --boot-bg: var(--surface);
+  --boot-fg: var(--fg);
+  --boot-bar: var(--line);
+  --boot-status: var(--muted);
+  --boot-log: var(--faint);
+  --boot-log-ok: var(--ok);
+  --boot-skip: var(--faint);
 }
 
 [data-branch='finance'] {
@@ -75,6 +168,13 @@
     --press: rgba(255, 255, 255, 0.12);
     --shadow: 0 24px 70px -14px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
     --shadow-sm: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+    --boot-bg: #000;
+    --boot-fg: #e6ebef;
+    --boot-bar: #1c232a;
+    --boot-status: #8d9aa6;
+    --boot-log: #5f6c78;
+    --boot-log-ok: #43c08a;
+    --boot-skip: #4d5964;
     color-scheme: dark;
   }
 }
@@ -107,5 +207,23 @@
   --press: rgba(255, 255, 255, 0.12);
   --shadow: 0 24px 70px -14px rgba(0, 0, 0, 0.7), 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-sm: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  --boot-bg: #000;
+  --boot-fg: #e6ebef;
+  --boot-bar: #1c232a;
+  --boot-status: #8d9aa6;
+  --boot-log: #5f6c78;
+  --boot-log-ok: #43c08a;
+  --boot-skip: #4d5964;
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --boot-bg: var(--surface);
+  --boot-fg: var(--fg);
+  --boot-bar: var(--line);
+  --boot-status: var(--muted);
+  --boot-log: var(--faint);
+  --boot-log-ok: var(--ok);
+  --boot-skip: var(--faint);
+  color-scheme: light;
 }

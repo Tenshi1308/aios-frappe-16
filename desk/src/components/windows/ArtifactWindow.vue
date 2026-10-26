@@ -128,20 +128,20 @@ onMounted(loadPreview);
 .artifact-win {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
   height: 100%;
   overflow: auto;
 }
 .aw-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
+  gap: var(--space-8);
+  padding: var(--space-7) var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .aw-meta b {
   overflow: hidden;
@@ -149,22 +149,22 @@ onMounted(loadPreview);
   white-space: nowrap;
 }
 .aw-chip {
-  padding: 1px 7px;
-  border-radius: 8px;
+  padding: var(--space-1) var(--space-7);
+  border-radius: var(--radius-8);
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 10px;
+  font-size: var(--fs-10);
 }
 .aw-size {
   color: var(--muted);
 }
 .aw-note {
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 .aw-error {
   color: var(--bad);
@@ -172,14 +172,14 @@ onMounted(loadPreview);
 .aw-text {
   flex: 1;
   margin: 0;
-  padding: 10px;
+  padding: var(--space-10);
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -188,20 +188,20 @@ onMounted(loadPreview);
   width: 100%;
   min-height: 300px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface);
 }
 .aw-download {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-12);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-12);
   text-decoration: none;
 }
 .aw-download:hover {
@@ -211,18 +211,18 @@ onMounted(loadPreview);
   flex: 1;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
 }
 .aw-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg);
 }
 .aw-table th,
 .aw-table td {
-  padding: 4px 8px;
+  padding: var(--space-4) var(--space-8);
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
@@ -232,16 +232,16 @@ onMounted(loadPreview);
   top: 0;
   background: var(--surface);
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--fw-600);
 }
 .aw-md {
   flex: 1;
   overflow: auto;
-  padding: 10px;
+  padding: var(--space-10);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   background: var(--surface-2);
   color: var(--fg);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 </style>
