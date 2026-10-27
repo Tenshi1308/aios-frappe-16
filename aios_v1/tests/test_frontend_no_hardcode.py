@@ -26,6 +26,7 @@ DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
 START_MENU = SHELL_DIR / "StartMenu.vue"
 DESKTOP_VIEW = DESK_SRC / "views" / "DesktopView.vue"
 STORES_DIR = DESK_SRC / "stores"
+CHAT_STORE = STORES_DIR / "chat.ts"
 
 FORBIDDEN_SETTING_FIELDS = (
     "api_key",
@@ -187,6 +188,19 @@ class TestFrontendNoHardcode(unittest.TestCase):
                 offenders.append(f"{rel}: {match.group(0)}")
         self.assertEqual(offenders, [], f"Blok catch {{}} kosong di stores: {offenders}")
 
+    def test_no_silent_draft_load_error_in_chat_store(self):
+        self.assertTrue(CHAT_STORE.exists(), "desk/src/stores/chat.ts belum ada")
+        text = CHAT_STORE.read_text(encoding="utf-8")
+        silent_pattern = re.compile(
+            r"catch\s*(?:\([^)]*\))?\s*\{(?![^}]*pendingDraftsError)[^}]*pendingDrafts\s*=\s*\[\][^}]*\}"
+        )
+        self.assertIsNone(
+            silent_pattern.search(text),
+            "loadPendingDrafts di chat.ts masih menelan error tanpa menetapkan pendingDraftsError",
+        )
+        self.assertIn("pendingDraftsError", text)
+        self.assertIn("pendingDraftsLoading", text)
+
     def test_regex_detectors_catch_synthetic_violations(self):
         self.assertIsNotNone(COLOR_LITERAL_RE.search("color: #1a2b3c;"))
         self.assertIsNotNone(COLOR_LITERAL_RE.search("background: rgba(20, 30, 40, 0.5);"))
@@ -216,6 +230,18 @@ class TestFrontendNoHardcode(unittest.TestCase):
         synthetic_block = _extract_function_block(synthetic_buggy_func, "iconClick")
         self.assertIsNotNone(synthetic_block)
         self.assertIn(".run()", synthetic_block)
+
+        silent_draft_pattern = re.compile(
+            r"catch\s*(?:\([^)]*\))?\s*\{(?![^}]*pendingDraftsError)[^}]*pendingDrafts\s*=\s*\[\][^}]*\}"
+        )
+        self.assertIsNotNone(
+            silent_draft_pattern.search("try { await fetch(); } catch { this.pendingDrafts = []; }")
+        )
+        self.assertIsNone(
+            silent_draft_pattern.search(
+                "try { await fetch(); } catch (e) { this.pendingDrafts = []; this.pendingDraftsError = 'err'; }"
+            )
+        )
 
 
 if __name__ == "__main__":
