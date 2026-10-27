@@ -24,6 +24,8 @@ BASE_CSS = DESK_SRC / "styles" / "base.css"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
 DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
 START_MENU = SHELL_DIR / "StartMenu.vue"
+DESKTOP_VIEW = DESK_SRC / "views" / "DesktopView.vue"
+STORES_DIR = DESK_SRC / "stores"
 
 FORBIDDEN_SETTING_FIELDS = (
     "api_key",
@@ -65,6 +67,23 @@ DOMAIN_LITERAL_RE = re.compile(
 )
 
 API_MOCK_RE = re.compile(r"api/mock\b")
+EMPTY_CATCH_RE = re.compile(r"catch\s*(?:\([^)]*\))?\s*\{\s*\}")
+
+
+def _extract_function_block(text: str, func_name: str) -> str | None:
+    match = re.search(rf"function\s+{re.escape(func_name)}\s*\([^)]*\)\s*\{{", text)
+    if not match:
+        return None
+    start = match.end() - 1
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[match.start() : i + 1]
+    return text[match.start() :]
 
 
 def _iter_source_files(directory: Path):
@@ -150,6 +169,24 @@ class TestFrontendNoHardcode(unittest.TestCase):
                 offenders.append(path.relative_to(REPO_ROOT).as_posix())
         self.assertEqual(offenders, [], f"Referensi api/mock di jalur produksi: {offenders}")
 
+    def test_desktop_icon_click_does_not_call_run_directly(self):
+        self.assertTrue(DESKTOP_VIEW.exists(), "desk/src/views/DesktopView.vue belum ada")
+        text = DESKTOP_VIEW.read_text(encoding="utf-8")
+        block = _extract_function_block(text, "iconClick")
+        self.assertIsNotNone(block, "Fungsi iconClick tidak ditemukan di DesktopView.vue")
+        self.assertNotIn(".run()", block)
+        self.assertNotIn(".run(", block)
+
+    def test_no_empty_catch_in_stores(self):
+        self.assertTrue(STORES_DIR.exists(), "desk/src/stores belum ada")
+        offenders = []
+        for path in sorted(STORES_DIR.glob("*.ts")):
+            text = path.read_text(encoding="utf-8")
+            for match in EMPTY_CATCH_RE.finditer(text):
+                rel = path.relative_to(REPO_ROOT).as_posix()
+                offenders.append(f"{rel}: {match.group(0)}")
+        self.assertEqual(offenders, [], f"Blok catch {{}} kosong di stores: {offenders}")
+
     def test_regex_detectors_catch_synthetic_violations(self):
         self.assertIsNotNone(COLOR_LITERAL_RE.search("color: #1a2b3c;"))
         self.assertIsNotNone(COLOR_LITERAL_RE.search("background: rgba(20, 30, 40, 0.5);"))
@@ -170,6 +207,15 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIsNotNone(FORBIDDEN_SETTING_RE.search("const key = data.api_key;"))
         self.assertIsNotNone(FORBIDDEN_SETTING_RE.search("<span>{{ company_context_persona }}</span>"))
         self.assertIsNone(FORBIDDEN_SETTING_RE.search("<span>{{ data.quota.limit }}</span>"))
+
+        self.assertIsNotNone(EMPTY_CATCH_RE.search("try { await load(); } catch {}"))
+        self.assertIsNotNone(EMPTY_CATCH_RE.search("try { await load(); } catch (e) { }"))
+        self.assertIsNone(EMPTY_CATCH_RE.search("try { await load(); } catch (e) { handleError(e); }"))
+
+        synthetic_buggy_func = "function iconClick(d) { selectedIcon.value = d.id; d.run(); }"
+        synthetic_block = _extract_function_block(synthetic_buggy_func, "iconClick")
+        self.assertIsNotNone(synthetic_block)
+        self.assertIn(".run()", synthetic_block)
 
 
 if __name__ == "__main__":
