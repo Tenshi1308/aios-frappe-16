@@ -95,7 +95,7 @@ Agent dapat membuka modul dan membuat artefak. Aksi tulis **tidak pernah** langs
 
 ## 5. Artefak sebagai File & Jendela
 
-File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**. Approval Card H4 adalah event backend virtual; UI #12 fase 2a mengambil detail dari `get_draft` (jendela kartu dengan Setujui/Tolak, termasuk hasil gagal `executed:false` yang dijelaskan dengan code+message), daftar draft pending milik pemilik lewat `list_pending_drafts`, dan kartu tidak membuat `File`:
+File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**. Approval Card H4 adalah event backend virtual; UI #12 fase 2a mengambil detail dari `get_draft` (jendela kartu dengan Setujui/Tolak, termasuk hasil gagal `executed:false` yang dijelaskan dengan code+message), daftar draft pending milik pemilik lewat `list_pending_drafts`, dan kartu tidak membuat `File`. Daftar draft pending di jendela `PendingDraftsWindow` menampilkan status memuat, daftar kartu, dan kondisi kosong ("Tidak ada draft yang menunggu persetujuan.") hanya bila pemanggilan berhasil; bila pemanggilan gagal, error tidak ditelan melainkan ditampilkan sebagai banner `role="alert"` dengan tombol coba lagi, dilaporkan ke DocType `Error Log` via `log_client_error`, serta memunculkan badge indikator `!` di header Agent Panel (#12 fase 3d-2c):
 
 | Jenis | Tampilan |
 |---|---|
