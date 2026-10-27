@@ -44,23 +44,36 @@ interface DeskIcon {
   id: string;
   label: string;
   icon: string;
-  neutral: boolean;
+  colorToken?: string;
+  neutral?: boolean;
   run: () => void;
 }
-const desktopIcons = computed<DeskIcon[]>(() => [
-  { id: 'agents', label: 'AI Agents', icon: 'sparkle', neutral: false, run: () => ui.openAgent() },
-  { id: 'files', label: 'Files', icon: 'folder', neutral: true, run: () => wm.open('files', 'Files') },
-  {
-    id: 'about',
-    label: 'Tentang AIOS',
-    icon: 'desk',
-    neutral: true,
-    run: () => windowHost.value?.openAbout(),
-  },
-]);
+const desktopIcons = computed<DeskIcon[]>(() => {
+  const domainIcons: DeskIcon[] = modules.domains.map((d) => ({
+    id: `domain:${d.key}`,
+    label: d.label,
+    icon: d.icon || 'tag',
+    colorToken: d.color_token,
+    run: () => {
+      void modules.openDomain(d.key);
+    },
+  }));
+  const staticIcons: DeskIcon[] = [
+    { id: 'agents', label: 'AI Agents', icon: 'sparkle', neutral: false, run: () => ui.openAgent() },
+    { id: 'files', label: 'Files', icon: 'folder', neutral: true, run: () => wm.open('files', 'Files') },
+    {
+      id: 'about',
+      label: 'Tentang AIOS',
+      icon: 'desk',
+      neutral: true,
+      run: () => windowHost.value?.openAbout(),
+    },
+  ];
+  return [...domainIcons, ...staticIcons];
+});
 function iconClick(d: DeskIcon) {
-  if (props.narrow || window.matchMedia('(pointer: coarse)').matches) d.run();
-  else selectedIcon.value = d.id;
+  selectedIcon.value = d.id;
+  d.run();
 }
 
 function onKey(e: KeyboardEvent) {
@@ -91,7 +104,13 @@ function onKey(e: KeyboardEvent) {
           @dblclick="d.run()"
           @keydown.enter.prevent="d.run()"
         >
-          <span class="tile xl" :class="{ neutral: d.neutral }"><AppIcon :name="d.icon" :size="24" /></span>
+          <span
+            class="tile xl"
+            :class="{ neutral: d.neutral }"
+            :style="d.colorToken ? { background: `var(--${d.colorToken})` } : undefined"
+          >
+            <AppIcon :name="d.icon" :size="24" />
+          </span>
           <span>{{ d.label }}</span>
         </button>
       </div>

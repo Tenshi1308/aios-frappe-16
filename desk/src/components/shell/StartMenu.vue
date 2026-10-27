@@ -29,9 +29,9 @@ function openAgent(branchKey: string) {
   ui.openAgent();
 }
 
-function openModule(key: string) {
+function openDomain(key: string) {
   ui.closeFlyouts();
-  void modules.openModule(key);
+  void modules.openDomain(key);
 }
 
 function openSettings() {
@@ -48,6 +48,29 @@ function openSettings() {
         <span>Cari modul, dokumen, atau tanyakan agent</span>
         <kbd>Ctrl K</kbd>
       </button>
+
+      <div class="fl-head">
+        <h4>Bidang</h4>
+        <span v-if="modules.domains.length">{{ modules.domains.length }} bidang aktif</span>
+      </div>
+      <div v-if="modules.domains.length" class="mod-grid">
+        <button
+          v-for="d in modules.domains"
+          :key="d.key"
+          class="mod"
+          type="button"
+          @click="openDomain(d.key)"
+        >
+          <span class="tile lg" :style="{ background: `var(--${d.color_token})` }">
+            <AppIcon :name="d.icon || 'tag'" :size="20" />
+          </span>
+          <span>{{ d.label }}</span>
+        </button>
+      </div>
+      <div v-else class="empty-note">
+        {{ modules.loading ? 'Memuat bidang…' : 'Belum ada bidang aktif.' }}
+      </div>
+
       <div class="fl-head">
         <h4>AI agents</h4>
         <span>{{ branches.branches.length }} cabang aktif</span>
@@ -58,30 +81,6 @@ function openSettings() {
           {{ b.name }}
         </button>
         <span v-if="!branches.branches.length" class="empty-note">Belum ada agent aktif.</span>
-      </div>
-      <div class="fl-head">
-        <h4>Modul</h4>
-        <span v-if="modules.modules.length">{{ modules.modules.length }} modul</span>
-      </div>
-      <template v-if="modules.grouped.length">
-        <div v-for="grp in modules.grouped" :key="grp.group" class="sr-group">
-          <h5>{{ grp.group }}</h5>
-          <div class="agent-row">
-            <button
-              v-for="m in grp.items"
-              :key="m.key"
-              class="agent-pill"
-              type="button"
-              @click="openModule(m.key)"
-            >
-              <span class="tile sm neutral"><AppIcon :name="m.icon || 'file'" :size="13" /></span>
-              {{ m.label }}
-            </button>
-          </div>
-        </div>
-      </template>
-      <div v-else class="empty-note">
-        {{ modules.loading ? 'Memuat modul…' : 'Belum ada modul tersedia.' }}
       </div>
     </div>
     <div class="start-foot">
