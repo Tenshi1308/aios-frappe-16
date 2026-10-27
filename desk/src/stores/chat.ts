@@ -11,6 +11,7 @@ import {
 } from '../api/chat';
 import { useSessionStore } from './session';
 import { useModulesStore } from './modules';
+import { reportClientError } from '../api/client';
 import type {
   ArtifactEvent,
   AttachmentMeta,
@@ -43,6 +44,8 @@ export const useChatStore = defineStore('chat', {
     historyOpen: {} as Record<string, boolean>,
     historyLoading: {} as Record<string, boolean>,
     pendingDrafts: [] as PendingDraft[],
+    pendingDraftsLoading: false,
+    pendingDraftsError: '',
     /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
     artifactWindows: {} as Record<string, ArtifactEvent>,
   }),
@@ -65,10 +68,27 @@ export const useChatStore = defineStore('chat', {
     },
     async loadPendingDrafts() {
       const session = useSessionStore();
+      this.pendingDraftsLoading = true;
+      this.pendingDraftsError = '';
       try {
         this.pendingDrafts = await fetchPendingDrafts(session.csrfToken);
-      } catch {
+      } catch (err) {
         this.pendingDrafts = [];
+        this.pendingDraftsError = 'Daftar draft tidak dapat dimuat.';
+        const msg =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Daftar draft tidak dapat dimuat.';
+        void reportClientError(
+          {
+            message: msg,
+            context: 'loadPendingDrafts',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
+      } finally {
+        this.pendingDraftsLoading = false;
       }
     },
     async approveDraft(draftId: string) {

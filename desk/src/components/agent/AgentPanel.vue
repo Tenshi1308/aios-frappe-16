@@ -212,6 +212,16 @@ async function onFilesPicked(e: Event) {
         <AppIcon name="file" :size="18" />
         <span class="badge">{{ chat.pendingDrafts.length }}</span>
       </button>
+      <button
+        v-else-if="chat.pendingDraftsError"
+        class="icon-btn approvals"
+        aria-label="Gagal memuat persetujuan tertunda"
+        title="Gagal memuat persetujuan tertunda — klik untuk memeriksa"
+        @click="openPendingDrafts"
+      >
+        <AppIcon name="file" :size="18" />
+        <span class="badge">!</span>
+      </button>
       <button class="icon-btn" aria-label="Riwayat percakapan" @click="chat.toggleHistory(branchKey)">
         <AppIcon name="history" :size="18" />
       </button>
