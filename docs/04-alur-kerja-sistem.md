@@ -279,13 +279,13 @@ Semua aksi hanya menerima DocType dalam `ALLOWED_DRAFT_DOCTYPES`. Untuk UPDATE/A
 ```mermaid
 sequenceDiagram
     actor Admin as AIOS Admin (site developer)
-    participant CP as Control Plane (AIOS Client Site)
+    participant CP as Control Plane (AIOS Managed Site)
     participant Job as Provisioner (worker di host)
     participant Site as Site Klien Baru
 
     Admin->>CP: Isi nama site, nama perusahaan, email kontak → tekan "Buat Site"
     CP->>CP: Validasi nama site (^[a-z][a-z0-9-]{2,40}$) + cek duplikat
-    CP->>CP: Buat record AIOS Client Site (status = Provisioning)
+    CP->>CP: Buat record AIOS Managed Site (status = Provisioning)
     CP->>Job: Antrekan job provisioning (frappe.enqueue)
     Job->>Job: bench new-site <nama> + install erpnext + install aios_v1
     Job->>Site: Selesaikan setup wizard Frappe (company, email, currency)
@@ -308,7 +308,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     actor Admin as AIOS Admin (site developer)
-    participant CP as Developer Control Plane (AIOS Client Site registry)
+    participant CP as Developer Control Plane (AIOS Managed Site registry)
     participant Site as Site Klien (Control API /api/control)
     participant DB as Frappe User DocType (site klien)
 
@@ -335,7 +335,7 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 6:
-1. **Registrasi Site Klien (`AIOS Client Site`, hanya di site developer):** record registry dibuat oleh alur provisioning (§6.1) berisi `site_name`, `base_url`, `company_name`, `contact_name`, `contact_email`, dan `api_credential` (field `Password` terenkripsi, di-mask di setiap log/error). Control plane memvalidasi `base_url` terhadap allowlist + wajib HTTPS (kecuali lokal) dengan guard anti-SSRF yang sama seperti `web-market-research`.
+1. **Registrasi Site Klien (`AIOS Managed Site`, hanya di site developer):** record registry dibuat oleh alur provisioning (§6.1) berisi `site_name`, `base_url`, `company_name`, `contact_name`, `contact_email`, dan `api_credential` (field `Password` terenkripsi, di-mask di setiap log/error). Control plane memvalidasi `base_url` terhadap allowlist + wajib HTTPS (kecuali lokal) dengan guard anti-SSRF yang sama seperti `web-market-research`.
 2. **Health Check & Status Site:** Control plane memanggil `GET /api/control/health` dengan token `AIOS Control`; hasilnya memperbarui `status`, `last_seen`, dan `last_error` (pesan aman, tanpa traceback/detail internal). Kegagalan tidak boleh dilaporkan sebagai sukses.
 3. **Antrean Pendaftaran Lintas Site:** Control plane membaca `User` dengan `aios_status = "Pending Provisioning"` **dan role `AIOS Client`** dari tiap site klien via Control API. Akun sistem (`Guest`, `Administrator`) tidak boleh masuk antrean. Respons memuat **nama dan email** (diperlukan untuk undangan), **tidak pernah** memuat password, hash, API key, isi `AIOS Setting`, atau data bisnis.
 4. **Persetujuan & Undangan:** Saat disetujui, Control API menyetel `aios_status = "Active"` (otomatis `enabled = 1`), `aios_persona`, lalu membuat token set-password **sekali pakai + kedaluwarsa** yang diproses di site klien. Password tidak pernah dikirim via email; control plane hanya menampilkan tautan undangan untuk dikirim manual oleh `AIOS Admin`.

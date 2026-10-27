@@ -34,7 +34,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 3. **[03 — Skema Data, Identitas Frappe (`User`), & Arsitektur `1 Client = 1 Site`](./03-skema-data-dan-isolasi-multitenant.md)** — *spesifikasi normatif*
    - Konsep **1 Client = 1 Site (`dns_multitenant`)**: setiap klien memiliki *site* dan database MariaDB terpisah, sehingga DocType `AIOS Tenant` dihapus sepenuhnya.
    - Pemusatan atribut operasional pada DocType **`User`** bawaan Frappe (`aios_persona`, `aios_persona_context`, `aios_status`, `aios_company_name`, `aios_tokens_used`); kuota token = plafon site di **`AIOS Setting`** (`site_token_limit`), counter di-update atomik via SQL.
-   - **Developer Control Plane (§1.4):** registry `AIOS Client Site` di site developer, role layanan `AIOS Control`, Control API per site klien, dan batas wewenang lintas site.
+   - **Developer Control Plane (§1.4):** registry `AIOS Managed Site` di site developer, role layanan `AIOS Control`, Control API per site klien, dan batas wewenang lintas site.
    - **Adapter DB eksternal dihapus (§2):** `AIOS DB Connection`, `AIOS Mapping`, `AIOS Mapping Entry`, `AIOS Schema Snapshot` tidak lagi bagian dari skema — PoC ERPNext-first.
    - Matriks otoritatif `User.aios_status` × `User.enabled` beserta pertahanan 3 lapis (`send_welcome_email = 0` + `no_welcome_mail = True`, sinkronisasi `enabled = 0`, serta hook `on_login` & `auth_hooks`).
    - Pendaftaran skema Custom Field, Role, Role Profile, dan `Custom DocPerm` secara terprogram pada hook **`after_install` dan `after_migrate`** di `hooks.py` (**tanpa `fixtures` JSON**).
@@ -51,7 +51,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 5. **[05.1 — Roadmap Perbaikan Fondasi, Keamanan, & Higienitas Repo (Fondasi — Dikerjakan Pertama)](./05.1-roadmap-perbaikan-fondasi.md)** — *roadmap & status*
    - **Peta Tahap 1–8** (urutan baca: semua item `#n` disusun per tahap) + checklist status (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + dependency + acceptance per item.
    - Rencana eksekusi **Branch `#0` s/d `#13`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
-   - **`#11 — Developer Control Plane`:** dua fase — (1) dashboard lintas site (registry `AIOS Client Site`, role `AIOS Control`, Control API, undangan sekali pakai, monitoring agregat); (2) tombol **Buat Site** untuk provisioning otomatis. Kontrak: `docs/03` §1.4 & `docs/04` Alur 6.
+   - **`#11 — Developer Control Plane`:** dua fase — (1) dashboard lintas site (registry `AIOS Managed Site`, role `AIOS Control`, Control API, undangan sekali pakai, monitoring agregat); (2) tombol **Buat Site** untuk provisioning otomatis. Kontrak: `docs/03` §1.4 & `docs/04` Alur 6.
    - **`#12 — Frontend Vue Desktop`:** Ekasa Desk dalam Vue; cutover selesai (`frontend/` sekarang Vue 3).
    - **`#13 — Hapus adapter DB eksternal`:** dikerjakan paling awal; memotong scope `#4a-1`, `#4a-2`, dan menggugurkan L5/L6 `#7a`.
    - **Lampiran arsip:** **[05.2 — Lampiran Roadmap Fondasi](./05.2-lampiran-roadmap-fondasi.md)** — *arsip/referensi*: temuan `file:line`, riwayat koreksi, baseline angka, detail rencana lama, strategi test, catatan lingkungan. **Bukan status terkini.**

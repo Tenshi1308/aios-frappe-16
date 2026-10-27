@@ -54,9 +54,9 @@ Menyimpan konfigurasi dan plafon default tingkat *site* (agar tidak ada angka ga
 
 ### 1.4. Developer Control Plane (Registry & Konfigurasi di Site Developer)
 
-Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane** — satu *site* Frappe khusus developer yang menjalankan dashboard `AIOS Admin`. Registry *site* klien berupa DocType **`AIOS Client Site`** yang **hanya ada di site developer** (bukan di site klien):
+Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane** — satu *site* Frappe khusus developer yang menjalankan dashboard `AIOS Admin`. Data registry DocType **`AIOS Managed Site`** dipakai hanya di site developer, bukan di site klien. Karena DocType merupakan bagian app, migrasi Frappe mendaftarkan metadatanya di site yang memasang app; role `AIOS Client` dan `AIOS Control` tidak mendapat DocPerm untuk registry. Nama ini menegaskan bahwa record mencatat site yang dikelola `AIOS Admin`, bukan site milik klien:
 
-- `site_name` (`Data`, unique): hostname *site* klien (mis. `client-1.aios.local`).
+- `site_name` (`Data`): hostname *site* klien; `autoname` menjadikannya nama dokumen yang unik.
 - `base_url` (`Data`): URL dasar *site* klien yang dipanggil Control API.
 - `company_name` (`Data`): nama perusahaan klien.
 - `contact_name` (`Data`) & `contact_email` (`Data`): kontak klien untuk undangan.
@@ -67,7 +67,7 @@ Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane*
 - `notes` (`Small Text`): catatan operator.
 
 **Aturan penting:**
-1. **Tidak ada DocType `plan`, billing, atau tiering** pada tahap ini; kuota PoC = satu gerbang site — `AIOS Setting.site_token_limit` vs `site_tokens_used` (per site klien). `User.aios_tokens_used` hanya statistik harian, bukan gerbang; registry `AIOS Client Site` (opsional) untuk ringkasan lintas site.
+1. **Tidak ada DocType `plan`, billing, atau tiering** pada tahap ini; kuota PoC = satu gerbang site — `AIOS Setting.site_token_limit` vs `site_tokens_used` (per site klien). `User.aios_tokens_used` hanya statistik harian, bukan gerbang; registry `AIOS Managed Site` (opsional) untuk ringkasan lintas site.
 2. **Ownership tetap per `User` di site klien.** Control plane tidak pernah menulis data bisnis klien; ia mengelola lifecycle (`aios_status`), menyalin konfigurasi operator, dan membaca agregat monitoring via role `AIOS Control`.
 3. **`Administrator` di site klien tidak dipakai oleh control plane harian.** Job provisioning awal memakai `Administrator` hanya untuk setup wizard dan `AIOS Setting`; jalur programatik harian (lifecycle, monitoring, **sync konfigurasi**) memakai token role `AIOS Control` (bukan `AIOS Admin`, bukan `Administrator`).
 4. **Role `AIOS Control`** di site klien: service role tanpa login manusia — `read` pada `User` dan `AIOS Token Usage`, plus **satu endpoint tulis sempit untuk sync konfigurasi** yang hanya menyentuh field model `AIOS Setting` (dan, setelah H1/H2, DocType konfigurasi operator). Tidak ada akses ke DocType bisnis/ERPNext dan tidak ada `DocPerm write` umum pada `AIOS Setting`. Aksinya diekspos lewat endpoint Control API (`/api/control/...`) yang memvalidasi token `api_credential` dan menolak sesi manusia.
@@ -83,7 +83,7 @@ Pengelolaan banyak klien lintas *site* dilakukan dari **Developer Control Plane*
 
 ## 2. Peta Doctype AIOS & Matriks Permission (Site Klien: `AIOS Client` / `AIOS Control`)
 
-Seluruh DocType operasional AIOS berelasi langsung ke **`User`** (`user -> Link(User)`) — kecuali registry `AIOS Client Site` yang hanya ada di *site developer* (`docs/03` §1.4).
+Seluruh DocType operasional AIOS berelasi langsung ke **`User`** (`user -> Link(User)`) — kecuali data registry `AIOS Managed Site`, yang hanya dipakai di *site developer* (`docs/03` §1.4).
 
 > Dokumen ini menetapkan **bentuk akhir** semua DocType, termasuk yang belum ada di kode. Status implementasi per DocType ada di `docs/05.1` §1.3.
 

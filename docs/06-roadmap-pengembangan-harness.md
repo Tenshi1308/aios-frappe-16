@@ -101,8 +101,8 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 
 **Dibagi dua fase:** §1–§3 = **Fase 1** (dashboard operasional), §4 = **Fase 2** (tombol **Buat Site**). Fase 2 dikerjakan setelah Fase 1 dan tidak boleh memblokir `#8`.
 
-### 1. Registri Site Klien (`AIOS Client Site`, hanya di site developer)
-1. Field mengikuti `docs/03` §1.4: `site_name` (unique), `base_url`, `company_name`, `contact_name`, `contact_email`, `api_credential` (`Password`), `status`, `last_seen`, `last_error`, `notes`.
+### 1. Registri Site Klien (`AIOS Managed Site`, dipakai hanya di site developer)
+1. Field mengikuti `docs/03` §1.4: `site_name` (nama dokumen melalui `autoname`), `base_url`, `company_name`, `contact_name`, `contact_email`, `api_credential` (`Password`), `status`, `last_seen`, `last_error`, `notes`.
 2. **Tanpa `plan`/billing/tiering.** Kuota PoC = satu gerbang site (`AIOS Setting.site_token_limit`); `User.aios_tokens_used` statistik; registry opsional.
 3. Validasi `base_url`: allowlist + wajib HTTPS di non-lokal, guard SSRF (RFC1918/loopback/link-local/cloud metadata, re-check redirect).
 
