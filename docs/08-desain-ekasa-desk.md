@@ -30,11 +30,11 @@ Form email + password, ditambah tautan ke pendaftaran mandiri. Kegagalan menampi
 
 ### 2.3. Desktop
 
-- **Ikon desktop** (kiri atas, grid vertikal): **bidang ERP** — bukan modul dokumen. Tiap ikon = satu bidang (`Sales`, `Finance`, `Inventory`, `Reports`, dst), memakai tile besar + label di bawah. Pola visual dari prototype: `.desk-icons` (`display:grid; grid-auto-flow:row; gap:6px; width:88px`) dan `.desk-icon` (ikon 48px, label 12px, `border-radius:8px`, state `.sel` memakai `--accent-soft` + border `--accent`). Klik memilih, klik-ganda/Enter membuka; di layar sempit (`.os.narrow`) grid menjadi 4 kolom statis dan klik langsung membuka.
-- **Jendela bidang**: membuka satu bidang menampilkan **kartu KPI** + **shortcut modul** + kartu "tanya agent" — lihat §6.
+- **Ikon desktop** (kiri atas, grid vertikal): **bidang ERP** (`Sales`, `Finance`, dst sesuai bidang aktif dari `modules.domains`) dengan tile besar (`.tile.xl`) berwarna `var(--domain-*)` + label di bawah, digabung bersama AI Agents, Files, dan Tentang AIOS (`Classic Desk` tidak dibuat — §12 butir 4). Pola visual dari prototype: `.desk-icons` (`display:grid; grid-auto-flow:row; gap:6px; width:88px`) dan `.desk-icon` (ikon 48px, label 12px, `border-radius:8px`, state `.sel` memakai `--accent-soft` + border `--accent`). Klik langsung membuka jendela bidang/fitur terkait; klik-ganda dan Enter juga membuka langsung; di layar sempit (`.os.narrow`) grid menjadi 4 kolom statis.
+- **Jendela bidang**: membuka satu bidang menampilkan **kartu KPI** + **shortcut modul** + kartu "tanya agent" — diimplementasikan di `desk/src/components/domain/DomainWindow.vue` (fase 3d-2, lihat §6).
 - **Taskbar** di bawah: tiga kolom (`1fr auto 1fr`). Kiri: nama site + status. Tengah: tombol mulai, pencarian, tombol agent, tombol app yang sedang berjalan. Kanan: status koneksi, jam + tanggal. Tombol app memakai tile berwarna bidang.
 - **Flyout**: pencarian (`Ctrl+K`), daftar agent (`Ctrl+J`), dan notifikasi. `Esc` menutup. Semua flyout muncul dari taskbar (`bottom: calc(var(--taskbar-h) + 10px)`), lebar `min(660px, 100% - 16px)`, sudut 14px.
-- **Start Menu** (§2.5): pencarian → **grid bidang** → AI agents → Recent → footer profil + tombol pengaturan + daya.
+- **Start Menu** (§2.5): pencarian → **grid bidang** (`.mod-grid` 7 kolom) → AI agents → footer profil + tombol pengaturan + daya (Recent belum memiliki backend sehingga tidak dirender).
 - **Tema**: tiga opsi — `Automatic` (*Ikuti sistem*, default; menghapus atribut `data-theme` pada `<html>` sehingga mengikuti `prefers-color-scheme`), `Light` (`data-theme="light"`), dan `Dark` (`data-theme="dark"`). Preferensi disimpan di field bawaan Frappe `User.desk_theme` lewat endpoint `frappe.core.doctype.user.user.switch_theme` dan dibaca dari `desktop.settings` (`theme.value`, `theme.options`). Saat boot (`main.ts`), `localStorage` (`aios.desk.theme`) dibaca semata-mata untuk menghilangkan kedipan awal; `User.desk_theme` dari server tetap menjadi sumber kebenaran dan menimpa cache bila berbeda.
 
 ### 2.4. Panel Agent
@@ -62,9 +62,9 @@ Backend menolak file milik user lain, file publik, file dari conversation lain, 
 Susunan dari atas ke bawah, sesuai prototype:
 
 1. **Tombol pencarian** selebar flyout, ikon + teks + `kbd` `Ctrl K`.
-2. **Grid bidang** — header `Bidang` + jumlah, lalu `.mod-grid` (`display:grid; grid-template-columns:repeat(7,1fr); gap:4px`) berisi tombol `.mod` (tile 44px, label 12px, `flex-direction:column`, `align-items:center`). Di layar sempit grid menjadi 4 kolom. **Ini bukan pill agent** — memakai komponen grid tersendiri.
-3. **AI agents** — deretan pill (`.agent-pill`) dengan titik warna per cabang.
-4. **Recent** — dua kolom, tiap entri: tile + nama dokumen + subteks "doctype · waktu".
+2. **Grid bidang** — header `Bidang` + jumlah bidang aktif, lalu `.mod-grid` (`display:grid; grid-template-columns:repeat(7,1fr); gap:4px`) berisi tombol `.mod` (tile 44px `.tile.lg` dengan background `var(--domain-*)`, label 12px di bawah, `flex-direction:column`, `align-items:center`). Klik tombol bidang langsung memanggil `modules.openDomain(key)`. **Ini bukan pill agent** — memakai grid bidang tersendiri; blok pill modul lama telah dipindahkan sepenuhnya ke dalam jendela bidang.
+3. **AI agents** — deretan pill (`.agent-pill`) dengan titik warna per cabang (`.agent-dot`).
+4. **Recent** — dua kolom di prototype (tile + nama dokumen + subteks). **Status:** saat ini belum ada endpoint backend untuk riwayat dokumen/Recent, sehingga section ini tidak dirender di UI untuk mencegah data rekaan/palsu.
 5. **Footer** — avatar + nama + peran · site; di kanan tombol Pengaturan dan tombol daya (Kunci / Muat ulang / Keluar).
 
 ---
@@ -128,10 +128,11 @@ Tampilan mengikuti prototype yang memakai **dua lapis**, dan keduanya tidak bole
 1. **Bidang** (*domain*) — kelompok kerja tingkat atas, mis. `Sales`, `Finance`, `Inventory`, `Reports`. Satu bidang = satu ikon desktop + satu entri grid di Start Menu. Membuka bidang menampilkan **jendela bidang** berisi kartu KPI, daftar shortcut modul, dan kartu "tanya agent". Ini yang digambarkan prototype sebagai *workspace* ERPNext (`Accounting`, `Selling`, `Stock`, dst).
 2. **Modul** — daftar dokumen satu DocType di dalam bidang, mis. `Sales Invoice` di dalam `Sales`. Klik shortcut membuka tampilan daftar; breadcrumb kembali ke bidang.
 
-Jendela bidang (window ID `domain:<key>`) merender:
-- **Kartu KPI** (`.cards`, grid `auto-fit minmax(170px, 1fr)`): label kecil, angka besar, delta opsional. Angka dihitung **server**, klien hanya memformat.
-- **Shortcut** (`.shortcuts`): satu tombol per modul anggota, berisi ikon + label + jumlah baris.
-- **Kartu agent** (`.ask-card`): agent pemilik bidang + dua saran prompt; klik membuka panel agent dengan konteks bidang.
+Jendela bidang (window ID `domain:<key>`, diimplementasikan di `desk/src/components/domain/DomainWindow.vue`) merender:
+- **Header ringkas**: ikon bidang + label + subteks "Bidang · Baca saja" + tombol refresh (`.domain-refresh`).
+- **Kartu KPI** (`.domain-cards`, grid `auto-fit minmax(170px, 1fr)`): tiap kartu (`.domain-card`) berisi label (`.domain-card-label`) dan nilai angka (`.domain-card-value`). Angka dihitung **server** via agregat `desktop.domain()`, klien hanya memformat (angka pemisah ribuan atau mata uang dengan currency response).
+- **Shortcut** (`.domain-shortcuts`): satu tombol per modul anggota (`.domain-shortcut`), berisi ikon + label + jumlah baris dokumen (`row_count`), klik memanggil `modules.openModule(key)` untuk membuka jendela modul yang sudah ada.
+- **Kartu agent** (`.domain-ask`): titik inisial agent pemilik bidang (`.agent-dot`) + nama agent + dua saran prompt (`.chip`); klik prompt langsung mengirim pesan ke agent terkait dan membuka panel chat, atau klik "Tanya agent" membuka panel chat di cabang tersebut.
 
 Jendela modul (window ID `module:<key>`) mempertahankan kontrak yang sudah ada: header + refresh, form filter sesuai deklarasi backend (`date_from`, `date_to`, `status`, `party`), tabel kolom dari server, navigasi halaman.
 
@@ -142,7 +143,7 @@ Daftar bidang dan modul berasal dari backend (§7), bukan dari komponen. Katalog
 - **Dua tier (`active` vs `planned`):** `sales` dan `finance` berstatus `"active"` dengan modul anggota dan kartu KPI penuh. Sembilan bidang ERP lain (`purchasing`, `inventory`, `manufacturing`, `projects`, `crm`, `assets`, `support`, `quality`, `accounting`) terdaftar di katalog dengan `status: "planned"`, `modules: ()`, dan `cards: ()`.
 - **Aturan `planned` tidak dirender:** `get_domain_catalog()` (yang dikirim di `desktop.bootstrap().domains`) dan `get_domain_keys()` (yang dipakai enum tool `open_domain`) **hanya** mengembalikan bidang berstatus `"active"`. Bidang `"planned"` tidak dikirim ke UI, tidak dirender di desktop maupun Start Menu, tidak dievaluasi KPI-nya, dan ditolak oleh `desktop.domain()` dengan `ValidationError`. Membuka bidang baru di masa depan cukup mengubah `status` menjadi `"active"` serta mengisi `modules` dan `cards` di server tanpa perubahan kode frontend.
 
-Bidang dibuka dari ikon desktop, grid Start Menu, pencarian (`Ctrl+K`), **atau** oleh agent ("buka Sales" → tool `open_domain` → event SSE `open_domain` → membuka jendela `domain:<key>`). Modul tetap dibuka lewat tool `open_module` → event SSE `open_module` → jendela `module:<key>`. Selama komponen `DomainWindow` (fase 3d-2) belum dibangun, `WindowHost.vue` merender placeholder `.win-placeholder` ("Jendela bidang belum tersedia.") untuk jendela ber-prefix `domain:`.
+Bidang dibuka dari ikon desktop, grid Start Menu, pencarian (`Ctrl+K`), **atau** oleh agent ("buka Sales" → tool `open_domain` → event SSE `open_domain` → membuka jendela `domain:<key>`). Modul tetap dibuka lewat tool `open_module` → event SSE `open_module` → jendela `module:<key>`. Jendela bidang di-host di `WindowHost.vue` lewat `<DomainWindow :domain-key="w.id.slice(7)" />` (fase 3d-2).
 
 ### 6.3. Aturan angka
 
