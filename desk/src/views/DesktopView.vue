@@ -71,9 +71,24 @@ const desktopIcons = computed<DeskIcon[]>(() => {
   ];
   return [...domainIcons, ...staticIcons];
 });
-function iconClick(d: DeskIcon) {
-  selectedIcon.value = d.id;
+function launchIcon(d: DeskIcon) {
   d.run();
+}
+
+function isCoarseOrNarrow(): boolean {
+  if (props.narrow) return true;
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    return window.matchMedia('(pointer: coarse)').matches;
+  }
+  return false;
+}
+
+function iconClick(d: DeskIcon) {
+  if (isCoarseOrNarrow()) {
+    launchIcon(d);
+  } else {
+    selectedIcon.value = d.id;
+  }
 }
 
 function onKey(e: KeyboardEvent) {
@@ -101,8 +116,8 @@ function onKey(e: KeyboardEvent) {
           class="desk-icon"
           :class="{ sel: selectedIcon === d.id }"
           @click="iconClick(d)"
-          @dblclick="d.run()"
-          @keydown.enter.prevent="d.run()"
+          @dblclick="launchIcon(d)"
+          @keydown.enter.prevent="launchIcon(d)"
         >
           <span
             class="tile xl"
