@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Kontrak kerja AI coding assistant, **AIOS V1** — backend Frappe/ERPNext, frontend Vue 3 (Ekasa Desk); `frontend/` lama masih Next.js selama migrasi. Stack & versi: `docs/README.md`, `pyproject.toml`, `frontend/package.json`. Isi file ini: **aturan & jalan kerja** — tanpa angka, status implementasi, atau nama field/file; detail ada di `docs/`.
+Kontrak kerja AI coding assistant, **AIOS V1** — backend Frappe/ERPNext, frontend Vue 3 (Ekasa Desk). Stack & versi: `docs/README.md`, `pyproject.toml`, `frontend/package.json`. Isi file ini: **aturan & jalan kerja** — tanpa angka, status implementasi, atau nama field/file; detail ada di `docs/`.
 
 ## 1. Context Routing
 
@@ -85,7 +85,7 @@ Perintah — isi `<bench-root>` dan `<site>` dari environment kerja (site AIOS a
 
 Test discipline: data uji memakai dummy sehingga data nyata tetap utuh; test PoC 100% read-only; `db.commit` dimonkeypatch jadi no-op dan `rollback()` jalan di `tearDown`; file `test_*.py` tidak memanggil `db.commit()` secara langsung. Status tiap aturan dan target implementasinya ada di bagian status `docs/05.1`. Hijau di CI dibaca sebagai sinyal, bukan bukti aturan terpenuhi — verifikasi tetap per kriteria.
 
-Konvensi: kode/identifier English; Python file/folder `snake_case`; frontend Vue komponen `PascalCase.vue`, folder route/component `lowercase`; konvensi React/Next `PascalCase.tsx` hanya untuk `frontend/` lama selama migrasi; docs dan skill markdown `snake_case` (kecuali file existing). Docs diperbarui saat source-of-truth berubah, dan pembaruan itu masuk ke rencana yang disetujui — pemetaannya ada di `docs/README.md`; docs yang tidak relevan dibiarkan. Commit lokal setelah verification selesai dan tidak ada `NOT VERIFIED` yang menunggu uji user; `git diff` diperiksa lebih dulu.
+Konvensi: kode/identifier English; Python file/folder `snake_case`; frontend Vue komponen `PascalCase.vue`, folder route/component `lowercase`; docs dan skill markdown `snake_case` (kecuali file existing). Docs diperbarui saat source-of-truth berubah, dan pembaruan itu masuk ke rencana yang disetujui — pemetaannya ada di `docs/README.md`; docs yang tidak relevan dibiarkan. Commit lokal setelah verification selesai dan tidak ada `NOT VERIFIED` yang menunggu uji user; `git diff` diperiksa lebih dulu.
 
 ## 9. Komunikasi, Restraint & Integritas
 

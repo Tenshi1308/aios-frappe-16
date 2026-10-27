@@ -52,7 +52,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Peta Tahap 1–8** (urutan baca: semua item `#n` disusun per tahap) + checklist status (`✅` selesai / `🟡` sebagian / `⬜` belum / `⛔` terkunci) + dependency + acceptance per item.
    - Rencana eksekusi **Branch `#0` s/d `#13`** untuk memasang CI, menutup celah keamanan darurat (langsung berbasis `User`, tanpa `AIOS Tenant`), menghapus `AIOS Tenant` & `monitoring_service.py` legacy, mendaftarkan Custom Field & `Custom DocPerm` via `after_install`/`after_migrate`, membersihkan 39 MB artefak sampah & emoji UI, serta mengunci sandbox LLM & akuntansi token atomik (`usage.py`).
    - **`#11 — Developer Control Plane`:** dua fase — (1) dashboard lintas site (registry `AIOS Client Site`, role `AIOS Control`, Control API, undangan sekali pakai, monitoring agregat); (2) tombol **Buat Site** untuk provisioning otomatis. Kontrak: `docs/03` §1.4 & `docs/04` Alur 6.
-   - **`#12 — Frontend Vue Desktop`:** Ekasa Desk dalam Vue; `desk/` → `frontend/` setelah paritas.
+   - **`#12 — Frontend Vue Desktop`:** Ekasa Desk dalam Vue; cutover selesai (`frontend/` sekarang Vue 3).
    - **`#13 — Hapus adapter DB eksternal`:** dikerjakan paling awal; memotong scope `#4a-1`, `#4a-2`, dan menggugurkan L5/L6 `#7a`.
    - **Lampiran arsip:** **[05.2 — Lampiran Roadmap Fondasi](./05.2-lampiran-roadmap-fondasi.md)** — *arsip/referensi*: temuan `file:line`, riwayat koreksi, baseline angka, detail rencana lama, strategi test, catatan lingkungan. **Bukan status terkini.**
 
@@ -75,4 +75,4 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Live Agent Trace** di panel agent (langkah bisa dimekarkan) — instruksi tugas & argumen tool terlihat, *system prompt* internal tidak.
    - Artefak sebagai berkas/jendela desktop; modul sebagai jendela baca-saja.
    - **Zero hardcoded** untuk agent, modul, doctype, company, kuota; token CSS dua lapis (primitives → semantic); komponen dilarang menulis warna/font/shadow langsung.
-   - Stack Vite + Vue 3 + TypeScript + Router + Pinia; struktur `desk/`; kontrak API desktop; halaman yang diport.
+   - Stack Vite + Vue 3 + TypeScript + Router + Pinia; struktur `frontend/`; kontrak API desktop; halaman yang diport.

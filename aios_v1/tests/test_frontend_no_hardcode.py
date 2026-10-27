@@ -1,12 +1,12 @@
 """Kontrak statis anti-hardcode Ekasa Desk (#12 fase 3a/3b/3d-2 - docs/08 §7-§8).
 
-Test ini berjalan tanpa Frappe dan tanpa `desk/node_modules`:
-1. Komponen `desk/src/components/{module,domain,shell,windows}` dan `desk/src/styles/base.css`
+Test ini berjalan tanpa Frappe dan tanpa `frontend/node_modules`:
+1. Komponen `frontend/src/components/{module,domain,shell,windows}` dan `frontend/src/styles/base.css`
    bebas warna literal hex (`#rgb`..`#rrggbbaa`) atau `rgb()`/`rgba()`.
-2. Komponen `desk/src/components/module` bebas literal nama DocType katalog
+2. Komponen `frontend/src/components/module` bebas literal nama DocType katalog
    ("Sales Invoice", "Purchase Invoice", dst.).
 3. `DomainWindow.vue` dan `StartMenu.vue` bebas literal nama bidang ("Sales", "Finance") di template.
-4. Jalur produksi `desk/src/` (di luar `api/mock`) bebas impor/referensi `api/mock`.
+4. Jalur produksi `frontend/src/` (di luar `api/mock`) bebas impor/referensi `api/mock`.
 5. Kasus positif buatan membuktikan regex benar-benar menangkap pelanggaran.
 """
 
@@ -15,7 +15,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DESK_SRC = REPO_ROOT / "desk" / "src"
+DESK_SRC = REPO_ROOT / "frontend" / "src"
 MODULE_DIR = DESK_SRC / "components" / "module"
 DOMAIN_DIR = DESK_SRC / "components" / "domain"
 SHELL_DIR = DESK_SRC / "components" / "shell"
@@ -101,14 +101,14 @@ def _extract_vue_template(path: Path) -> str:
     return match.group(1) if match else text
 
 
-@unittest.skipUnless(DESK_SRC.exists(), "desk/src belum tersedia")
+@unittest.skipUnless(DESK_SRC.exists(), "frontend/src belum tersedia")
 class TestFrontendNoHardcode(unittest.TestCase):
     def test_no_hex_or_rgba_in_module_and_shell_components(self):
-        self.assertTrue(MODULE_DIR.exists(), "desk/src/components/module belum ada")
-        self.assertTrue(DOMAIN_DIR.exists(), "desk/src/components/domain belum ada")
-        self.assertTrue(SHELL_DIR.exists(), "desk/src/components/shell belum ada")
-        self.assertTrue(WINDOWS_DIR.exists(), "desk/src/components/windows belum ada")
-        self.assertTrue(BASE_CSS.exists(), "desk/src/styles/base.css belum ada")
+        self.assertTrue(MODULE_DIR.exists(), "frontend/src/components/module belum ada")
+        self.assertTrue(DOMAIN_DIR.exists(), "frontend/src/components/domain belum ada")
+        self.assertTrue(SHELL_DIR.exists(), "frontend/src/components/shell belum ada")
+        self.assertTrue(WINDOWS_DIR.exists(), "frontend/src/components/windows belum ada")
+        self.assertTrue(BASE_CSS.exists(), "frontend/src/styles/base.css belum ada")
         offenders = []
         paths = [
             *(_iter_source_files(MODULE_DIR)),
@@ -129,13 +129,13 @@ class TestFrontendNoHardcode(unittest.TestCase):
         )
 
     def test_no_secret_field_literals_in_settings_window(self):
-        self.assertTrue(SETTINGS_WINDOW.exists(), "desk/src/components/windows/SettingsWindow.vue belum ada")
+        self.assertTrue(SETTINGS_WINDOW.exists(), "frontend/src/components/windows/SettingsWindow.vue belum ada")
         text = SETTINGS_WINDOW.read_text(encoding="utf-8")
         offenders = [match.group(0) for match in FORBIDDEN_SETTING_RE.finditer(text)]
         self.assertEqual(offenders, [], f"Field sensitif literal di SettingsWindow.vue: {offenders}")
 
     def test_no_literal_doctype_names_in_module_components(self):
-        self.assertTrue(MODULE_DIR.exists(), "desk/src/components/module belum ada")
+        self.assertTrue(MODULE_DIR.exists(), "frontend/src/components/module belum ada")
         offenders = []
         for path in _iter_source_files(MODULE_DIR):
             text = path.read_text(encoding="utf-8")
@@ -145,8 +145,8 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertEqual(offenders, [], f"Nama DocType literal di komponen modul: {offenders}")
 
     def test_no_literal_domain_names_in_domain_window_and_start_menu_templates(self):
-        self.assertTrue(DOMAIN_WINDOW.exists(), "desk/src/components/domain/DomainWindow.vue belum ada")
-        self.assertTrue(START_MENU.exists(), "desk/src/components/shell/StartMenu.vue belum ada")
+        self.assertTrue(DOMAIN_WINDOW.exists(), "frontend/src/components/domain/DomainWindow.vue belum ada")
+        self.assertTrue(START_MENU.exists(), "frontend/src/components/shell/StartMenu.vue belum ada")
         offenders = []
         for target in (DOMAIN_WINDOW, START_MENU):
             template_text = _extract_vue_template(target)
@@ -171,7 +171,7 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertEqual(offenders, [], f"Referensi api/mock di jalur produksi: {offenders}")
 
     def test_desktop_icon_click_does_not_call_run_directly(self):
-        self.assertTrue(DESKTOP_VIEW.exists(), "desk/src/views/DesktopView.vue belum ada")
+        self.assertTrue(DESKTOP_VIEW.exists(), "frontend/src/views/DesktopView.vue belum ada")
         text = DESKTOP_VIEW.read_text(encoding="utf-8")
         block = _extract_function_block(text, "iconClick")
         self.assertIsNotNone(block, "Fungsi iconClick tidak ditemukan di DesktopView.vue")
@@ -179,7 +179,7 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertNotIn(".run(", block)
 
     def test_no_empty_catch_in_stores(self):
-        self.assertTrue(STORES_DIR.exists(), "desk/src/stores belum ada")
+        self.assertTrue(STORES_DIR.exists(), "frontend/src/stores belum ada")
         offenders = []
         for path in sorted(STORES_DIR.glob("*.ts")):
             text = path.read_text(encoding="utf-8")
@@ -189,7 +189,7 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertEqual(offenders, [], f"Blok catch {{}} kosong di stores: {offenders}")
 
     def test_no_silent_draft_load_error_in_chat_store(self):
-        self.assertTrue(CHAT_STORE.exists(), "desk/src/stores/chat.ts belum ada")
+        self.assertTrue(CHAT_STORE.exists(), "frontend/src/stores/chat.ts belum ada")
         text = CHAT_STORE.read_text(encoding="utf-8")
         silent_pattern = re.compile(
             r"catch\s*(?:\([^)]*\))?\s*\{(?![^}]*pendingDraftsError)[^}]*pendingDrafts\s*=\s*\[\][^}]*\}"
