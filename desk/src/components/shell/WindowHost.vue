@@ -10,6 +10,7 @@ import FilesWindow from '../windows/FilesWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
 import SettingsWindow from '../windows/SettingsWindow.vue';
 import ModuleWindow from '../module/ModuleWindow.vue';
+import DomainWindow from '../domain/DomainWindow.vue';
 
 const props = defineProps<{ narrow: boolean }>();
 
@@ -66,10 +67,10 @@ defineExpose({ openAbout });
           v-else-if="w.id.startsWith('module:')"
           :module-key="w.id.slice(7)"
         />
-        <!-- fase 3d-2 -->
-        <div v-else-if="w.id.startsWith('domain:')" class="win-placeholder">
-          Jendela bidang belum tersedia.
-        </div>
+        <DomainWindow
+          v-else-if="w.id.startsWith('domain:')"
+          :domain-key="w.id.slice(7)"
+        />
       </div>
       <div class="resize" @pointerdown.stop="wm.startResize($event, w, false)" />
     </div>

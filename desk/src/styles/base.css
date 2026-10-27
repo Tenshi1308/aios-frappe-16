@@ -1671,3 +1671,197 @@ textarea {
   border-left: 3px solid var(--line);
   color: var(--muted);
 }
+
+/* ---------- DOMAIN & MOD GRID ---------- */
+.mod-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-4);
+}
+.mod {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-7);
+  padding: var(--space-10) var(--space-2);
+  border-radius: var(--radius-8);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
+  text-align: center;
+  line-height: 1.2;
+  color: var(--fg);
+  border: 1px solid transparent;
+}
+.mod:hover {
+  background: var(--hover);
+}
+.domain-win {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-14);
+}
+.domain-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding-bottom: var(--space-10);
+  border-bottom: 1px solid var(--line);
+}
+.domain-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  min-width: 0;
+}
+.domain-title h4 {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-700);
+  color: var(--fg);
+}
+.domain-title small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-11);
+}
+.domain-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-10);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-8);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
+}
+.domain-refresh:hover:not(:disabled) {
+  background: var(--hover);
+}
+.domain-refresh:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+.domain-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-8);
+  background: var(--surface-2);
+  font-size: var(--fs-12);
+}
+.domain-error {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.domain-state {
+  padding: var(--space-28) var(--space-14);
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--fs-13);
+}
+.domain-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-12);
+}
+.domain-card {
+  padding: var(--space-14) var(--space-16);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-10);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+.domain-card-label {
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.domain-card-value {
+  font-size: var(--fs-20);
+  font-weight: var(--fw-700);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+.sec,
+.domain-sec {
+  margin: var(--space-6) 0 0;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-700);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.domain-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-8);
+}
+.domain-shortcut {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-11) var(--space-12);
+  border-radius: var(--radius-9);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  font-weight: var(--fw-600);
+  font-size: var(--fs-13);
+  color: var(--fg);
+}
+.domain-shortcut:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.domain-shortcut svg {
+  color: var(--muted);
+  flex: none;
+}
+.domain-shortcut span {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.domain-shortcut em {
+  font-style: normal;
+  font-size: var(--fs-12);
+  color: var(--faint);
+  font-weight: var(--fw-500);
+  font-variant-numeric: tabular-nums;
+}
+.domain-ask {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  flex-wrap: wrap;
+  padding: var(--space-12) var(--space-14);
+  border-radius: var(--radius-10);
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent);
+}
+.domain-ask-text {
+  flex: 1 1 180px;
+  min-width: 180px;
+  font-size: var(--fs-13);
+  color: var(--fg);
+}
+.domain-ask-prompts {
+  display: flex;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  align-items: center;
+}
