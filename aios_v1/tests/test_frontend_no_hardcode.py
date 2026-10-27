@@ -1,12 +1,13 @@
-"""Kontrak statis anti-hardcode Ekasa Desk (#12 fase 3a/3b - docs/08 §7-§8).
+"""Kontrak statis anti-hardcode Ekasa Desk (#12 fase 3a/3b/3d-2 - docs/08 §7-§8).
 
 Test ini berjalan tanpa Frappe dan tanpa `desk/node_modules`:
-1. Komponen `desk/src/components/module` dan `desk/src/components/shell`
+1. Komponen `desk/src/components/{module,domain,shell,windows}` dan `desk/src/styles/base.css`
    bebas warna literal hex (`#rgb`..`#rrggbbaa`) atau `rgb()`/`rgba()`.
 2. Komponen `desk/src/components/module` bebas literal nama DocType katalog
    ("Sales Invoice", "Purchase Invoice", dst.).
-3. Jalur produksi `desk/src/` (di luar `api/mock`) bebas impor/referensi `api/mock`.
-4. Kasus positif buatan membuktikan regex benar-benar menangkap pelanggaran.
+3. `DomainWindow.vue` dan `StartMenu.vue` bebas literal nama bidang ("Sales", "Finance") di template.
+4. Jalur produksi `desk/src/` (di luar `api/mock`) bebas impor/referensi `api/mock`.
+5. Kasus positif buatan membuktikan regex benar-benar menangkap pelanggaran.
 """
 
 import re
@@ -16,10 +17,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DESK_SRC = REPO_ROOT / "desk" / "src"
 MODULE_DIR = DESK_SRC / "components" / "module"
+DOMAIN_DIR = DESK_SRC / "components" / "domain"
 SHELL_DIR = DESK_SRC / "components" / "shell"
 WINDOWS_DIR = DESK_SRC / "components" / "windows"
 BASE_CSS = DESK_SRC / "styles" / "base.css"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
+DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
+START_MENU = SHELL_DIR / "StartMenu.vue"
 
 FORBIDDEN_SETTING_FIELDS = (
     "api_key",
@@ -53,6 +57,13 @@ DOCTYPE_LITERAL_RE = re.compile(
     + r""")\s*\1|\b(?:Sales\s+Invoice|Sales\s+Order|Purchase\s+Invoice|Payment\s+Entry)\b"""
 )
 
+ACTIVE_DOMAINS = ("Sales", "Finance")
+DOMAIN_LITERAL_RE = re.compile(
+    r"""(['"`])\s*(?:"""
+    + "|".join(re.escape(d) for d in ACTIVE_DOMAINS)
+    + r""")\s*\1|\b(?:Sales|Finance)\b"""
+)
+
 API_MOCK_RE = re.compile(r"api/mock\b")
 
 
@@ -64,16 +75,24 @@ def _iter_source_files(directory: Path):
             yield path
 
 
+def _extract_vue_template(path: Path) -> str:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(r"<template>(.*)</template>", text, re.DOTALL)
+    return match.group(1) if match else text
+
+
 @unittest.skipUnless(DESK_SRC.exists(), "desk/src belum tersedia")
 class TestFrontendNoHardcode(unittest.TestCase):
     def test_no_hex_or_rgba_in_module_and_shell_components(self):
         self.assertTrue(MODULE_DIR.exists(), "desk/src/components/module belum ada")
+        self.assertTrue(DOMAIN_DIR.exists(), "desk/src/components/domain belum ada")
         self.assertTrue(SHELL_DIR.exists(), "desk/src/components/shell belum ada")
         self.assertTrue(WINDOWS_DIR.exists(), "desk/src/components/windows belum ada")
         self.assertTrue(BASE_CSS.exists(), "desk/src/styles/base.css belum ada")
         offenders = []
         paths = [
             *(_iter_source_files(MODULE_DIR)),
+            *(_iter_source_files(DOMAIN_DIR)),
             *(_iter_source_files(SHELL_DIR)),
             *(_iter_source_files(WINDOWS_DIR)),
             BASE_CSS,
@@ -105,6 +124,21 @@ class TestFrontendNoHardcode(unittest.TestCase):
                 offenders.append(f"{rel}: {match.group(0)}")
         self.assertEqual(offenders, [], f"Nama DocType literal di komponen modul: {offenders}")
 
+    def test_no_literal_domain_names_in_domain_window_and_start_menu_templates(self):
+        self.assertTrue(DOMAIN_WINDOW.exists(), "desk/src/components/domain/DomainWindow.vue belum ada")
+        self.assertTrue(START_MENU.exists(), "desk/src/components/shell/StartMenu.vue belum ada")
+        offenders = []
+        for target in (DOMAIN_WINDOW, START_MENU):
+            template_text = _extract_vue_template(target)
+            for match in DOMAIN_LITERAL_RE.finditer(template_text):
+                rel = target.relative_to(REPO_ROOT).as_posix()
+                offenders.append(f"{rel}: {match.group(0)}")
+        self.assertEqual(
+            offenders,
+            [],
+            f"Nama bidang literal di template DomainWindow.vue atau StartMenu.vue: {offenders}",
+        )
+
     def test_no_api_mock_in_production_paths(self):
         offenders = []
         for path in _iter_source_files(DESK_SRC):
@@ -125,6 +159,10 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIsNotNone(DOCTYPE_LITERAL_RE.search("<h4>Purchase Invoice</h4>"))
         self.assertIsNotNone(DOCTYPE_LITERAL_RE.search('label: "Customer"'))
         self.assertIsNone(DOCTYPE_LITERAL_RE.search("<h4>{{ meta?.label }}</h4>"))
+
+        self.assertIsNotNone(DOMAIN_LITERAL_RE.search("<h4>Sales</h4>"))
+        self.assertIsNotNone(DOMAIN_LITERAL_RE.search("<span>Finance</span>"))
+        self.assertIsNone(DOMAIN_LITERAL_RE.search("<h4>{{ meta?.label }}</h4>"))
 
         self.assertIsNotNone(API_MOCK_RE.search("import { rows } from '../api/mock/sales';"))
         self.assertIsNone(API_MOCK_RE.search("import { fetchModule } from '@modules-api';"))
