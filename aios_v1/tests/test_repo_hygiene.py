@@ -1,6 +1,7 @@
 """Higienitas repo (K1/K4/K8/K9) — AST + git ls-files. Merah di #0, hijau di #3."""
 
 import ast
+import re
 import subprocess
 import unittest
 from pathlib import Path
@@ -11,11 +12,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]  # apps/aios_v1/
 INNER_PKG = Path(__file__).resolve().parent.parent  # apps/aios_v1/aios_v1/
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
-# File frontend yang wajib bebas emoji (docs/05.1 §3 #3)
-EMOJI_FREE_FILES = [
-    FRONTEND_DIR / "lib" / "branches.ts",
-    FRONTEND_DIR / "components" / "chat" / "ChatDock.tsx",
-]
+# Seluruh source frontend wajib bebas emoji dekoratif (docs/01, docs/08 aturan Zero Emoji)
+FRONTEND_SRC = FRONTEND_DIR / "src"
+EMOJI_RE = re.compile(
+    r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF]"
+)
 
 # Batch 1 hanya modul PoC aktif; modul dormant menyusul #3.
 DORMANT_MODULES = {
@@ -33,6 +34,14 @@ def _git_ls_files(subpath):
         ["git", "ls-files", subpath], cwd=REPO_ROOT, capture_output=True, text=True, check=False
     )
     return [line for line in out.stdout.splitlines() if line.strip()]
+
+
+def _iter_frontend_sources(directory: Path):
+    if not directory.exists():
+        return
+    for path in sorted(directory.rglob("*")):
+        if path.is_file() and path.suffix in {".vue", ".ts", ".css"}:
+            yield path
 
 
 def _iter_production_modules():
@@ -85,14 +94,25 @@ class TestRepoHygiene(unittest.TestCase):
         demos = list((INNER_PKG / "lib").glob("demo_tahap*.py"))
         self.assertEqual(demos, [], f"K4: {len(demos)} demo_tahap* masih ada")
 
-    @pytest.mark.xfail(reason="target #3 (K1/K4/K8/K9)", strict=False)
     def test_no_emoji_in_frontend(self):
-        emoji_chars = "📊💰📈🛒📦🏭📋👥🔧"
+        if not FRONTEND_SRC.exists():
+            self.skipTest("frontend/src belum tersedia")
         offenders = []
-        for f in EMOJI_FREE_FILES:
-            if f.exists() and any(ch in f.read_text(encoding="utf-8") for ch in emoji_chars):
-                offenders.append(f.name)
+        for path in _iter_frontend_sources(FRONTEND_SRC):
+            text = path.read_text(encoding="utf-8")
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                for match in EMOJI_RE.finditer(line):
+                    rel = path.relative_to(REPO_ROOT).as_posix()
+                    offenders.append(f"{rel}:{lineno}: {match.group(0)}")
         self.assertEqual(offenders, [], f"Emoji dekoratif di: {offenders}")
+
+    def test_emoji_regex_detects_samples_and_ignores_plain_text(self):
+        self.assertIsNotNone(EMOJI_RE.search("Performa: 📊"))
+        self.assertIsNotNone(EMOJI_RE.search("Total: 💰"))
+        self.assertIsNotNone(EMOJI_RE.search("Icon ✨"))
+        self.assertIsNone(
+            EMOJI_RE.search("Halo, client. AIOS · online · Mengirim… — Rp 363.000")
+        )
 
     def test_no_silent_except_in_production_modules(self):
         """Setiap ExceptHandler log, raise, atau teruskan exception ke caller (AST).
