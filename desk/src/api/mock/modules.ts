@@ -1,6 +1,9 @@
 import type {
   BootstrapData,
+  DomainCard,
+  DomainDetailData,
   DomainMeta,
+  DomainModule,
   ModuleDetailData,
   ModuleFilters,
   ModuleListData,
@@ -83,6 +86,44 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
     domains: MOCK_DOMAINS,
     modules: MOCK_MODULES,
     csrf_token: 'mock-csrf-token',
+  };
+}
+
+export async function fetchDomain(key: string): Promise<DomainDetailData> {
+  const dom = MOCK_DOMAINS.find((d) => d.key === key) ?? MOCK_DOMAINS[0];
+  const isFinance = dom.key === 'finance';
+  return {
+    domain: dom,
+    company: {
+      id: 'Mock Company',
+      name: 'Mock Company',
+      currency: 'IDR',
+    },
+    cards: isFinance
+      ? [
+          { key: 'ap_outstanding', label: 'AP outstanding', value: 184293, format: 'currency', currency: 'IDR' },
+          { key: 'payment_month', label: 'Pembayaran bulan ini', value: 211854, format: 'currency', currency: 'IDR' },
+          { key: 'journal_month', label: 'Jurnal bulan ini', value: 0, format: 'number' },
+          { key: 'supplier_active', label: 'Supplier aktif', value: 8, format: 'number' },
+        ]
+      : [
+          { key: 'invoice_month', label: 'Invoice bulan ini', value: 363000, format: 'currency', currency: 'IDR' },
+          { key: 'open_so', label: 'Order terbuka', value: 2, format: 'number' },
+          { key: 'ar_outstanding', label: 'Piutang', value: 316000, format: 'currency', currency: 'IDR' },
+          { key: 'customer_active', label: 'Customer aktif', value: 8, format: 'number' },
+        ],
+    modules: isFinance
+      ? [
+          { key: 'purchase_invoice', label: 'Purchase Invoice', icon: 'file', row_count: 3 },
+          { key: 'payment_entry', label: 'Payment Entry', icon: 'wallet', row_count: 2 },
+          { key: 'supplier', label: 'Supplier', icon: 'users', row_count: 8 },
+        ]
+      : [
+          { key: 'sales_invoice', label: 'Sales Invoice', icon: 'file', row_count: 5 },
+          { key: 'sales_order', label: 'Sales Order', icon: 'cart', row_count: 2 },
+          { key: 'customer', label: 'Customer', icon: 'users', row_count: 8 },
+          { key: 'item', label: 'Item', icon: 'box', row_count: 12 },
+        ],
   };
 }
 
@@ -187,6 +228,7 @@ export async function saveTheme(theme: SettingsTheme, _csrfToken: string): Promi
 
 export const modulesApi = {
   fetchBootstrap,
+  fetchDomain,
   fetchModule,
   fetchList,
   search,

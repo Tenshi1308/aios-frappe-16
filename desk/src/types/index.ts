@@ -170,12 +170,38 @@ export interface ModuleCardMeta {
   scope: ModuleCardScope;
 }
 
+export interface DomainCard {
+  key: string;
+  label: string;
+  value: number;
+  format: 'number' | 'currency';
+  currency?: string;
+}
+
+export interface DomainModule {
+  key: string;
+  label: string;
+  icon: string;
+  row_count: number;
+}
+
 export interface DomainMeta {
   key: string;
   label: string;
   icon: string;
   color_token: string;
   module_count: number;
+}
+
+export interface DomainDetailData {
+  domain: DomainMeta;
+  company: {
+    id: string;
+    name: string;
+    currency: string;
+  };
+  cards: DomainCard[];
+  modules: DomainModule[];
 }
 
 export interface ModuleMeta {
@@ -296,6 +322,7 @@ export interface SettingsData {
 
 export interface ModulesApi {
   fetchBootstrap(): Promise<BootstrapData>;
+  fetchDomain(key: string): Promise<DomainDetailData>;
   fetchModule(
     key: string,
     params?: { page?: number; pageSize?: number; filters?: ModuleFilters },

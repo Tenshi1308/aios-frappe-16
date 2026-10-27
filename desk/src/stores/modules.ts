@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import {
   fetchBootstrap,
+  fetchDomain,
   fetchList,
   fetchModule,
   fetchSettings,
@@ -10,6 +11,7 @@ import {
 import { useWindowManager } from '../composables/useWindowManager';
 import { useSessionStore } from './session';
 import type {
+  DomainDetailData,
   DomainMeta,
   ModuleDetailData,
   ModuleFilters,
@@ -27,6 +29,9 @@ export interface ModuleEntryState extends ModuleDetailData {
 export const useModulesStore = defineStore('modules', {
   state: () => ({
     domains: [] as DomainMeta[],
+    domainData: {} as Record<string, DomainDetailData>,
+    domainLoadingByKey: {} as Record<string, boolean>,
+    domainErrorByKey: {} as Record<string, string>,
     modules: [] as ModuleMeta[],
     activeKey: null as string | null,
     moduleData: {} as Record<string, ModuleEntryState>,
@@ -43,11 +48,15 @@ export const useModulesStore = defineStore('modules', {
     themeSaving: false,
     bootstrapped: false,
     _reqSeq: {} as Record<string, number>,
+    _domainSeq: {} as Record<string, number>,
     _searchSeq: 0,
     _settingsSeq: 0,
   }),
   getters: {
     domainByKey: (s) => (key: string) => s.domains.find((d) => d.key === key),
+    domainDataFor: (s) => (key: string) => s.domainData[key] ?? null,
+    isDomainLoadingKey: (s) => (key: string) => s.domainLoadingByKey[key] ?? false,
+    domainErrorFor: (s) => (key: string) => s.domainErrorByKey[key] ?? '',
     byKey: (s) => (key: string) => s.modules.find((m) => m.key === key),
     grouped: (s) => {
       const map = new Map<string, ModuleMeta[]>();
@@ -118,11 +127,43 @@ export const useModulesStore = defineStore('modules', {
       }
     },
 
-    openDomain(key: string) {
+    async refreshDomain(key: string) {
       if (!key) return;
-      const meta = this.domainByKey(key);
+      const seq = (this._domainSeq[key] ?? 0) + 1;
+      this._domainSeq[key] = seq;
+      this.domainLoadingByKey[key] = true;
+      this.domainErrorByKey[key] = '';
+
+      try {
+        const detail = await fetchDomain(key);
+        if (this._domainSeq[key] !== seq) return;
+        this.domainData[key] = detail;
+        if (!this.domains.some((d) => d.key === detail.domain.key)) {
+          this.domains = [...this.domains, detail.domain];
+        }
+      } catch (err) {
+        if (this._domainSeq[key] !== seq) return;
+        const msg = err instanceof Error && err.message.trim() ? err.message : 'Bidang tidak dapat dimuat.';
+        this.domainErrorByKey[key] = msg;
+      } finally {
+        if (this._domainSeq[key] === seq) {
+          this.domainLoadingByKey[key] = false;
+        }
+      }
+    },
+
+    async openDomain(key: string) {
+      if (!key) return;
+      const meta = this.domainByKey(key) ?? this.domainDataFor(key)?.domain;
       const title = meta?.label ?? key;
-      useWindowManager().open(`domain:${key}`, title);
+      const win = useWindowManager().open(`domain:${key}`, title);
+      if (!this.domainDataFor(key)) {
+        await this.refreshDomain(key);
+        const loadedTitle = this.domainDataFor(key)?.domain.label;
+        if (loadedTitle && win.title !== loadedTitle) {
+          win.title = loadedTitle;
+        }
+      }
     },
 
     async openModule(key: string) {

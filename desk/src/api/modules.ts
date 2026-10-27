@@ -3,7 +3,10 @@ import type {
   BootstrapData,
   Branch,
   BranchWorker,
+  DomainCard,
+  DomainDetailData,
   DomainMeta,
+  DomainModule,
   ModuleCard,
   ModuleCardFormat,
   ModuleCardMeta,
@@ -128,6 +131,33 @@ function mapDomainMeta(raw: unknown): DomainMeta | null {
     icon: asString(raw.icon, 'tag'),
     color_token: asString(raw.color_token, `domain-${raw.key}`),
     module_count: Math.max(0, Math.trunc(asNumber(raw.module_count, 0))),
+  };
+}
+
+function mapDomainCard(raw: unknown): DomainCard | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.key !== 'string' || !raw.key) return null;
+  const format: 'number' | 'currency' = raw.format === 'currency' ? 'currency' : 'number';
+  const card: DomainCard = {
+    key: raw.key,
+    label: asString(raw.label, raw.key),
+    value: asNumber(raw.value, 0),
+    format,
+  };
+  if (typeof raw.currency === 'string' && raw.currency.trim()) {
+    card.currency = raw.currency.trim();
+  }
+  return card;
+}
+
+function mapDomainModule(raw: unknown): DomainModule | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.key !== 'string' || !raw.key) return null;
+  return {
+    key: raw.key,
+    label: asString(raw.label, raw.key),
+    icon: asString(raw.icon, 'file'),
+    row_count: Math.max(0, Math.trunc(asNumber(raw.row_count, 0))),
   };
 }
 
@@ -294,6 +324,44 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
     domains,
     modules,
     csrf_token: csrfToken,
+  };
+}
+
+export async function fetchDomain(key: string): Promise<DomainDetailData> {
+  const qs = new URLSearchParams({ domain: key });
+  const raw = unwrapMessage<unknown>(await apiFetch(`${DESKTOP_API}.domain?${qs.toString()}`));
+  if (!isRecord(raw) || !isRecord(raw.domain) || !isRecord(raw.company)) {
+    throw new ApiError('Respons bidang tidak valid.');
+  }
+  const domKey = asString(raw.domain.key);
+  if (!domKey) {
+    throw new ApiError('Definisi bidang tidak valid.');
+  }
+  const modulesList = Array.isArray(raw.modules)
+    ? raw.modules.map(mapDomainModule).filter((m): m is DomainModule => m !== null)
+    : [];
+  const cardsList = Array.isArray(raw.cards)
+    ? raw.cards.map(mapDomainCard).filter((c): c is DomainCard => c !== null)
+    : [];
+  const domainMeta: DomainMeta = {
+    key: domKey,
+    label: asString(raw.domain.label, domKey),
+    icon: asString(raw.domain.icon, 'tag'),
+    color_token: asString(raw.domain.color_token, `domain-${domKey}`),
+    module_count:
+      typeof raw.domain.module_count === 'number'
+        ? Math.max(0, Math.trunc(asNumber(raw.domain.module_count, 0)))
+        : modulesList.length,
+  };
+  return {
+    domain: domainMeta,
+    company: {
+      id: asString(raw.company.id),
+      name: asString(raw.company.name, asString(raw.company.id)),
+      currency: asString(raw.company.currency),
+    },
+    cards: cardsList,
+    modules: modulesList,
   };
 }
 
@@ -481,6 +549,7 @@ export async function saveTheme(theme: SettingsTheme, csrfToken: string): Promis
 
 export const modulesApi = {
   fetchBootstrap,
+  fetchDomain,
   fetchModule,
   fetchList,
   search,
