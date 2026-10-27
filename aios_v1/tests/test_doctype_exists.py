@@ -64,6 +64,13 @@ class TestTahapCDoctypes(unittest.TestCase):
         self.assertIn("site_tokens_used", fields)
         self.assertTrue(fields["site_tokens_used"].get("read_only"))
 
+    def test_managed_site_registry_fields(self):
+        fields = _fields("aios_managed_site")
+        for name in ("site_name", "base_url", "api_credential", "status"):
+            self.assertIn(name, fields)
+        path = DOCTYPE_DIR / "aios_managed_site" / "aios_managed_site.json"
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["permissions"], [])
+
     def test_permission_hooks_registered(self):
         src = HOOKS.read_text(encoding="utf-8")
         self.assertIn("permission_query_conditions = {", src)

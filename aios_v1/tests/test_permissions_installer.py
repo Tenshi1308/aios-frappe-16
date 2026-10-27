@@ -62,6 +62,17 @@ class TestPermissionInstaller(IntegrationTestCase):
         self.assertEqual(perm["read"], 1)
         self.assertIsNone(self._perm("AIOS Conversation", "AIOS Admin"))
 
+    def test_managed_site_admin_docperm_is_installed(self):
+        if not frappe.db.exists("Role", "AIOS Admin"):
+            self.skipTest("AIOS Admin role is not installed on this site.")
+
+        ensure_aios_permissions()
+
+        perm = self._perm("AIOS Managed Site", "AIOS Admin")
+        self.assertTrue(perm)
+        for ptype in ("read", "write", "create", "delete"):
+            self.assertEqual(perm[ptype], 1, ptype)
+
     def test_client_full_on_owned_doctype(self):
         perm = self._perm("AIOS Conversation", "AIOS Client")
         self.assertTrue(perm)
