@@ -5,6 +5,8 @@ from datetime import date
 from functools import wraps
 
 import frappe
+from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.sessions import get_csrf_token
 from frappe.utils import format_datetime, now_datetime
 from frappe.utils.scheduler import is_scheduler_inactive
@@ -562,3 +564,39 @@ def settings():
             "options": [*_THEME_OPTIONS],
         },
     }
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=10, seconds=60, methods=["POST"], ip_based=True)
+def log_client_error(message: str, context: str = "", stack: str = ""):
+    """Catat error kritis klien ke DocType Error Log dengan laju dibatasi."""
+    try:
+        user = frappe.session.user if hasattr(frappe, "session") else None
+        if not user or user == "Guest":
+            frappe.throw(_("Masuk terlebih dahulu."), frappe.AuthenticationError)
+
+        msg = (message or "").strip()
+        if not msg:
+            frappe.throw(_("Pesan error wajib diisi."), frappe.ValidationError)
+
+        clean_message = msg[:500]
+        clean_context = (context or "").strip()[:200]
+        clean_stack = (stack or "").strip()[:4000]
+
+        detail_parts = [clean_message]
+        if clean_stack:
+            detail_parts.append(clean_stack)
+        detail_text = "\n\n".join(detail_parts)
+
+        log_exception(
+            title="AIOS Desk Client Error",
+            context=clean_context or None,
+            detail=detail_text,
+        )
+        return {"ok": True}
+    except (frappe.AuthenticationError, frappe.RateLimitExceededError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception("AIOS Desk Client Error", exc=exc, context="log_client_error")
+        frappe.throw(_("Permintaan gagal."), frappe.ValidationError)
+

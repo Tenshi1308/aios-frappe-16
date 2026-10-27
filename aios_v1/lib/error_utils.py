@@ -69,6 +69,7 @@ def log_exception(
     exc: BaseException | None = None,
     context: str | None = None,
     *,
+    detail: str | None = None,
     defer_insert: bool = False,
 ) -> None:
     """Catat kegagalan ke Error Log Frappe dengan pesan tersanitasi."""
@@ -77,6 +78,8 @@ def log_exception(
         parts.append(str(context))
     if exc is not None:
         parts.append(f"{type(exc).__name__}: {exc}")
+    if detail:
+        parts.append(str(detail))
     trace = frappe.get_traceback() if exc is not None else ""
     if trace:
         parts.append(trace)
