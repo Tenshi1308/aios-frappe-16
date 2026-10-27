@@ -30,6 +30,12 @@ CONTROL_PERMS = {
 	"AIOS Token Usage": ("read",),
 }
 
+# Developer control-plane registry permissions. This is deliberately separate
+# from the client/control loops: the role only exists on the developer site.
+MANAGED_SITE_ADMIN_PERMS = {
+	"AIOS Managed Site": ("read", "write", "create", "delete"),
+}
+
 # DocType ERPNext target untuk plugin baca/laporan. `AIOS Client` hanya
 # read + report; tulis tetap lewat Pending Action Draft.
 ERP_CLIENT_DOCTYPES = (
@@ -230,6 +236,14 @@ def ensure_aios_permissions() -> None:
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		_ensure_role_perm(doctype, "AIOS Control", ptypes)
+
+	for doctype, ptypes in MANAGED_SITE_ADMIN_PERMS.items():
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		if frappe.db.exists("Role", "AIOS Admin"):
+			_ensure_role_perm(doctype, "AIOS Admin", ptypes)
+		else:
+			_remove_role_perm(doctype, "AIOS Admin")
 
 	_remove_role_perm("AIOS Plugin", "AIOS Admin")
 	_remove_role_perm("AIOS Plugin Scope", "AIOS Admin")
