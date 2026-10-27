@@ -556,3 +556,6 @@ export const modulesApi = {
   fetchSettings,
   saveTheme,
 } satisfies ModulesApi;
+
+export { reportClientError, type ClientErrorPayload } from './client';
+

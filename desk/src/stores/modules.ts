@@ -10,6 +10,7 @@ import {
 } from '@modules-api';
 import { useWindowManager } from '../composables/useWindowManager';
 import { useSessionStore } from './session';
+import { reportClientError } from '../api/client';
 import type {
   DomainDetailData,
   DomainMeta,
@@ -47,6 +48,7 @@ export const useModulesStore = defineStore('modules', {
     settingsError: '',
     themeSaving: false,
     bootstrapped: false,
+    bootstrapError: '',
     _reqSeq: {} as Record<string, number>,
     _domainSeq: {} as Record<string, number>,
     _searchSeq: 0,
@@ -71,6 +73,7 @@ export const useModulesStore = defineStore('modules', {
     dataFor: (s) => (key: string) => s.moduleData[key] ?? null,
     isLoadingKey: (s) => (key: string) => s.loadingByKey[key] ?? false,
     errorFor: (s) => (key: string) => s.errorByKey[key] ?? '',
+    bootstrapFailed: (s) => !s.bootstrapped && !!s.bootstrapError,
   },
   actions: {
     async loadBootstrap(force = false) {
@@ -81,12 +84,27 @@ export const useModulesStore = defineStore('modules', {
         this.domains = data.domains ?? [];
         this.modules = data.modules;
         this.bootstrapped = true;
-      } catch {
+        this.bootstrapError = '';
+      } catch (err) {
         // Bootstrap modul tidak boleh menjatuhkan shell (mis. Administrator ditolak _require_active_client).
         if (!this.bootstrapped) {
           this.domains = [];
           this.modules = [];
         }
+        const message =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Katalog modul tidak dapat dimuat.';
+        this.bootstrapError = message;
+        const session = useSessionStore();
+        void reportClientError(
+          {
+            message,
+            context: 'loadBootstrap',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
       } finally {
         this.loading = false;
       }
@@ -128,7 +146,7 @@ export const useModulesStore = defineStore('modules', {
     },
 
     async refreshDomain(key: string) {
-      if (!key) return;
+      if (!key || this.domainLoadingByKey[key]) return;
       const seq = (this._domainSeq[key] ?? 0) + 1;
       this._domainSeq[key] = seq;
       this.domainLoadingByKey[key] = true;

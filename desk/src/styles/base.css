@@ -1760,6 +1760,14 @@ textarea {
   background: var(--bad-soft);
   color: var(--bad);
 }
+.desk-banner {
+  position: absolute;
+  top: var(--space-14);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-modal);
+  box-shadow: var(--shadow-sm);
+}
 .domain-state {
   padding: var(--space-28) var(--space-14);
   text-align: center;

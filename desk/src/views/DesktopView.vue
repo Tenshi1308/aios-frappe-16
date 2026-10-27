@@ -136,6 +136,23 @@ function onKey(e: KeyboardEvent) {
         <span>Klik dua kali ikon untuk membuka</span>
       </div>
 
+      <div
+        v-if="modules.bootstrapFailed"
+        class="domain-banner domain-error desk-banner"
+        role="alert"
+      >
+        <span>{{ modules.bootstrapError }}</span>
+        <button
+          class="domain-refresh"
+          type="button"
+          :disabled="modules.loading"
+          @click="modules.loadBootstrap(true)"
+        >
+          <AppIcon name="refresh" :size="13" />
+          <span>Coba lagi</span>
+        </button>
+      </div>
+
       <WindowHost ref="windowHost" :narrow="narrow" />
 
       <StartMenu v-if="ui.flyout === 'start'" />

@@ -79,3 +79,38 @@ export function unwrapMessage<T>(data: unknown): T | null {
   }
   return (data as T) ?? null;
 }
+
+export interface ClientErrorPayload {
+  message: string;
+  context?: string;
+  stack?: string;
+}
+
+export async function reportClientError(
+  payload: ClientErrorPayload,
+  csrfToken?: string,
+): Promise<boolean> {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (csrfToken) {
+      headers['X-Frappe-CSRF-Token'] = csrfToken;
+    }
+    const res = await fetch('/api/method/aios_v1.api.desktop.log_client_error', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({
+        message: payload.message,
+        context: payload.context ?? '',
+        stack: payload.stack ?? '',
+      }),
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn('Gagal melaporkan error klien ke server:', err);
+    return false;
+  }
+}
+
