@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import frappe
 
 from aios_v1.lib.error_utils import log_exception, safe_error, sanitize_text
@@ -28,7 +30,25 @@ def _audit(action: str, **fields) -> None:
 	"""Write a sanitized audit entry through Frappe's site logger."""
 	values = [("action", action), ("user", frappe.session.user), *fields.items()]
 	message = " ".join(f"{sanitize_text(key)}={sanitize_text(value)}" for key, value in values)
-	frappe.logger("aios_control", allow_site=True).info(message)
+	logger = frappe.logger("aios_control", allow_site=True)
+	# Frappe defaults loggers to ERROR outside dev; INFO must be enabled per-logger to persist audit.
+	logger.setLevel(logging.INFO)
+	logger.info(message)
+
+
+def _record_activity(subject: str) -> None:
+	"""Record a successful write in Frappe's Activity Log, without blocking it on failure."""
+	try:
+		frappe.get_doc(
+			{
+				"doctype": "Activity Log",
+				"user": frappe.session.user,
+				"status": "Success",
+				"subject": sanitize_text(subject)[:140],
+			}
+		).insert(ignore_permissions=True, ignore_links=True)
+	except Exception as exc:
+		log_exception("AIOS Control API: activity log", exc=exc, context="activity_log")
 
 
 def _safe_error() -> dict:
@@ -134,6 +154,7 @@ def activate_user(user: str, status: str):
 			user,
 			{"aios_status": status, "enabled": 1 if status == "Active" else 0},
 		)
+		_record_activity(f"AIOS lifecycle: {user} → {status}")
 		_audit("activate_user", target=user, status=status)
 		return {"ok": True, "user": user, "aios_status": status}
 	except (frappe.PermissionError, frappe.ValidationError):
