@@ -8,6 +8,7 @@ from aios_v1.lib.error_utils import log_exception, safe_error, sanitize_text
 
 _EXCLUDED_USERS = ("Administrator", "Guest")
 _USER_FIELDS = ("name", "full_name", "aios_status", "aios_persona", "enabled", "last_login")
+_CLIENT_ROLE = "AIOS Client"
 
 
 def _require_control_token() -> None:
@@ -53,6 +54,26 @@ def _base_user_filters(status=None) -> dict:
 	return filters
 
 
+def _client_role_names() -> list[str]:
+	"""Return users carrying the client role; the filter is fixed, not a parameter."""
+	return frappe.get_all(
+		"Has Role",
+		filters={"parenttype": "User", "role": _CLIENT_ROLE},
+		pluck="parent",
+		limit=0,
+	)
+
+
+def _client_user_filters(status=None) -> list:
+	filters = [
+		["User", "name", "not in", list(_EXCLUDED_USERS)],
+		["User", "name", "in", _client_role_names()],
+	]
+	if status is not None:
+		filters.append(["User", "aios_status", "=", status])
+	return filters
+
+
 @frappe.whitelist(methods=["GET"])
 def health():
 	_require_control_token()
@@ -76,7 +97,7 @@ def users(status=None, page=1, page_size=50):
 	try:
 		page = _bounded_int(page, default=1, minimum=1)
 		page_size = _bounded_int(page_size, default=50, minimum=1, maximum=100)
-		filters = _base_user_filters(status)
+		filters = _client_user_filters(status)
 		rows = frappe.get_list(
 			"User",
 			filters=filters,
