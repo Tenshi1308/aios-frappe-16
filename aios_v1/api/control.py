@@ -47,13 +47,6 @@ def _bounded_int(value, default: int, minimum: int, maximum: int | None = None) 
 	return parsed
 
 
-def _base_user_filters(status=None) -> dict:
-	filters = {"name": ["not in", _EXCLUDED_USERS]}
-	if status is not None:
-		filters["aios_status"] = status
-	return filters
-
-
 def _client_role_names() -> list[str]:
 	"""Return users carrying the client role; the filter is fixed, not a parameter."""
 	return frappe.get_all(
@@ -126,7 +119,14 @@ def activate_user(user: str, status: str):
 		frappe.throw("Status harus Active atau Suspended.", frappe.ValidationError)
 
 	try:
-		if user in _EXCLUDED_USERS or not frappe.db.exists("User", user):
+		if user in _EXCLUDED_USERS:
+			_audit("activate_user_rejected", target=user, reason="excluded_user")
+			frappe.throw("User tidak ditemukan atau tidak dapat diubah.", frappe.ValidationError)
+		if not frappe.db.exists("User", user):
+			_audit("activate_user_rejected", target=user, reason="user_not_found")
+			frappe.throw("User tidak ditemukan atau tidak dapat diubah.", frappe.ValidationError)
+		if _CLIENT_ROLE not in frappe.get_roles(user):
+			_audit("activate_user_rejected", target=user, reason="not_aios_client")
 			frappe.throw("User tidak ditemukan atau tidak dapat diubah.", frappe.ValidationError)
 
 		frappe.db.set_value(
@@ -158,14 +158,11 @@ def metrics():
 			fields=[{"SUM": "total_tokens", "as": "tokens_today"}],
 			limit=1,
 		)
-		users_filter = {"name": ["not in", _EXCLUDED_USERS]}
 		payload = {
 			"site_tokens_used": int(frappe.db.get_single_value("AIOS Setting", "site_tokens_used") or 0),
 			"site_token_limit": int(frappe.db.get_single_value("AIOS Setting", "site_token_limit") or 0),
-			"active_users": frappe.db.count(
-				"User", filters={**users_filter, "aios_status": "Active"}
-			),
-			"total_users": frappe.db.count("User", filters=users_filter),
+			"active_users": frappe.db.count("User", filters=_client_user_filters("Active")),
+			"total_users": frappe.db.count("User", filters=_client_user_filters()),
 			"tokens_today": int((token_totals[0].get("tokens_today") if token_totals else 0) or 0),
 		}
 		_audit("metrics")
