@@ -36,6 +36,9 @@ venv.bak/
 node_modules/
 jspm_packages/
 
+# Artefak build dashboard admin (folder admin/ -> aios_v1/public/admin/)
+aios_v1/public/admin/
+
 # IDEs and editors
 .vscode/
 .vs/

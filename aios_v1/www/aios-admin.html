@@ -1,0 +1,8 @@
+{% if admin_error %}
+<div class="aios-admin-error">{{ admin_error }}</div>
+{% elif not admin_js %}
+<div class="aios-admin-error">Dashboard belum di-build. Jalankan build admin/ terlebih dahulu.</div>
+{% endif %}
+{% if admin_css %}<link rel="stylesheet" href="{{ admin_css }}">{% endif %}
+{% if admin_js %}<script type="module" src="{{ admin_js }}"></script>{% endif %}
+<div id="app"></div>
