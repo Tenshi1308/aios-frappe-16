@@ -291,7 +291,7 @@ Semua endpoint **Desktop API** memakai sesi Frappe yang sedang login dan tunduk 
 | Settings (kuota, persona, status) | **Masuk desktop** sebagai jendela Pengaturan |
 | Onboarding koneksi DB | **Tidak diport** — adapter DB eksternal dihapus (`docs/03` §2) |
 | Payment | **Tidak diport** — sudah mati |
-| Dashboard developer | **Diport setelah `#11`**, bukan sekarang |
+| Dashboard developer | **Bukan bagian Ekasa Desk** — app Vue terpisah di `admin/` (app `aios_v1`), dilayani app di `/aios-admin` (`#11` fase 1c-2) |
 
 Paritas visual diukur terhadap `ekasa-desk-prototype/index.html`, bukan terhadap `frontend/` lama. Daftar selisih yang belum tertutup dipelihara di `docs/05.1`.
 
@@ -301,7 +301,7 @@ Paritas visual diukur terhadap `ekasa-desk-prototype/index.html`, bukan terhadap
 
 1. **Belum ada isolasi level OS.** UI berjalan di browser; keamanan tetap di lapisan server (`docs/02` §2.3).
 2. **Modul belum punya penulisan.** Semua aksi tulis lewat approval.
-3. **Dashboard developer belum dibangun** — menunggu backend `#11`.
+3. **Dashboard developer** dibangun sebagai **app Vue terpisah `/aios-admin`** (folder `admin/`, API `aios_v1.api.control_plane`, `#11` fase 1c-2) dan **bukan bagian Ekasa Desk**; tab undangan sekali pakai, tombol **Buat Site** (fase 2 `#11`), serta DocPerm/registry plugin `AIOS Admin` menyusul di `#11`.
 4. **`Classic Desk` tidak diport.** Prototype menampilkan tombol ke `/app` (Frappe Desk). Di `frontend/` tombol itu **tidak boleh ada**: `AIOS Client` ber-`desk_access=0` dan `Administrator` tidak pernah dipakai jalur produk.
 5. **Notifikasi belum disambungkan.** Prototype menampilkan flyout notifikasi dengan data contoh; `frontend/` belum punya sumber notifikasi nyata. Flyout tidak dirender sampai ada backend-nya.
 6. **Selisih kode vs prototype yang masih terbuka** dicatat di `docs/05.1`, bukan disembunyikan di sini.

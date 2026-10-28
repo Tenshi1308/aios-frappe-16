@@ -113,6 +113,14 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 4. `AIOS Admin` **tidak dipasang di site klien**; `Administrator` tidak pernah dipakai jalur ini.
 
 ### 3. Dashboard Control Plane (UI `AIOS Admin`)
+> **Arsitektur (keputusan owner, fase 1c-2):** dashboard = **app Vue terpisah** di folder
+> `admin/` di dalam app `aios_v1` (bukan bagian Ekasa Desk `frontend/`, bukan Frappe Desk
+> page), di-build ke `aios_v1/public/admin/` dan dilayani app di route **`/aios-admin`**
+> lewat shell www (`aios_v1/www/aios-admin.html` + `aios_admin.py`) dengan aset dari
+> manifest `/assets/aios_v1/admin/`. Guard: Guest diarahkan ke login; selain
+> `Administrator` wajib role `AIOS Admin` (yang tetap `desk_access=0`). API-nya di
+> `aios_v1/api/control_plane.py` (`dashboard`, `health_check`, `set_user_status`).
+
 1. **Daftar Site & Kesehatan:** status, `last_seen`, `last_error`, aksi health check manual.
 2. **Antrean `Pending Provisioning` Lintas Site:** daftar user pending per site, aksi setujui/tolak, set `aios_persona`.
 3. **Undangan Sekali Pakai:** token set-password dibuat & divalidasi **di site klien** (expiry + sekali pakai); dashboard hanya menampilkan tautan + kode registrasi untuk dikirim manual. **Tanpa SMTP untuk PoC**; email otomatis menyusul lewat Email Queue Frappe tanpa mengubah kontrak tautan.
