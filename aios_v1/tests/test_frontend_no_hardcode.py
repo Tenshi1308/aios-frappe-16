@@ -16,6 +16,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DESK_SRC = REPO_ROOT / "frontend" / "src"
+ADMIN_SRC = REPO_ROOT / "admin" / "src"
 MODULE_DIR = DESK_SRC / "components" / "module"
 DOMAIN_DIR = DESK_SRC / "components" / "domain"
 SHELL_DIR = DESK_SRC / "components" / "shell"
@@ -133,6 +134,27 @@ class TestFrontendNoHardcode(unittest.TestCase):
         text = SETTINGS_WINDOW.read_text(encoding="utf-8")
         offenders = [match.group(0) for match in FORBIDDEN_SETTING_RE.finditer(text)]
         self.assertEqual(offenders, [], f"Field sensitif literal di SettingsWindow.vue: {offenders}")
+
+    def test_no_color_literals_in_admin_src(self):
+        """Dashboard admin (admin/src) bebas warna literal; token dari tokens.css."""
+        self.assertTrue(ADMIN_SRC.exists(), "admin/src belum tersedia")
+        offenders = []
+        for path in _iter_source_files(ADMIN_SRC):
+            text = path.read_text(encoding="utf-8")
+            for match in COLOR_LITERAL_RE.finditer(text):
+                offenders.append(f"{path.relative_to(REPO_ROOT).as_posix()}: {match.group(0)}")
+        self.assertEqual(offenders, [], f"Warna literal di admin/src: {offenders}")
+
+    def test_no_api_credential_literal_in_admin_src(self):
+        """api_credential tidak pernah disebut/dirender di kode dashboard admin."""
+        self.assertTrue(ADMIN_SRC.exists(), "admin/src belum tersedia")
+        offenders = []
+        for path in _iter_source_files(ADMIN_SRC):
+            text = path.read_text(encoding="utf-8")
+            if re.search(r"\bapi_credential\b", text):
+                offenders.append(path.relative_to(REPO_ROOT).as_posix())
+        self.assertEqual(offenders, [], f"Literal api_credential di admin/src: {offenders}")
+
 
     def test_no_literal_doctype_names_in_module_components(self):
         self.assertTrue(MODULE_DIR.exists(), "frontend/src/components/module belum ada")

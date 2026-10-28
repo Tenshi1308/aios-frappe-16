@@ -11,9 +11,11 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]  # apps/aios_v1/
 INNER_PKG = Path(__file__).resolve().parent.parent  # apps/aios_v1/aios_v1/
 FRONTEND_DIR = REPO_ROOT / "frontend"
+ADMIN_DIR = REPO_ROOT / "admin"
 
 # Seluruh source frontend wajib bebas emoji dekoratif (docs/01, docs/08 aturan Zero Emoji)
 FRONTEND_SRC = FRONTEND_DIR / "src"
+ADMIN_SRC = ADMIN_DIR / "src"
 EMOJI_RE = re.compile(
     r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF]"
 )
@@ -95,15 +97,16 @@ class TestRepoHygiene(unittest.TestCase):
         self.assertEqual(demos, [], f"K4: {len(demos)} demo_tahap* masih ada")
 
     def test_no_emoji_in_frontend(self):
-        if not FRONTEND_SRC.exists():
-            self.skipTest("frontend/src belum tersedia")
+        if not FRONTEND_SRC.exists() and not ADMIN_SRC.exists():
+            self.skipTest("frontend/src dan admin/src belum tersedia")
         offenders = []
-        for path in _iter_frontend_sources(FRONTEND_SRC):
-            text = path.read_text(encoding="utf-8")
-            for lineno, line in enumerate(text.splitlines(), start=1):
-                for match in EMOJI_RE.finditer(line):
-                    rel = path.relative_to(REPO_ROOT).as_posix()
-                    offenders.append(f"{rel}:{lineno}: {match.group(0)}")
+        for directory in (FRONTEND_SRC, ADMIN_SRC):
+            for path in _iter_frontend_sources(directory):
+                text = path.read_text(encoding="utf-8")
+                for lineno, line in enumerate(text.splitlines(), start=1):
+                    for match in EMOJI_RE.finditer(line):
+                        rel = path.relative_to(REPO_ROOT).as_posix()
+                        offenders.append(f"{rel}:{lineno}: {match.group(0)}")
         self.assertEqual(offenders, [], f"Emoji dekoratif di: {offenders}")
 
     def test_emoji_regex_detects_samples_and_ignores_plain_text(self):
