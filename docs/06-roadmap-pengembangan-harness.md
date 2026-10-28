@@ -104,7 +104,7 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 ### 1. Registri Site Klien (`AIOS Managed Site`, dipakai hanya di site developer)
 1. Field mengikuti `docs/03` §1.4: `site_name` (nama dokumen melalui `autoname`), `base_url`, `company_name`, `contact_name`, `contact_email`, `api_credential` (`Password`), `status`, `last_seen`, `last_error`, `notes`.
 2. **Tanpa `plan`/billing/tiering.** Kuota PoC = satu gerbang site (`AIOS Setting.site_token_limit`); `User.aios_tokens_used` statistik; registry opsional.
-3. Validasi `base_url`: allowlist + wajib HTTPS di non-lokal, guard SSRF (RFC1918/loopback/link-local/cloud metadata, re-check redirect).
+3. Validasi `base_url`: allowlist registry + wajib HTTPS di non-lokal; guard klien membangun URL dari `base_url` terdaftar, tidak mengikuti redirect, dan selalu menolak alamat metadata/link-local/unspecified/multicast/reserved. Loopback/RFC1918 sah karena terdaftar.
 
 ### 2. Role `AIOS Control` & Control API di Site Klien
 1. Role layanan tanpa login manusia: **`read` pada `User` dan `AIOS Token Usage` saja**. Tidak ada akses `AIOS Setting`, tidak ada akses DocType bisnis/ERPNext.
@@ -128,7 +128,9 @@ Membangun **Developer Control Plane**: satu *site* Frappe khusus developer yang 
 ### 5. Script Test Wajib
 - `aios_v1/tests/test_control_api_auth.py`: token salah/kosong → 401 + tercatat; sesi manusia ditolak; token tidak muncul di pesan error/log.
 - `aios_v1/tests/test_control_site_registry.py`: `site_name` unik, `base_url` non-allowlist ditolak.
-- `aios_v1/tests/test_control_ssrf_guard.py`: menolak `127.0.0.1`, `169.254.169.254`, IP privat, dan redirect ke host terlarang.
+- `aios_v1/tests/test_control_ssrf_guard.py`: URL hanya dibangun dari `base_url` registry; menolak `169.254.169.254`, `fd00:ec2::254`, alamat link-local/unspecified/multicast/reserved, userinfo/query/fragment, skema selain HTTP(S), dan redirect 3xx; menerima loopback/RFC1918 yang terdaftar; jawaban DNS terlarang menolak panggilan.
+- `aios_v1/tests/test_control_client.py`: `health()` meng-unwrap `message`; `activate_user` mengirim POST dengan body benar; timeout dan status 4xx/5xx → `safe_error` + satu Error Log; body melebihi batas ditolak; kredensial tidak muncul di payload/Error Log; site tidak terdaftar → error aman tanpa traceback.
+- `aios_v1/tests/test_control_pending_queue.py`: `users()` selalu memfilter role `AIOS Client` (bukan parameter), filter status bekerja di atasnya, `Administrator`/`Guest` tidak muncul, dan 6 field respons tetap.
 - `aios_v1/tests/test_control_lifecycle.py`: setujui user pending → `aios_status = "Active"` + `enabled = 1`; `AIOS Control` tidak bisa membaca `AIOS Setting` maupun dokumen bisnis; `Administrator` tidak tersentuh.
 - `aios_v1/tests/test_site_provisioning.py`: satu penekanan tombol menghasilkan site baru yang bisa dibuka; nama site tidak valid (huruf besar, spasi, `..`, `;`) ditolak.
 - `aios_v1/tests/test_site_provisioning_cleanup.py`: kegagalan di tengah job tidak meninggalkan site/database setengah jadi.

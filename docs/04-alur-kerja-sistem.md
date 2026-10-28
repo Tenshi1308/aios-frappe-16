@@ -319,7 +319,7 @@ sequenceDiagram
     CP-->>Admin: Tampilkan status "Active" / error aman di last_error
 
     Admin->>CP: 3. Lihat antrean pendaftaran (aios_status = Pending Provisioning + role AIOS Client)
-    CP->>Site: GET /api/control/users?status=Pending Provisioning&role=AIOS Client
+    CP->>Site: GET /api/control/users?status=Pending Provisioning
     Site-->>CP: Daftar user pending (tanpa password/hash)
     Admin->>CP: 4. Setujui user (persona, token limit) & minta tautan undangan
     CP->>Site: POST /api/control/users/{user}/activate
@@ -335,9 +335,9 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 6:
-1. **Registrasi Site Klien (`AIOS Managed Site`, hanya di site developer):** record registry dibuat oleh alur provisioning (§6.1) berisi `site_name`, `base_url`, `company_name`, `contact_name`, `contact_email`, dan `api_credential` (field `Password` terenkripsi, di-mask di setiap log/error). Control plane memvalidasi `base_url` terhadap allowlist + wajib HTTPS (kecuali lokal) dengan guard anti-SSRF yang sama seperti `web-market-research`.
+1. **Registrasi Site Klien (`AIOS Managed Site`, hanya di site developer):** record registry dibuat oleh alur provisioning (§6.1) berisi `site_name`, `base_url`, `company_name`, `contact_name`, `contact_email`, dan `api_credential` (field `Password` terenkripsi berformat `api_key:api_secret`, di-mask di setiap log/error). Control plane memvalidasi `base_url` terhadap allowlist registry + wajib HTTPS (kecuali lokal): URL dibangun dari `base_url` terdaftar, redirect tidak diikuti, dan alamat metadata/link-local selalu ditolak. Loopback/RFC1918 sah karena terdaftar; guard `web-market-research` tetap terpisah karena kebijakannya berbeda.
 2. **Health Check & Status Site:** Control plane memanggil `GET /api/control/health` dengan token `AIOS Control`; hasilnya memperbarui `status`, `last_seen`, dan `last_error` (pesan aman, tanpa traceback/detail internal). Kegagalan tidak boleh dilaporkan sebagai sukses.
-3. **Antrean Pendaftaran Lintas Site:** Control plane membaca `User` dengan `aios_status = "Pending Provisioning"` **dan role `AIOS Client`** dari tiap site klien via Control API. Akun sistem (`Guest`, `Administrator`) tidak boleh masuk antrean. Respons memuat **nama dan email** (diperlukan untuk undangan), **tidak pernah** memuat password, hash, API key, isi `AIOS Setting`, atau data bisnis.
+3. **Antrean Pendaftaran Lintas Site:** Control plane membaca `User` dengan `aios_status = "Pending Provisioning"` **dan role `AIOS Client`** dari tiap site klien via Control API. Filter role melekat di endpoint `/users` (bukan parameter pemanggil). Akun sistem (`Guest`, `Administrator`) tidak boleh masuk antrean. Respons memuat **nama dan email** (diperlukan untuk undangan), **tidak pernah** memuat password, hash, API key, isi `AIOS Setting`, atau data bisnis.
 4. **Persetujuan & Undangan:** Saat disetujui, Control API menyetel `aios_status = "Active"` (otomatis `enabled = 1`), `aios_persona`, lalu membuat token set-password **sekali pakai + kedaluwarsa** yang diproses di site klien. Password tidak pernah dikirim via email; control plane hanya menampilkan tautan undangan untuk dikirim manual oleh `AIOS Admin`.
 5. **Pengiriman Undangan:** Untuk PoC tidak ada ketergantungan SMTP. `AIOS Admin` menyalin tautan undangan (dan kode registrasi) lalu mengirimkannya lewat kanal yang sudah dipakai (WhatsApp/Telegram/email sendiri). Integrasi email otomatis (Email Queue Frappe → SMTP/Email Account) menyusul tanpa mengubah kontrak tautan.
 6. **Monitoring Lintas Site:** Control plane menarik agregat (`AIOS Token Usage`, `User.aios_tokens_used`, jumlah user aktif, status site) lewat `GET /api/control/metrics`. Data mentah tetap di site klien; control plane hanya menyimpan ringkasan yang diperlukan dashboard.
