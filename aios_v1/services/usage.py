@@ -33,6 +33,8 @@ def _increment_site_counter(delta: int) -> None:
 		"WHERE doctype = %s AND field = %s",
 		(delta, SITE_DOCTYPE, SITE_USED_FIELD),
 	)
+	# Raw SQL tidak meng-invalidate cache; clear manual (Frappe caching guide).
+	frappe.clear_document_cache(SITE_DOCTYPE, SITE_DOCTYPE)
 
 
 def record_token_usage(
@@ -71,6 +73,8 @@ def record_token_usage(
 		"UPDATE `tabUser` SET aios_tokens_used = COALESCE(aios_tokens_used, 0) + %s WHERE name = %s",
 		(total_tokens, user),
 	)
+	# Raw SQL tidak meng-invalidate cache; clear manual (Frappe caching guide).
+	frappe.clear_document_cache("User", user)
 	return {"total_tokens": total_tokens}
 
 
@@ -103,6 +107,8 @@ def record_token_usage_batch(user: str, records: list[dict]) -> dict:
 			"UPDATE `tabUser` SET aios_tokens_used = COALESCE(aios_tokens_used, 0) + %s WHERE name = %s",
 			(total, user),
 		)
+		# Raw SQL tidak meng-invalidate cache; clear manual (Frappe caching guide).
+		frappe.clear_document_cache("User", user)
 	return {"total_tokens": total, "agents": len(aggregated)}
 
 
@@ -113,3 +119,6 @@ def reset_daily_counters() -> None:
 		(SITE_DOCTYPE, SITE_USED_FIELD),
 	)
 	frappe.db.sql("UPDATE `tabUser` SET aios_tokens_used = 0 WHERE COALESCE(aios_tokens_used, 0) <> 0")
+	# Raw SQL tidak meng-invalidate cache; clear manual (Frappe caching guide).
+	frappe.clear_document_cache(SITE_DOCTYPE, SITE_DOCTYPE)
+	frappe.clear_document_cache("User")

@@ -212,3 +212,69 @@ class TestTokenQuota(IntegrationTestCase):
 		rows = frappe.get_all("AIOS Token Usage", filters={"user": EMAIL}, fields=["total_tokens"])
 		self.assertEqual(rows[-1].total_tokens, 10)
 		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 10)
+
+	def test_record_invalidates_stale_cache_reads(self):
+		"""Raw SQL increment harus meng-invalidate cache, bukan menyisakan nilai lama."""
+		self._set_site(1000, 0)
+		frappe.db.set_value("User", EMAIL, "aios_tokens_used", 0)
+
+		# ISI CACHE dengan pembacaan awal
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 0)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 0)
+		record_token_usage(
+			user=EMAIL,
+			provider="p",
+			model="m",
+			branch="finance",
+			agent="manager",
+			input_tokens=10,
+			output_tokens=5,
+		)
+
+		# TANPA clear cache, dua baris ini akan mengembalikan 0 (stale)
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 15)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 15)
+
+	def test_batch_invalidates_stale_cache_reads(self):
+		self._set_site(1000, 0)
+		frappe.db.set_value("User", EMAIL, "aios_tokens_used", 0)
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 0)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 0)
+		record_token_usage_batch(
+			EMAIL,
+			[
+				{
+					"branch": "sales",
+					"agent": "a",
+					"provider": "p",
+					"model": "m",
+					"input_tokens": 4,
+					"output_tokens": 6,
+				},
+				{
+					"branch": "finance",
+					"agent": "b",
+					"provider": "p",
+					"model": "m",
+					"input_tokens": 1,
+					"output_tokens": 9,
+				},
+			],
+		)
+
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 20)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 20)
+
+	def test_reset_invalidates_stale_cache(self):
+		"""Reset harus meng-invalidate cache, bukan menyisakan nilai lama."""
+		self._set_site(1000, 100)
+		frappe.db.set_value("User", EMAIL, "aios_tokens_used", 100)
+
+		# ISI CACHE secara eksplisit sebelum reset
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 100)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 100)
+
+		reset_daily_counters()
+
+		self.assertEqual(frappe.db.get_single_value("AIOS Setting", "site_tokens_used"), 0)
+		self.assertEqual(frappe.db.get_value("User", EMAIL, "aios_tokens_used"), 0)
