@@ -27,7 +27,7 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 | A5 | `pending_inbox()` tidak melihat pendaftar di site developer | **tinggi** | Belum |
 | A6 | Baris `Has Role` yatim + 1 user uji | rendah | Belum (kapan saja) |
 | B1 | Tautan undangan `/update-password` belum diterbitkan `activate_user` | **tinggi** | Belum |
-| B2 | ~~Custom Field `Lead.app_source`~~ | — | **Dibatalkan** → `Lead.source` |
+| B2 | ~~Custom Field `Lead.app_source`~~ | — | **Dibatalkan** → `Lead.utm_source` |
 | B3 | Tab "Pendaftar" + `signup_leads()` | sedang | Belum |
 | B4 | Hook `setup_wizard_complete` (normalisasi user hasil wizard) | **tinggi** | Belum (baru) |
 | B5 | Prosedur manual admin tertulis | sedang | **Dikerjakan** (`docs/04` §6.0) |
@@ -49,7 +49,7 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 **Dampak:** pendaftar nyangkut di site yang salah; tidak ada mekanisme memindahkan.
 
 **Keputusan:**
-1. Ganti `register_account` agar membuat **`Lead`** bawaan ERPNext di site developer. Field: `lead_name`, `email_id`, `company_name`, `country`, `source = "AIOS Signup"`. Tanpa Custom Field.
+1. Ganti `register_account` agar membuat **`Lead`** bawaan ERPNext di site developer. Field: `lead_name`, `email_id`, `company_name`, `country`, `utm_source = "AIOS Signup"`. Tanpa Custom Field.
 2. **Akar masalah = routing, bukan tipe dokumen.** `Lead` pun akan tercipta di site klien bila request mendarat di sana. Maka endpoint **wajib menolak** bila `frappe.conf.aios_site_role != "developer"` (kunci `site_config.json`, primitif konfigurasi resmi Frappe). Kunci kosong = gagal eksplisit.
 3. Email duplikat: `Lead.validate` → `check_email_id_is_unique` melempar error. Tangkap, `frappe.log_error`, respons tetap seragam (anti-enumerasi).
 
@@ -85,7 +85,7 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 
 **Bukti:** `samuelkarel1308@gmail.com` ada di site developer (`aios_status = "Pending Provisioning"`) tetapi tidak pernah muncul di dashboard.
 
-**Keputusan:** endpoint baru `signup_leads()` membaca `Lead` dengan `source = "AIOS Signup"` di site developer; `pending_inbox()` tetap untuk user yang sudah ada di site klien.
+**Keputusan:** endpoint baru `signup_leads()` membaca `Lead` dengan `utm_source = "AIOS Signup"` di site developer; `pending_inbox()` tetap untuk user yang sudah ada di site klien.
 
 ---
 
@@ -124,9 +124,11 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 
 ### B2 — ~~Custom Field `Lead.app_source`~~
 
-**Status: Dibatalkan.** Pakai field bawaan `Lead.source` (Link ke `Lead Source`) dengan record `Lead Source` "AIOS Signup". Alasan: primitif resmi, tanpa Customize Form, tanpa fixtures, tanpa field baru. `app_active` tetap dibatalkan (redundant dengan `AIOS Managed Site.status`).
+**Status: Dibatalkan.** Pakai field bawaan `Lead.utm_source` (Link ke `UTM Source`) dengan record `UTM Source` "AIOS Signup". Alasan: primitif resmi, tanpa Customize Form, tanpa fixtures, tanpa field baru. `app_active` tetap dibatalkan (redundant dengan `AIOS Managed Site.status`).
 
-**Catatan:** record `Lead Source` "AIOS Signup" harus ada di site developer. Buat lewat `after_install`/`after_migrate` (idempotent), bukan manual.
+**Koreksi 2026-10-29 (Frappe resmi menang):** versi awal catatan ini menulis `Lead.source` + `Lead Source`. Itu **salah** untuk ERPNext 16: patch `erpnext/patches/v15_0/migrate_to_utm_analytics.py` menghapus doctype `Lead Source` dan memakai `UTM Source` (doctype Frappe, modul Website, `autoname = prompt`). Field resmi di `Lead` adalah **`utm_source`** (Link → `UTM Source`); `Lead.source` tidak ada (diverifikasi di `tabDocField` site developer). Nilainya tetap "AIOS Signup".
+
+**Catatan:** record `UTM Source` "AIOS Signup" harus ada di site developer. Buat lewat `after_install`/`after_migrate` (idempotent), bukan manual.
 
 ---
 
@@ -181,7 +183,7 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 |---|---|
 | Aturan induk | **Frappe resmi menang** atas docs dan `AGENTS.md` |
 | Penampung pendaftar pra-site | **`Lead`** bawaan ERPNext di site developer |
-| Penanda asal | **`Lead.source` = "AIOS Signup"**; tanpa Custom Field |
+| Penanda asal | **`Lead.utm_source` = "AIOS Signup"**; tanpa Custom Field |
 | Guard registrasi | `frappe.conf.aios_site_role == "developer"`; kosong/lain = tolak |
 | Registrasi | **Tanpa password**; field: nama, email, perusahaan, negara |
 | `register_account` | Diganti total menjadi pembuat `Lead` |
@@ -230,7 +232,7 @@ Saat dokumen ini dibuat:
 ## G. Urutan kerja yang disarankan
 
 1. **A6** — bersihkan data (kapan saja; izin eksplisit).
-2. **A1 + A3** — guard `aios_site_role`, `register_account` → `Lead`, form tanpa password + negara, update 2 test lama. Sertakan `Lead Source` "AIOS Signup" (B2).
+2. **A1 + A3** — guard `aios_site_role`, `register_account` → `Lead`, form tanpa password + negara, update 2 test lama. Sertakan `UTM Source` "AIOS Signup" (B2).
 3. **A5 + B3** — `signup_leads()` + tab "Pendaftar".
 4. **B4** — hook `setup_wizard_complete` + test.
 5. **B1** — `invitation_url` di `activate_user` + test kontrak `_reset_password`.
