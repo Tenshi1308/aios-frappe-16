@@ -32,12 +32,12 @@ Karena `frappe/auth.py:286` secara native hanya memeriksa `User.enabled`, maka `
 
 | `aios_status` | `User.enabled` (Otomatis) | `send_welcome_email` | Boleh Login (`/login` & API)? | Keterangan |
 |---|---|---|---|---|
-| **`Pending Provisioning`** | **`0`** | **`0`** (`flags.no_welcome_mail = True`) | **TIDAK (Ditolak di 3 lapis)** | Baru mendaftar mandiri di `/aios/register`, menunggu site/akun diaktifkan |
+| **`Pending Provisioning`** | **`0`** | **`0`** (`flags.no_welcome_mail = True`) | **TIDAK (Ditolak di 3 lapis)** | Baru mendaftar mandiri di `/register`, menunggu site/akun diaktifkan |
 | **`Active`** | **`1`** | Sesuai kebijakan Admin | **YA** | Akun aktif di site klien |
 | **`Suspended`** | **`0`** | **`0`** | **TIDAK (Sesi aktif langsung di-clear)** | Akun dibekukan oleh `AIOS Admin` |
 
 > **Pertahanan 3 Lapis (`Defense-in-Depth`) untuk `Pending Provisioning` & `Suspended`:**
-> 1. **Lapis 1 (Matikan Welcome Email Reset Password):** Saat membuat `User` melalui `/aios/register`, set `user.send_welcome_email = 0` dan `user.flags.no_welcome_mail = True` (`user.py:463`) agar Frappe tidak mengirim email berisi link `/update-password?key=...`.
+> 1. **Lapis 1 (Matikan Welcome Email Reset Password):** Saat membuat `User` melalui `/register`, set `user.send_welcome_email = 0` dan `user.flags.no_welcome_mail = True` (`user.py:463`) agar Frappe tidak mengirim email berisi link `/update-password?key=...`.
 > 2. **Lapis 2 (Sinkronisasi `enabled = 0`):** Selama `aios_status != "Active"`, `User.enabled` bernilai `0` sehingga `LoginManager.authenticate()` (`frappe/auth.py:286`) menolak login secara native.
 > 3. **Lapis 3 (`on_login` & `auth_hooks` di `hooks.py`):** Hook `on_login` (`auth.py:172`, sebelum `make_session`) dan `auth_hooks` (`auth.py:750`, setiap request) membaca `frappe.db.get_value("User", user, "aios_status")` (tanpa cache) dan melempar `frappe.AuthenticationError` bila status bukan `"Active"`.
 

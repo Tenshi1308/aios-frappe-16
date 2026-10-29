@@ -4,14 +4,14 @@ Dokumen ini menggambarkan 7 alur kerja utama di dalam AIOS V1 dari awal pendafta
 
 ---
 
-## Alur 1 — *Self-Service Registration* (`/aios/register` — *Pending Provisioning*) & Aktivasi User via Control Plane
+## Alur 1 — *Self-Service Registration* (`/register` — *Pending Provisioning*) & Aktivasi User via Control Plane
 
 Karena arsitektur multi-tenant AIOS V1 adalah **`1 Client = 1 Site`** (setiap perusahaan klien memiliki *instance site* dan database tersendiri), pendaftaran mandiri di halaman web tidak langsung membuat `Company` dadakan atau *auto-login* ke workspace, melainkan masuk ke status **`Pending Provisioning`** pada DocType `User` dengan `enabled = 0` dan tanpa pengiriman email *reset password* otomatis. **Aktivasi akun dan penerbitan undangan dilakukan oleh `AIOS Admin` dari Developer Control Plane** (Alur 6), bukan oleh operator di site klien.
 
 ```mermaid
 sequenceDiagram
     actor Klien as Calon Klien (Pebisnis)
-    participant UI as Registration UI (/aios/register)
+    participant UI as Registration UI (/register)
     participant API as AIOS Registration API (auth.py)
     participant Setting as AIOS Setting (Site Defaults)
     participant DB as Frappe User DocType
@@ -29,7 +29,7 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 1:
-1. **Input Registrasi Mandiri:** Calon klien mengisi Nama Lengkap, Email, Password, dan Nama Perusahaan/PT pada halaman `/aios/register`.
+1. **Input Registrasi Mandiri:** Calon klien mengisi Nama Lengkap, Email, Password, dan Nama Perusahaan/PT pada halaman `/register`.
 2. **Validasi & Proteksi Enumerasi:** Endpoint registrasi (`@frappe.whitelist(allow_guest=True)` + `@rate_limit`) memvalidasi input dan menerapkan respons seragam agar tidak dapat disalahgunakan untuk enumerasi email.
 3. **Kuota Token Site-Level:** Registrasi tidak menyalin kuota per user; gerbang kuota dibaca dari `AIOS Setting.site_token_limit` saat `/stream` (Alur 4), bukan saat registrasi.
 4. **Pembuatan Akun `User` Terkunci (`Pending Provisioning`):**
@@ -43,6 +43,32 @@ sequenceDiagram
    - Sistem **tidak** membuat DocType `AIOS Tenant`, **tidak** membuat `Company` ERPNext secara paksa di dalam request tersebut, dan **tidak** melakukan *auto-login* (`login_as`) ke `/aios`.
 5. **Tampilan Menunggu Persetujuan:** UI menampilkan informasi bahwa pendaftaran telah diterima dan menunggu persetujuan admin AIOS (dilihat `AIOS Admin` di Developer Control Plane, Alur 6).
 6. **Aktivasi via Control Plane:** Setelah disetujui, `AIOS Admin` di control plane menetapkan `aios_persona` (`executive`, `finance`, `sales`), lalu Control API *site* klien menyetel `User.aios_status = "Active"` (yang otomatis mengaktifkan `User.enabled = 1`). Kredensial awal tidak pernah dikirim via email — pengguna diarahkan ke tautan set-password sekali pakai yang dikirim `AIOS Admin` secara manual (WhatsApp/Telegram/email sendiri), lihat Alur 6.
+
+### Model Penyajian Ekasa Desk
+
+Ekasa Desk (`frontend/`) adalah aplikasi Vite yang berjalan **terpisah**
+dari site Frappe. Ia tidak di-build ke `aios_v1/public/` dan tidak
+dilayani sebagai halaman www Frappe.
+
+**Satu proses frontend melayani semua site klien.** Pemilihan site
+dilakukan oleh Frappe dari `Host` header request — mekanisme resmi
+Frappe (lihat docs.frappe.io Sites § Site Resolution). Karena itu:
+
+- Akses dev memakai `<site>.localhost:<port>`, bukan `localhost:<port>`.
+  Contoh: `aios-4a1-check.localhost:5173`.
+- Proxy Vite **tidak boleh menimpa** `Host` header. Override Host membuat
+  semua request dilayani sebagai satu site saja, sehingga registrasi
+  client masuk ke site yang salah.
+- `X-Frappe-Site-Name` adalah header resmi Frappe alternatif bila Host
+  tidak bisa dipakai (mis. reverse proxy yang mengganti Host).
+
+Konsekuensi alur: client membuka `<site>.localhost:<port>/register`,
+`register_account()` membuat `User` di site itu, dan user pending langsung
+terlihat oleh `pending_inbox()` di control plane.
+
+Target backend dan port dev dibaca dari environment (`VITE_BACKEND_TARGET`,
+`VITE_DEV_PORT`) — lihat `frontend/.env.example`. Tanpa nilai itu, dev
+server gagal start secara eksplisit.
 
 ---
 

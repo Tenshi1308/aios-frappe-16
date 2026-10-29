@@ -265,6 +265,42 @@ class TestFrontendNoHardcode(unittest.TestCase):
             )
         )
 
+    def test_vite_config_has_no_hardcoded_backend_or_site(self):
+        """vite.config.ts tidak boleh hardcode host, port, atau nama site."""
+        config = REPO_ROOT / "frontend" / "vite.config.ts"
+        self.assertTrue(config.exists(), "frontend/vite.config.ts tidak ditemukan")
+        source = config.read_text(encoding="utf-8")
+
+        # Nilai hardcode yang dilarang
+        for banned in (
+            "127.0.0.1:8001",
+            "aios-v16.localhost",
+            "localhost:5173",
+        ):
+            self.assertNotIn(
+                banned,
+                source,
+                f"vite.config.ts masih hardcode {banned!r}",
+            )
+
+        # Override Host header dilarang (mekanisme resmi Frappe memakai Host asli)
+        self.assertNotIn(
+            "headers: { Host:",
+            source,
+            "vite.config.ts menimpa Host header; Frappe memilih site dari Host asli",
+        )
+
+        # Wajib membaca dari env
+        self.assertIn("VITE_BACKEND_TARGET", source)
+        self.assertIn("VITE_DEV_PORT", source)
+
+    def test_env_example_documents_required_vars(self):
+        env_example = REPO_ROOT / "frontend" / ".env.example"
+        self.assertTrue(env_example.exists(), "frontend/.env.example belum ada")
+        source = env_example.read_text(encoding="utf-8")
+        for key in ("VITE_BACKEND_TARGET", "VITE_DEV_PORT", "VITE_DESKTOP_ADAPTER"):
+            self.assertIn(key, source, f".env.example tidak mendokumentasikan {key}")
+
 
 if __name__ == "__main__":
     unittest.main()
