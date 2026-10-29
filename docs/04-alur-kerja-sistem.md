@@ -6,43 +6,33 @@ Dokumen ini menggambarkan 7 alur kerja utama di dalam AIOS V1 dari awal pendafta
 
 ## Alur 1 — *Self-Service Registration* (`/register` — *Pending Provisioning*) & Aktivasi User via Control Plane
 
-Karena arsitektur multi-tenant AIOS V1 adalah **`1 Client = 1 Site`** (setiap perusahaan klien memiliki *instance site* dan database tersendiri), pendaftaran mandiri di halaman web tidak langsung membuat `Company` dadakan atau *auto-login* ke workspace, melainkan masuk ke status **`Pending Provisioning`** pada DocType `User` dengan `enabled = 0` dan tanpa pengiriman email *reset password* otomatis. **Aktivasi akun dan penerbitan undangan dilakukan oleh `AIOS Admin` dari Developer Control Plane** (Alur 6), bukan oleh operator di site klien.
+Karena arsitektur multi-tenant AIOS V1 adalah **`1 Client = 1 Site`** (setiap perusahaan klien memiliki *instance site* dan database tersendiri), pendaftaran mandiri di halaman web tidak langsung membuat `Company` dadakan, `User`, atau *auto-login*. Pendaftar dicatat sebagai **`Lead`** bawaan ERPNext (`source` = "AIOS Signup") di **site developer**, karena site klien belum ada. **Pembuatan site, aktivasi akun, dan penerbitan tautan set-password dilakukan oleh `AIOS Admin`** (Alur 6), bukan oleh operator di site klien. Urutan lengkapnya ada di `docs/00` §1.1 *Flow Utama*.
 
 ```mermaid
 sequenceDiagram
     actor Klien as Calon Klien (Pebisnis)
     participant UI as Registration UI (/register)
     participant API as AIOS Registration API (auth.py)
-    participant Setting as AIOS Setting (Site Defaults)
-    participant DB as Frappe User DocType
+    participant DB as Frappe Lead DocType (site developer)
     participant CP as Developer Control Plane (AIOS Admin)
 
-    Klien->>UI: Isi Nama Lengkap, Email, Password, Nama Perusahaan
+    Klien->>UI: Isi Nama Lengkap, Email, Nama Perusahaan, Negara (tanpa password)
     UI->>API: POST /api/method/aios_v1.auth.register_account
-    Note over API,Setting: Kuota token site-level (dibaca saat /stream, bukan registrasi)
-    API->>DB: Buat DocType "User" (AIOS Client Profile, desk_access=0)
-    Note over DB: Kunci Keamanan User Pending:<br/>aios_status = "Pending Provisioning"<br/>enabled = 0 (Sinkron via User.validate)<br/>send_welcome_email = 0 & flags.no_welcome_mail = True<br/>aios_company_name = Nama PT<br/>aios_persona = "executive"<br/>aios_tokens_used = 0
-    DB-->>API: User tersimpan (Tanpa Email Reset Password & Tanpa Sesi Login)
+    Note over API: Guard: tolak bila site_config aios_site_role != "developer"
+    API->>DB: Buat "Lead" (lead_name, email_id, company_name, country, source = "AIOS Signup")
+    DB-->>API: Lead tersimpan (tanpa User, tanpa email, tanpa sesi login)
     API-->>UI: Return { status: "PENDING_PROVISIONING" }
     UI-->>Klien: Tampilkan Layar "Pendaftaran Diterima — Menunggu Persetujuan Admin"
     Note over CP: AIOS Admin melihat antrean pendaftaran<br/>lintas site di dashboard control plane,<br/>lalu menyetujui / menolak (Alur 6)
 ```
 
 ### Rincian Langkah Alur 1:
-1. **Input Registrasi Mandiri:** Calon klien mengisi Nama Lengkap, Email, Password, dan Nama Perusahaan/PT pada halaman `/register`.
-2. **Validasi & Proteksi Enumerasi:** Endpoint registrasi (`@frappe.whitelist(allow_guest=True)` + `@rate_limit`) memvalidasi input dan menerapkan respons seragam agar tidak dapat disalahgunakan untuk enumerasi email.
-3. **Kuota Token Site-Level:** Registrasi tidak menyalin kuota per user; gerbang kuota dibaca dari `AIOS Setting.site_token_limit` saat `/stream` (Alur 4), bukan saat registrasi.
-4. **Pembuatan Akun `User` Terkunci (`Pending Provisioning`):**
-   - Sistem membuat dokumen `User` bawaan Frappe dengan Role `AIOS Client` (`user_type = "Website User"`, `desk_access = 0`).
-   - Mematikan pengiriman email sambutan/reset password bawaan Frappe (`user.send_welcome_email = 0` dan `user.flags.no_welcome_mail = True`) sehingga user yang belum di-provision tidak menerima link `/update-password`.
-   - Mengisi Custom Field pada `User`:
-     - `aios_status = "Pending Provisioning"` (yang secara otomatis menyetel `User.enabled = 0` di `User.validate` sehingga `/login` standar Frappe juga tertutup rapat).
-     - `aios_company_name = company_name`
-     - `aios_persona = "executive"`
-     - `aios_tokens_used = 0`
-   - Sistem **tidak** membuat DocType `AIOS Tenant`, **tidak** membuat `Company` ERPNext secara paksa di dalam request tersebut, dan **tidak** melakukan *auto-login* (`login_as`) ke `/aios`.
-5. **Tampilan Menunggu Persetujuan:** UI menampilkan informasi bahwa pendaftaran telah diterima dan menunggu persetujuan admin AIOS (dilihat `AIOS Admin` di Developer Control Plane, Alur 6).
-6. **Aktivasi via Control Plane:** Setelah disetujui, `AIOS Admin` di control plane menetapkan `aios_persona` (`executive`, `finance`, `sales`), lalu Control API *site* klien menyetel `User.aios_status = "Active"` (yang otomatis mengaktifkan `User.enabled = 1`). Kredensial awal tidak pernah dikirim via email — pengguna diarahkan ke tautan set-password sekali pakai yang dikirim `AIOS Admin` secara manual (WhatsApp/Telegram/email sendiri), lihat Alur 6.
+1. **Input Registrasi Mandiri:** Calon klien mengisi Nama Lengkap, Email, Nama Perusahaan/PT, dan Negara pada halaman `/register`. **Tanpa password** — password dibuat client sendiri lewat tautan `/update-password` saat aktivasi (langkah 6).
+2. **Validasi & Proteksi Enumerasi:** Endpoint registrasi (`@frappe.whitelist(allow_guest=True)` + `@rate_limit`) memvalidasi input dan menerapkan respons seragam agar tidak dapat disalahgunakan untuk enumerasi email. `Lead.validate` bawaan ERPNext menolak email duplikat (`check_email_id_is_unique`); error itu ditangkap, dicatat lewat `frappe.log_error`, dan respons tetap seragam. Endpoint **menolak** request bila `frappe.conf.aios_site_role != "developer"` agar `Lead` tidak pernah tercipta di site klien.
+3. **Penyimpanan `Lead`:** Sistem membuat `Lead` bawaan ERPNext (`lead_name`, `email_id`, `company_name`, `country`, `source` = "AIOS Signup") dengan `ignore_permissions`. Sistem **tidak** membuat `User`, `AIOS Tenant`, `Company`, atau sesi login, dan **tidak** mengirim email apa pun.
+4. **Tampilan Menunggu Persetujuan:** UI menampilkan bahwa pendaftaran diterima dan menunggu konfirmasi `AIOS Admin`. Teks tidak menjanjikan email otomatis.
+5. **Penyiapan Site (manual):** `AIOS Admin` melihat `Lead` di tab "Pendaftar" (control plane), lalu menyiapkan site klien mengikuti Alur 6 §6.0. Setup wizard dijalankan dengan `email` + `full_name` dari `Lead`, **tanpa `password`**; hook resmi `setup_wizard_complete` memasang `AIOS Client Profile`, mencabut `System Manager`, dan menyetel `aios_status = "Pending Provisioning"` (otomatis `enabled = 0` via `User.validate`, sehingga `/login` standar tertutup).
+6. **Aktivasi via Control Plane:** `AIOS Admin` menetapkan `aios_persona` (`executive`, `finance`, `sales`), lalu Control API *site* klien menyetel `User.aios_status = "Active"` (otomatis `User.enabled = 1`) dan menerbitkan tautan `/update-password?key=...` sekali pakai. Tautan dikirim `AIOS Admin` secara manual (WhatsApp/Telegram/email sendiri); client membuat **password sendiri** lewat halaman resmi Frappe itu, lalu login.
 
 ### Model Penyajian Ekasa Desk
 
@@ -300,6 +290,20 @@ Semua aksi hanya menerima DocType dalam `ALLOWED_DRAFT_DOCTYPES`. Untuk UPDATE/A
 
 `AIOS Admin` mengelola banyak klien dari satu dashboard di *site developer*. Setiap *site* klien tetap menjadi *data plane* mandiri; control plane harian tidak menyimpan data bisnis klien dan tidak memakai `Administrator`. Job provisioning awal memakai `Administrator` hanya untuk menyelesaikan setup wizard dan mengisi `AIOS Setting`, lalu tidak dipakai lagi.
 
+### 6.0. Fase Manual (berlaku sekarang)
+
+Sebelum tombol **Buat Site** (§6.1) ada, `AIOS Admin` menyiapkan site klien dengan langkah resmi Frappe berikut (sumber alur: `docs/00` §1.1):
+
+1. Baca `Lead` pendaftar di tab "Pendaftar" (site developer).
+2. `bench new-site <nama>.localhost` lalu `bench --site <nama>.localhost install-app erpnext aios_v1`.
+3. Selesaikan setup wizard sebagai `Administrator` (UI `/app/setup-wizard` atau `setup_complete`) dengan `email`, `full_name`, `company_name`, `country` dari `Lead`; `language`, `timezone`, `currency`, `company_abbr`, `chart_of_accounts`, `fy_start_date`, `fy_end_date` diturunkan dari negara. **Jangan isi `password`** (argumen opsional di `create_or_update_user`).
+4. Hook `setup_wizard_complete` (`aios_v1`) menormalkan user hasil wizard: `AIOS Client Profile`, cabut `System Manager`, `user_type = "Website User"`, `aios_status = "Pending Provisioning"`.
+5. Buat user `AIOS Control` dan API key/secret lewat `frappe.core.doctype.user.user.generate_keys`; isi `AIOS Setting`.
+6. Daftarkan site di `AIOS Managed Site` (`api_credential` = `api_key:api_secret`).
+7. Aktifkan user (`activate_user`) → dapatkan `invitation_url` → kirim ke client.
+
+`Administrator` hanya dipakai pada langkah 3 dan 5; setelah itu jalur harian memakai `AIOS Control`. Catatan: outgoing `Email Account` site baru belum dikonfigurasi, jadi tautan dikirim manual, bukan lewat email Frappe.
+
 ### 6.1. Membuat Site Klien Baru (tombol **Buat Site** — Fase 2 `#11`)
 
 ```mermaid
@@ -363,7 +367,7 @@ sequenceDiagram
 ### Rincian Langkah Alur 6:
 1. **Registrasi Site Klien (`AIOS Managed Site`, hanya di site developer):** record registry dibuat oleh alur provisioning (§6.1) berisi `site_name`, `base_url`, `company_name`, `contact_name`, `contact_email`, dan `api_credential` (field `Password` terenkripsi berformat `api_key:api_secret`, di-mask di setiap log/error). Control plane memvalidasi `base_url` terhadap allowlist registry + wajib HTTPS (kecuali lokal): URL dibangun dari `base_url` terdaftar, redirect tidak diikuti, dan alamat metadata/link-local selalu ditolak. Loopback/RFC1918 sah karena terdaftar; guard `web-market-research` tetap terpisah karena kebijakannya berbeda.
 2. **Health Check & Status Site:** Control plane memanggil `GET /api/control/health` dengan token `AIOS Control`; hasilnya **ditampilkan di dashboard** dan memperbarui `last_seen` serta `last_error` (pesan aman, tanpa traceback/detail internal) pada record registry. **Status registry tidak diubah oleh health check.** Kegagalan tidak boleh dilaporkan sebagai sukses.
-3. **Antrean Pendaftaran Lintas Site:** Control plane membaca `User` dengan `aios_status = "Pending Provisioning"` **dan role `AIOS Client`** dari tiap site klien via Control API. Filter role melekat di endpoint `/users` (bukan parameter pemanggil). Akun sistem (`Guest`, `Administrator`) tidak boleh masuk antrean. Respons memuat **nama dan email** (diperlukan untuk undangan), **tidak pernah** memuat password, hash, API key, isi `AIOS Setting`, atau data bisnis.
+3. **Antrean Pendaftaran Lintas Site:** Pendaftar **pra-site** dibaca dari `Lead` (`source` = "AIOS Signup") di site developer lewat `signup_leads()`; butir ini mengatur user yang sudah berada di site klien. Control plane membaca `User` dengan `aios_status = "Pending Provisioning"` **dan role `AIOS Client`** dari tiap site klien via Control API. Filter role melekat di endpoint `/users` (bukan parameter pemanggil). Akun sistem (`Guest`, `Administrator`) tidak boleh masuk antrean. Respons memuat **nama dan email** (diperlukan untuk undangan), **tidak pernah** memuat password, hash, API key, isi `AIOS Setting`, atau data bisnis.
 4. **Persetujuan & Undangan:** Saat disetujui, Control API menyetel `aios_status = "Active"` (otomatis `enabled = 1`), `aios_persona`, lalu membuat token set-password **sekali pakai + kedaluwarsa** yang diproses di site klien. Password tidak pernah dikirim via email; control plane hanya menampilkan tautan undangan untuk dikirim manual oleh `AIOS Admin`.
 5. **Pengiriman Undangan:** Untuk PoC tidak ada ketergantungan SMTP. `AIOS Admin` menyalin tautan undangan (dan kode registrasi) lalu mengirimkannya lewat kanal yang sudah dipakai (WhatsApp/Telegram/email sendiri). Integrasi email otomatis (Email Queue Frappe → SMTP/Email Account) menyusul tanpa mengubah kontrak tautan.
 6. **Monitoring Lintas Site:** Control plane menarik agregat (`AIOS Token Usage`, `User.aios_tokens_used`, jumlah user aktif, status site) lewat `GET /api/control/metrics`. Data mentah tetap di site klien; control plane hanya menyimpan ringkasan yang diperlukan dashboard.

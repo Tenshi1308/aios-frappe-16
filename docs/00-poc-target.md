@@ -21,6 +21,31 @@ PoC **bukan** “semua fitur di docs selesai”. PoC adalah alur end-to-end di a
 
 ---
 
+## 1.1 Flow Utama (kontrak dari owner)
+
+**Satu-satunya definisi alur klien dari daftar sampai pakai.** Dokumen lain merujuk ke sini dan tidak menyalinnya. Fase provisioning saat ini **manual dengan sengaja**; otomatisasi menyusul di `#11` (`docs/04` §6.1).
+
+1. **Client registrasi** di halaman `/register` (Vite). Hanya mengisi yang dibutuhkan setup wizard Frappe/ERPNext: nama lengkap, email, nama perusahaan, negara. **Tanpa password.** Sistem membuat `Lead` (`source` = "AIOS Signup") di **site developer**.
+2. **Client menunggu** konfirmasi `AIOS Admin` (layar "Pendaftaran Diterima").
+3. **`AIOS Admin` melihat pendaftar** (tab "Pendaftar" di `/aios-admin`), lalu menyiapkan site **secara manual**: `bench new-site` → install `erpnext` + `aios_v1` → setup wizard dengan email + nama client tanpa `password` (negara, mata uang, zona waktu, singkatan, COA, tahun fiskal diturunkan dari data pendaftar) → hook `setup_wizard_complete` menormalkan user client → buat user `AIOS Control` + API key/secret (`generate_keys`) → daftarkan di `AIOS Managed Site` (**aios manage site**).
+4. **`AIOS Admin` mengaktifkan** user (`aios_status = "Active"`), sistem menerbitkan tautan `/update-password?key=...` sekali pakai, admin mengirimnya ke client (WhatsApp/Telegram/email) bahwa app siap dipakai.
+5. **Client login** dengan password yang ia buat sendiri lewat tautan itu.
+6. **Client memakai app** (Ekasa Desk) di site-nya sendiri.
+
+```mermaid
+flowchart LR
+    A["1. Client isi /register"] --> B["Lead di site developer"]
+    B --> C["2. Client menunggu"]
+    B --> D["3. Admin siapkan site manual"]
+    D --> E["4. Admin aktifkan + kirim tautan"]
+    E --> F["5. Client buat password, login"]
+    F --> G["6. Client pakai Ekasa Desk"]
+```
+
+**Aturan induk: Frappe resmi menang.** Seluruh alur di atas memakai primitif resmi Frappe: `Lead`, setup wizard (`setup_complete`) + hook `setup_wizard_complete`, `generate_keys`, `/update-password`. Bila ada konflik dengan dokumen/`AGENTS.md`, perilaku resmi Frappe yang menang (`AGENTS.md` §2).
+
+---
+
 ## 2. Scope final PoC
 
 ### 2.1 Wajib PoC
@@ -134,6 +159,13 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-23 | Plugin `workspace-artifact-builder` dipindah dari H2 ke H5; H2 melengkapi katalog tujuh plugin melalui plugin artefak H5. |
 | 2026-10-23 | H2 fase 2 (`cf77edf`) menambahkan `quant-calculator` dan `document-intelligence`; lima dari tujuh plugin terdaftar. `workspace-artifact-builder` di H5; `web-market-research` dan MCP menyusul fase 3. |
 | 2026-10-26 | File baru dikaitkan per pesan memakai attachment bawaan Frappe (`AIOS Message`); file lama yang langsung tertaut ke percakapan tidak dihapus dan tetap dapat diakses. |
+| 2026-10-29 | **Frappe/ERPNext resmi menang** atas docs dan `AGENTS.md` bila berbeda. Konflik dilaporkan, docs diperbarui mengikuti Frappe. |
+| 2026-10-29 | Registrasi **tanpa password**. Form hanya mengisi data yang dibutuhkan setup wizard: nama, email, perusahaan, negara. |
+| 2026-10-29 | Penampung pendaftar pra-site = `Lead` bawaan ERPNext di site developer, ditandai `Lead.source` = "AIOS Signup". Tanpa Custom Field `app_source`. |
+| 2026-10-29 | Setup wizard (fase manual) dijalankan admin dengan email + nama client, **tanpa `password`**. Password dibuat client sendiri lewat tautan `/update-password`. |
+| 2026-10-29 | Hook resmi `setup_wizard_complete` mencabut `System Manager` dari user client hasil wizard dan memasang `AIOS Client Profile`. |
+| 2026-10-29 | Site developer ditandai `aios_site_role = "developer"` di `site_config.json`; registrasi ditolak di site lain. |
+| 2026-10-29 | Pendaftaran user ke-2 dst (C1), `max_users` (C2), dan pengisian `contact_email` dari `Lead` (A4) ditunda; di luar Flow Utama. |
 
 ---
 
@@ -144,6 +176,10 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | `AIOS Setting` JSON masih kurang `max_users` | `company_context_persona` sudah ada sejak `#8`; `max_users` menyusul `#5`. `default_user_token_limit` dibatalkan (kuota per user tidak dipakai). |
 | `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
 | ~~`/api/monitoring` masih pakai `AIOS Tenant`~~ | ✅ Dipindah ke `User` + `AIOS Token Usage` di `#4a-2`. |
+| `register_account` masih membuat `User` (dengan password) di site yang menerima request | Flow Utama langkah 1 belum terpenuhi; lihat `docs/09` A1–A3. |
+| Tab "Pendaftar" + `signup_leads()` belum ada | Langkah 3 belum terlihat admin; `docs/09` A5/B3. |
+| Hook `setup_wizard_complete` belum ada | User hasil wizard masih `System Manager`; `docs/09` B4. |
+| `activate_user` belum menerbitkan tautan `/update-password` | Langkah 4–5 belum jalan; `docs/09` B1. |
 
 ---
 

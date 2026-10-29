@@ -15,6 +15,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 0. **[00 — Target PoC AIOS V1](./00-poc-target.md)** — *kontrak scope PoC*
    - Definisi “PoC selesai bila apa”, scope wajib/pendukung/di luar PoC, acceptance end-to-end, urutan, glossary, decision log, dan known gaps.
    - **Baca ini dulu** sebelum `05.1` atau `06`.
+   - Memuat **§1.1 Flow Utama** (alur klien 6 langkah dari owner; sumber tunggal) dan aturan induk **Frappe resmi menang**.
 
 1. **[01 — Profil dan Visi Produk](./01-profil-dan-visi-produk.md)** — *spesifikasi normatif*
    - Esensi AIOS sebagai *Business AI Harness* (bukan chatbot tanya-jawab biasa dan bukan coding harness).
@@ -76,3 +77,6 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - Artefak sebagai berkas/jendela desktop; modul sebagai jendela baca-saja.
    - **Zero hardcoded** untuk agent, modul, doctype, company, kuota; token CSS dua lapis (primitives → semantic); komponen dilarang menulis warna/font/shadow langsung.
    - Stack Vite + Vue 3 + TypeScript + Router + Pinia; struktur `frontend/`; kontrak API desktop; halaman yang diport.
+
+9. **[09 — Catatan Masalah Terbuka (Backlog Perbaikan)](./09-catatan-masalah-terbuka.md)** — *catatan kerja* (bukan norma, bukan roadmap)
+   - Temuan terkonfirmasi + keputusan + urutan kerja untuk menutup celah antara kode dan **Flow Utama** (`docs/00` §1.1). Bila berbeda dengan `00`–`04`, dokumen normatif yang menang; bila berbeda dengan Frappe resmi, Frappe yang menang.

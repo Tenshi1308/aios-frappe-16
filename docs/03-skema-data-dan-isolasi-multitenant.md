@@ -15,9 +15,11 @@ Sesuai arahan arsitektur **`1 Client = 1 Site` (`dns_multitenant` Frappe)**:
 
 ### 1.1. Doctype `User` Bawaan Frappe (Identitas, Status, Persona, & Kuota Per-User)
 - **Fungsi:** Mengelola kredensial login, sesi (`sid`), *brute-force lockout* (`LoginAttemptTracker`), Role Profile, persona AI, status aktivasi/provisioning, dan kuota token pengguna.
-- **Pendaftaran Custom Field via `after_install` & `after_migrate` (Bukan `fixtures` & Bukan UI):**
+- **Pendaftaran Custom Field: Customize Form + `export-fixtures` untuk DocType non-core, skrip `after_install` & `after_migrate` untuk DocType core:**
   - Di Frappe 16 (`frappe/model/__init__.py:103-122`), DocType `User` termasuk dalam `core_doctypes_list`, sehingga UI *Customize Form* menolak penambahan field ke `User` (`custom_field.py:281-282`).
-  - Kita **dilarang keras** memodifikasi `tabDocField` secara langsung via `frappe.get_doc("DocType", "User").append("fields", ...)`, dan **tidak menaruh Custom Field di `fixtures` JSON**.
+  - Untuk DocType **standard non-core** (mis. `Lead`, `Customer`): field dibuat lewat **Customize Form**, lalu diekspor dengan `bench --site <site> export-fixtures` dan didaftarkan sebagai `fixtures = ["Custom Field"]` di `hooks.py`. Sesuai panduan resmi Frappe (*How To Create Custom Fields During App Installation*), berkas fixtures otomatis diimpor saat app dipasang di site baru atau di-`bench update`.
+  - Untuk DocType **core** (`User`, `Role`, `DocType`), Customize Form tidak tersedia sehingga field wajib lewat skrip (lihat butir *Standar Resmi* di bawah).
+  - Kita **dilarang keras** memodifikasi `tabDocField` secara langsung via `frappe.get_doc("DocType", "User").append("fields", ...)`.
   - **Standar Resmi yang Dipakai:** Seluruh Custom Field pada `User` didefinisikan di satu modul Python terpusat (`aios_v1/setup.py`) menggunakan fungsi resmi **`create_custom_fields(USER_CUSTOM_FIELDS, update=True)`** (`frappe.custom.doctype.custom_field.custom_field`), diikuti pemanggilan eksplisit `frappe.clear_cache(doctype="User")` dan `frappe.db.updatedb("User")` pada hook **`after_install` dan `after_migrate`** di `hooks.py`.
 - **Daftar Custom Field pada `User` (Fieldtype Dikunci Permanen Agar Tidak Melanggar `ALLOWED_FIELDTYPE_CHANGE`):**
   1. `aios_persona` (`Select`: `executive`, `finance`, `sales`, `operations`, `system` — jabatan utama pengguna).
