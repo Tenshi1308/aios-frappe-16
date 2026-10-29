@@ -1,522 +1,483 @@
 #!/usr/bin/env python3
-"""Runner E2E untuk Flow Utama AIOS V1 (docs/00-poc-target.md §1.1).
+"""Runner E2E live untuk Flow Utama AIOS V1 (`docs/00-poc-target.md` §1.1).
 
-Menjalankan 6 langkah Flow Utama secara live end-to-end:
-1. Registrasi via HTTP API tanpa password -> Lead di site developer.
-2. Status pendaftar menunggu (tanpa welcome email, tanpa sesi login).
-3. Admin setup site manual (new-site, install apps, setup wizard, user normalization, aios control keys, registry).
-4. Admin aktivasi akun via Control API -> penerbitan invitation_url.
-5. Client set password sendiri lewat token undangan dan berhasil login.
-6. Client mengakses session context di site-nya (status Active).
+Membuat SATU site klien sekali pakai, menjalankan 6 langkah Flow Utama lewat HTTP + `bench`,
+lalu menghapus site itu (dan data uji di site developer). Tidak menyentuh site existing.
 
-Perhatian:
-- Nol hardcode: semua konfigurasi lingkungan dibaca dari environment variables atau scripts/e2e.env.
-- Guard keamanan ketat: site uji wajib memiliki prefix khusus sebelum drop-site.
-- Cleanup selalu dijalankan di blok finally.
+Cara pakai:
+    cp scripts/e2e.env.example scripts/e2e.env   # isi nilainya; file ini di-.gitignore
+    python3 scripts/e2e_flow_utama.py
+
+Aturan:
+- Semua konfigurasi dari environment / `scripts/e2e.env`; yang wajib tapi kosong -> gagal eksplisit.
+- Perintah `bench` dijalankan sebagai list argumen (tanpa `shell=True`). Operasi data di site
+  memakai fungsi Frappe yang dapat dipanggil lewat `bench execute` (`frappe.client.*`,
+  `setup_complete`, `generate_keys`), bukan kode Python mentah.
+- `drop-site` hanya untuk site yang dibuat skrip ini (nama berawalan `<E2E_SITE_PREFIX>-`).
+- Exit code != 0 bila ada langkah FAIL / NOT RUN / cleanup gagal.
+- Keterbatasan diketahui: `--db-root-password` (bila `E2E_DB_ROOT_PASSWORD` diisi) terlihat di
+  daftar proses selama `new-site`/`drop-site`. Jalankan hanya di mesin dev pribadi, atau kosongkan
+  variabel itu dan biarkan bench memakai kredensial root dari konfigurasinya.
 """
+
+from __future__ import annotations
 
 import json
 import os
+import secrets
 import shutil
 import subprocess
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import date
+from http.cookiejar import CookieJar
 from pathlib import Path
-from uuid import uuid4
+
+CLIENT_ROLE = "AIOS Client"
+CONTROL_ROLE = "AIOS Control"
+WIZARD_ROLE = "System Manager"
+PENDING_STATUS = "Pending Provisioning"
+ACTIVE_STATUS = "Active"
+UTM_SOURCE_NAME = "AIOS Signup"
+UPDATE_PASSWORD_PATH = "/update-password"
+RESET_KEY_GONE_STATUS = 410  # frappe.core.doctype.user.user.update_password: key dipakai/invalid
+LOGIN_FAILED_STATUS = 401
+STEP_TITLES = {
+	1: "Client registrasi -> Lead di site developer (tanpa password)",
+	2: "Client menunggu (tanpa email, tanpa User)",
+	3: "Admin siapkan site (wizard tanpa password + hook + registry)",
+	4: "Admin aktivasi -> invitation_url",
+	5: "Client buat password sendiri (sekali pakai) + login",
+	6: "Client pakai app (sesi Active)",
+}
 
 
-def _load_env_file(env_path: Path):
-    """Muat file environment sederhana jika ada."""
-    if not env_path.is_file():
-        return
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, val = line.split("=", 1)
-            key = key.strip()
-            val = val.strip().strip("'\"")
-            if key and key not in os.environ:
-                os.environ[key] = val
+def _load_env_file(path: Path) -> None:
+	if not path.is_file():
+		return
+	for raw in path.read_text(encoding="utf-8").splitlines():
+		line = raw.strip()
+		if not line or line.startswith("#") or "=" not in line:
+			continue
+		key, value = line.split("=", 1)
+		key = key.strip()
+		if key and key not in os.environ:
+			os.environ[key] = value.strip().strip("'\"")
 
 
-def _get_required_env(key: str) -> str:
-    val = os.environ.get(key, "").strip()
-    if not val:
-        raise ValueError(f"Environment variable '{key}' wajib diisi dan tidak boleh kosong!")
-    return val
+def _required(key: str) -> str:
+	value = os.environ.get(key, "").strip()
+	if not value:
+		raise ValueError(f"Environment variable '{key}' wajib diisi (lihat scripts/e2e.env.example).")
+	return value
 
 
-def _http_request(
-    url: str,
-    method: str = "GET",
-    data: dict | None = None,
-    headers: dict | None = None,
-    cookies: str | None = None,
-) -> tuple[int, dict, dict]:
-    """Helper HTTP request tanpa ketergantungan library pihak ketiga."""
-    req_headers = headers.copy() if headers else {}
-    if cookies:
-        req_headers["Cookie"] = cookies
-
-    body_bytes = None
-    if data is not None:
-        body_bytes = json.dumps(data).encode("utf-8")
-        req_headers["Content-Type"] = "application/json"
-
-    req = urllib.request.Request(url, data=body_bytes, headers=req_headers, method=method)
-
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            status = resp.status
-            resp_headers = dict(resp.info())
-            raw_body = resp.read().decode("utf-8")
-            try:
-                parsed_json = json.loads(raw_body)
-            except Exception:
-                parsed_json = {"raw": raw_body}
-            return status, parsed_json, resp_headers
-    except urllib.error.HTTPError as err:
-        status = err.code
-        resp_headers = dict(err.headers)
-        raw_body = err.read().decode("utf-8")
-        try:
-            parsed_json = json.loads(raw_body)
-        except Exception:
-            parsed_json = {"raw": raw_body}
-        return status, parsed_json, resp_headers
+class StepFailure(Exception):
+	"""Assertion langkah gagal (kondisi produk salah), bukan error infrastruktur."""
 
 
-class FlowUtamaRunner:
-    def __init__(self):
-        script_dir = Path(__file__).resolve().parent
-        _load_env_file(script_dir / "e2e.env")
+class Http:
+	"""HTTP client dengan cookie jar; `Host` header menentukan site (dns_multitenant)."""
 
-        self.bench_root = Path(_get_required_env("E2E_BENCH_ROOT"))
-        if not self.bench_root.is_dir():
-            raise FileNotFoundError(f"Bench root '{self.bench_root}' tidak ditemukan!")
+	def __init__(self, base_url: str):
+		self.base_url = base_url.rstrip("/")
+		self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
 
-        self.dev_site = _get_required_env("E2E_DEV_SITE")
-        self.db_root_password = _get_required_env("E2E_DB_ROOT_PASSWORD")
-        self.admin_password = _get_required_env("E2E_ADMIN_PASSWORD")
-        self.site_prefix = os.environ.get("E2E_SITE_PREFIX", "aios-e2e-tmp").strip()
-        self.web_port = os.environ.get("E2E_WEB_PORT", "8001").strip()
+	def call(self, method: str, path: str, *, host: str, body: dict | None = None, headers: dict | None = None):
+		request_headers = {"Host": host, "Accept": "application/json", **(headers or {})}
+		data = None
+		if body is not None:
+			data = json.dumps(body).encode("utf-8")
+			request_headers["Content-Type"] = "application/json"
+		request = urllib.request.Request(
+			f"{self.base_url}{path}", data=data, headers=request_headers, method=method
+		)
+		try:
+			with self.opener.open(request, timeout=60) as response:
+				status, raw = response.status, response.read().decode("utf-8")
+		except urllib.error.HTTPError as err:
+			status, raw = err.code, err.read().decode("utf-8")
+		try:
+			parsed = json.loads(raw)
+		except json.JSONDecodeError:
+			parsed = {"raw": raw[:500]}
+		return status, parsed
 
-        if len(self.site_prefix) < 4:
-            raise ValueError("E2E_SITE_PREFIX minimal 4 karakter demi keamanan guard drop-site.")
 
-        # Identitas uji unik untuk putaran ini
-        unique_token = uuid4().hex[:6]
-        self.test_site_name = f"{self.site_prefix}-{unique_token}.localhost"
-        self.client_email = f"e2e.client.{unique_token}@example.test"
-        self.client_name = f"Client {unique_token}"
-        self.company_name = f"PT E2E Maju {unique_token}"
-        self.country = "Indonesia"
-        self.new_password = f"TestPass{unique_token}!#"
+class Bench:
+	def __init__(self, root: Path, db_root_password: str):
+		binary = os.environ.get("E2E_BENCH_BIN", "").strip() or shutil.which("bench")
+		if not binary:
+			raise ValueError("Executable 'bench' tidak ditemukan; set E2E_BENCH_BIN atau tambahkan ke PATH.")
+		self.binary, self.root, self.db_root_password = binary, root, db_root_password
 
-        self.results = {}
-        self.site_created = False
-        self.lead_created = False
-        self.managed_site_created = False
-        self.invitation_url = None
-        self.control_api_key = None
-        self.control_api_secret = None
+	def run(self, args: list[str]) -> subprocess.CompletedProcess:
+		proc = subprocess.run(
+			[self.binary, *args],
+			cwd=str(self.root),
+			stdout=subprocess.PIPE,
+			stderr=subprocess.PIPE,
+			text=True,
+			stdin=subprocess.DEVNULL,
+			check=False,
+		)
+		if proc.returncode != 0:
+			raise RuntimeError(
+				f"bench {args[0]} gagal (exit {proc.returncode}).\nSTDERR: {proc.stderr[-1500:]}\nSTDOUT: {proc.stdout[-500:]}"
+			)
+		return proc
 
-    def _run_bench_cmd(self, args: list[str], check: bool = True) -> subprocess.CompletedProcess:
-        """Eksekusi perintah bench dengan proteksi argumen list (tanpa shell=True)."""
-        bench_bin = os.environ.get("BENCH_PATH") or shutil.which("bench")
-        if not bench_bin:
-            default_bench = Path.home() / ".local" / "bin" / "bench"
-            if default_bench.is_file():
-                bench_bin = str(default_bench)
-            else:
-                bench_bin = "bench"
-        cmd = [bench_bin] + args
-        proc = subprocess.run(
-            cmd,
-            cwd=str(self.bench_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        if check and proc.returncode != 0:
-            err_msg = f"Perintah bench gagal (exit {proc.returncode}): {' '.join(cmd)}\nSTDERR: {proc.stderr}\nSTDOUT: {proc.stdout}"
-            raise RuntimeError(err_msg)
-        return proc
+	def execute(self, site: str, method: str, **kwargs):
+		"""`bench execute <method> --kwargs`; hasil JSON dari baris terakhir stdout (kosong -> None)."""
+		args = ["--site", site, "execute", method]
+		if kwargs:
+			args += ["--kwargs", repr(kwargs)]
+		proc = self.run(args)
+		for line in reversed([ln for ln in proc.stdout.splitlines() if ln.strip()]):
+			try:
+				return json.loads(line)
+			except json.JSONDecodeError:
+				continue
+		return None
 
-    def preflight_check(self):
-        """Pastikan site developer memiliki penanda aios_site_role = 'developer'."""
-        site_config_path = self.bench_root / "sites" / self.dev_site / "site_config.json"
-        if not site_config_path.is_file():
-            raise FileNotFoundError(f"site_config.json tidak ditemukan untuk dev site: {site_config_path}")
+	def root_password_args(self) -> list[str]:
+		return ["--db-root-password", self.db_root_password] if self.db_root_password else []
 
-        with open(site_config_path, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
 
-        role = cfg.get("aios_site_role")
-        if role != "developer":
-            raise RuntimeError(
-                f"Site developer '{self.dev_site}' belum ditandai dengan 'aios_site_role': 'developer' di site_config.json! "
-                f"Nilai saat ini: {role}. Harap setujui dan setel terlebih dahulu."
-            )
+class FlowRunner:
+	def __init__(self):
+		_load_env_file(Path(__file__).resolve().parent / "e2e.env")
+		self.bench_root = Path(_required("E2E_BENCH_ROOT"))
+		if not (self.bench_root / "sites").is_dir():
+			raise FileNotFoundError(f"E2E_BENCH_ROOT tidak berisi folder sites/: {self.bench_root}")
+		self.dev_site = _required("E2E_DEV_SITE")
+		if not (self.bench_root / "sites" / self.dev_site).is_dir():
+			raise FileNotFoundError(f"Site developer tidak ada: {self.dev_site}")
+		if "." not in self.dev_site:
+			raise ValueError("E2E_DEV_SITE harus berupa hostname dengan titik.")
+		self.site_prefix = _required("E2E_SITE_PREFIX")
+		self.base_url = _required("E2E_BASE_URL")
+		self.country = _required("E2E_COUNTRY")
+		self.language = _required("E2E_LANGUAGE")
+		self.chart_of_accounts = _required("E2E_CHART_OF_ACCOUNTS")
+		self.email_domain = _required("E2E_EMAIL_DOMAIN")
+		self.bench = Bench(self.bench_root, os.environ.get("E2E_DB_ROOT_PASSWORD", "").strip())
+		self.http = Http(self.base_url)
 
-    # ------------------------------------------------------------------
-    # Langkah 1: Client Registrasi (docs/00 §1.1 Langkah 1)
-    # ------------------------------------------------------------------
-    def step_1_register(self):
-        print("\n[Langkah 1] Menjalankan registrasi client tanpa password ke site developer...")
-        url = f"http://127.0.0.1:{self.web_port}/api/method/aios_v1.auth.register_account"
-        payload = {
-            "full_name": self.client_name,
-            "email": self.client_email,
-            "company_name": self.company_name,
-            "country": self.country,
-        }
-        headers = {"Host": self.dev_site}
+		token = secrets.token_hex(4)
+		self.site_suffix = self.dev_site.split(".", 1)[1]
+		self.test_site = f"{self.site_prefix}-{token}.{self.site_suffix}"
+		self.client_email = f"e2e.client.{token}@{self.email_domain}"
+		self.control_email = f"e2e.control.{token}@{self.email_domain}"
+		self.client_name = f"E2E Client {token}"
+		self.company_name = f"E2E {token}"
+		self.client_password = secrets.token_urlsafe(24)
+		self.site_admin_password = secrets.token_urlsafe(24)
 
-        status, body, _ = _http_request(url, method="POST", data=payload, headers=headers)
-        if status != 200:
-            self.results[1] = ("FAIL", f"HTTP {status}: {body}")
-            return False
+		self.results: dict[int, tuple[str, str]] = {}
+		self.cleanup_errors: list[str] = []
+		self.lead_names: list[str] = []
+		self.site_created = False
+		self.registry_created = False
+		self.control_key = ""
+		self.control_secret = ""
+		self.invitation_url = ""
 
-        # Verifikasi respons
-        msg = body.get("message", {})
-        if msg.get("status") != "PENDING_PROVISIONING":
-            self.results[1] = ("FAIL", f"Respons bukan PENDING_PROVISIONING: {body}")
-            return False
+	# ----------------------------------------------------------------- guards
 
-        # Verifikasi via bench bahwa Lead terbentuk di site developer
-        check_script = (
-            f"import frappe; "
-            f"lead = frappe.db.get_value('Lead', {{'email_id': '{self.client_email}'}}, ['name', 'source'], as_dict=True); "
-            f"user_exists = frappe.db.exists('User', '{self.client_email}'); "
-            f"print(json.dumps({{'lead': lead, 'user_exists': bool(user_exists)}}))"
-        )
-        proc = self._run_bench_cmd(["--site", self.dev_site, "execute", "frappe.db.get_value", "--args", f"['Lead', {{'email_id': '{self.client_email}'}}, 'name']"])
-        
-        # Eksekusi python langsung via bench execute python snippet
-        py_proc = subprocess.run(
-            ["bench", "--site", self.dev_site, "execute", "python", "-c", check_script],
-            cwd=str(self.bench_root),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+	def _assert_dev_site_marked(self) -> None:
+		config = json.loads((self.bench_root / "sites" / self.dev_site / "site_config.json").read_text("utf-8"))
+		if config.get("aios_site_role") != "developer":
+			raise RuntimeError(
+				f"Site '{self.dev_site}' belum punya aios_site_role = \"developer\" di site_config.json "
+				f"(nilai: {config.get('aios_site_role')!r}). Setel dulu atas persetujuan owner; skrip tidak menulisnya."
+			)
 
-        self.lead_created = True
-        self.results[1] = ("PASS", f"Lead terdaftar untuk email {self.client_email} dengan source AIOS Signup")
-        return True
+	def _assert_droppable(self, site: str) -> None:
+		if not (site.startswith(f"{self.site_prefix}-") and site.endswith(f".{self.site_suffix}")):
+			raise RuntimeError(f"GUARD: menolak drop-site untuk '{site}' (bukan site uji skrip ini).")
+		if site == self.dev_site:
+			raise RuntimeError("GUARD: site developer tidak boleh di-drop.")
 
-    # ------------------------------------------------------------------
-    # Langkah 2: Client Menunggu (docs/00 §1.1 Langkah 2)
-    # ------------------------------------------------------------------
-    def step_2_waiting(self):
-        print("[Langkah 2] Memverifikasi status pendaftar (tanpa email keluar dan tanpa sesi login)...")
-        # Pastikan tidak ada queue email terkirim ke calon klien
-        proc = self._run_bench_cmd(
-            [
-                "--site",
-                self.dev_site,
-                "execute",
-                "frappe.db.count",
-                "--args",
-                f"['Email Queue', {{'recipient': '{self.client_email}'}}]",
-            ]
-        )
-        count_str = proc.stdout.strip()
-        if count_str and count_str != "0":
-            self.results[2] = ("FAIL", f"Email Queue menampung {count_str} email untuk calon klien!")
-            return False
+	@staticmethod
+	def _expect(condition: bool, message: str) -> None:
+		if not condition:
+			raise StepFailure(message)
 
-        self.results[2] = ("PASS", "Calon klien berstatus pending, tidak ada email bocor atau auto-login.")
-        return True
+	# ------------------------------------------------------------------ steps
 
-    # ------------------------------------------------------------------
-    # Langkah 3: Admin Setup Site Manual (docs/00 §1.1 Langkah 3)
-    # ------------------------------------------------------------------
-    def step_3_admin_setup_site(self):
-        print(f"[Langkah 3] Menyiapkan site uji klien baru: {self.test_site_name}...")
-        # 1. new-site
-        self._run_bench_cmd(
-            [
-                "new-site",
-                self.test_site_name,
-                "--admin-password",
-                self.admin_password,
-                "--db-root-password",
-                self.db_root_password,
-                "--no-mariadb-socket",
-            ]
-        )
-        self.site_created = True
+	def step_1(self) -> str:
+		status, body = self.http.call(
+			"POST",
+			"/api/method/aios_v1.auth.register_account",
+			host=self.dev_site,
+			body={
+				"full_name": self.client_name,
+				"email": self.client_email,
+				"company_name": self.company_name,
+				"country": self.country,
+			},
+		)
+		self._expect(status == 200, f"register_account HTTP {status}: {str(body)[:300]}")
+		self._expect(
+			body.get("message") == {"status": "PENDING_PROVISIONING"}, f"respons tak terduga: {str(body)[:300]}"
+		)
+		leads = self.bench.execute(
+			self.dev_site,
+			"frappe.client.get_list",
+			doctype="Lead",
+			filters={"email_id": self.client_email},
+			fields=["name", "company_name", "country", "utm_source"],
+			limit_page_length=5,
+		)
+		self.lead_names = [row["name"] for row in leads or []]
+		self._expect(len(leads or []) == 1, f"harus tepat 1 Lead untuk {self.client_email}, ada {len(leads or [])}")
+		lead = leads[0]
+		self._expect(lead["utm_source"] == UTM_SOURCE_NAME, f"Lead.utm_source={lead['utm_source']!r}")
+		self._expect(lead["company_name"] == self.company_name, f"Lead.company_name={lead['company_name']!r}")
+		self._expect(lead["country"] == self.country, f"Lead.country={lead['country']!r}")
+		users = self.bench.execute(
+			self.dev_site, "frappe.client.get_list", doctype="User", filters={"name": self.client_email}
+		)
+		self._expect(not users, "pendaftar pra-site tidak boleh menjadi User di site developer")
+		return f"Lead {lead['name']} (utm_source={UTM_SOURCE_NAME}), tanpa User"
 
-        # 2. install-app
-        print(f"  Memasang app erpnext & aios_v1 di {self.test_site_name}...")
-        self._run_bench_cmd(["--site", self.test_site_name, "install-app", "erpnext", "aios_v1"])
+	def step_2(self) -> str:
+		queued = self.bench.execute(
+			self.dev_site,
+			"frappe.get_all",
+			doctype="Email Queue Recipient",
+			filters={"recipient": self.client_email},
+			pluck="name",
+		)
+		self._expect(not queued, f"{len(queued or [])} email antre untuk pendaftar")
+		return "Email Queue kosong untuk pendaftar"
 
-        # 3. jalankan setup wizard secara programatik dengan email client, TANPA password
-        print("  Menyelesaikan Setup Wizard Frappe/ERPNext...")
-        wizard_args = json.dumps(
-            {
-                "language": "en",
-                "country": self.country,
-                "timezone": "Asia/Jakarta",
-                "currency": "IDR",
-                "full_name": self.client_name,
-                "email": self.client_email,
-                "company_name": self.company_name,
-                "company_abbr": "E2E",
-                "chart_of_accounts": "Standard",
-                "fy_start_date": "2026-01-01",
-                "fy_end_date": "2026-12-31",
-            }
-        )
-        self._run_bench_cmd(
-            [
-                "--site",
-                self.test_site_name,
-                "execute",
-                "frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
-                "--args",
-                f"[{wizard_args}]",
-            ]
-        )
+	def _create_site(self) -> None:
+		self.bench.run(
+			["new-site", self.test_site, "--admin-password", self.site_admin_password, *self.bench.root_password_args()]
+		)
+		self.site_created = True
+		self.bench.run(["--site", self.test_site, "install-app", "erpnext"])
+		self.bench.run(["--site", self.test_site, "install-app", "aios_v1"])
 
-        # 4. Verifikasi normalisasi hook setup_wizard_complete pada user
-        check_user_cmd = (
-            f"import frappe; "
-            f"u = frappe.get_doc('User', '{self.client_email}'); "
-            f"roles = [r.role for r in u.roles]; "
-            f"assert 'System Manager' not in roles, 'System Manager belum dicabut!'; "
-            f"assert 'AIOS Client' in roles, 'AIOS Client belum dipasang!'; "
-            f"assert u.enabled == 0, 'User seharusnya berstatus enabled=0 saat pending!'; "
-            f"print('NORMALIZED_OK')"
-        )
-        self._run_bench_cmd(["--site", self.test_site_name, "execute", "python", "-c", check_user_cmd])
+	def _run_wizard(self) -> None:
+		info = self.bench.execute(
+			self.test_site, "frappe.geo.country_info.get_country_info", country=self.country
+		)
+		self._expect(bool(info and info.get("currency") and info.get("timezones")), f"country_info kosong: {self.country}")
+		year = date.today().year
+		abbr = "".join(word[0] for word in self.company_name.split()).upper()
+		self.bench.execute(
+			self.test_site,
+			"frappe.desk.page.setup_wizard.setup_wizard.setup_complete",
+			args={
+				"language": self.language,
+				"country": self.country,
+				"timezone": info["timezones"][0],
+				"currency": info["currency"],
+				"full_name": self.client_name,
+				"email": self.client_email,
+				"company_name": self.company_name,
+				"company_abbr": abbr,
+				"chart_of_accounts": self.chart_of_accounts,
+				"fy_start_date": f"{year}-01-01",
+				"fy_end_date": f"{year}-12-31",
+				# sengaja TANPA "password": client membuatnya sendiri di langkah 5
+			},
+		)
 
-        # 5. Buat token untuk user AIOS Control
-        key_cmd = (
-            "import frappe; "
-            "from frappe.core.doctype.user.user import generate_keys; "
-            "keys = generate_keys('AIOS Control'); "
-            "frappe.db.commit(); "
-            "print(f\"{keys.get('api_key')}:{keys.get('api_secret')}\")"
-        )
-        proc_keys = self._run_bench_cmd(["--site", self.test_site_name, "execute", "python", "-c", key_cmd])
-        key_pair = proc_keys.stdout.strip().split("\n")[-1]
-        self.control_api_key, self.control_api_secret = key_pair.split(":", 1)
+	def step_3(self) -> str:
+		self._create_site()
+		self._run_wizard()
+		user = self.bench.execute(self.test_site, "frappe.client.get", doctype="User", name=self.client_email)
+		self._expect(bool(user), f"user client {self.client_email} tidak dibuat wizard")
+		roles = [row["role"] for row in user.get("roles", [])]
+		profiles = [row["role_profile"] for row in user.get("role_profiles", [])]
+		self._expect(WIZARD_ROLE not in roles, "hook belum mencabut System Manager dari user client")
+		self._expect(CLIENT_ROLE in roles, f"role {CLIENT_ROLE} belum terpasang: {roles}")
+		self._expect(bool(profiles), "AIOS Client Profile belum terpasang")
+		self._expect(user.get("user_type") == "Website User", f"user_type={user.get('user_type')!r}")
+		self._expect(user.get("aios_status") == PENDING_STATUS, f"aios_status={user.get('aios_status')!r}")
+		self._expect(user.get("enabled") == 0, "user client harus enabled=0 sebelum aktivasi")
 
-        # 6. Daftarkan site klien di AIOS Managed Site pada dev site
-        reg_cmd = (
-            f"import frappe; "
-            f"doc = frappe.new_doc('AIOS Managed Site'); "
-            f"doc.site_name = '{self.test_site_name}'; "
-            f"doc.base_url = 'http://127.0.0.1:{self.web_port}'; "
-            f"doc.company_name = '{self.company_name}'; "
-            f"doc.contact_name = '{self.client_name}'; "
-            f"doc.contact_email = '{self.client_email}'; "
-            f"doc.api_credential = '{key_pair}'; "
-            f"doc.status = 'Active'; "
-            f"doc.insert(ignore_permissions=True); "
-            f"frappe.db.commit();"
-        )
-        self._run_bench_cmd(["--site", self.dev_site, "execute", "python", "-c", reg_cmd])
-        self.managed_site_created = True
+		self.bench.execute(
+			self.test_site,
+			"frappe.client.insert",
+			doc={
+				"doctype": "User",
+				"email": self.control_email,
+				"first_name": "E2E Control",
+				"enabled": 1,
+				"send_welcome_email": 0,
+				"user_type": "Website User",
+				"roles": [{"role": CONTROL_ROLE}],
+			},
+		)
+		keys = self.bench.execute(
+			self.test_site, "frappe.core.doctype.user.user.generate_keys", user=self.control_email
+		)
+		self._expect(bool(keys and keys.get("api_key") and keys.get("api_secret")), "generate_keys tidak mengembalikan kunci")
+		self.control_key, self.control_secret = keys["api_key"], keys["api_secret"]
 
-        self.results[3] = ("PASS", f"Site {self.test_site_name} berhasil dibuat, dinormalisasi, dan didaftarkan.")
-        return True
+		self.bench.execute(
+			self.dev_site,
+			"frappe.client.insert",
+			doc={
+				"doctype": "AIOS Managed Site",
+				"site_name": self.test_site,
+				"base_url": self.base_url,
+				"company_name": self.company_name,
+				"contact_name": self.client_name,
+				"contact_email": self.client_email,
+				"api_credential": f"{self.control_key}:{self.control_secret}",
+				"status": "Active",
+			},
+		)
+		self.registry_created = True
+		return f"site {self.test_site}; user client ternormalisasi (roles={roles}); registry dibuat"
 
-    # ------------------------------------------------------------------
-    # Langkah 4: Admin Aktivasi via Control API (docs/00 §1.1 Langkah 4)
-    # ------------------------------------------------------------------
-    def step_4_admin_activate(self):
-        print("[Langkah 4] Admin mengaktifkan user dan menerbitkan link undangan set-password...")
-        url = f"http://127.0.0.1:{self.web_port}/api/method/aios_v1.api.control.activate_user"
-        headers = {
-            "Host": self.test_site_name,
-            "Authorization": f"token {self.control_api_key}:{self.control_api_secret}",
-        }
-        payload = {"user": self.client_email, "status": "Active"}
+	def step_4(self) -> str:
+		status, body = self.http.call(
+			"POST",
+			"/api/method/aios_v1.api.control.activate_user",
+			host=self.test_site,
+			body={"user": self.client_email, "status": ACTIVE_STATUS},
+			headers={"Authorization": f"token {self.control_key}:{self.control_secret}"},
+		)
+		self._expect(status == 200, f"activate_user HTTP {status}: {str(body)[:300]}")
+		message = body.get("message") or {}
+		url = message.get("invitation_url")
+		self._expect(bool(url), f"activate_user tanpa invitation_url: {str(message)[:300]}")
+		parsed = urllib.parse.urlparse(url)
+		self._expect(parsed.path == UPDATE_PASSWORD_PATH, f"path tautan salah: {parsed.path}")
+		self._expect(bool(urllib.parse.parse_qs(parsed.query).get("key")), "tautan tanpa parameter key")
+		self.invitation_url = url
+		return f"invitation_url path={parsed.path} (key disembunyikan)"
 
-        status, body, _ = _http_request(url, method="POST", data=payload, headers=headers)
-        if status != 200:
-            self.results[4] = ("FAIL", f"HTTP {status} saat aktivasi: {body}")
-            return False
+	def step_5(self) -> str:
+		key = urllib.parse.parse_qs(urllib.parse.urlparse(self.invitation_url).query)["key"][0]
+		status, body = self.http.call(
+			"POST",
+			"/api/method/frappe.core.doctype.user.user.update_password",
+			host=self.test_site,
+			body={"key": key, "new_password": self.client_password},
+		)
+		self._expect(status == 200, f"update_password HTTP {status}: {str(body)[:300]}")
 
-        msg = body.get("message", {})
-        self.invitation_url = msg.get("invitation_url")
-        if not self.invitation_url or not self.invitation_url.startswith("/update-password?key="):
-            self.results[4] = ("FAIL", f"invitation_url tidak valid atau tidak ada dalam respons: {body}")
-            return False
+		status, _ = self.http.call(
+			"POST",
+			"/api/method/frappe.core.doctype.user.user.update_password",
+			host=self.test_site,
+			body={"key": key, "new_password": secrets.token_urlsafe(24)},
+		)
+		self._expect(status == RESET_KEY_GONE_STATUS, f"key kedua harus ditolak ({RESET_KEY_GONE_STATUS}), dapat HTTP {status}")
 
-        self.results[4] = ("PASS", f"User diaktifkan. Tautan undangan: {self.invitation_url}")
-        return True
+		fresh = Http(self.base_url)  # sesi bersih: buktikan login murni dengan password baru
+		status, _ = fresh.call(
+			"POST",
+			"/api/method/login",
+			host=self.test_site,
+			body={"usr": self.client_email, "pwd": secrets.token_urlsafe(24)},
+		)
+		self._expect(status == LOGIN_FAILED_STATUS, f"password salah harus ditolak ({LOGIN_FAILED_STATUS}), dapat HTTP {status}")
+		status, body = fresh.call(
+			"POST",
+			"/api/method/login",
+			host=self.test_site,
+			body={"usr": self.client_email, "pwd": self.client_password},
+		)
+		self._expect(status == 200 and body.get("message") == "Logged In", f"login gagal HTTP {status}: {str(body)[:300]}")
+		self.http = fresh
+		return "key sekali pakai; password salah ditolak; login password baru berhasil"
 
-    # ------------------------------------------------------------------
-    # Langkah 5: Client Update Password & Login (docs/00 §1.1 Langkah 5)
-    # ------------------------------------------------------------------
-    def step_5_client_set_password_and_login(self):
-        print("[Langkah 5] Client membuat password sendiri via token undangan dan melakukan login...")
-        parsed = urllib.parse.urlparse(self.invitation_url)
-        params = urllib.parse.parse_qs(parsed.query)
-        key_list = params.get("key")
-        if not key_list:
-            self.results[5] = ("FAIL", "Key query parameter tidak ditemukan pada invitation_url!")
-            return False
-        reset_key = key_list[0]
+	def step_6(self) -> str:
+		status, body = self.http.call(
+			"GET", "/api/method/aios_v1.setup.get_session_context", host=self.test_site
+		)
+		self._expect(status == 200, f"get_session_context HTTP {status}: {str(body)[:300]}")
+		context = body.get("message") or {}
+		self._expect(context.get("user") == self.client_email, f"user={context.get('user')!r}")
+		self._expect(context.get("aios_status") == ACTIVE_STATUS, f"aios_status={context.get('aios_status')!r}")
+		self._expect(WIZARD_ROLE not in (context.get("roles") or []), "client tidak boleh System Manager")
+		return f"sesi {ACTIVE_STATUS} untuk {self.client_email}"
 
-        # Panggil update_password bawaan Frappe
-        update_url = f"http://127.0.0.1:{self.web_port}/api/method/frappe.core.doctype.user.user.update_password"
-        update_payload = {"key": reset_key, "new_password": self.new_password}
-        headers = {"Host": self.test_site_name}
+	# ---------------------------------------------------------------- cleanup
 
-        status, body, _ = _http_request(update_url, method="POST", data=update_payload, headers=headers)
-        if status != 200:
-            self.results[5] = ("FAIL", f"Gagal update password (HTTP {status}): {body}")
-            return False
+	def cleanup(self) -> None:
+		print("\n[cleanup]")
+		if self.site_created:
+			try:
+				self._assert_droppable(self.test_site)
+				self.bench.run(
+					["drop-site", self.test_site, "--force", "--no-backup", *self.bench.root_password_args()]
+				)
+				print(f"  site dihapus: {self.test_site}")
+			except Exception as exc:  # noqa: BLE001 - dicatat & membuat exit code != 0
+				self.cleanup_errors.append(f"drop-site {self.test_site}: {exc}")
+		if self.registry_created:
+			try:
+				self.bench.execute(
+					self.dev_site, "frappe.client.delete", doctype="AIOS Managed Site", name=self.test_site
+				)
+				print("  registry dihapus")
+			except Exception as exc:  # noqa: BLE001
+				self.cleanup_errors.append(f"hapus AIOS Managed Site: {exc}")
+		for name in self.lead_names:
+			try:
+				self.bench.execute(self.dev_site, "frappe.client.delete", doctype="Lead", name=name)
+				print(f"  Lead dihapus: {name}")
+			except Exception as exc:  # noqa: BLE001
+				self.cleanup_errors.append(f"hapus Lead {name}: {exc}")
 
-        # Uji login dengan password yang baru dibuat
-        login_url = f"http://127.0.0.1:{self.web_port}/api/method/login"
-        login_payload = {"usr": self.client_email, "pwd": self.new_password}
+	# ------------------------------------------------------------------- main
 
-        login_status, login_body, login_headers = _http_request(
-            login_url, method="POST", data=login_payload, headers=headers
-        )
-        if login_status != 200 or login_body.get("message") != "Logged In":
-            self.results[5] = ("FAIL", f"Login gagal setelah update password (HTTP {login_status}): {login_body}")
-            return False
+	def run(self) -> int:
+		self._assert_dev_site_marked()
+		print(f"Site developer: {self.dev_site} | site uji: {self.test_site}")
+		stop = False
+		try:
+			for number in range(1, 7):
+				if stop:
+					self.results[number] = ("NOT RUN", "langkah sebelumnya gagal")
+					continue
+				print(f"[langkah {number}] {STEP_TITLES[number]}")
+				try:
+					self.results[number] = ("PASS", getattr(self, f"step_{number}")())
+				except StepFailure as failure:
+					self.results[number] = ("FAIL", str(failure))
+					stop = True
+				except Exception as exc:  # noqa: BLE001 - infrastruktur; dilaporkan lengkap
+					import traceback
 
-        self.session_cookie = login_headers.get("Set-Cookie")
-        self.results[5] = ("PASS", "Password berhasil dibuat dan login berhasil.")
-        return True
+					traceback.print_exc()
+					self.results[number] = ("ERROR", f"{type(exc).__name__}: {str(exc)[:400]}")
+					stop = True
+		finally:
+			self.cleanup()
+		return self.report()
 
-    # ------------------------------------------------------------------
-    # Langkah 6: Client Memakai Ekasa Desk (docs/00 §1.1 Langkah 6)
-    # ------------------------------------------------------------------
-    def step_6_client_access_app(self):
-        print("[Langkah 6] Client mengakses session context di Ekasa Desk...")
-        url = f"http://127.0.0.1:{self.web_port}/api/method/aios_v1.setup.get_session_context"
-        headers = {"Host": self.test_site_name}
+	def report(self) -> int:
+		print("\n" + "=" * 90)
+		for number in range(1, 7):
+			status, detail = self.results.get(number, ("NOT RUN", ""))
+			print(f"[{status:7}] langkah {number}: {STEP_TITLES[number]}\n          {detail}")
+		for error in self.cleanup_errors:
+			print(f"[CLEANUP GAGAL] {error}")
+		print("=" * 90)
+		all_pass = all(self.results.get(n, ("", ""))[0] == "PASS" for n in range(1, 7))
+		return 0 if all_pass and not self.cleanup_errors else 1
 
-        status, body, _ = _http_request(url, method="GET", headers=headers, cookies=self.session_cookie)
-        if status != 200:
-            self.results[6] = ("FAIL", f"Akses session context gagal (HTTP {status}): {body}")
-            return False
 
-        msg = body.get("message", {})
-        if msg.get("user") != self.client_email or msg.get("aios_status") != "Active":
-            self.results[6] = ("FAIL", f"Sesi tidak aktif atau user tidak cocok: {body}")
-            return False
-
-        self.results[6] = ("PASS", f"Client berhasil mengakses app. Sesi aktif untuk {self.client_email}")
-        return True
-
-    # ------------------------------------------------------------------
-    # Cleanup Terlindungi Guard
-    # ------------------------------------------------------------------
-    def cleanup(self):
-        print("\n[Cleanup] Menjalankan pembersihan sumber daya uji...")
-        # 1. Hapus site uji jika sempat dibuat
-        if self.site_created:
-            if not self.test_site_name.startswith(self.site_prefix):
-                print(f"GUARD CRITICAL: Nama site '{self.test_site_name}' tidak berawalan '{self.site_prefix}'! DROP DIBATALKAN!")
-            else:
-                print(f"  Menghapus site uji: {self.test_site_name}...")
-                try:
-                    self._run_bench_cmd(
-                        [
-                            "drop-site",
-                            self.test_site_name,
-                            "--force",
-                            "--root-password",
-                            self.db_root_password,
-                        ],
-                        check=False,
-                    )
-                except Exception as exc:
-                    print(f"  PERINGATAN saat drop-site: {exc}")
-
-        # 2. Hapus Lead di site developer
-        if self.lead_created:
-            print(f"  Menghapus Lead uji di {self.dev_site}...")
-            del_cmd = (
-                f"import frappe; "
-                f"leads = frappe.get_all('Lead', filters={{'email_id': '{self.client_email}'}}); "
-                f"[frappe.delete_doc('Lead', l.name, force=True, ignore_permissions=True) for l in leads]; "
-                f"frappe.db.commit();"
-            )
-            self._run_bench_cmd(["--site", self.dev_site, "execute", "python", "-c", del_cmd], check=False)
-
-        # 3. Hapus AIOS Managed Site di site developer
-        if self.managed_site_created:
-            print(f"  Menghapus registry AIOS Managed Site di {self.dev_site}...")
-            del_reg_cmd = (
-                f"import frappe; "
-                f"if frappe.db.exists('AIOS Managed Site', '{self.test_site_name}'): "
-                f"    frappe.delete_doc('AIOS Managed Site', '{self.test_site_name}', force=True, ignore_permissions=True); "
-                f"    frappe.db.commit();"
-            )
-            self._run_bench_cmd(["--site", self.dev_site, "execute", "python", "-c", del_reg_cmd], check=False)
-
-    def print_summary(self):
-        print("\n" + "=" * 80)
-        print("LAPORAN EKSEKUSI E2E FLOW UTAMA AIOS V1")
-        print("=" * 80)
-        step_names = {
-            1: "Langkah 1: Client Registrasi (Lead pra-site)",
-            2: "Langkah 2: Client Menunggu (No Leaked Mails/Sess)",
-            3: "Langkah 3: Admin Setup Site Manual (Wizard & Norm)",
-            4: "Langkah 4: Admin Aktivasi & Undangan (invitation_url)",
-            5: "Langkah 5: Client Update Password & Login",
-            6: "Langkah 6: Client Akses App (Active Session)",
-        }
-        all_passed = True
-        for step_num in range(1, 7):
-            name = step_names[step_num]
-            res = self.results.get(step_num, ("NOT RUN", "Langkah tidak dieksekusi."))
-            status, detail = res
-            if status != "PASS":
-                all_passed = False
-            print(f"[{status:7}] {name:<45} | {detail}")
-        print("=" * 80)
-        return all_passed
-
-    def run(self) -> int:
-        try:
-            self.preflight_check()
-        except Exception as exc:
-            print(f"\n[PREFLIGHT GAGAL] {exc}")
-            return 1
-
-        try:
-            if not self.step_1_register():
-                return 1
-            if not self.step_2_waiting():
-                return 1
-            if not self.step_3_admin_setup_site():
-                return 1
-            if not self.step_4_admin_activate():
-                return 1
-            if not self.step_5_client_set_password_and_login():
-                return 1
-            if not self.step_6_client_access_app():
-                return 1
-        except Exception as exc:
-            print(f"\n[EKSEKUSI TERHENTI OLEH EXCEPTION] {exc}")
-            import traceback
-            traceback.print_exc()
-            return 1
-        finally:
-            self.cleanup()
-            passed = self.print_summary()
-
-        return 0 if passed else 1
+def main() -> int:
+	try:
+		return FlowRunner().run()
+	except (ValueError, FileNotFoundError, RuntimeError) as exc:
+		print(f"[PRASYARAT GAGAL] {exc}", file=sys.stderr)
+		return 2
 
 
 if __name__ == "__main__":
-    runner = FlowUtamaRunner()
-    sys.exit(runner.run())
+	sys.exit(main())
