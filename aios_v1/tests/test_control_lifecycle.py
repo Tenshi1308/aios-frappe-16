@@ -136,7 +136,7 @@ class TestControlLifecycle(IntegrationTestCase):
 		result = self._invoke(control_api.metrics)
 		self.assertEqual(
 			set(result),
-			{"site_tokens_used", "site_token_limit", "active_users", "total_users", "tokens_today"},
+			{"site_tokens_used", "site_token_limit", "active_users", "total_users", "pending_users", "tokens_today"},
 		)
 
 	def test_audit_writes_to_logger_handler(self):

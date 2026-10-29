@@ -133,7 +133,7 @@ class TestControlApiAuth(IntegrationTestCase):
 		result = self._invoke(control_api.metrics)
 		self.assertEqual(
 			set(result),
-			{"site_tokens_used", "site_token_limit", "active_users", "total_users", "tokens_today"},
+			{"site_tokens_used", "site_token_limit", "active_users", "total_users", "pending_users", "tokens_today"},
 		)
 
 	def test_t11_audit_uses_logger_without_authorization_secrets(self):

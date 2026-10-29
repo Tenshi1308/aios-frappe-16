@@ -5,6 +5,7 @@ dummy di-rollback di `tearDown`; `frappe.db.commit` dimonkeypatch jadi no-op.
 """
 
 import importlib
+import warnings
 from unittest.mock import call, patch
 from uuid import uuid4
 
@@ -39,6 +40,7 @@ METRIC_FIELDS = {
 	"site_token_limit",
 	"active_users",
 	"total_users",
+	"pending_users",
 	"tokens_today",
 }
 
@@ -107,8 +109,231 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 
 	def _dummy_entries(self, payload):
 		"""Hanya site dummy milik test ini — registry bisa berisi record nyata."""
-		prefixes = ("test.dashboard.", "test.health.", "test.setuser.")
+		prefixes = (
+			"test.dashboard.",
+			"test.health.",
+			"test.setuser.",
+			"test.page.",
+			"test.users.",
+			"test.totals.",
+			"test.inbox.",
+		)
 		return [row for row in payload["sites"] if str(row["site_name"]).startswith(prefixes)]
+
+	def test_dashboard_pagination_page_two_differs(self):
+		self._as(self.admin)
+		for i in range(25):
+			_managed_site(f"test.page.{i:02d}.{uuid4().hex[:6]}.localhost").insert(ignore_permissions=True)
+		with patch(
+			"aios_v1.api.control_plane.control_client.metrics",
+			return_value={
+				"site_tokens_used": 0,
+				"site_token_limit": 0,
+				"active_users": 0,
+				"total_users": 0,
+				"pending_users": 0,
+				"tokens_today": 0,
+			},
+		):
+			p1 = self.api.dashboard(page=1, page_size=20)
+			p2 = self.api.dashboard(page=2, page_size=20)
+
+		names1 = {row["site_name"] for row in self._dummy_entries(p1)}
+		names2 = {row["site_name"] for row in self._dummy_entries(p2)}
+		self.assertNotEqual(names1, names2, "page 2 berbeda")
+		total_sites = frappe.db.count("AIOS Managed Site")
+		self.assertEqual(p1["pagination"]["total"], total_sites)
+
+	def test_dashboard_page_size_is_clamped(self):
+		self._as(self.admin)
+		with patch(
+			"aios_v1.api.control_plane.control_client.metrics",
+			return_value={
+				"site_tokens_used": 0,
+				"site_token_limit": 0,
+				"active_users": 0,
+				"total_users": 0,
+				"pending_users": 0,
+				"tokens_today": 0,
+			},
+		):
+			p_high = self.api.dashboard(page=1, page_size=1000)
+			self.assertEqual(p_high["pagination"]["page_size"], 100)
+
+			p_zero = self.api.dashboard(page=0, page_size=0)
+			self.assertEqual(p_zero["pagination"]["page_size"], 1)
+			self.assertEqual(p_zero["pagination"]["page"], 1)
+
+	def test_users_page_forwards_status_and_uses_client_total(self):
+		site = _managed_site(f"test.users.{uuid4().hex}.localhost").insert(ignore_permissions=True).name
+		self._as(self.admin)
+		with patch(
+			"aios_v1.api.control_plane.control_client.users",
+			return_value={
+				"users": [
+					{
+						"name": "u1@example.test",
+						"full_name": "U One",
+						"aios_status": "Pending Provisioning",
+						"aios_persona": "operator",
+						"enabled": 0,
+						"last_login": None,
+					}
+				],
+				"total": 42,
+			},
+		) as mock_users:
+			payload = self.api.users_page(
+				site=site,
+				page=2,
+				page_size=20,
+				status="Pending Provisioning",
+			)
+
+		mock_users.assert_called_once_with(
+			site,
+			status="Pending Provisioning",
+			page=2,
+			page_size=20,
+		)
+		self.assertEqual(payload["site"], site)
+		self.assertEqual(payload["total"], 42)
+		self.assertEqual(payload["page"], 2)
+		self.assertEqual(payload["page_size"], 20)
+		self.assertEqual(payload["total_pages"], 3)
+		self.assertEqual(len(payload["users"]), 1)
+		self.assertEqual(payload["error"], None)
+
+	def test_totals_counts_unreachable_sites(self):
+		broken = _managed_site(f"test.totals.broken.{uuid4().hex}.localhost").insert(ignore_permissions=True).name
+		_managed_site(f"test.totals.healthy.{uuid4().hex}.localhost").insert(ignore_permissions=True)
+		self._as(self.admin)
+
+		def fake_metrics(site_name):
+			if site_name == broken:
+				raise ConnectionError("Timeout")
+			return {
+				"site_tokens_used": 15,
+				"site_token_limit": 100,
+				"active_users": 2,
+				"total_users": 3,
+				"pending_users": 1,
+				"tokens_today": 7,
+			}
+
+		with patch("aios_v1.api.control_plane.control_client.metrics", side_effect=fake_metrics):
+			res = self.api.totals()
+
+		totals = res["totals"]
+		self.assertGreaterEqual(totals["sites_unreachable"], 1)
+		self.assertGreaterEqual(totals["active_users"], 2)
+		self.assertGreaterEqual(totals["tokens_today"], 7)
+
+	def test_pending_inbox_limits_sites_per_page(self):
+		self._as(self.admin)
+		for i in range(25):
+			_managed_site(f"test.inbox.{i:02d}.{uuid4().hex[:6]}.localhost").insert(ignore_permissions=True)
+
+		with patch(
+			"aios_v1.api.control_plane.control_client.users",
+			return_value={
+				"users": [
+					{
+						"name": f"user.{uuid4().hex[:4]}@example.test",
+						"full_name": "Pending User",
+						"aios_status": "Pending Provisioning",
+						"aios_persona": "operator",
+						"enabled": 0,
+						"last_login": None,
+					}
+				],
+				"total": 1,
+			},
+		):
+			p1 = self.api.pending_inbox(site_page=1, site_page_size=20)
+			p2 = self.api.pending_inbox(site_page=2, site_page_size=20)
+
+		self.assertEqual(p1["sites_scanned"], 20)
+		self.assertGreaterEqual(p1["sites_total"], 25)
+		self.assertGreaterEqual(p2["sites_scanned"], 5)
+
+	def test_pending_inbox_loop_stops_at_client_total(self):
+		site = _managed_site(f"test.inbox.p150.{uuid4().hex[:6]}.localhost").insert(ignore_permissions=True).name
+		self._as(self.admin)
+
+		def fake_users(site_name, status=None, page=1, page_size=100):
+			if page == 1:
+				return {
+					"users": [
+						{"name": f"u{i}@test.localhost", "full_name": f"User {i}", "aios_status": status, "aios_persona": "operator", "enabled": 0, "last_login": None}
+						for i in range(100)
+					],
+					"total": 150,
+				}
+			elif page == 2:
+				return {
+					"users": [
+						{"name": f"u{i}@test.localhost", "full_name": f"User {i}", "aios_status": status, "aios_persona": "operator", "enabled": 0, "last_login": None}
+						for i in range(100, 150)
+					],
+					"total": 150,
+				}
+			return {"users": [], "total": 150}
+
+		with patch("aios_v1.api.control_plane.control_client.users", side_effect=fake_users) as mock_users:
+			payload = self.api.pending_inbox(site_page=1, site_page_size=20)
+
+		site_entry = next((e for e in payload["entries"] if e["site"] == site), None)
+		self.assertIsNotNone(site_entry)
+		self.assertEqual(site_entry["pending_users"], 150)
+		self.assertEqual(len(site_entry["users"]), 150)
+		calls_for_site = [c for c in mock_users.call_args_list if c.args and c.args[0] == site]
+		self.assertEqual(len(calls_for_site), 2)
+
+	def test_pending_inbox_partial_when_exceeding_max_loops(self):
+		site = _managed_site(f"test.inbox.pmax.{uuid4().hex[:6]}.localhost").insert(ignore_permissions=True).name
+		self._as(self.admin)
+
+		def fake_users_5000(site_name, status=None, page=1, page_size=100):
+			return {
+				"users": [
+					{"name": f"u{page}_{i}@test.localhost", "full_name": f"User {page}_{i}", "aios_status": status, "aios_persona": "operator", "enabled": 0, "last_login": None}
+					for i in range(100)
+				],
+				"total": 5000,
+			}
+
+		with patch("aios_v1.api.control_plane.control_client.users", side_effect=fake_users_5000):
+			payload = self.api.pending_inbox(site_page=1, site_page_size=20)
+
+		site_entry = next((e for e in payload["entries"] if e["site"] == site), None)
+		self.assertIsNotNone(site_entry)
+		self.assertEqual(site_entry["pending_users"], 1000)
+		self.assertEqual(len(site_entry["users"]), 1000)
+		self.assertTrue(payload["partial"])
+
+	def test_dashboard_uses_limit_offset_not_deprecated_params(self):
+		self._as(self.admin)
+		with patch(
+			"aios_v1.api.control_plane.control_client.metrics",
+			return_value={
+				"site_tokens_used": 0,
+				"site_token_limit": 0,
+				"active_users": 0,
+				"total_users": 0,
+				"pending_users": 0,
+				"tokens_today": 0,
+			},
+		):
+			with warnings.catch_warnings(record=True) as caught:
+				warnings.simplefilter("always")
+				self.api.dashboard(page=1, page_size=20)
+
+		deprecated_warnings = [
+			w for w in caught
+			if "limit_page_length" in str(w.message) or "limit_start" in str(w.message)
+		]
+		self.assertEqual(deprecated_warnings, [])
 
 	def test_dashboard_rejects_guest_without_session(self):
 		self._as("Guest")
@@ -125,44 +350,26 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 			ignore_permissions=True
 		).name
 		self._as(self.admin)
-		with (
-			patch(
-				"aios_v1.api.control_plane.control_client.users",
-				return_value={
-					"users": [
-						{
-							"name": "user@example.test",
-							"full_name": "User Contoh",
-							"aios_status": "Active",
-							"aios_persona": "executive",
-							"enabled": 1,
-							"last_login": None,
-						}
-					]
-				},
-			) as mock_users,
-			patch(
-				"aios_v1.api.control_plane.control_client.metrics",
-				return_value={
-					"site_tokens_used": 120,
-					"site_token_limit": 1000,
-					"active_users": 3,
-					"total_users": 4,
-					"tokens_today": 45,
-				},
-			) as mock_metrics,
-		):
+		with patch(
+			"aios_v1.api.control_plane.control_client.metrics",
+			return_value={
+				"site_tokens_used": 120,
+				"site_token_limit": 1000,
+				"active_users": 3,
+				"total_users": 4,
+				"pending_users": 1,
+				"tokens_today": 45,
+			},
+		) as mock_metrics:
 			payload = self.api.dashboard()
 
-		self.assertEqual(set(payload), {"sites", "totals"})
+		self.assertEqual(set(payload), {"sites", "pagination", "theme"})
 		# Registry site developer bisa berisi site nyata; jumlah dummy memang 1.
 		self.assertEqual(len(self._dummy_entries(payload)), 1)
 		entry = self._dummy_entries(payload)[0]
 		self.assertEqual(entry["site_name"], site)
 		self.assertEqual(entry["error"], None)
-		self.assertEqual(set(entry) - set(MANIFEST_FIELDS), {"users", "metrics", "error"})
-		self.assertEqual(len(entry["users"]), 1)
-		self.assertEqual(set(entry["users"][0]), USER_FIELDS)
+		self.assertEqual(set(entry) - set(MANIFEST_FIELDS), {"metrics", "error"})
 		self.assertEqual(set(entry["metrics"]), METRIC_FIELDS)
 		self.assertNotIn("api_credential", entry)
 		self.assertEqual(
@@ -172,14 +379,11 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 				"site_token_limit": 1000,
 				"active_users": 3,
 				"total_users": 4,
+				"pending_users": 1,
 				"tokens_today": 45,
 			},
 		)
 		# Registry memuat site nyata juga; pastikan dummy tepat sekali dipanggil.
-		self.assertEqual(
-			mock_users.call_args_list.count(call(site)),
-			1,
-		)
 		self.assertEqual(
 			mock_metrics.call_args_list.count(call(site)),
 			1,
@@ -194,11 +398,6 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 		).name
 		self._as(self.admin)
 
-		def fake_users(site_name, status=None, page=1, page_size=50):
-			if site_name == broken:
-				return {"success": False, "error": "Site klien tidak dapat dihubungi.", "code": "CONTROL_UNAVAILABLE"}
-			return {"users": []}
-
 		def fake_metrics(site_name):
 			if site_name == broken:
 				return {"success": False, "error": "Site klien tidak dapat dihubungi.", "code": "CONTROL_UNAVAILABLE"}
@@ -207,23 +406,19 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 				"site_token_limit": 100,
 				"active_users": 1,
 				"total_users": 1,
+				"pending_users": 0,
 				"tokens_today": 5,
 			}
 
 		before = _error_log_names()
-		with (
-			patch("aios_v1.api.control_plane.control_client.users", side_effect=fake_users),
-			patch("aios_v1.api.control_plane.control_client.metrics", side_effect=fake_metrics),
-		):
+		with patch("aios_v1.api.control_plane.control_client.metrics", side_effect=fake_metrics):
 			payload = self.api.dashboard()
 		logs = set(_error_log_names()) - before
 
 		by_name = {row["site_name"]: row for row in self._dummy_entries(payload)}
 		self.assertEqual(len(self._dummy_entries(payload)), 2)
-		self.assertEqual(by_name[healthy]["users"], [])
 		self.assertEqual(by_name[healthy]["metrics"]["site_tokens_used"], 10)
 		self.assertEqual(by_name[healthy]["error"], None)
-		self.assertEqual(by_name[broken]["users"], [])
 		self.assertIsNone(by_name[broken]["metrics"])
 		self.assertEqual(by_name[broken]["error"], "Site klien tidak dapat dihubungi.")
 		self.assertNotIn("success", by_name[broken])
@@ -234,23 +429,42 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 			ignore_permissions=True
 		).name
 		self._as(self.admin)
-		with (
-			patch("aios_v1.api.control_plane.control_client.users", return_value={"users": []}),
-			patch(
-				"aios_v1.api.control_plane.control_client.metrics",
-				return_value={
-					"site_tokens_used": 0,
-					"site_token_limit": 0,
-					"active_users": 0,
-					"total_users": 0,
-					"tokens_today": 0,
-				},
-			),
+		with patch(
+			"aios_v1.api.control_plane.control_client.metrics",
+			return_value={
+				"site_tokens_used": 0,
+				"site_token_limit": 0,
+				"active_users": 0,
+				"total_users": 0,
+				"pending_users": 0,
+				"tokens_today": 0,
+			},
 		):
 			payload = frappe.as_json(self.api.dashboard())
 
 		self.assertNotIn(API_CREDENTIAL, payload)
 		self.assertNotIn("api_credential", payload)
+
+	def test_dashboard_theme_returns_valid_desk_theme(self):
+		self._as("Administrator")
+		frappe.db.set_value("User", self.admin, "desk_theme", "Dark", update_modified=False)
+		self._as(self.admin)
+		payload = self.api.dashboard()
+		self.assertEqual(payload["theme"]["value"], "Dark")
+		self.assertEqual(payload["theme"]["options"], ["Automatic", "Light", "Dark"])
+
+	def test_dashboard_theme_normalizes_empty_or_invalid_to_automatic(self):
+		for invalid_val in (None, "", "NonExistentTheme", 123):
+			self._as("Administrator")
+			frappe.db.set_value("User", self.admin, "desk_theme", invalid_val, update_modified=False)
+			self._as(self.admin)
+			payload = self.api.dashboard()
+			self.assertEqual(payload["theme"]["value"], "Automatic")
+
+	def test_dashboard_theme_options_order_is_fixed(self):
+		self._as(self.admin)
+		payload = self.api.dashboard()
+		self.assertEqual(payload["theme"]["options"], ["Automatic", "Light", "Dark"])
 
 	def test_health_check_success_updates_last_seen_and_clears_error(self):
 		site = _managed_site(f"test.health.ok.{uuid4().hex}.localhost").insert(
