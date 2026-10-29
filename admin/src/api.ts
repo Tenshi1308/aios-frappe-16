@@ -1,8 +1,12 @@
 import type {
+  AdminTheme,
   DashboardPayload,
   HealthCheckPayload,
+  PendingInboxPayload,
   SafeErrorPayload,
   SetUserStatusPayload,
+  TotalsPayload,
+  UsersPagePayload,
 } from './types';
 
 let csrfToken: string | null = null;
@@ -85,8 +89,43 @@ export async function loadSession(): Promise<void> {
   csrfToken = typeof data?.csrf_token === 'string' && data.csrf_token ? data.csrf_token : null;
 }
 
-export function fetchDashboard(): Promise<DashboardPayload> {
-  return request<DashboardPayload>('/api/method/aios_v1.api.control_plane.dashboard');
+function qs(params: Record<string, string | number | null | undefined>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== null && v !== undefined && v !== '') sp.set(k, String(v));
+  }
+  const s = sp.toString();
+  return s ? `?${s}` : '';
+}
+
+export function fetchDashboard(page: number, pageSize = 20): Promise<DashboardPayload> {
+  return request<DashboardPayload>(
+    `/api/method/aios_v1.api.control_plane.dashboard${qs({ page, page_size: pageSize })}`,
+  );
+}
+
+export function fetchUsersPage(
+  site: string,
+  page: number,
+  pageSize = 20,
+  status?: string | null,
+): Promise<UsersPagePayload> {
+  return request<UsersPagePayload>(
+    `/api/method/aios_v1.api.control_plane.users_page${qs({ site, page, page_size: pageSize, status })}`,
+  );
+}
+
+export function fetchTotals(): Promise<TotalsPayload> {
+  return request<TotalsPayload>('/api/method/aios_v1.api.control_plane.totals');
+}
+
+export function fetchPendingInbox(sitePage: number, sitePageSize = 20): Promise<PendingInboxPayload> {
+  return request<PendingInboxPayload>(
+    `/api/method/aios_v1.api.control_plane.pending_inbox${qs({
+      site_page: sitePage,
+      site_page_size: sitePageSize,
+    })}`,
+  );
 }
 
 export function checkHealth(site: string): Promise<HealthCheckPayload> {
@@ -115,4 +154,15 @@ export function setUserStatus(site: string, user: string, status: string): Promi
       body: new URLSearchParams({ site, user, status }),
     },
   );
+}
+
+export async function saveTheme(theme: AdminTheme): Promise<void> {
+  await request('/api/method/frappe.core.doctype.user.user.switch_theme', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'X-Frappe-CSRF-Token': csrfToken ?? '',
+    },
+    body: new URLSearchParams({ theme }),
+  });
 }

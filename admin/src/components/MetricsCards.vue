@@ -7,21 +7,27 @@ const props = defineProps<{ totals: DashboardTotals | null }>();
 const cards = computed(() => {
   const totals = props.totals;
   return [
-    { label: 'Jumlah site', value: totals ? String(totals.sites) : '-' },
-    { label: 'Pengguna aktif', value: totals ? String(totals.active_users) : '-' },
-    { label: 'Total pengguna', value: totals ? String(totals.total_users) : '-' },
+    { key: 'sites', label: 'Jumlah site', value: totals ? String(totals.sites) : '-' },
+    { key: 'active_users', label: 'Pengguna aktif', value: totals ? String(totals.active_users) : '-' },
+    { key: 'total_users', label: 'Total pengguna', value: totals ? String(totals.total_users) : '-' },
     {
+      key: 'tokens_quota',
       label: 'Token site terpakai',
       value: totals ? `${totals.site_tokens_used} / ${totals.site_token_limit}` : '-',
     },
-    { label: 'Token hari ini', value: totals ? String(totals.tokens_today) : '-' },
+    { key: 'tokens_today', label: 'Token hari ini', value: totals ? String(totals.tokens_today) : '-' },
   ];
 });
 </script>
 
 <template>
   <div class="aios-admin-cards">
-    <div v-for="card in cards" :key="card.label" class="aios-admin-metric">
+    <div
+      v-for="card in cards"
+      :key="card.key"
+      class="aios-admin-metric"
+      :data-metric="card.key"
+    >
       <span class="aios-admin-metric-label">{{ card.label }}</span>
       <span class="aios-admin-metric-value">{{ card.value }}</span>
     </div>

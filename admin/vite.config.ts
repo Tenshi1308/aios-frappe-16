@@ -6,6 +6,15 @@ import vue from '@vitejs/plugin-vue';
 export default defineConfig({
   plugins: [vue()],
   base: '/assets/aios_v1/admin/',
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8001',
+        changeOrigin: false,
+        headers: { Host: 'aios-v16.localhost' },
+      },
+    },
+  },
   build: {
     outDir: '../aios_v1/public/admin',
     emptyOutDir: true,

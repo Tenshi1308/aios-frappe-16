@@ -1,28 +1,139 @@
 /* Layout AIOS Admin — semua nilai visual lewat token frontend/src/styles/tokens.css. */
 
+:root {
+  --admin-max-w: 1180px;
+}
+
+html {
+  height: auto;
+  overflow-y: auto;
+}
+
+body {
+  height: auto;
+  overflow: visible;
+}
+
+#app {
+  height: auto;
+  min-height: 100%;
+}
+
 .aios-admin {
   min-height: 100vh;
-  background: var(--wall-base);
+  background-color: var(--wall-base);
   color: var(--fg);
   font-family: var(--font-ui);
   font-size: var(--fs-14);
   padding: var(--space-24);
+  box-sizing: border-box;
+}
+
+.aios-admin-inner {
+  max-width: var(--admin-max-w);
+  margin: 0 auto;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: var(--space-24);
+  gap: var(--space-20);
 }
 
 .aios-admin-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-16);
+  gap: var(--space-12);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: var(--space-12);
+}
+
+.aios-admin-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.aios-admin-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-28);
+  height: var(--space-28);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-8);
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color var(--dur-12), border-color var(--dur-12),
+              color var(--dur-12);
+}
+
+.aios-admin-icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.aios-admin-icon-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.aios-admin-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.aios-admin-theme {
+  display: inline-flex;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.aios-admin-theme-opt {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-600);
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background-color var(--dur-12), color var(--dur-12);
+}
+
+.aios-admin-theme-opt:hover:not(:disabled):not(.active) {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.aios-admin-theme-opt.active {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+
+.aios-admin-theme-opt:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.aios-admin-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
 }
 
 .aios-admin-title {
-  font-size: var(--fs-24);
+  font-size: var(--fs-20);
   font-weight: var(--fw-700);
   margin: 0;
+  line-height: 1.2;
 }
 
 .aios-admin-sub {
@@ -32,18 +143,21 @@
 
 .aios-admin-tabs {
   display: flex;
-  gap: var(--space-8);
+  gap: var(--space-6);
+  align-items: center;
 }
 
 .aios-admin-tab {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--fg);
-  font-size: var(--fs-13);
+  font-size: var(--fs-12);
   font-weight: var(--fw-600);
-  padding: var(--space-8) var(--space-16);
-  border-radius: var(--radius-8);
+  padding: var(--space-6) var(--space-14);
+  border-radius: var(--radius-pill);
   cursor: pointer;
+  transition: background-color var(--dur-12), border-color var(--dur-12),
+              color var(--dur-12);
 }
 
 .aios-admin-tab:hover {
@@ -56,15 +170,28 @@
   color: var(--on-accent);
 }
 
-.aios-admin-card {
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
+.aios-admin-surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius-12);
   box-shadow: var(--shadow-sm);
-  padding: var(--space-20);
+}
+
+.aios-admin-toolbar {
+  background: var(--surface-2);
+  padding: var(--space-10) var(--space-16);
+  border-bottom: 1px solid var(--line);
+  border-top-left-radius: var(--radius-12);
+  border-top-right-radius: var(--radius-12);
   display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.aios-admin-table-wrap {
+  overflow-x: visible;
+  width: 100%;
 }
 
 .aios-admin-table {
@@ -76,16 +203,24 @@
 .aios-admin-table th,
 .aios-admin-table td {
   text-align: left;
-  padding: var(--space-8) var(--space-12);
+  padding: var(--space-10) var(--space-12);
   border-bottom: 1px solid var(--line);
-  vertical-align: top;
+  vertical-align: middle;
 }
 
 .aios-admin-table th {
+  background: var(--surface-2);
+  position: sticky;
+  top: 0;
   color: var(--muted);
-  font-weight: var(--fw-600);
-  font-size: var(--fs-11-5);
+  font-weight: var(--fw-700);
+  font-size: var(--fs-11);
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.aios-admin-table tr:last-child td {
+  border-bottom: none;
 }
 
 .aios-admin-badge {
@@ -117,6 +252,20 @@
   background: var(--warn-soft);
 }
 
+button.aios-admin-badge {
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+button.aios-admin-badge:hover {
+  border-color: var(--warn);
+}
+
+button.aios-admin-badge:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .aios-admin-button {
   border: 1px solid var(--line);
   background: var(--surface);
@@ -124,7 +273,7 @@
   font-size: var(--fs-12);
   font-weight: var(--fw-600);
   padding: var(--space-6) var(--space-12);
-  border-radius: var(--radius-6);
+  border-radius: var(--radius-pill);
   cursor: pointer;
 }
 
@@ -148,13 +297,51 @@
   cursor: not-allowed;
 }
 
+.aios-admin-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
 .aios-admin-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--fg);
+  font-family: var(--font-ui);
   font-size: var(--fs-12);
-  padding: var(--space-6) var(--space-8);
-  border-radius: var(--radius-6);
+  font-weight: var(--fw-600);
+  padding: var(--space-6) var(--space-28) var(--space-6) var(--space-12);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background-color var(--dur-12), border-color var(--dur-12);
+}
+
+.aios-admin-select:hover {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.aios-admin-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.aios-admin-select-arrow {
+  position: absolute;
+  right: var(--space-10);
+  width: var(--space-14);
+  height: var(--space-14);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.aios-admin-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
 }
 
 .aios-admin-error {
@@ -166,20 +353,115 @@
   font-size: var(--fs-13);
 }
 
+.aios-admin-error[data-tone='ok'] {
+  border-color: var(--ok);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.aios-admin-error[data-tone='error'] {
+  border-color: var(--bad);
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.aios-admin-error[data-tone='warn'] {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.aios-admin-unreachable-warn {
+  margin-top: var(--space-16);
+}
+
+.aios-admin-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-flyout);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-16);
+  background: var(--glass-strong);
+  backdrop-filter: blur(2px);
+}
+
+.aios-admin-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-12);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.aios-admin-dialog:focus {
+  outline: none;
+}
+
+.aios-admin-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.aios-admin-dialog-title {
+  margin: 0;
+  font-size: var(--fs-17);
+  font-weight: var(--fw-700);
+  color: var(--fg);
+}
+
+.aios-admin-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-16);
+  overflow-y: auto;
+}
+
 .aios-admin-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: var(--space-16);
+  width: 100%;
 }
 
 .aios-admin-metric {
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: var(--radius-12);
-  padding: var(--space-16);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-16) var(--space-20);
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-8);
+  flex: 1 1 160px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.aios-admin-metric[data-metric='sites'],
+.aios-admin-metric[data-metric='active_users'],
+.aios-admin-metric[data-metric='total_users'] {
+  flex: 1 1 160px;
+}
+
+.aios-admin-metric[data-metric='tokens_quota'] {
+  flex: 1.8 1 290px;
+}
+
+.aios-admin-metric[data-metric='tokens_today'] {
+  flex: 1.1 1 180px;
 }
 
 .aios-admin-metric-label {
@@ -187,16 +469,28 @@
   font-size: var(--fs-11-5);
   font-weight: var(--fw-600);
   text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .aios-admin-metric-value {
-  font-size: var(--fs-30);
-  font-weight: var(--fw-800);
-  font-family: var(--font-mono);
+  font-size: var(--fs-24);
+  font-weight: var(--fw-700);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+  word-break: break-word;
+}
+
+.aios-admin-metric[data-metric='tokens_quota'] .aios-admin-metric-value {
+  font-size: var(--fs-20);
 }
 
 .aios-admin-muted {
   color: var(--muted);
+}
+
+.aios-admin-loading {
+  padding: var(--space-20);
 }
 
 .aios-admin-site {
@@ -205,9 +499,47 @@
   font-weight: var(--fw-600);
 }
 
-.aios-admin-section {
+.aios-admin-pager {
   display: flex;
-  align-items: center;
   justify-content: space-between;
+  align-items: center;
   gap: var(--space-12);
+  padding: var(--space-10) var(--space-16);
+  border-top: 1px solid var(--line);
+}
+
+.aios-admin-pager-info {
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+
+.aios-admin-pager-btns {
+  display: flex;
+  gap: var(--space-8);
+}
+
+@media (max-width: 800px) {
+  .aios-admin-table-wrap {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .aios-admin {
+    padding: var(--space-12);
+  }
+
+  .aios-admin-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .aios-admin-tabs {
+    flex-wrap: wrap;
+  }
+
+  .aios-admin-cards {
+    flex-direction: column;
+    gap: var(--space-12);
+  }
 }

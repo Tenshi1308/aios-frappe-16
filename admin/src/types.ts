@@ -16,6 +16,7 @@ export interface SiteMetrics {
   site_token_limit: number;
   active_users: number;
   total_users: number;
+  pending_users: number;
   tokens_today: number;
 }
 
@@ -28,7 +29,6 @@ export interface SiteEntry {
   status: SiteStatus | null;
   last_seen: string | null;
   last_error: string | null;
-  users: DashboardUser[];
   metrics: SiteMetrics | null;
   error: string | null;
 }
@@ -37,14 +37,57 @@ export interface DashboardTotals {
   sites: number;
   active_users: number;
   total_users: number;
+  pending_users: number;
   site_tokens_used: number;
   site_token_limit: number;
   tokens_today: number;
 }
 
+export interface Pagination {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+}
+
+export type AdminTheme = 'Automatic' | 'Light' | 'Dark';
+
+export interface ThemePayload {
+  value: AdminTheme;
+  options: AdminTheme[];
+}
+
 export interface DashboardPayload {
   sites: SiteEntry[];
-  totals: DashboardTotals;
+  pagination: Pagination;
+  theme: ThemePayload;
+}
+
+export interface UsersPagePayload {
+  site: string;
+  users: DashboardUser[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  error: string | null;
+}
+
+export interface TotalsPayload {
+  totals: DashboardTotals & { sites_unreachable: number };
+  sites_total: number;
+  sites_scanned: number;
+}
+
+export interface PendingInboxPayload {
+  site_page: number;
+  site_page_size: number;
+  sites_total: number;
+  sites_scanned: number;
+  total_pending: number;
+  entries: Array<{ site: string; pending_users: number; users: DashboardUser[] }>;
+  partial: boolean;
+  error: string | null;
 }
 
 export interface HealthCheckPayload {

@@ -4,7 +4,10 @@ import type { SiteEntry } from '../types';
 
 const props = defineProps<{ sites: SiteEntry[] }>();
 
-const emit = defineEmits<{ (event: 'health', site: string): void }>();
+const emit = defineEmits<{
+  (event: 'health', site: string): void;
+  (event: 'openPending', site: string): void;
+}>();
 
 const busy = ref<string | null>(null);
 
@@ -28,7 +31,7 @@ async function onHealth(site: string): Promise<void> {
 </script>
 
 <template>
-  <div class="aios-admin-card">
+  <div class="aios-admin-table-wrap">
     <table class="aios-admin-table">
       <thead>
         <tr>
@@ -37,6 +40,7 @@ async function onHealth(site: string): Promise<void> {
           <th>Status</th>
           <th>Terakhir dilihat</th>
           <th>Kesalahan terakhir</th>
+          <th>Pending</th>
           <th>Aksi</th>
         </tr>
       </thead>
@@ -59,6 +63,18 @@ async function onHealth(site: string): Promise<void> {
           <td>{{ site.error || site.last_error || '-' }}</td>
           <td>
             <button
+              v-if="site.metrics && site.metrics.pending_users > 0"
+              type="button"
+              class="aios-admin-badge"
+              data-tone="warn"
+              @click="emit('openPending', site.site_name)"
+            >
+              {{ site.metrics.pending_users }} pending
+            </button>
+            <span v-else class="aios-admin-muted">—</span>
+          </td>
+          <td>
+            <button
               class="aios-admin-button"
               data-variant="primary"
               :disabled="busy === site.site_name"
@@ -69,7 +85,7 @@ async function onHealth(site: string): Promise<void> {
           </td>
         </tr>
         <tr v-if="rows.length === 0">
-          <td colspan="6" class="aios-admin-muted">Belum ada site klien terdaftar.</td>
+          <td colspan="7" class="aios-admin-muted">Belum ada site klien terdaftar.</td>
         </tr>
       </tbody>
     </table>

@@ -67,10 +67,16 @@ const ICONS: Record<string, string[]> = {
     'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
     'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
   ],
+  'user-round-check': ['M2 21a8 8 0 0 1 13.292-6', 'm16 19 2 2 4-4'],
+};
+
+const ICON_CIRCLES: Record<string, Array<{ cx: number; cy: number; r: number }>> = {
+  'user-round-check': [{ cx: 10, cy: 8, r: 5 }],
 };
 
 const props = withDefaults(defineProps<{ name: string; size?: number | string }>(), { size: 18 });
 const paths = computed(() => ICONS[props.name] ?? ICONS.file ?? []);
+const circles = computed(() => ICON_CIRCLES[props.name] ?? []);
 </script>
 
 <template>
@@ -86,5 +92,6 @@ const paths = computed(() => ICONS[props.name] ?? ICONS.file ?? []);
     aria-hidden="true"
   >
     <path v-for="(d, i) in paths" :key="i" :d="d" />
+    <circle v-for="(c, i) in circles" :key="'c' + i" :cx="c.cx" :cy="c.cy" :r="c.r" />
   </svg>
 </template>

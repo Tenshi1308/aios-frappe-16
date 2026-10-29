@@ -184,6 +184,7 @@ def metrics():
 			"site_token_limit": int(frappe.db.get_single_value("AIOS Setting", "site_token_limit") or 0),
 			"active_users": frappe.db.count("User", filters=_client_user_filters("Active")),
 			"total_users": frappe.db.count("User", filters=_client_user_filters()),
+			"pending_users": frappe.db.count("User", filters=_client_user_filters("Pending Provisioning")),
 			"tokens_today": int((token_totals[0].get("tokens_today") if token_totals else 0) or 0),
 		}
 		_audit("metrics")
