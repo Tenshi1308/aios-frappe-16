@@ -112,11 +112,12 @@ class TestFrontendAuthContract(unittest.TestCase):
         self.assertIn(":data-tone", src)
 
     def test_signup_leads_has_dynamic_site_lookup(self):
-        """signup_leads harus mencocokkan status secara dinamis ke AIOS Managed Site."""
+        """signup_leads harus menyaring pendaftar yang sudah memiliki site di AIOS Managed Site."""
         control_plane = REPO_ROOT / "aios_v1" / "api" / "control_plane.py"
         src = control_plane.read_text(encoding="utf-8")
         self.assertIn('"AIOS Managed Site"', src)
-        self.assertIn('"Site Siap"', src)
+        self.assertIn("matched", src)
+        self.assertIn("continue", src)
 
 
 if __name__ == "__main__":

@@ -450,21 +450,13 @@ def signup_leads():
 		company = (lead.get("company_name") or "").strip().lower()
 		matched = sites_by_email.get(email) or sites_by_company.get(company)
 
-		status = "Menunggu Penyiapan Site"
-		site_name = None
 		if matched:
-			site_name = matched.get("site_name")
-			site_status = matched.get("status")
-			if site_status == "Active":
-				status = "Site Siap"
-			elif site_status == "Provisioning":
-				status = "Sedang Disiapkan"
-			else:
-				status = f"Site {site_status}"
+			# Calon klien sudah selesai disiapkan (sudah memiliki site di registry)
+			continue
 
 		lead_dict = dict(lead)
-		lead_dict["status"] = status
-		lead_dict["site_name"] = site_name
+		lead_dict["status"] = "Menunggu Penyiapan Site"
+		lead_dict["site_name"] = None
 		enriched.append(lead_dict)
 
 	return enriched
