@@ -14,6 +14,11 @@ function formatDate(dateStr: string): string {
     return dateStr;
   }
 }
+
+function statusTone(status?: string): 'ok' | 'warn' {
+  if (status === 'Site Siap' || status === 'Active' || status === 'Aktif') return 'ok';
+  return 'warn';
+}
 </script>
 
 <template>
@@ -44,7 +49,9 @@ function formatDate(dateStr: string): string {
           <td>{{ lead.company_name || '-' }}</td>
           <td>{{ lead.country || '-' }}</td>
           <td>
-            <span class="aios-admin-badge" data-tone="warn">Menunggu Penyiapan Site</span>
+            <span class="aios-admin-badge" :data-tone="statusTone(lead.status)">
+              {{ lead.status || 'Menunggu Penyiapan Site' }}
+            </span>
           </td>
         </tr>
       </tbody>

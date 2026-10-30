@@ -103,6 +103,21 @@ class TestFrontendAuthContract(unittest.TestCase):
         self.assertNotIn("return { error: text }", src)
         self.assertIn("return null", src)
 
+    def test_signups_table_dynamic_status(self):
+        """SignupsTable tidak boleh hardcode status, harus menggunakan lead.status dinamis."""
+        signups_table = REPO_ROOT / "admin" / "src" / "components" / "SignupsTable.vue"
+        src = signups_table.read_text(encoding="utf-8")
+        self.assertNotIn(">Menunggu Penyiapan Site<", src)
+        self.assertIn("lead.status", src)
+        self.assertIn(":data-tone", src)
+
+    def test_signup_leads_has_dynamic_site_lookup(self):
+        """signup_leads harus mencocokkan status secara dinamis ke AIOS Managed Site."""
+        control_plane = REPO_ROOT / "aios_v1" / "api" / "control_plane.py"
+        src = control_plane.read_text(encoding="utf-8")
+        self.assertIn('"AIOS Managed Site"', src)
+        self.assertIn('"Site Siap"', src)
+
 
 if __name__ == "__main__":
     unittest.main()

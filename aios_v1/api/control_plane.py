@@ -422,10 +422,50 @@ def signup_leads():
 	frappe.only_for(_ADMIN_ROLE)
 	from aios_v1.setup import UTM_SOURCE_SIGNUP
 
-	return frappe.get_all(
+	leads = frappe.get_all(
 		"Lead",
 		filters={"utm_source": UTM_SOURCE_SIGNUP},
 		fields=["name", "lead_name", "first_name", "email_id", "company_name", "country", "creation"],
 		order_by="creation desc",
 	)
+
+	managed_sites = frappe.get_all(
+		"AIOS Managed Site",
+		fields=["site_name", "contact_email", "company_name", "status"],
+	)
+
+	sites_by_email = {}
+	sites_by_company = {}
+	for site in managed_sites:
+		c_email = (site.get("contact_email") or "").strip().lower()
+		c_company = (site.get("company_name") or "").strip().lower()
+		if c_email and c_email not in sites_by_email:
+			sites_by_email[c_email] = site
+		if c_company and c_company not in sites_by_company:
+			sites_by_company[c_company] = site
+
+	enriched = []
+	for lead in leads:
+		email = (lead.get("email_id") or "").strip().lower()
+		company = (lead.get("company_name") or "").strip().lower()
+		matched = sites_by_email.get(email) or sites_by_company.get(company)
+
+		status = "Menunggu Penyiapan Site"
+		site_name = None
+		if matched:
+			site_name = matched.get("site_name")
+			site_status = matched.get("status")
+			if site_status == "Active":
+				status = "Site Siap"
+			elif site_status == "Provisioning":
+				status = "Sedang Disiapkan"
+			else:
+				status = f"Site {site_status}"
+
+		lead_dict = dict(lead)
+		lead_dict["status"] = status
+		lead_dict["site_name"] = site_name
+		enriched.append(lead_dict)
+
+	return enriched
 

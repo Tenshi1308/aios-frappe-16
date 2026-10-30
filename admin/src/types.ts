@@ -113,6 +113,8 @@ export interface SignupLead {
   company_name: string;
   country: string;
   creation: string;
+  status?: string;
+  site_name?: string | null;
 }
 
 export interface SafeErrorPayload {
