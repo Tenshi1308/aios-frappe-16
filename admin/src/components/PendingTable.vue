@@ -89,12 +89,22 @@ async function setPayload(user: DashboardUser, status: string): Promise<void> {
             <td>
               <div class="aios-admin-actions">
                 <button
+                  v-if="user.aios_status !== 'Active'"
                   class="aios-admin-button"
                   data-variant="primary"
-                  :disabled="busy !== null || user.aios_status === 'Active'"
+                  :disabled="busy !== null"
                   @click="setPayload(user, 'Active')"
                 >
                   Aktifkan
+                </button>
+                <button
+                  v-else
+                  class="aios-admin-button"
+                  :disabled="busy !== null"
+                  title="Terbitkan ulang tautan undangan atau reset sandi mandiri"
+                  @click="setPayload(user, 'Active')"
+                >
+                  Reset Sandi
                 </button>
                 <button
                   class="aios-admin-button"

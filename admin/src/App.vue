@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import {
   ApiError,
   checkHealth,
   fetchDashboard,
-  fetchPendingInbox,
   fetchSignupLeads,
   fetchTotals,
   fetchUsersPage,
@@ -15,7 +14,6 @@ import {
 import type {
   AdminTheme,
   DashboardPayload,
-  PendingInboxPayload,
   SignupLead,
   TotalsPayload,
   UsersPagePayload,
@@ -30,13 +28,12 @@ import EkasaMark from '../../frontend/src/components/base/EkasaMark.vue';
 import AppIcon from '../../frontend/src/components/base/AppIcon.vue';
 import './styles/admin.css';
 
-type Tab = 'signups' | 'sites' | 'users' | 'monitoring';
+type Tab = 'signups' | 'sites' | 'users';
 
 const TABS: Array<{ key: Tab; label: string }> = [
   { key: 'signups', label: 'Pendaftar' },
   { key: 'sites', label: 'Site' },
   { key: 'users', label: 'Pengguna' },
-  { key: 'monitoring', label: 'Monitoring' },
 ];
 
 const THEME_ORDER: AdminTheme[] = ['Light', 'Automatic', 'Dark'];
@@ -80,24 +77,6 @@ const invitationModal = ref<{
   copied: false,
 });
 
-const inboxOpen = ref(false);
-const inboxPage = ref(1);
-const inboxData = ref<PendingInboxPayload | null>(null);
-const inboxLoading = ref(false);
-const inboxDialog = ref<HTMLElement | null>(null);
-const inboxTrigger = ref<HTMLElement | null>(null);
-
-const inboxFrom = computed(() => {
-  const d = inboxData.value;
-  if (!d || !d.sites_total) return 0;
-  return (d.site_page - 1) * d.site_page_size + 1;
-});
-const inboxTo = computed(() => {
-  const d = inboxData.value;
-  if (!d) return 0;
-  return Math.min(d.site_page * d.site_page_size, d.sites_total);
-});
-
 const currentTheme = computed<AdminTheme>(() => data.value?.theme.value ?? 'Automatic');
 
 function failureMessage(err: unknown): string {
@@ -112,17 +91,14 @@ async function refresh(options?: { clearNotice?: boolean }): Promise<void> {
     notice.value = null;
   }
   try {
-    const dashboardData = await fetchDashboard(sitePage.value, 20);
-    data.value = dashboardData;
-    siteNames.value = dashboardData.sites.map((s) => s.site_name);
+    const payload = await fetchDashboard(sitePage.value, 20);
+    data.value = payload;
+    applyTheme(payload.theme.value);
+    siteNames.value = payload.sites.map((s) => s.site_name);
     if (!userSite.value && siteNames.value.length > 0) {
       userSite.value = siteNames.value[0];
     }
-    if (dashboardData.theme?.value) {
-      applyTheme(dashboardData.theme.value);
-    }
   } catch (err) {
-    data.value = null;
     error.value = failureMessage(err);
   } finally {
     loading.value = false;
@@ -145,7 +121,15 @@ async function loadUsers(): Promise<void> {
     if (siteNames.value.length > 0) {
       userSite.value = siteNames.value[0];
     } else {
-      usersData.value = null;
+      usersData.value = {
+        site: '',
+        users: [],
+        total: 0,
+        page: 1,
+        page_size: 20,
+        total_pages: 1,
+        error: null,
+      };
       return;
     }
   }
@@ -172,8 +156,6 @@ function onSelectTab(tab: Tab): void {
   activeTab.value = tab;
   if (tab === 'signups') {
     void loadSignups();
-  } else if (tab === 'monitoring') {
-    void loadTotals();
   } else if (tab === 'users') {
     void loadUsers();
   }
@@ -229,62 +211,10 @@ async function onUserFilter(f: 'pending' | 'all'): Promise<void> {
   await loadUsers();
 }
 
-async function loadInbox(): Promise<void> {
-  inboxLoading.value = true;
-  try {
-    inboxData.value = await fetchPendingInbox(inboxPage.value, 20);
-  } catch (err) {
-    inboxData.value = {
-      site_page: inboxPage.value,
-      site_page_size: 20,
-      sites_total: 0,
-      sites_scanned: 0,
-      total_pending: 0,
-      entries: [],
-      partial: false,
-      error: failureMessage(err),
-    };
-  } finally {
-    inboxLoading.value = false;
-  }
-}
-
-async function closeInbox(): Promise<void> {
-  inboxOpen.value = false;
-  document.documentElement.style.overflow = '';
-  await nextTick();
-  inboxTrigger.value?.focus();
-}
-
-async function onOpenPendingFromInbox(site: string): Promise<void> {
-  inboxOpen.value = false;
-  document.documentElement.style.overflow = '';
-  await onOpenPending(site);
-}
-
-async function onToggleInbox(): Promise<void> {
-  inboxOpen.value = !inboxOpen.value;
-  if (inboxOpen.value) {
-    document.documentElement.style.overflow = 'hidden';
-    inboxPage.value = 1;
-    await loadInbox();
-    await nextTick();
-    inboxDialog.value?.focus();
-  } else {
-    await closeInbox();
-  }
-}
-
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape') {
-    if (inboxOpen.value) void closeInbox();
     if (invitationModal.value.open) closeInvitationModal();
   }
-}
-
-async function onInboxPage(p: number): Promise<void> {
-  inboxPage.value = p;
-  await loadInbox();
 }
 
 async function onOpenPending(site: string): Promise<void> {
@@ -292,16 +222,13 @@ async function onOpenPending(site: string): Promise<void> {
   userFilter.value = 'pending';
   userPage.value = 1;
   activeTab.value = 'users';
-  inboxOpen.value = false;
   await loadUsers();
 }
 
 async function onReload(): Promise<void> {
-  await refresh();
+  await Promise.all([refresh(), loadTotals()]);
   if (activeTab.value === 'signups') {
     await loadSignups();
-  } else if (activeTab.value === 'monitoring') {
-    await loadTotals();
   } else if (activeTab.value === 'users') {
     await loadUsers();
   }
@@ -332,7 +259,7 @@ async function onHealth(site: string): Promise<void> {
     notice.value = payload.ok
       ? `Site ${site} sehat. Terakhir dilihat diperbarui.`
       : `Cek kesehatan gagal: ${payload.last_error ?? 'tidak diketahui'}`;
-    await refresh({ clearNotice: false });
+    await Promise.all([refresh({ clearNotice: false }), loadTotals()]);
   } catch (err) {
     error.value = failureMessage(err);
   }
@@ -356,7 +283,7 @@ async function onSetStatus(payload: { site: string; user: string; status: string
       };
     }
     await loadUsers();
-    await refresh({ clearNotice: false });
+    await Promise.all([refresh({ clearNotice: false }), loadTotals()]);
   } catch (err) {
     error.value = failureMessage(err);
   }
@@ -368,13 +295,11 @@ onMounted(async () => {
   } catch (err) {
     error.value = failureMessage(err);
   }
-  await refresh();
+  await Promise.all([refresh(), loadTotals()]);
   if (activeTab.value === 'signups') {
     await loadSignups();
   } else if (activeTab.value === 'users') {
     await loadUsers();
-  } else if (activeTab.value === 'monitoring') {
-    await loadTotals();
   }
   window.addEventListener('keydown', onKeydown);
 });
@@ -409,19 +334,6 @@ onUnmounted(() => {
         </div>
         <div class="aios-admin-header-actions">
           <button
-            ref="inboxTrigger"
-            class="aios-admin-icon-btn"
-            type="button"
-            :disabled="inboxLoading"
-            :aria-expanded="inboxOpen"
-            aria-controls="aios-admin-inbox"
-            aria-label="Lihat pengguna pending"
-            title="Pengguna pending"
-            @click="onToggleInbox()"
-          >
-            <AppIcon name="user-round-check" :size="16" />
-          </button>
-          <button
             class="aios-admin-icon-btn"
             type="button"
             :disabled="loading"
@@ -452,23 +364,21 @@ onUnmounted(() => {
       <div v-if="error" class="aios-admin-error" data-tone="error">{{ error }}</div>
       <div v-if="notice" class="aios-admin-error" data-tone="ok">{{ notice }}</div>
 
+      <!-- Top Summary Bar: Metrik Ringkas Sistem -->
+      <div v-if="totalsData" class="aios-admin-top-summary">
+        <MetricsCards :totals="totalsData.totals" />
+        <div
+          v-if="totalsData.totals.sites_unreachable > 0"
+          class="aios-admin-error aios-admin-unreachable-warn"
+          data-tone="warn"
+        >
+          {{ totalsData.totals.sites_unreachable }} site tidak dapat dibaca; angka di atas tidak lengkap.
+        </div>
+      </div>
+
       <section v-if="activeTab === 'signups'" class="aios-admin-surface">
         <SignupsTable :leads="signupsData" :loading="signupsLoading" />
       </section>
-
-      <div v-else-if="activeTab === 'monitoring'">
-        <div v-if="totalsLoading" class="aios-admin-muted aios-admin-loading">Memuat agregat semua site...</div>
-        <template v-else-if="totalsData">
-          <MetricsCards :totals="totalsData.totals" />
-          <div
-            v-if="totalsData.totals.sites_unreachable > 0"
-            class="aios-admin-error aios-admin-unreachable-warn"
-            data-tone="warn"
-          >
-            {{ totalsData.totals.sites_unreachable }} site tidak dapat dibaca; angka di atas tidak lengkap.
-          </div>
-        </template>
-      </div>
 
       <section v-else-if="activeTab === 'sites'" class="aios-admin-surface">
         <template v-if="data">
@@ -506,85 +416,6 @@ onUnmounted(() => {
     </div>
 
     <div
-      v-if="inboxOpen"
-      id="aios-admin-inbox"
-      class="aios-admin-overlay"
-      role="presentation"
-      @click.self="closeInbox()"
-    >
-      <div
-        ref="inboxDialog"
-        class="aios-admin-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="aios-admin-inbox-title"
-        tabindex="-1"
-      >
-        <header class="aios-admin-dialog-head">
-          <h2 id="aios-admin-inbox-title" class="aios-admin-dialog-title">
-            Pengguna pending
-          </h2>
-          <button
-            class="aios-admin-icon-btn"
-            type="button"
-            aria-label="Tutup"
-            title="Tutup"
-            @click="closeInbox()"
-          >
-            <AppIcon name="x" :size="16" />
-          </button>
-        </header>
-
-        <div class="aios-admin-dialog-body">
-          <p class="aios-admin-muted">
-            Memeriksa site {{ inboxFrom }}–{{ inboxTo }} dari
-            {{ inboxData?.sites_total ?? 0 }} · {{ inboxData?.total_pending ?? 0 }} pending
-          </p>
-          <div v-if="inboxData?.error" class="aios-admin-error" data-tone="error">
-            {{ inboxData.error }}
-          </div>
-          <div v-else-if="inboxLoading" class="aios-admin-muted aios-admin-loading">
-            Memeriksa site...
-          </div>
-          <div v-else-if="!inboxData?.entries?.length" class="aios-admin-muted aios-admin-loading">
-            Tidak ada pengguna pending di halaman site ini.
-          </div>
-          <div v-else class="aios-admin-table-wrap">
-            <table class="aios-admin-table">
-              <thead><tr><th>Site</th><th>Pending</th><th>Aksi</th></tr></thead>
-              <tbody>
-                <tr v-for="e in inboxData.entries" :key="e.site">
-                  <td>{{ e.site }}</td>
-                  <td><span class="aios-admin-badge" data-tone="warn">{{ e.pending_users }} pending</span></td>
-                  <td>
-                    <button
-                      class="aios-admin-button"
-                      type="button"
-                      @click="onOpenPendingFromInbox(e.site)"
-                    >
-                      Buka
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-if="inboxData?.partial" class="aios-admin-error" data-tone="warn">
-            Sebagian site punya lebih dari 1000 pengguna pending; daftar dipotong.
-          </div>
-        </div>
-
-        <PagerBar
-          :page="inboxData?.site_page ?? 1"
-          :page-size="inboxData?.site_page_size ?? 20"
-          :total="inboxData?.sites_total ?? 0"
-          :disabled="inboxLoading"
-          @change="onInboxPage"
-        />
-      </div>
-    </div>
-
-    <div
       v-if="invitationModal.open"
       class="aios-admin-overlay"
       role="presentation"
@@ -615,8 +446,8 @@ onUnmounted(() => {
         <div class="aios-admin-dialog-body">
           <p>
             Akun <strong>{{ invitationModal.user }}</strong> pada site
-            <strong>{{ invitationModal.site }}</strong> telah diaktifkan. Tautan resmi Frappe berikut
-            bersifat <em>sekali pakai</em> untuk membuat password mandiri:
+            <strong>{{ invitationModal.site }}</strong> siap menerima password baru. Tautan resmi Frappe berikut
+            bersifat <em>sekali pakai</em>:
           </p>
           <div class="aios-admin-invitation-card">
             <div class="aios-admin-invitation-row">
