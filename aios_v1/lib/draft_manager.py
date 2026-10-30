@@ -104,7 +104,10 @@ def validate_data_fields(meta, data: dict) -> None:
             frappe.throw(f"Field '{fieldname}' tidak dapat diubah melalui draft AIOS.")
         field = meta.get_field(fieldname)
         if not field:
-            frappe.throw("data memuat field yang tidak dikenal untuk DocType ini.")
+            frappe.throw(
+                f"Field '{fieldname}' tidak dikenal untuk DocType '{meta.name}'. "
+                f"Gunakan tool 'erpnext_doctype_schema' untuk memeriksa nama field yang valid."
+            )
         if field.fieldtype == "Table":
             if not isinstance(value, list):
                 frappe.throw(f"Field tabel '{fieldname}' harus berupa daftar.")

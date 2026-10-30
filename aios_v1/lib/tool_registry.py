@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from aios_v1.lib.error_utils import log_exception, safe_error
+from aios_v1.lib.error_utils import log_exception, safe_error, sanitize_text
 
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _HIDDEN_TOOL_PARAMS = frozenset({"user_id", "allowed_company"})
@@ -381,6 +381,10 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         return json.dumps(result, default=str)
     except ToolContextError:
         raise
+    except (frappe.ValidationError, ValueError) as exc:
+        log_exception(f"AIOS Tool Validation: {name}", exc=exc)
+        clean_msg = sanitize_text(str(exc))
+        return json.dumps(safe_error(clean_msg, "VALIDATION_FAILED"))
     except Exception as exc:
         log_exception(f"AIOS Tool Error: {name}", exc=exc)
         return json.dumps(safe_error("Tool gagal dijalankan.", "TOOL_FAILED"))

@@ -203,7 +203,13 @@ def extract_document_content(
 	roles=[],
 	plugin_key="document-intelligence",
 	parameters={
-		"file_id": {"type": "string", "description": "Nama dokumen File milik pengguna"},
+		"file_id": {
+			"type": "string",
+			"description": (
+				"ID unik dokumen File dari sistem (misal: '291138620b' seperti yang tertera pada konteks "
+				"LAMPIRAN PENGGUNA), BUKAN nama file seperti 'laporan.xlsx'."
+			),
+		},
 		"format": {
 			"type": "string",
 			"enum": ["pdf", "csv", "xlsx"],
@@ -231,11 +237,42 @@ def document_extract(file_id, format=None, sheet_name=None, max_rows=DEFAULT_MAX
 	if not conversation_id:
 		return _file_error("CONVERSATION_REQUIRED", "File hanya dapat dibaca dari percakapan yang sama.")
 
+	file_doc = None
+	user = getattr(frappe.session, "user", None)
 	try:
 		file_doc = frappe.get_doc("File", file_id)
+	except frappe.DoesNotExistError:
+		# Smart lookup fallback: jika pemanggil mengirim file_name alih-alih ID unik docname
+		candidates = frappe.get_all(
+			"File",
+			filters={"file_name": file_id, "is_private": 1},
+			fields=["name", "attached_to_doctype", "attached_to_name", "owner"],
+			order_by="creation desc",
+			limit=10,
+		)
+		for cand in candidates:
+			cand_conv = None
+			cand_doctype = cand.get("attached_to_doctype")
+			cand_parent = cand.get("attached_to_name")
+			cand_owner = cand.get("owner")
+			if cand_doctype == CONVERSATION_DOCTYPE:
+				cand_conv = str(cand_parent or "")
+			elif cand_doctype == "AIOS Message":
+				cand_conv = str(frappe.db.get_value("AIOS Message", cand_parent, "conversation") or "")
+			if cand_conv == conversation_id and (user == "Administrator" or cand_owner == user):
+				try:
+					file_doc = frappe.get_doc("File", cand.get("name"))
+					break
+				except Exception as exc:
+					log_exception("AIOS Document Smart File Lookup", exc=exc)
+		if not file_doc:
+			return _file_error("FILE_NOT_FOUND", f"File '{file_id}' tidak ditemukan pada percakapan ini.")
 	except Exception as exc:
 		log_exception("AIOS Document File Lookup", exc=exc)
 		return safe_error("File tidak tersedia untuk pengguna ini.", "FILE_FORBIDDEN")
+
+	if not file_doc:
+		return _file_error("FILE_NOT_FOUND", f"File '{file_id}' tidak ditemukan pada percakapan ini.")
 
 	if int(file_doc.get("is_private") or 0) != 1:
 		return _file_error("FILE_NOT_PRIVATE", "Hanya File privat yang dapat dibaca.")

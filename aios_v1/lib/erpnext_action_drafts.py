@@ -11,7 +11,12 @@ from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 
 @ai_tool(
     name="erpnext_action_draft_create",
-    description="Membuat Pending Action Draft untuk ditinjau manusia; tidak menulis ke ERPNext.",
+    description=(
+        "Membuat Pending Action Draft untuk ditinjau manusia; tidak menulis ke ERPNext. "
+        "Pastikan seluruh nama field pada 'data' sesuai dengan skema DocType target. "
+        "Jika belum yakin atau menerima error validasi field, panggil 'erpnext_doctype_schema' terlebih dahulu "
+        "(misal: Quotation menggunakan 'party_name' dan 'quotation_to', bukan 'customer')."
+    ),
     branch=["finance", "sales"],
     plugin_key="erpnext-action-drafts",
     parameters={
