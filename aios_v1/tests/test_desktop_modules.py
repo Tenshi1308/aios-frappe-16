@@ -259,8 +259,12 @@ class TestDesktopModules(IntegrationTestCase):
             filters = dict(filters or {})
             calls.append((doctype, fields, filters, kwargs))
             selected = [row for row in dummy_rows if row["company"] == filters.get("company")]
-            if fields and isinstance(fields[0], dict) and "COUNT" in fields[0]:
-                return [{"total": len(selected)}]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(row.get(field_name, 0) for row in selected)}]
             return [{field: row.get(field) for field in fields} for row in selected]
 
         with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
@@ -362,6 +366,71 @@ class TestDesktopModules(IntegrationTestCase):
             {"date_to": "2026-10-20"},
         )
         self.assertEqual(to_only, {"posting_date": ["<=", "2026-10-20"]})
+
+    def test_list_and_module_cards_reflect_active_filters(self):
+        active = self.company
+        dummy_rows = [
+            {
+                "name": "_Test Invoice 1",
+                "posting_date": "2026-10-20",
+                "customer_name": "Customer A",
+                "customer": "Customer A",
+                "status": "Paid",
+                "base_grand_total": 1000,
+                "company": active,
+                "docstatus": 1,
+            },
+            {
+                "name": "_Test Invoice 2",
+                "posting_date": "2026-10-25",
+                "customer_name": "Customer B",
+                "customer": "Customer B",
+                "status": "Unpaid",
+                "base_grand_total": 2000,
+                "company": active,
+                "docstatus": 1,
+            },
+        ]
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            selected = [r for r in dummy_rows if r["company"] == filters.get("company")]
+            if "status" in filters:
+                selected = [r for r in selected if r["status"] == filters["status"]]
+            if "posting_date" in filters:
+                op, val = filters["posting_date"]
+                if op == "between":
+                    start, end = val
+                    selected = [r for r in selected if start <= r["posting_date"] <= end]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            unfiltered = frappe.call(
+                desktop_api.list,
+                module="sales_invoice",
+                doctype="Sales Invoice",
+            )
+            self.assertIn("cards", unfiltered)
+            card_map_unfiltered = {c["key"]: c["value"] for c in unfiltered["cards"]}
+            self.assertEqual(card_map_unfiltered["count"], 2)
+            self.assertEqual(card_map_unfiltered["total"], 3000)
+
+            filtered = frappe.call(
+                desktop_api.list,
+                module="sales_invoice",
+                doctype="Sales Invoice",
+                filters=json.dumps({"date_from": "2026-10-20", "date_to": "2026-10-20"}),
+            )
+            self.assertIn("cards", filtered)
+            card_map_filtered = {c["key"]: c["value"] for c in filtered["cards"]}
+            self.assertEqual(card_map_filtered["count"], 1)
+            self.assertEqual(card_map_filtered["total"], 1000)
 
     def test_page_size_is_capped_and_page_has_minimum_one(self):
         def fake_get_list(doctype, fields=None, filters=None, **kwargs):

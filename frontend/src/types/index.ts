@@ -256,6 +256,7 @@ export interface ModuleListData {
   doctype: string;
   rows: ModuleRow[];
   pagination: Pagination;
+  cards?: ModuleCard[];
 }
 
 export type SearchResult =

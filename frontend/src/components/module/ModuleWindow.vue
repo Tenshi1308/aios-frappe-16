@@ -86,8 +86,10 @@ function formatCard(card: ModuleCard): string {
   return formatNumber(card.value);
 }
 
-function scopeLabel(scope: string): string {
-  return scope === 'site' ? 'Cakupan site' : 'Cakupan company';
+function scopeLabel(card: ModuleCard): string {
+  if (card.scope === 'site') return 'Cakupan site';
+  if (hasActiveFilter()) return 'Hasil filter';
+  return 'Cakupan company';
 }
 
 function formatCell(row: ModuleRow, col: ModuleColumn): string {
@@ -208,7 +210,7 @@ async function onNextPage() {
         <article v-for="card in cards" :key="card.key" class="mod-card">
           <div class="mod-card-top">
             <span class="mod-card-label">{{ card.label }}</span>
-            <span class="mod-card-scope">{{ scopeLabel(card.scope) }}</span>
+            <span class="mod-card-scope">{{ scopeLabel(card) }}</span>
           </div>
           <div class="mod-card-val">
             <b>{{ formatCard(card) }}</b>

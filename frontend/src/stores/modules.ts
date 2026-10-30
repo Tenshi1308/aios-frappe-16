@@ -228,6 +228,7 @@ export const useModulesStore = defineStore('modules', {
             module: listed.module,
             rows: listed.rows,
             pagination: listed.pagination,
+            cards: listed.cards ?? current.cards,
           };
         }
       } catch (err) {
@@ -272,6 +273,7 @@ export const useModulesStore = defineStore('modules', {
             rows: listed.rows,
             pagination: listed.pagination,
             filters: { ...filters },
+            cards: listed.cards ?? current.cards,
           };
         }
       } catch (err) {

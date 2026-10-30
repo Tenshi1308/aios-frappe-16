@@ -423,6 +423,7 @@ export async function fetchList(
     doctype: raw.doctype,
     rows: mapRows(raw.rows, mod.columns),
     pagination: mapPagination(raw.pagination),
+    cards: Array.isArray(raw.cards) ? mapCards(raw.cards) : undefined,
   };
 }
 

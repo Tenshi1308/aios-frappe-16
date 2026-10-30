@@ -272,8 +272,10 @@ def _list_rows(module: dict, company_id: str, page, page_size, filters_value=Non
     }
 
 
-def _card_value(module: dict, card: dict, company_id: str):
+def _card_value(module: dict, card: dict, company_id: str, client_filters: dict | None = None):
     filters = _server_filters(module, company_id, card["filters"])
+    if client_filters and card.get("scope") != "site":
+        filters.update(client_filters)
     aggregate = card["aggregate"].upper()
     field = card["field"]
     rows = frappe.get_list(
@@ -292,10 +294,10 @@ def _card_value(module: dict, card: dict, company_id: str):
     }
 
 
-def _cards(module: dict, company_id: str, currency: str) -> list[dict]:
+def _cards(module: dict, company_id: str, currency: str, client_filters: dict | None = None) -> list[dict]:
     cards = []
     for definition in module["cards"]:
-        card = _card_value(module, definition, company_id)
+        card = _card_value(module, definition, company_id, client_filters)
         if card["format"] == "currency":
             card["currency"] = currency
         cards.append(card)
@@ -383,9 +385,10 @@ def _module_response(module: dict, company: dict, page, page_size, filters=None)
         "label": module["label"],
         "columns": _public_module(module)["columns"],
     }
+    user_filters = _read_filters(module, filters)
     return {
         "module": _public_module(module),
-        "cards": _cards(module, company["id"], company["currency"]),
+        "cards": _cards(module, company["id"], company["currency"], user_filters),
         "doctypes": [doctype],
         "rows": rows,
         "pagination": pagination,
@@ -441,11 +444,13 @@ def list(module: str, doctype: str, page=1, page_size=DEFAULT_PAGE_SIZE, filters
     definition = _definition(module, doctype)
     company = _company_context()
     rows, pagination = _list_rows(definition, company["id"], page, page_size, filters)
+    user_filters = _read_filters(definition, filters)
     return {
         "module": _public_module(definition),
         "doctype": definition["doctype"],
         "rows": rows,
         "pagination": pagination,
+        "cards": _cards(definition, company["id"], company["currency"], user_filters),
     }
 
 
