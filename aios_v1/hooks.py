@@ -17,6 +17,9 @@ after_migrate = "aios_v1.setup.after_migrate"
 on_login = "aios_v1.setup.on_login"
 auth_hooks = ["aios_v1.setup.validate_aios_status"]
 
+# Setup wizard normalisasi user client
+setup_wizard_complete = ["aios_v1.setup.normalize_wizard_user"]
+
 doc_events = {
     "User": {
         "validate": "aios_v1.setup.sync_aios_status_enabled",

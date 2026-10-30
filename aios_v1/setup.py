@@ -273,3 +273,51 @@ def get_session_context():
         "company": company,
         "csrf_token": get_csrf_token(),
     }
+
+
+def normalize_wizard_user(args=None):
+    """Hook setup_wizard_complete: menormalkan user klien hasil setup wizard Frappe.
+
+    1. Cabut role System Manager agar user tidak memiliki akses Frappe Desk.
+    2. Pasang role AIOS Client dan AIOS Client Profile.
+    3. Set user_type = 'Website User'.
+    4. Set aios_status = 'Pending Provisioning' dan enabled = 0.
+    5. Idempotent dan hanya menargetkan email pendaftar, bukan Administrator.
+    """
+    if not args:
+        return
+
+    email = getattr(args, "email", None) if not isinstance(args, dict) else args.get("email")
+    if not email:
+        return
+
+    email = str(email).strip()
+    if email == "Administrator" or not frappe.db.exists("User", email):
+        return
+
+    user = frappe.get_doc("User", email)
+
+    # Cabut System Manager
+    user.roles = [r for r in user.roles if r.role != "System Manager"]
+
+    # Pasang role AIOS Client
+    if not any(r.role == "AIOS Client" for r in user.roles):
+        user.append("roles", {"role": "AIOS Client"})
+
+    # Pasang role profile AIOS Client Profile
+    if hasattr(user, "role_profiles") and not any(
+        r.role_profile == "AIOS Client Profile" for r in user.role_profiles
+    ):
+        user.append("role_profiles", {"role_profile": "AIOS Client Profile"})
+
+    if hasattr(user, "role_profile_name"):
+        user.role_profile_name = "AIOS Client Profile"
+
+    user.user_type = "Website User"
+    user.aios_status = "Pending Provisioning"
+    user.enabled = 0
+
+    user.flags.ignore_permissions = True
+    user.flags.ignore_password_policy = True
+    user.save(ignore_permissions=True)
+

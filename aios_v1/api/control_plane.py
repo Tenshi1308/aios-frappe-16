@@ -399,3 +399,18 @@ def set_user_status(site: str, user: str, status: str):
 	except Exception as exc:
 		log_exception("AIOS Dashboard: set_user_status", exc=exc, context=f"site={site}")
 		return _safe_error()
+
+
+@frappe.whitelist()
+def signup_leads():
+	"""Daftar pendaftar calon klien pra-site untuk AIOS Admin (Langkah 3 Flow Utama)."""
+	frappe.only_for(_ADMIN_ROLE)
+	from aios_v1.setup import UTM_SOURCE_SIGNUP
+
+	return frappe.get_all(
+		"Lead",
+		filters={"utm_source": UTM_SOURCE_SIGNUP},
+		fields=["name", "lead_name", "first_name", "email_id", "company_name", "country", "creation"],
+		order_by="creation desc",
+	)
+
