@@ -133,6 +133,8 @@ export interface DraftActionResult {
   code?: string;
   message?: string;
   document?: string;
+  doctype?: string;
+  name?: string;
 }
 
 export interface AttachmentMeta {

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { fetchDraft } from '../../api/chat';
+import { useBranchesStore } from '../../stores/branches';
 import { useChatStore } from '../../stores/chat';
 import { useSessionStore } from '../../stores/session';
+import { useUiStore } from '../../stores/ui';
 import type { DraftActionResult, DraftDetail } from '../../types';
 import { formatDateTime, prettyJson } from '../../utils/format';
 import AppIcon from '../base/AppIcon.vue';
@@ -11,6 +13,8 @@ const props = defineProps<{ draftId: string }>();
 
 const session = useSessionStore();
 const chat = useChatStore();
+const branches = useBranchesStore();
+const ui = useUiStore();
 
 const draft = ref<DraftDetail | null>(null);
 const payload = ref<Record<string, unknown> | null>(null);
@@ -25,6 +29,16 @@ const isPending = computed(() => draft.value?.status === 'PENDING_APPROVAL');
 
 function loadErrorText(err: unknown): string {
   return err instanceof Error && err.message.trim() ? err.message : 'Draft tidak ditemukan.';
+}
+
+function dispatchFeedback(branchKey: string, feedbackMsg: string) {
+  branches.selectBranch(branchKey);
+  ui.openAgent();
+  if (chat.isStreaming(branchKey)) {
+    setTimeout(() => void chat.send(branchKey, feedbackMsg), 600);
+  } else {
+    void chat.send(branchKey, feedbackMsg);
+  }
 }
 
 async function load(retry = 0) {
@@ -64,6 +78,26 @@ async function approve() {
       ? { ...res, message: res.message || `Draft dieksekusi${res.document ? ` (${res.document})` : ''}.` }
       : { ...res, message: res.message || 'Draft disetujui, tetapi eksekusi gagal.' };
     if (draft.value && typeof res.draft_status === 'string') draft.value.status = res.draft_status;
+
+    if (res.executed) {
+      const branchKey = draft.value?.branch || branches.selected?.key || 'sales';
+      const docName = res.document || res.name || '';
+      const docType = res.doctype || (payload.value?.doctype as string) || 'dokumen';
+      const actionType = draft.value?.type || 'CREATE';
+
+      let feedbackMsg = '';
+      if (actionType === 'CREATE') {
+        feedbackMsg = `Saya telah menyetujui draf ${props.draftId} (${docType}). Dokumen resmi ${docType} berhasil dibuat dengan nomor ${docName}. Mohon konfirmasi dan jelaskan langkah operasional selanjutnya.`;
+      } else if (actionType === 'UPDATE_DRAFT') {
+        feedbackMsg = `Saya telah menyetujui draf ${props.draftId} (${docType}). Perubahan pada dokumen resmi ${docType} ${docName} telah diterapkan. Mohon konfirmasi dan jelaskan langkah operasional selanjutnya.`;
+      } else if (actionType === 'CANCEL_AND_AMEND') {
+        feedbackMsg = `Saya telah menyetujui draf ${props.draftId} (${docType}). Dokumen lama telah dibatalkan dan dokumen amend resmi ${docName} telah diterbitkan. Mohon konfirmasi dan jelaskan langkah operasional selanjutnya.`;
+      } else {
+        feedbackMsg = `Saya telah menyetujui draf ${props.draftId} (${docType}). Dokumen resmi ${docName ? `dengan nomor ${docName}` : ''} telah diproses. Mohon konfirmasi dan jelaskan langkah operasional selanjutnya.`;
+      }
+
+      dispatchFeedback(branchKey, feedbackMsg);
+    }
   } catch (err) {
     result.value = { executed: false, message: loadErrorText(err) };
   } finally {
@@ -75,10 +109,18 @@ async function reject() {
   busy.value = true;
   result.value = null;
   try {
-    const res = await chat.rejectDraft(props.draftId, rejectReason.value.trim());
+    const reasonText = rejectReason.value.trim();
+    const res = await chat.rejectDraft(props.draftId, reasonText);
     result.value = { ...res, message: res.message || 'Draft telah ditolak.' };
     if (draft.value) draft.value.status = 'REJECTED';
     confirmingReject.value = false;
+
+    const branchKey = draft.value?.branch || branches.selected?.key || 'sales';
+    const docType = (payload.value?.doctype as string) || 'dokumen';
+    const reasonClause = reasonText ? ` dengan alasan: "${reasonText}"` : ' tanpa alasan khusus';
+    const feedbackMsg = `Saya telah menolak draf ${props.draftId} (${docType})${reasonClause}. Mohon sesuaikan atau batalkan rencana tindakan ini.`;
+
+    dispatchFeedback(branchKey, feedbackMsg);
   } catch (err) {
     result.value = { executed: false, message: loadErrorText(err) };
   } finally {
