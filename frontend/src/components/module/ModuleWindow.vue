@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, watch } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useModulesStore } from '../../stores/modules';
 import type {
   ModuleCard,
@@ -22,6 +22,7 @@ const filterDraft = reactive<Record<ModuleFilterKey, string>>({
   status: '',
   party: '',
 });
+const filterError = ref('');
 
 const entry = computed(() => modules.dataFor(props.moduleKey));
 const meta = computed(() => entry.value?.module ?? modules.byKey(props.moduleKey) ?? null);
@@ -46,6 +47,7 @@ const cardCurrency = computed(() => {
 });
 
 function syncDraftFromStore() {
+  filterError.value = '';
   const saved = entry.value?.filters ?? {};
   filterDraft.date_from = saved.date_from ?? '';
   filterDraft.date_to = saved.date_to ?? '';
@@ -124,10 +126,18 @@ function hasActiveFilter(): boolean {
 }
 
 async function onApplyFilter() {
+  const dFrom = filterDraft.date_from?.trim();
+  const dTo = filterDraft.date_to?.trim();
+  if (dFrom && dTo && dFrom > dTo) {
+    filterError.value = 'Tanggal mulai tidak boleh melebihi tanggal akhir.';
+    return;
+  }
+  filterError.value = '';
   await modules.applyFilter(props.moduleKey, currentFiltersPayload());
 }
 
 async function onResetFilter() {
+  filterError.value = '';
   for (const def of filterDefs.value) {
     filterDraft[def.key] = '';
   }
@@ -220,6 +230,9 @@ async function onNextPage() {
             :type="f.type === 'date' ? 'date' : 'text'"
             :placeholder="f.label"
             :aria-label="f.label"
+            :max="f.key === 'date_from' && filterDraft.date_to ? filterDraft.date_to : undefined"
+            :min="f.key === 'date_to' && filterDraft.date_from ? filterDraft.date_from : undefined"
+            @input="filterError = ''"
           />
         </label>
         <div class="mod-filter-actions">
@@ -233,6 +246,9 @@ async function onNextPage() {
           >
             Reset
           </button>
+        </div>
+        <div v-if="filterError" class="mod-filter-error" role="alert">
+          {{ filterError }}
         </div>
       </form>
 
@@ -454,6 +470,13 @@ async function onNextPage() {
   display: flex;
   align-items: center;
   gap: var(--space-6);
+}
+.mod-filter-error {
+  width: 100%;
+  color: var(--bad);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-600);
+  margin-top: var(--space-4);
 }
 .mod-state {
   flex: 1;

@@ -171,6 +171,8 @@ def _read_filters(module: dict, value) -> dict:
 
     filters = {}
     allowed = module["filter_fields"]
+    date_values = {}
+
     for key, raw in supplied.items():
         if key not in allowed:
             frappe.throw("Filter tidak tersedia pada modul ini.", frappe.ValidationError)
@@ -186,11 +188,32 @@ def _read_filters(module: dict, value) -> dict:
             except ValueError as exc:
                 log_exception("AIOS Desktop Date Filter", exc=exc)
                 frappe.throw("Format tanggal filter tidak valid.", frappe.ValidationError)
-            filters[definition["field"]] = [definition["operator"], parsed.isoformat()]
+            date_values[key] = (definition["field"], parsed.isoformat())
         elif definition["operator"] == "like":
             filters[definition["field"]] = ["like", f"%{raw}%"]
         else:
             filters[definition["field"]] = [definition["operator"], raw]
+
+    if "date_from" in date_values and "date_to" in date_values:
+        field_from, val_from = date_values["date_from"]
+        field_to, val_to = date_values["date_to"]
+        if val_from > val_to:
+            frappe.throw(
+                "Rentang tanggal tidak valid. Tanggal mulai tidak boleh melebihi tanggal akhir.",
+                frappe.ValidationError,
+            )
+        if field_from == field_to:
+            filters[field_from] = ["between", [val_from, val_to]]
+        else:
+            filters[field_from] = [allowed["date_from"]["operator"], val_from]
+            filters[field_to] = [allowed["date_to"]["operator"], val_to]
+    elif "date_from" in date_values:
+        field, val = date_values["date_from"]
+        filters[field] = [allowed["date_from"]["operator"], val]
+    elif "date_to" in date_values:
+        field, val = date_values["date_to"]
+        filters[field] = [allowed["date_to"]["operator"], val]
+
     return filters
 
 

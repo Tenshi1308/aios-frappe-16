@@ -319,6 +319,50 @@ class TestDesktopModules(IntegrationTestCase):
                 filters={"unknown_field": "value"},
             )
 
+    def test_read_filters_date_range_between_and_validation(self):
+        invoice_module = get_module_definition("sales_invoice")
+
+        # 1. date_from > date_to wajib melempar ValidationError
+        with self.assertRaises(frappe.ValidationError):
+            desktop_api._read_filters(
+                invoice_module,
+                {"date_from": "2026-10-30", "date_to": "2026-10-27"},
+            )
+
+        # 2. date_from == date_to menghasilkan operator 'between' dengan batas sama
+        same_day = desktop_api._read_filters(
+            invoice_module,
+            {"date_from": "2026-10-20", "date_to": "2026-10-20"},
+        )
+        self.assertEqual(
+            same_day,
+            {"posting_date": ["between", ["2026-10-20", "2026-10-20"]]},
+        )
+
+        # 3. date_from < date_to menghasilkan operator 'between'
+        valid_range = desktop_api._read_filters(
+            invoice_module,
+            {"date_from": "2026-10-01", "date_to": "2026-10-20"},
+        )
+        self.assertEqual(
+            valid_range,
+            {"posting_date": ["between", ["2026-10-01", "2026-10-20"]]},
+        )
+
+        # 4. Hanya date_from menghasilkan operator >=
+        from_only = desktop_api._read_filters(
+            invoice_module,
+            {"date_from": "2026-10-01"},
+        )
+        self.assertEqual(from_only, {"posting_date": [">=", "2026-10-01"]})
+
+        # 5. Hanya date_to menghasilkan operator <=
+        to_only = desktop_api._read_filters(
+            invoice_module,
+            {"date_to": "2026-10-20"},
+        )
+        self.assertEqual(to_only, {"posting_date": ["<=", "2026-10-20"]})
+
     def test_page_size_is_capped_and_page_has_minimum_one(self):
         def fake_get_list(doctype, fields=None, filters=None, **kwargs):
             if fields and isinstance(fields[0], dict) and "COUNT" in fields[0]:
