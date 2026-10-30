@@ -16,7 +16,6 @@ from aios_v1.lib.error_utils import log_exception
 SITE_ROLE_KEY = "aios_site_role"
 DEVELOPER_ROLE_VALUE = "developer"
 UTM_SOURCE_NAME = "AIOS Signup"
-DEFAULT_COUNTRY = "Indonesia"
 GENERIC_PENDING_RESPONSE = {"status": "PENDING_PROVISIONING"}
 
 
@@ -53,7 +52,9 @@ def register_account(full_name: str, email: str, company_name: str):
     lead.lead_name = full_name
     lead.email_id = email
     lead.company_name = company_name
-    lead.country = DEFAULT_COUNTRY
+    system_country = frappe.get_system_settings("country")
+    if system_country:
+        lead.country = system_country
     lead.utm_source = UTM_SOURCE_NAME
 
     try:

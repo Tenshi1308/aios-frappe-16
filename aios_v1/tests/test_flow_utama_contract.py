@@ -135,7 +135,9 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		if "password" in params:
 			self.fail("GAP A3/A1: register_account() masih menerima 'password'. Flow Utama: tanpa password.")
 		if "country" in params:
-			self.fail("GAP A3/A1: register_account() seharusnya tidak meminta 'country' (otomatis default Indonesia).")
+			self.fail(
+				"GAP A3/A1: register_account() seharusnya tidak meminta 'country' (otomatis dari System Settings)."
+			)
 		for required in ("full_name", "email", "company_name"):
 			self.assertIn(required, params)
 
@@ -189,7 +191,12 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		)
 		self.assertIsNotNone(lead, "Lead tidak terbentuk untuk pendaftar.")
 		self.assertEqual(lead.company_name, "PT Test Flow")
-		self.assertEqual(lead.country, "Indonesia")
+		expected_country = frappe.get_system_settings("country")
+		self.assertEqual(
+			lead.country,
+			expected_country,
+			"Lead country harus diambil secara dinamis dari System Settings.",
+		)
 		self.assertEqual(lead.utm_source, UTM_SOURCE_NAME)
 		self.assertFalse(frappe.db.exists("User", email), "Pendaftar pra-site tidak boleh menjadi User.")
 

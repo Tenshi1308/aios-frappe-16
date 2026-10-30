@@ -62,7 +62,12 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         self.assertIsNotNone(lead, "Lead harus terbentuk.")
         self.created_leads.append(lead.name)
         self.assertEqual(lead.company_name, "PT Test Alpha")
-        self.assertEqual(lead.country, "Indonesia", "Lead harus otomatis disetel ke default Indonesia.")
+        expected_country = frappe.get_system_settings("country")
+        self.assertEqual(
+            lead.country,
+            expected_country,
+            "Lead country harus diambil secara dinamis dari System Settings.",
+        )
         self.assertEqual(lead.utm_source, "AIOS Signup")
 
         self.assertFalse(frappe.db.exists("User", email), "User tidak boleh dibuat pra-site.")
