@@ -50,7 +50,7 @@ export async function readBody(res: Response): Promise<unknown> {
   try {
     return JSON.parse(text);
   } catch {
-    return { error: text };
+    return null;
   }
 }
 

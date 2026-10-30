@@ -90,8 +90,14 @@ class TestFrontendAuthContract(unittest.TestCase):
                 f"Ditemukan silent catch kosong di {path.name}",
             )
             if path == SESSION_API:
-                self.assertIn("safeMessage(", src, "login() harus membaca response error server via safeMessage")
+                self.assertIn("Email atau password salah.", src, "login() harus mengembalikan pesan generik aman")
                 self.assertIn("console.error", src, "login() harus mencatat network error ke console")
+
+    def test_read_body_rejects_raw_html(self):
+        """Mencegah kebocoran HTML traceback: non-JSON tidak boleh dibungkus jadi error."""
+        src = CLIENT_API.read_text(encoding="utf-8")
+        self.assertNotIn("return { error: text }", src)
+        self.assertIn("return null", src)
 
 
 if __name__ == "__main__":

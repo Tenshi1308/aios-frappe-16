@@ -1,4 +1,4 @@
-import { ApiError, apiFetch, readBody, safeMessage, unwrapMessage } from './client';
+import { ApiError, apiFetch, unwrapMessage } from './client';
 import type { SessionContext } from '../types';
 
 export async function fetchSessionContext(): Promise<SessionContext> {
@@ -19,12 +19,11 @@ export async function login(usr: string, pwd: string): Promise<void> {
       body: new URLSearchParams({ usr, pwd }).toString(),
     });
   } catch (err) {
-    console.error('Login network error:', err);
+    console.error('Login network error:', err instanceof Error ? err.message : 'Network error');
     throw new ApiError('Tidak dapat menghubungi server. Periksa koneksi.');
   }
   if (!res.ok) {
-    const data = await readBody(res);
-    throw new ApiError(safeMessage(data, 'Email atau password salah.'));
+    throw new ApiError('Email atau password salah.');
   }
 }
 
