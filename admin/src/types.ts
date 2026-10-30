@@ -102,6 +102,17 @@ export interface SetUserStatusPayload {
   site: string;
   user: string;
   aios_status: string | null;
+  invitation_url?: string | null;
+}
+
+export interface SignupLead {
+  name: string;
+  lead_name: string;
+  first_name: string;
+  email_id: string;
+  company_name: string;
+  country: string;
+  creation: string;
 }
 
 export interface SafeErrorPayload {

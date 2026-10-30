@@ -5,6 +5,7 @@ import {
   checkHealth,
   fetchDashboard,
   fetchPendingInbox,
+  fetchSignupLeads,
   fetchTotals,
   fetchUsersPage,
   loadSession,
@@ -15,6 +16,7 @@ import type {
   AdminTheme,
   DashboardPayload,
   PendingInboxPayload,
+  SignupLead,
   TotalsPayload,
   UsersPagePayload,
 } from './types';
@@ -22,14 +24,16 @@ import { applyTheme } from '../../frontend/src/utils/theme';
 import MetricsCards from './components/MetricsCards.vue';
 import PagerBar from './components/PagerBar.vue';
 import PendingTable from './components/PendingTable.vue';
+import SignupsTable from './components/SignupsTable.vue';
 import SiteTable from './components/SiteTable.vue';
 import EkasaMark from '../../frontend/src/components/base/EkasaMark.vue';
 import AppIcon from '../../frontend/src/components/base/AppIcon.vue';
 import './styles/admin.css';
 
-type Tab = 'sites' | 'users' | 'monitoring';
+type Tab = 'signups' | 'sites' | 'users' | 'monitoring';
 
 const TABS: Array<{ key: Tab; label: string }> = [
+  { key: 'signups', label: 'Pendaftar' },
   { key: 'sites', label: 'Site' },
   { key: 'users', label: 'Pengguna' },
   { key: 'monitoring', label: 'Monitoring' },
@@ -58,6 +62,23 @@ const totalsLoading = ref(false);
 const usersData = ref<UsersPagePayload | null>(null);
 const usersLoading = ref(false);
 const siteNames = ref<string[]>([]);
+
+const signupsData = ref<SignupLead[]>([]);
+const signupsLoading = ref(false);
+
+const invitationModal = ref<{
+  open: boolean;
+  user: string;
+  site: string;
+  url: string;
+  copied: boolean;
+}>({
+  open: false,
+  user: '',
+  site: '',
+  url: '',
+  copied: false,
+});
 
 const inboxOpen = ref(false);
 const inboxPage = ref(1);
@@ -149,11 +170,41 @@ async function loadUsers(): Promise<void> {
 
 function onSelectTab(tab: Tab): void {
   activeTab.value = tab;
-  if (tab === 'monitoring') {
+  if (tab === 'signups') {
+    void loadSignups();
+  } else if (tab === 'monitoring') {
     void loadTotals();
   } else if (tab === 'users') {
     void loadUsers();
   }
+}
+
+async function loadSignups(): Promise<void> {
+  signupsLoading.value = true;
+  try {
+    signupsData.value = await fetchSignupLeads();
+  } catch (err) {
+    error.value = failureMessage(err);
+  } finally {
+    signupsLoading.value = false;
+  }
+}
+
+async function copyInvitation(): Promise<void> {
+  if (!invitationModal.value.url) return;
+  try {
+    await navigator.clipboard.writeText(invitationModal.value.url);
+    invitationModal.value.copied = true;
+    setTimeout(() => {
+      invitationModal.value.copied = false;
+    }, 2500);
+  } catch {
+    // fallback if clipboard API is not available
+  }
+}
+
+function closeInvitationModal(): void {
+  invitationModal.value.open = false;
 }
 
 async function onSitePage(p: number): Promise<void> {
@@ -225,7 +276,10 @@ async function onToggleInbox(): Promise<void> {
 }
 
 function onKeydown(e: KeyboardEvent): void {
-  if (e.key === 'Escape' && inboxOpen.value) void closeInbox();
+  if (e.key === 'Escape') {
+    if (inboxOpen.value) void closeInbox();
+    if (invitationModal.value.open) closeInvitationModal();
+  }
 }
 
 async function onInboxPage(p: number): Promise<void> {
@@ -244,7 +298,9 @@ async function onOpenPending(site: string): Promise<void> {
 
 async function onReload(): Promise<void> {
   await refresh();
-  if (activeTab.value === 'monitoring') {
+  if (activeTab.value === 'signups') {
+    await loadSignups();
+  } else if (activeTab.value === 'monitoring') {
     await loadTotals();
   } else if (activeTab.value === 'users') {
     await loadUsers();
@@ -290,6 +346,15 @@ async function onSetStatus(payload: { site: string; user: string; status: string
     notice.value = result.ok
       ? `Pengguna ${payload.user} kini ${result.aios_status}.`
       : `Perubahan status gagal di site klien.`;
+    if (result.ok && result.invitation_url) {
+      invitationModal.value = {
+        open: true,
+        user: payload.user,
+        site: payload.site,
+        url: result.invitation_url,
+        copied: false,
+      };
+    }
     await loadUsers();
     await refresh({ clearNotice: false });
   } catch (err) {
@@ -304,7 +369,9 @@ onMounted(async () => {
     error.value = failureMessage(err);
   }
   await refresh();
-  if (activeTab.value === 'users') {
+  if (activeTab.value === 'signups') {
+    await loadSignups();
+  } else if (activeTab.value === 'users') {
     await loadUsers();
   } else if (activeTab.value === 'monitoring') {
     await loadTotals();
@@ -385,7 +452,11 @@ onUnmounted(() => {
       <div v-if="error" class="aios-admin-error" data-tone="error">{{ error }}</div>
       <div v-if="notice" class="aios-admin-error" data-tone="ok">{{ notice }}</div>
 
-      <div v-if="activeTab === 'monitoring'">
+      <section v-if="activeTab === 'signups'" class="aios-admin-surface">
+        <SignupsTable :leads="signupsData" :loading="signupsLoading" />
+      </section>
+
+      <div v-else-if="activeTab === 'monitoring'">
         <div v-if="totalsLoading" class="aios-admin-muted aios-admin-loading">Memuat agregat semua site...</div>
         <template v-else-if="totalsData">
           <MetricsCards :totals="totalsData.totals" />
@@ -510,6 +581,73 @@ onUnmounted(() => {
           :disabled="inboxLoading"
           @change="onInboxPage"
         />
+      </div>
+    </div>
+
+    <div
+      v-if="invitationModal.open"
+      class="aios-admin-overlay"
+      role="presentation"
+      @click.self="closeInvitationModal()"
+    >
+      <div
+        class="aios-admin-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invitation-dialog-title"
+        tabindex="-1"
+      >
+        <header class="aios-admin-dialog-head">
+          <h2 id="invitation-dialog-title" class="aios-admin-dialog-title">
+            Tautan Undangan Berhasil Diterbitkan
+          </h2>
+          <button
+            class="aios-admin-icon-btn"
+            type="button"
+            aria-label="Tutup"
+            title="Tutup"
+            @click="closeInvitationModal()"
+          >
+            <AppIcon name="x" :size="16" />
+          </button>
+        </header>
+
+        <div class="aios-admin-dialog-body">
+          <p>
+            Akun <strong>{{ invitationModal.user }}</strong> pada site
+            <strong>{{ invitationModal.site }}</strong> telah diaktifkan. Tautan resmi Frappe berikut
+            bersifat <em>sekali pakai</em> untuk membuat password mandiri:
+          </p>
+          <div class="aios-admin-invitation-card">
+            <div class="aios-admin-invitation-row">
+              <input
+                type="text"
+                readonly
+                :value="invitationModal.url"
+                class="aios-admin-invitation-input"
+                @focus="($event.target as HTMLInputElement).select()"
+              />
+              <button
+                class="aios-admin-button"
+                data-variant="primary"
+                type="button"
+                @click="copyInvitation()"
+              >
+                {{ invitationModal.copied ? 'Tersalin!' : 'Salin Tautan' }}
+              </button>
+            </div>
+            <div class="aios-admin-actions">
+              <a
+                :href="invitationModal.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="aios-admin-button"
+              >
+                Buka Halaman Set Password &rarr;
+              </a>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>

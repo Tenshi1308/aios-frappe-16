@@ -5,6 +5,7 @@ import type {
   PendingInboxPayload,
   SafeErrorPayload,
   SetUserStatusPayload,
+  SignupLead,
   TotalsPayload,
   UsersPagePayload,
 } from './types';
@@ -117,6 +118,10 @@ export function fetchUsersPage(
 
 export function fetchTotals(): Promise<TotalsPayload> {
   return request<TotalsPayload>('/api/method/aios_v1.api.control_plane.totals');
+}
+
+export function fetchSignupLeads(): Promise<SignupLead[]> {
+  return request<SignupLead[]>('/api/method/aios_v1.api.control_plane.signup_leads');
 }
 
 export function fetchPendingInbox(sitePage: number, sitePageSize = 20): Promise<PendingInboxPayload> {
