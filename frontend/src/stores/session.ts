@@ -110,7 +110,7 @@ export const useSessionStore = defineStore('session', {
         this.loggingIn = false;
       }
     },
-    async register(payload: { full_name: string; email: string; password: string; company_name: string }) {
+    async register(payload: { full_name: string; email: string; company_name: string; country: string }) {
       this.registering = true;
       this.registerError = '';
       try {

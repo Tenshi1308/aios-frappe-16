@@ -30,12 +30,20 @@ export async function logout(): Promise<void> {
 
 export type RegistrationStatus = 'PENDING_PROVISIONING';
 
-export async function registerAccount(payload: {
+export interface RegisterPayload {
   full_name: string;
   email: string;
-  password: string;
   company_name: string;
-}): Promise<RegistrationStatus> {
+  country: string;
+}
+
+export async function listCountries(): Promise<string[]> {
+  const raw = await apiFetch('/api/method/aios_v1.auth.list_countries');
+  const countries = unwrapMessage<string[]>(raw);
+  return Array.isArray(countries) ? countries : [];
+}
+
+export async function registerAccount(payload: RegisterPayload): Promise<RegistrationStatus> {
   const raw = await apiFetch('/api/method/aios_v1.auth.register_account', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

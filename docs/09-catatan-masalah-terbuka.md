@@ -20,14 +20,14 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 
 | # | Masalah | Tingkat | Status |
 |---|---|---|---|
-| A1 | `register_account` membuat `User` di site yang salah; belum ada guard site developer | **tinggi** | Belum |
+| A1 | `register_account` membuat `User` di site yang salah; belum ada guard site developer | **tinggi** | **Dikerjakan** (selesai: Lead di site developer + guard) |
 | A2 | `docs/04` Alur 1 kontradiksi soal password | sedang | **Dikerjakan** (docs 04 dikoreksi) |
-| A3 | `RegisterView.vue` masih meminta password; belum ada field negara | sedang | Belum |
+| A3 | `RegisterView.vue` masih meminta password; belum ada field negara | sedang | **Dikerjakan** (selesai: form tanpa pwd + dropdown negara) |
 | A4 | `AIOS Managed Site.contact_email` kosong | rendah | **Ditunda** |
 | A5 | `pending_inbox()` tidak melihat pendaftar di site developer | **tinggi** | Belum |
 | A6 | Baris `Has Role` yatim + 1 user uji | rendah | Belum (kapan saja) |
 | B1 | Tautan undangan `/update-password` belum diterbitkan `activate_user` | **tinggi** | Belum |
-| B2 | ~~Custom Field `Lead.app_source`~~ | — | **Dibatalkan** → `Lead.utm_source` |
+| B2 | ~~Custom Field `Lead.app_source`~~ | — | **Dikerjakan** (selesai: `Lead.utm_source` + auto seed) |
 | B3 | Tab "Pendaftar" + `signup_leads()` | sedang | Belum |
 | B4 | Hook `setup_wizard_complete` (normalisasi user hasil wizard) | **tinggi** | Belum (baru) |
 | B5 | Prosedur manual admin tertulis | sedang | **Dikerjakan** (`docs/04` §6.0) |

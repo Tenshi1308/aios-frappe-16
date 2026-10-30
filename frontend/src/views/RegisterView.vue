@@ -1,11 +1,24 @@
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useSessionStore } from '../stores/session';
-import AppIcon from '../components/base/AppIcon.vue';
+import { listCountries } from '../api/session';
 import EkasaMark from '../components/base/EkasaMark.vue';
 
 const session = useSessionStore();
-const form = reactive({ full_name: '', email: '', password: '', company_name: '' });
+const form = reactive({ full_name: '', email: '', company_name: '', country: '' });
+const countries = ref<string[]>([]);
+const loadingCountries = ref(false);
+
+onMounted(async () => {
+  loadingCountries.value = true;
+  try {
+    countries.value = await listCountries();
+  } catch (err) {
+    session.registerError = err instanceof Error ? err.message : 'Gagal memuat daftar negara.';
+  } finally {
+    loadingCountries.value = false;
+  }
+});
 
 async function submit() {
   if (session.registering) return;
@@ -34,23 +47,18 @@ async function submit() {
           <input v-model="form.email" type="email" placeholder="Email" autocomplete="username" aria-label="Email" required />
         </div>
         <div class="lock-field">
-          <input
-            v-model="form.password"
-            type="password"
-            placeholder="Password (minimal 8 karakter)"
-            autocomplete="new-password"
-            aria-label="Password"
-            minlength="8"
-            required
-          />
+          <input v-model="form.company_name" type="text" placeholder="Nama perusahaan" aria-label="Nama perusahaan" required />
         </div>
         <div class="lock-field">
-          <input v-model="form.company_name" type="text" placeholder="Nama perusahaan" aria-label="Nama perusahaan" required />
+          <select v-model="form.country" aria-label="Negara" required :disabled="loadingCountries">
+            <option value="" disabled>{{ loadingCountries ? 'Memuat negara…' : 'Pilih negara' }}</option>
+            <option v-for="c in countries" :key="c" :value="c">{{ c }}</option>
+          </select>
         </div>
       </div>
       <div v-if="session.registerError" class="lock-error" role="alert">{{ session.registerError }}</div>
       <div class="lock-actions">
-        <button class="btn agent wide" type="submit" :disabled="session.registering">
+        <button class="btn agent wide" type="submit" :disabled="session.registering || loadingCountries">
           {{ session.registering ? 'Mengirim…' : 'Daftar' }}
         </button>
         <button class="lock-link" type="button" @click="session.phase = 'lock'">Sudah punya akun? Masuk</button>

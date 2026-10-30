@@ -272,7 +272,8 @@ textarea {
   border-radius: var(--radius-10);
   overflow: hidden;
 }
-.lock-field input {
+.lock-field input,
+.lock-field select {
   flex: 1;
   min-width: 0;
   border: 0;
@@ -281,8 +282,13 @@ textarea {
   font: inherit;
   color: var(--fg);
 }
-.lock-field input:focus {
+.lock-field input:focus,
+.lock-field select:focus {
   outline: none;
+}
+.lock-field select option {
+  background: var(--surface);
+  color: var(--fg);
 }
 .lock-field:focus-within {
   border-color: var(--accent);

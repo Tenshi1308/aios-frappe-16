@@ -1,13 +1,13 @@
-"""P3: registrasi mandiri → `Pending Provisioning` (Alur 3).
+"""Registrasi mandiri calon klien -> Lead di site developer (docs/00-poc-target.md §1.1).
 
-Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
+Butuh site + DB -> `bench --site aios-v16.localhost run-tests --app aios_v1 --module aios_v1.tests.test_self_register_pending_provisioning`.
 """
 
-import unittest
+from uuid import uuid4
 
 import frappe
 
-from aios_v1.auth import register_account
+from aios_v1.auth import list_countries, register_account
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -20,53 +20,99 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self._had_role = "aios_site_role" in frappe.conf
+        self._orig_role = frappe.conf.get("aios_site_role")
+        frappe.conf["aios_site_role"] = "developer"
+
+        self.created_leads = []
+        frappe.cache.delete_keys("rl:")
         frappe.local.request = None
         frappe.set_user("Guest")
 
     def tearDown(self):
+        frappe.set_user("Administrator")
+        for lead_name in reversed(self.created_leads):
+            if frappe.db.exists("Lead", lead_name):
+                frappe.delete_doc("Lead", lead_name, ignore_permissions=True, force=True)
+
+        if self._had_role:
+            frappe.conf["aios_site_role"] = self._orig_role
+        else:
+            frappe.conf.pop("aios_site_role", None)
+
         frappe.db.commit = self._orig_commit
         frappe.local.request = None
-        frappe.set_user("Administrator")
         frappe.db.rollback()
+        super().tearDown()
 
-    def test_creates_pending_user_without_tenant(self):
-        email = "_test.register.alpha@example.com"
-        result = register_account("Test Alpha", email, "rahasia123", "PT Test Alpha")
+    def _email(self, label: str) -> str:
+        return f"_test.reg.{label}.{uuid4().hex[:8]}@example.test"
+
+    def test_creates_lead_without_user(self):
+        email = self._email("alpha")
+        result = register_account("Test Alpha", email, "PT Test Alpha", "Indonesia")
 
         self.assertEqual(result, {"status": "PENDING_PROVISIONING"})
-        row = frappe.db.get_value(
-            "User",
-            email,
-            ["aios_status", "enabled", "send_welcome_email", "user_type"],
+        lead = frappe.db.get_value(
+            "Lead",
+            {"email_id": email},
+            ["name", "company_name", "country", "utm_source"],
             as_dict=True,
         )
-        self.assertEqual(row["aios_status"], "Pending Provisioning")
-        self.assertEqual(row["enabled"], 0)
-        self.assertEqual(row["send_welcome_email"], 0)
-        self.assertEqual(row["user_type"], "Website User")
-        self.assertIn("AIOS Client", frappe.get_roles(email))
+        self.assertIsNotNone(lead, "Lead harus terbentuk.")
+        self.created_leads.append(lead.name)
+        self.assertEqual(lead.company_name, "PT Test Alpha")
+        self.assertEqual(lead.country, "Indonesia")
+        self.assertEqual(lead.utm_source, "AIOS Signup")
+
+        self.assertFalse(frappe.db.exists("User", email), "User tidak boleh dibuat pra-site.")
 
     def test_duplicate_email_returns_same_generic_response(self):
-        email = "_test.register.beta@example.com"
-        first = register_account("Test Beta", email, "rahasia123", "PT Test Beta")
-        second = register_account("Test Beta", email, "rahasia123", "PT Test Beta")
+        email = self._email("beta")
+        first = register_account("Test Beta", email, "PT Test Beta", "Indonesia")
+        lead_name = frappe.db.get_value("Lead", {"email_id": email}, "name")
+        if lead_name:
+            self.created_leads.append(lead_name)
 
-        self.assertEqual(first, second)
-        self.assertEqual(frappe.db.count("User", {"email": email}), 1)
+        second = register_account("Test Beta", email, "PT Test Beta Lain", "Indonesia")
+
+        self.assertEqual(first, second, "Respons harus seragam untuk mencegah enumerasi email.")
+        self.assertEqual(frappe.db.count("Lead", {"email_id": email}), 1)
 
     def test_invalid_email_rejected(self):
         with self.assertRaises(frappe.ValidationError):
-            register_account("Test Gamma", "bukan-email", "rahasia123", "PT Gamma")
-
-    def test_short_password_rejected(self):
-        with self.assertRaises(frappe.ValidationError):
-            register_account(
-                "Test Delta",
-                "_test.register.delta@example.com",
-                "123",
-                "PT Delta",
-            )
+            register_account("Test Gamma", "bukan-email", "PT Gamma", "Indonesia")
 
     def test_missing_fields_rejected(self):
         with self.assertRaises(frappe.ValidationError):
-            register_account("", "_test.register.epsilon@example.com", "rahasia123", "PT Epsilon")
+            register_account("", self._email("delta"), "PT Delta", "Indonesia")
+
+        with self.assertRaises(frappe.ValidationError):
+            register_account("Test Delta", "", "PT Delta", "Indonesia")
+
+        with self.assertRaises(frappe.ValidationError):
+            register_account("Test Delta", self._email("delta"), "", "Indonesia")
+
+        with self.assertRaises(frappe.ValidationError):
+            register_account("Test Delta", self._email("delta"), "PT Delta", "")
+
+    def test_invalid_country_rejected(self):
+        with self.assertRaises(frappe.ValidationError):
+            register_account(
+                "Test Epsilon",
+                self._email("epsilon"),
+                "PT Epsilon",
+                "Negara Antah Berantah 123",
+            )
+
+    def test_non_developer_site_rejected(self):
+        frappe.conf["aios_site_role"] = "client"
+        email = self._email("zeta")
+        with self.assertRaises(frappe.PermissionError):
+            register_account("Test Zeta", email, "PT Zeta", "Indonesia")
+        self.assertFalse(frappe.db.exists("Lead", {"email_id": email}))
+
+    def test_list_countries_returns_list(self):
+        countries = list_countries()
+        self.assertIsInstance(countries, list)
+        self.assertIn("Indonesia", countries)

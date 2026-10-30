@@ -176,7 +176,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | `AIOS Setting` JSON masih kurang `max_users` | `company_context_persona` sudah ada sejak `#8`; `max_users` menyusul `#5`. `default_user_token_limit` dibatalkan (kuota per user tidak dipakai). |
 | `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
 | ~~`/api/monitoring` masih pakai `AIOS Tenant`~~ | ✅ Dipindah ke `User` + `AIOS Token Usage` di `#4a-2`. |
-| `register_account` masih membuat `User` (dengan password) di site yang menerima request | Flow Utama langkah 1 belum terpenuhi; lihat `docs/09` A1–A3. |
+| ~~`register_account` masih membuat `User` (dengan password)~~ | ✅ Diselesaikan: membuat `Lead` di site developer (`utm_source = "AIOS Signup"`) tanpa password, dengan guard `aios_site_role`. Flow Utama langkah 1–2 terpenuhi. |
 | Tab "Pendaftar" + `signup_leads()` belum ada | Langkah 3 belum terlihat admin; `docs/09` A5/B3. |
 | Hook `setup_wizard_complete` belum ada | User hasil wizard masih `System Manager`; `docs/09` B4. |
 | `activate_user` belum menerbitkan tautan `/update-password` | Langkah 4–5 belum jalan; `docs/09` B1. |

@@ -7,7 +7,7 @@ const session = useSessionStore();
 const message = computed(
   () =>
     session.blockedMessage ||
-    'Akunmu sudah masuk antrean provisioning. Administrator akan mengaktifkan akun dan mengirim tautan set-password secara terpisah.',
+    'Pendaftaranmu sudah kami terima. Administrator akan menghubungimu setelah akunmu siap.',
 );
 </script>
 

@@ -18,18 +18,17 @@ ROUTER = REPO_ROOT / "frontend" / "src" / "router" / "index.ts"
 
 
 class TestRegisterAccountContract(unittest.TestCase):
-    def test_uses_frappe_user(self):
+    def test_creates_lead_in_developer_site(self):
         src = AUTH.read_text(encoding="utf-8")
-        self.assertIn('frappe.new_doc("User")', src)
+        self.assertIn('frappe.new_doc("Lead")', src)
+        self.assertNotIn('frappe.new_doc("User")', src)
         self.assertIn("@frappe.whitelist(allow_guest=True)", src)
         self.assertIn("@rate_limit(", src)
-        self.assertIn('"AIOS Client Profile"', src)
-        self.assertIn('"Pending Provisioning"', src)
-        self.assertIn("send_welcome_email = 0", src)
-        self.assertIn("no_welcome_mail", src)
-        self.assertIn("aios_company_name", src)
-        self.assertIn("aios_persona", src)
-        self.assertIn("aios_tokens_used", src)
+        self.assertIn('"AIOS Signup"', src)
+        self.assertIn("company_name", src)
+        self.assertIn("country", src)
+        self.assertIn("aios_site_role", src)
+        self.assertIn("developer", src)
         self.assertNotIn('frappe.new_doc("AIOS Tenant")', src)
 
 

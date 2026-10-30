@@ -68,11 +68,29 @@ AIOS_ROLE_PROFILES = {
 def after_install():
     setup_aios_identity()
     ensure_builtin_plugins()
+    ensure_signup_utm_source()
 
 
 def after_migrate():
     setup_aios_identity()
     ensure_builtin_plugins()
+    ensure_signup_utm_source()
+
+
+UTM_SOURCE_SIGNUP = "AIOS Signup"
+
+
+def ensure_signup_utm_source():
+    """Pastikan record UTM Source untuk pendaftar AIOS tersedia di site."""
+    if frappe.db.exists("DocType", "UTM Source") and not frappe.db.exists("UTM Source", UTM_SOURCE_SIGNUP):
+        doc = frappe.get_doc(
+            {
+                "doctype": "UTM Source",
+                "__newname": UTM_SOURCE_SIGNUP,
+                "description": "Pendaftaran mandiri calon klien AIOS",
+            }
+        )
+        doc.insert(ignore_permissions=True)
 
 
 BUILTIN_PLUGIN_SEEDS = (
