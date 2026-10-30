@@ -12,6 +12,7 @@ Setiap `except` tercatat lewat `log_exception` lalu kembalikan pesan aman;
 from __future__ import annotations
 
 from math import ceil
+from urllib.parse import urlsplit, urlunsplit
 
 import frappe
 
@@ -393,12 +394,20 @@ def set_user_status(site: str, user: str, status: str):
 		if not frappe.db.exists("AIOS Managed Site", site_name):
 			frappe.throw("Site klien tidak ditemukan di registry.", frappe.DoesNotExistError)
 		payload = control_client.activate_user(site_name, user_name, status)
+		raw_url = payload.get("invitation_url")
+		invitation_url = raw_url
+		if raw_url:
+			base_url = frappe.db.get_value("AIOS Managed Site", site_name, "base_url") or ""
+			if base_url:
+				parsed = urlsplit(raw_url)
+				base = urlsplit(base_url)
+				invitation_url = urlunsplit((base.scheme, base.netloc, parsed.path, parsed.query, ""))
 		return {
 			"ok": bool(payload.get("ok")),
 			"site": site_name,
 			"user": user_name,
 			"aios_status": payload.get("aios_status"),
-			"invitation_url": payload.get("invitation_url"),
+			"invitation_url": invitation_url,
 		}
 	except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError, frappe.DoesNotExistError):
 		raise
