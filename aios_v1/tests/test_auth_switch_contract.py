@@ -90,7 +90,11 @@ class TestFrontendAuthContract(unittest.TestCase):
                 f"Ditemukan silent catch kosong di {path.name}",
             )
             if path == SESSION_API:
-                self.assertIn("Email atau password salah.", src, "login() harus mengembalikan pesan generik aman")
+                self.assertIn("Email atau password salah.", src, "login() harus mengembalikan pesan generik aman untuk 401/403")
+                self.assertIn("Tidak dapat menghubungi server. Periksa koneksi.", src, "login() harus membedakan gateway/network error")
+                self.assertIn("Terjadi kesalahan pada server. Coba beberapa saat lagi.", src, "login() harus membedakan server 500 error")
+                self.assertIn("res.status === 401", src)
+                self.assertIn("res.status === 502", src)
                 self.assertIn("console.error", src, "login() harus mencatat network error ke console")
 
     def test_read_body_rejects_raw_html(self):

@@ -23,7 +23,16 @@ export async function login(usr: string, pwd: string): Promise<void> {
     throw new ApiError('Tidak dapat menghubungi server. Periksa koneksi.');
   }
   if (!res.ok) {
-    throw new ApiError('Email atau password salah.');
+    if (res.status === 401 || res.status === 403) {
+      throw new ApiError('Email atau password salah.');
+    }
+    if (res.status === 429) {
+      throw new ApiError('Terlalu banyak percobaan masuk. Coba beberapa saat lagi.');
+    }
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new ApiError('Tidak dapat menghubungi server. Periksa koneksi.');
+    }
+    throw new ApiError('Terjadi kesalahan pada server. Coba beberapa saat lagi.');
   }
 }
 
