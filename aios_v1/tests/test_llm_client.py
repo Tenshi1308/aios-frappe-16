@@ -221,29 +221,37 @@ class TestLLMClient(unittest.TestCase):
         self.assertTrue(usage.get("failed"))
         mock_log_error.assert_called()
 
+    @patch('aios_v1.lib.llm_client.frappe.get_meta')
     @patch('aios_v1.lib.llm_client.frappe.get_single')
-    def test_get_llm_config_reads_default_max_tokens(self, mock_get_single):
+    def test_get_llm_config_reads_defaults_from_frappe_meta(self, mock_get_single, mock_get_meta):
         mock_doc = MagicMock()
         mock_doc.base_url = "https://mock.com"
         mock_doc.get_password.return_value = "secret"
         mock_doc.model_name = "test-model"
-        mock_doc.temperature = 0.3
-        mock_doc.default_max_tokens = 8192
+        mock_doc.temperature = 0.5
+        mock_doc.default_max_tokens = 4096
         mock_doc.get.side_effect = lambda field, default=None: getattr(mock_doc, field, default)
         mock_get_single.return_value = mock_doc
 
-        cfg = get_llm_config()
-        self.assertEqual(cfg["default_max_tokens"], 8192)
+        mock_meta = MagicMock()
+        temp_field = MagicMock()
+        temp_field.default = "0.2"
+        tokens_field = MagicMock()
+        tokens_field.default = "8192"
+        mock_meta.get_field.side_effect = lambda field: temp_field if field == "temperature" else tokens_field
+        mock_get_meta.return_value = mock_meta
 
-        # Fallback saat field bernilai None/0
+        # Nilai eksplisit dari dokumen setting
+        cfg = get_llm_config()
+        self.assertEqual(cfg["temperature"], 0.5)
+        self.assertEqual(cfg["default_max_tokens"], 4096)
+
+        # Fallback saat field bernilai None/kosong -> membaca dari Frappe meta
+        mock_doc.temperature = None
         mock_doc.default_max_tokens = None
         cfg_fallback = get_llm_config()
+        self.assertEqual(cfg_fallback["temperature"], 0.2)
         self.assertEqual(cfg_fallback["default_max_tokens"], 8192)
-
-        # Custom value saat diubah di Frappe Desk
-        mock_doc.default_max_tokens = 16384
-        cfg_custom = get_llm_config()
-        self.assertEqual(cfg_custom["default_max_tokens"], 16384)
 
     @patch('aios_v1.lib.llm_client.requests.post')
     @patch('aios_v1.lib.llm_client.get_llm_config')

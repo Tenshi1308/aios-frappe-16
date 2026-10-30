@@ -8,16 +8,26 @@ from aios_v1.lib.error_utils import log_exception
 
 def get_llm_config():
     setting = frappe.get_single("AIOS Setting")
+    meta = frappe.get_meta("AIOS Setting")
     base_url = (setting.base_url or "").strip()
     api_key = (setting.get_password("api_key", raise_exception=False) or "").strip()
     model = (setting.model_name or "").strip()
-    temperature = float(setting.temperature) if setting.temperature is not None else 0.3
-    try:
-        raw_max_tokens = setting.get("default_max_tokens")
-        default_max_tokens = int(raw_max_tokens) if raw_max_tokens else 8192
-    except (TypeError, ValueError) as exc:
-        log_exception("AIOS LLM Setting Max Tokens", exc=exc)
-        default_max_tokens = 8192
+
+    if setting.temperature is not None:
+        temperature = float(setting.temperature)
+    else:
+        temperature = float(meta.get_field("temperature").default)
+
+    meta_max_tokens = int(meta.get_field("default_max_tokens").default)
+    raw_max_tokens = setting.get("default_max_tokens")
+    if raw_max_tokens:
+        try:
+            default_max_tokens = int(raw_max_tokens)
+        except (TypeError, ValueError) as exc:
+            log_exception("AIOS LLM Setting Max Tokens", exc=exc)
+            default_max_tokens = meta_max_tokens
+    else:
+        default_max_tokens = meta_max_tokens
 
     if not api_key:
         frappe.throw("API Key belum diisi di AIOS Setting pada Frappe Desk.")
@@ -39,7 +49,13 @@ def get_llm_config():
 def chat_stream(messages, max_tokens=None, temperature=None, timeout=None, usage=None, tools=None, tool_calls=None):
     """Stream content delta and aggregate fragmented tool calls into `tool_calls`."""
     cfg = get_llm_config()
-    token_limit = max_tokens if max_tokens is not None else cfg.get("default_max_tokens", 8192)
+    meta = frappe.get_meta("AIOS Setting")
+    meta_default_tokens = int(meta.get_field("default_max_tokens").default)
+    token_limit = (
+        max_tokens
+        if max_tokens is not None
+        else (cfg.get("default_max_tokens") or meta_default_tokens)
+    )
     if usage is not None:
         usage["provider"] = urlparse(cfg["base_url"]).netloc or ""
         usage["model"] = cfg["model"]
