@@ -467,16 +467,6 @@ onUnmounted(() => {
                 {{ invitationModal.copied ? 'Tersalin!' : 'Salin Tautan' }}
               </button>
             </div>
-            <div class="aios-admin-actions">
-              <a
-                :href="invitationModal.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="aios-admin-button"
-              >
-                Buka Halaman Set Password &rarr;
-              </a>
-            </div>
           </div>
         </div>
       </div>
