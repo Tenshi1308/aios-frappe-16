@@ -220,3 +220,69 @@ class TestLLMClient(unittest.TestCase):
         self.assertNotIn("Connection Timeout", result[0])
         self.assertTrue(usage.get("failed"))
         mock_log_error.assert_called()
+
+    @patch('aios_v1.lib.llm_client.frappe.get_single')
+    def test_get_llm_config_reads_default_max_tokens(self, mock_get_single):
+        mock_doc = MagicMock()
+        mock_doc.base_url = "https://mock.com"
+        mock_doc.get_password.return_value = "secret"
+        mock_doc.model_name = "test-model"
+        mock_doc.temperature = 0.3
+        mock_doc.default_max_tokens = 8192
+        mock_doc.get.side_effect = lambda field, default=None: getattr(mock_doc, field, default)
+        mock_get_single.return_value = mock_doc
+
+        cfg = get_llm_config()
+        self.assertEqual(cfg["default_max_tokens"], 8192)
+
+        # Fallback saat field bernilai None/0
+        mock_doc.default_max_tokens = None
+        cfg_fallback = get_llm_config()
+        self.assertEqual(cfg_fallback["default_max_tokens"], 8192)
+
+        # Custom value saat diubah di Frappe Desk
+        mock_doc.default_max_tokens = 16384
+        cfg_custom = get_llm_config()
+        self.assertEqual(cfg_custom["default_max_tokens"], 16384)
+
+    @patch('aios_v1.lib.llm_client.requests.post')
+    @patch('aios_v1.lib.llm_client.get_llm_config')
+    def test_chat_stream_uses_default_max_tokens_when_unspecified(self, mock_get_config, mock_post):
+        mock_get_config.return_value = {
+            "base_url": "http://mock-api.com",
+            "api_key": "mock_key",
+            "model": "mock-model",
+            "temperature": 0.5,
+            "default_max_tokens": 8192,
+            "timeout": 10,
+        }
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.iter_lines.return_value = ['data: {"choices": [{"delta": {"content": "ok"}}]}', 'data: [DONE]']
+        mock_post.return_value = mock_response
+
+        # Tanpa max_tokens spesifik -> menggunakan default_max_tokens dari config (8192)
+        list(chat_stream([{"role": "user", "content": "Halo"}]))
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["max_tokens"], 8192)
+
+    @patch('aios_v1.lib.llm_client.requests.post')
+    @patch('aios_v1.lib.llm_client.get_llm_config')
+    def test_chat_stream_respects_explicit_max_tokens(self, mock_get_config, mock_post):
+        mock_get_config.return_value = {
+            "base_url": "http://mock-api.com",
+            "api_key": "mock_key",
+            "model": "mock-model",
+            "temperature": 0.5,
+            "default_max_tokens": 8192,
+            "timeout": 10,
+        }
+        mock_response = MagicMock()
+        mock_response.ok = True
+        mock_response.iter_lines.return_value = ['data: {"choices": [{"delta": {"content": "ok"}}]}', 'data: [DONE]']
+        mock_post.return_value = mock_response
+
+        # Dengan max_tokens eksplisit (misal dari bot Telegram: 1500)
+        list(chat_stream([{"role": "user", "content": "Halo"}], max_tokens=1500))
+        sent_payload = mock_post.call_args.kwargs["json"]
+        self.assertEqual(sent_payload["max_tokens"], 1500)

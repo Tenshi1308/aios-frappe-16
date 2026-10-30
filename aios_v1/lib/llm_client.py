@@ -12,6 +12,12 @@ def get_llm_config():
     api_key = (setting.get_password("api_key", raise_exception=False) or "").strip()
     model = (setting.model_name or "").strip()
     temperature = float(setting.temperature) if setting.temperature is not None else 0.3
+    try:
+        raw_max_tokens = setting.get("default_max_tokens")
+        default_max_tokens = int(raw_max_tokens) if raw_max_tokens else 8192
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS LLM Setting Max Tokens", exc=exc)
+        default_max_tokens = 8192
 
     if not api_key:
         frappe.throw("API Key belum diisi di AIOS Setting pada Frappe Desk.")
@@ -25,12 +31,15 @@ def get_llm_config():
         "api_key": api_key,
         "model": model,
         "temperature": temperature,
-        "timeout": 90.0
+        "default_max_tokens": default_max_tokens,
+        "timeout": 90.0,
     }
 
-def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage=None, tools=None, tool_calls=None):
+
+def chat_stream(messages, max_tokens=None, temperature=None, timeout=None, usage=None, tools=None, tool_calls=None):
     """Stream content delta and aggregate fragmented tool calls into `tool_calls`."""
     cfg = get_llm_config()
+    token_limit = max_tokens if max_tokens is not None else cfg.get("default_max_tokens", 8192)
     if usage is not None:
         usage["provider"] = urlparse(cfg["base_url"]).netloc or ""
         usage["model"] = cfg["model"]
@@ -43,7 +52,7 @@ def chat_stream(messages, max_tokens=2048, temperature=None, timeout=None, usage
     payload = {
         "model": cfg["model"],
         "messages": messages,
-        "max_tokens": max_tokens,
+        "max_tokens": token_limit,
         "temperature": temperature if temperature is not None else cfg["temperature"],
         "stream": True,
         "stream_options": {"include_usage": True},

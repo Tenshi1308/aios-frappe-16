@@ -100,6 +100,7 @@ class TestToolExecutionLoop(IntegrationTestCase):
                 "worker_key": "manager",
                 "delegation_depth": 0,
                 "conversation_id": "7",
+                "_created_file_ids": [],
             },
         )
         self.assertEqual(len(self.llm_message_snapshots), 2)
