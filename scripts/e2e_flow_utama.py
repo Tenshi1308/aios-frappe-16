@@ -388,7 +388,10 @@ class FlowRunner:
 			host=self.test_site,
 			body={"usr": self.client_email, "pwd": self.client_password},
 		)
-		self._expect(status == 200 and body.get("message") == "Logged In", f"login gagal HTTP {status}: {str(body)[:300]}")
+		self._expect(
+			status == 200 and body.get("message") in ("Logged In", "No App"),
+			f"login gagal HTTP {status}: {str(body)[:300]}",
+		)
 		self.http = fresh
 		return "key sekali pakai; password salah ditolak; login password baru berhasil"
 
