@@ -393,7 +393,13 @@ def set_user_status(site: str, user: str, status: str):
 		if not frappe.db.exists("AIOS Managed Site", site_name):
 			frappe.throw("Site klien tidak ditemukan di registry.", frappe.DoesNotExistError)
 		payload = control_client.activate_user(site_name, user_name, status)
-		return {"ok": bool(payload.get("ok")), "site": site_name, "user": user_name, "aios_status": payload.get("aios_status")}
+		return {
+			"ok": bool(payload.get("ok")),
+			"site": site_name,
+			"user": user_name,
+			"aios_status": payload.get("aios_status"),
+			"invitation_url": payload.get("invitation_url"),
+		}
 	except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError, frappe.DoesNotExistError):
 		raise
 	except Exception as exc:

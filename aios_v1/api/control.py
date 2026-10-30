@@ -154,9 +154,20 @@ def activate_user(user: str, status: str):
 			user,
 			{"aios_status": status, "enabled": 1 if status == "Active" else 0},
 		)
+
+		invitation_url = None
+		if status == "Active":
+			user_doc = frappe.get_doc("User", user)
+			invitation_url = user_doc._reset_password(send_email=False)
+
 		_record_activity(f"AIOS lifecycle: {user} → {status}")
 		_audit("activate_user", target=user, status=status)
-		return {"ok": True, "user": user, "aios_status": status}
+		return {
+			"ok": True,
+			"user": user,
+			"aios_status": status,
+			"invitation_url": invitation_url,
+		}
 	except (frappe.PermissionError, frappe.ValidationError):
 		raise
 	except Exception as exc:
