@@ -130,18 +130,20 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		return auth_mod
 
 	def _require_register_contract(self):
-		"""Prasyarat Langkah 1: kontrak baru `register_account` (tanpa password, dengan country)."""
+		"""Prasyarat Langkah 1: kontrak `register_account` (hanya 3 kolom: full_name, email, company_name; tanpa password, tanpa country)."""
 		params = inspect.signature(self._register_module().register_account).parameters
 		if "password" in params:
 			self.fail("GAP A3/A1: register_account() masih menerima 'password'. Flow Utama: tanpa password.")
-		if "country" not in params:
-			self.fail("GAP A3/A1: register_account() belum menerima 'country' (dibutuhkan setup wizard).")
+		if "country" in params:
+			self.fail("GAP A3/A1: register_account() seharusnya tidak meminta 'country' (otomatis default Indonesia).")
+		for required in ("full_name", "email", "company_name"):
+			self.assertIn(required, params)
 
 	def _register(self, email, *, company="PT Test Flow"):
 		frappe.set_user("Guest")
 		try:
 			return self._register_module().register_account(
-				full_name="Budi Test", email=email, company_name=company, country="Indonesia"
+				full_name="Budi Test", email=email, company_name=company
 			)
 		finally:
 			frappe.set_user("Administrator")
@@ -162,7 +164,7 @@ class TestFlowUtamaContract(IntegrationTestCase):
 
 	# ------------------------------------------------------- Langkah 1: registrasi
 
-	def test_step_1_signature_has_no_password_and_has_country(self):
+	def test_step_1_signature_has_only_essential_fields(self):
 		self._require_register_contract()
 
 	def test_step_1_utm_source_is_provisioned(self):

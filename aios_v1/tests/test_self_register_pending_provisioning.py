@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import frappe
 
-from aios_v1.auth import list_countries, register_account
+from aios_v1.auth import register_account
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -50,7 +50,7 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
 
     def test_creates_lead_without_user(self):
         email = self._email("alpha")
-        result = register_account("Test Alpha", email, "PT Test Alpha", "Indonesia")
+        result = register_account("Test Alpha", email, "PT Test Alpha")
 
         self.assertEqual(result, {"status": "PENDING_PROVISIONING"})
         lead = frappe.db.get_value(
@@ -62,57 +62,40 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         self.assertIsNotNone(lead, "Lead harus terbentuk.")
         self.created_leads.append(lead.name)
         self.assertEqual(lead.company_name, "PT Test Alpha")
-        self.assertEqual(lead.country, "Indonesia")
+        self.assertEqual(lead.country, "Indonesia", "Lead harus otomatis disetel ke default Indonesia.")
         self.assertEqual(lead.utm_source, "AIOS Signup")
 
         self.assertFalse(frappe.db.exists("User", email), "User tidak boleh dibuat pra-site.")
 
     def test_duplicate_email_returns_same_generic_response(self):
         email = self._email("beta")
-        first = register_account("Test Beta", email, "PT Test Beta", "Indonesia")
+        first = register_account("Test Beta", email, "PT Test Beta")
         lead_name = frappe.db.get_value("Lead", {"email_id": email}, "name")
         if lead_name:
             self.created_leads.append(lead_name)
 
-        second = register_account("Test Beta", email, "PT Test Beta Lain", "Indonesia")
+        second = register_account("Test Beta", email, "PT Test Beta Lain")
 
         self.assertEqual(first, second, "Respons harus seragam untuk mencegah enumerasi email.")
         self.assertEqual(frappe.db.count("Lead", {"email_id": email}), 1)
 
     def test_invalid_email_rejected(self):
         with self.assertRaises(frappe.ValidationError):
-            register_account("Test Gamma", "bukan-email", "PT Gamma", "Indonesia")
+            register_account("Test Gamma", "bukan-email", "PT Gamma")
 
     def test_missing_fields_rejected(self):
         with self.assertRaises(frappe.ValidationError):
-            register_account("", self._email("delta"), "PT Delta", "Indonesia")
+            register_account("", self._email("delta"), "PT Delta")
 
         with self.assertRaises(frappe.ValidationError):
-            register_account("Test Delta", "", "PT Delta", "Indonesia")
+            register_account("Test Delta", "", "PT Delta")
 
         with self.assertRaises(frappe.ValidationError):
-            register_account("Test Delta", self._email("delta"), "", "Indonesia")
-
-        with self.assertRaises(frappe.ValidationError):
-            register_account("Test Delta", self._email("delta"), "PT Delta", "")
-
-    def test_invalid_country_rejected(self):
-        with self.assertRaises(frappe.ValidationError):
-            register_account(
-                "Test Epsilon",
-                self._email("epsilon"),
-                "PT Epsilon",
-                "Negara Antah Berantah 123",
-            )
+            register_account("Test Delta", self._email("delta"), "")
 
     def test_non_developer_site_rejected(self):
         frappe.conf["aios_site_role"] = "client"
         email = self._email("zeta")
         with self.assertRaises(frappe.PermissionError):
-            register_account("Test Zeta", email, "PT Zeta", "Indonesia")
+            register_account("Test Zeta", email, "PT Zeta")
         self.assertFalse(frappe.db.exists("Lead", {"email_id": email}))
-
-    def test_list_countries_returns_list(self):
-        countries = list_countries()
-        self.assertIsInstance(countries, list)
-        self.assertIn("Indonesia", countries)

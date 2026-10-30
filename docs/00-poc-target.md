@@ -25,7 +25,7 @@ PoC **bukan** “semua fitur di docs selesai”. PoC adalah alur end-to-end di a
 
 **Satu-satunya definisi alur klien dari daftar sampai pakai.** Dokumen lain merujuk ke sini dan tidak menyalinnya. Fase provisioning saat ini **manual dengan sengaja**; otomatisasi menyusul di `#11` (`docs/04` §6.1).
 
-1. **Client registrasi** di halaman `/register` (Vite). Hanya mengisi yang dibutuhkan setup wizard Frappe/ERPNext: nama lengkap, email, nama perusahaan, negara. **Tanpa password.** Sistem membuat `Lead` (`utm_source` = "AIOS Signup") di **site developer**.
+1. **Client registrasi** di halaman `/register` (Vite). Hanya mengisi 3 hal esensial: nama lengkap, email, nama perusahaan. **Tanpa password dan tanpa pilihan negara** (negara disetel default Indonesia). Sistem membuat `Lead` (`utm_source` = "AIOS Signup") di **site developer**.
 2. **Client menunggu** konfirmasi `AIOS Admin` (layar "Pendaftaran Diterima").
 3. **`AIOS Admin` melihat pendaftar** (tab "Pendaftar" di `/aios-admin`), lalu menyiapkan site **secara manual**: `bench new-site` → install `erpnext` + `aios_v1` → setup wizard dengan email + nama client tanpa `password` (negara, mata uang, zona waktu, singkatan, COA, tahun fiskal diturunkan dari data pendaftar) → hook `setup_wizard_complete` menormalkan user client → buat user `AIOS Control` + API key/secret (`generate_keys`) → daftarkan di `AIOS Managed Site` (**aios manage site**).
 4. **`AIOS Admin` mengaktifkan** user (`aios_status = "Active"`), sistem menerbitkan tautan `/update-password?key=...` sekali pakai, admin mengirimnya ke client (WhatsApp/Telegram/email) bahwa app siap dipakai.
@@ -160,7 +160,7 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-23 | H2 fase 2 (`cf77edf`) menambahkan `quant-calculator` dan `document-intelligence`; lima dari tujuh plugin terdaftar. `workspace-artifact-builder` di H5; `web-market-research` dan MCP menyusul fase 3. |
 | 2026-10-26 | File baru dikaitkan per pesan memakai attachment bawaan Frappe (`AIOS Message`); file lama yang langsung tertaut ke percakapan tidak dihapus dan tetap dapat diakses. |
 | 2026-10-29 | **Frappe/ERPNext resmi menang** atas docs dan `AGENTS.md` bila berbeda. Konflik dilaporkan, docs diperbarui mengikuti Frappe. |
-| 2026-10-29 | Registrasi **tanpa password**. Form hanya mengisi data yang dibutuhkan setup wizard: nama, email, perusahaan, negara. |
+| 2026-10-29 | Registrasi **tanpa password dan tanpa pilihan negara**. Form hanya 3 field esensial: nama, email, perusahaan (negara default Indonesia). |
 | 2026-10-29 | Penampung pendaftar pra-site = `Lead` bawaan ERPNext di site developer, ditandai `Lead.utm_source` = "AIOS Signup". Tanpa Custom Field `app_source`. |
 | 2026-10-29 | Setup wizard (fase manual) dijalankan admin dengan email + nama client, **tanpa `password`**. Password dibuat client sendiri lewat tautan `/update-password`. |
 | 2026-10-29 | Hook resmi `setup_wizard_complete` mencabut `System Manager` dari user client hasil wizard dan memasang `AIOS Client Profile`. |

@@ -217,7 +217,6 @@ class FlowRunner:
 				"full_name": self.client_name,
 				"email": self.client_email,
 				"company_name": self.company_name,
-				"country": self.country,
 			},
 		)
 		self._expect(status == 200, f"register_account HTTP {status}: {str(body)[:300]}")

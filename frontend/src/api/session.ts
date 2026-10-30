@@ -34,13 +34,6 @@ export interface RegisterPayload {
   full_name: string;
   email: string;
   company_name: string;
-  country: string;
-}
-
-export async function listCountries(): Promise<string[]> {
-  const raw = await apiFetch('/api/method/aios_v1.auth.list_countries');
-  const countries = unwrapMessage<string[]>(raw);
-  return Array.isArray(countries) ? countries : [];
 }
 
 export async function registerAccount(payload: RegisterPayload): Promise<RegistrationStatus> {

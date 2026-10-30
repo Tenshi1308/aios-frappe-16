@@ -1,6 +1,7 @@
 """Registrasi klien AIOS di atas `Lead` bawaan ERPNext (docs/00-poc-target.md §1.1).
 
 Pendaftar dicatat sebagai `Lead` (`utm_source = "AIOS Signup"`) di site developer.
+Input form hanya 3 hal esensial: nama lengkap, email, dan nama perusahaan.
 Akun `User` baru dibuat saat penyiapan site (langkah 3), dan password dibuat
 oleh client sendiri saat aktivasi (langkah 4-5).
 """
@@ -15,28 +16,21 @@ from aios_v1.lib.error_utils import log_exception
 SITE_ROLE_KEY = "aios_site_role"
 DEVELOPER_ROLE_VALUE = "developer"
 UTM_SOURCE_NAME = "AIOS Signup"
+DEFAULT_COUNTRY = "Indonesia"
 GENERIC_PENDING_RESPONSE = {"status": "PENDING_PROVISIONING"}
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(limit=30, seconds=60)
-def list_countries() -> list[str]:
-    """Daftar nama negara resmi Frappe untuk opsi dropdown form registrasi."""
-    return frappe.get_all("Country", pluck="name", order_by="name asc")
-
-
-@frappe.whitelist(allow_guest=True)
 @rate_limit(limit=5, seconds=60)
-def register_account(full_name: str, email: str, company_name: str, country: str):
+def register_account(full_name: str, email: str, company_name: str):
     """Daftarkan calon klien sebagai `Lead` di site developer."""
     full_name = (full_name or "").strip()
     email = (email or "").strip().lower()
     company_name = (company_name or "").strip()
-    country = (country or "").strip()
 
-    if not full_name or not email or not company_name or not country:
+    if not full_name or not email or not company_name:
         frappe.throw(
-            _("Nama lengkap, email, nama perusahaan, dan negara wajib diisi"),
+            _("Nama lengkap, email, dan nama perusahaan wajib diisi"),
             frappe.ValidationError,
         )
 
@@ -50,12 +44,6 @@ def register_account(full_name: str, email: str, company_name: str, country: str
             frappe.PermissionError,
         )
 
-    if not frappe.db.exists("Country", country):
-        frappe.throw(
-            _("Negara '{0}' tidak ditemukan di sistem").format(country),
-            frappe.ValidationError,
-        )
-
     # Anti-enumerasi: email yang sudah terdaftar memberi respons yang sama
     if frappe.db.exists("Lead", {"email_id": email}):
         return GENERIC_PENDING_RESPONSE
@@ -65,7 +53,7 @@ def register_account(full_name: str, email: str, company_name: str, country: str
     lead.lead_name = full_name
     lead.email_id = email
     lead.company_name = company_name
-    lead.country = country
+    lead.country = DEFAULT_COUNTRY
     lead.utm_source = UTM_SOURCE_NAME
 
     try:

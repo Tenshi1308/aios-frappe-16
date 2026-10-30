@@ -22,7 +22,7 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 |---|---|---|---|
 | A1 | `register_account` membuat `User` di site yang salah; belum ada guard site developer | **tinggi** | **Dikerjakan** (selesai: Lead di site developer + guard) |
 | A2 | `docs/04` Alur 1 kontradiksi soal password | sedang | **Dikerjakan** (docs 04 dikoreksi) |
-| A3 | `RegisterView.vue` masih meminta password; belum ada field negara | sedang | **Dikerjakan** (selesai: form tanpa pwd + dropdown negara) |
+| A3 | `RegisterView.vue` masih meminta password | sedang | **Dikerjakan** (selesai: form hanya 3 field esensial) |
 | A4 | `AIOS Managed Site.contact_email` kosong | rendah | **Ditunda** |
 | A5 | `pending_inbox()` tidak melihat pendaftar di site developer | **tinggi** | Belum |
 | A6 | Baris `Has Role` yatim + 1 user uji | rendah | Belum (kapan saja) |

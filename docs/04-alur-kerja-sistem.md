@@ -16,10 +16,10 @@ sequenceDiagram
     participant DB as Frappe Lead DocType (site developer)
     participant CP as Developer Control Plane (AIOS Admin)
 
-    Klien->>UI: Isi Nama Lengkap, Email, Nama Perusahaan, Negara (tanpa password)
+    Klien->>UI: Isi Nama Lengkap, Email, Nama Perusahaan (tanpa password & negara)
     UI->>API: POST /api/method/aios_v1.auth.register_account
     Note over API: Guard: tolak bila site_config aios_site_role != "developer"
-    API->>DB: Buat "Lead" (lead_name, email_id, company_name, country, utm_source = "AIOS Signup")
+    API->>DB: Buat "Lead" (lead_name, email_id, company_name, country="Indonesia", utm_source="AIOS Signup")
     DB-->>API: Lead tersimpan (tanpa User, tanpa email, tanpa sesi login)
     API-->>UI: Return { status: "PENDING_PROVISIONING" }
     UI-->>Klien: Tampilkan Layar "Pendaftaran Diterima — Menunggu Persetujuan Admin"
@@ -27,9 +27,9 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 1:
-1. **Input Registrasi Mandiri:** Calon klien mengisi Nama Lengkap, Email, Nama Perusahaan/PT, dan Negara pada halaman `/register`. **Tanpa password** — password dibuat client sendiri lewat tautan `/update-password` saat aktivasi (langkah 6).
+1. **Input Registrasi Mandiri:** Calon klien mengisi 3 field: Nama Lengkap, Email, dan Nama Perusahaan/PT pada halaman `/register`. **Tanpa password** (dibuat saat aktivasi) dan **tanpa pilihan negara** (default Indonesia).
 2. **Validasi & Proteksi Enumerasi:** Endpoint registrasi (`@frappe.whitelist(allow_guest=True)` + `@rate_limit`) memvalidasi input dan menerapkan respons seragam agar tidak dapat disalahgunakan untuk enumerasi email. `Lead.validate` bawaan ERPNext menolak email duplikat (`check_email_id_is_unique`); error itu ditangkap, dicatat lewat `frappe.log_error`, dan respons tetap seragam. Endpoint **menolak** request bila `frappe.conf.aios_site_role != "developer"` agar `Lead` tidak pernah tercipta di site klien.
-3. **Penyimpanan `Lead`:** Sistem membuat `Lead` bawaan ERPNext (`lead_name`, `email_id`, `company_name`, `country`, `utm_source` = "AIOS Signup") dengan `ignore_permissions`. Sistem **tidak** membuat `User`, `AIOS Tenant`, `Company`, atau sesi login, dan **tidak** mengirim email apa pun.
+3. **Penyimpanan `Lead`:** Sistem membuat `Lead` bawaan ERPNext (`lead_name`, `email_id`, `company_name`, `country="Indonesia"`, `utm_source = "AIOS Signup"`) dengan `ignore_permissions`. Sistem **tidak** membuat `User`, `AIOS Tenant`, `Company`, atau sesi login, dan **tidak** mengirim email apa pun.
 4. **Tampilan Menunggu Persetujuan:** UI menampilkan bahwa pendaftaran diterima dan menunggu konfirmasi `AIOS Admin`. Teks tidak menjanjikan email otomatis.
 5. **Penyiapan Site (manual):** `AIOS Admin` melihat `Lead` di tab "Pendaftar" (control plane), lalu menyiapkan site klien mengikuti Alur 6 §6.0. Setup wizard dijalankan dengan `email` + `full_name` dari `Lead`, **tanpa `password`**; hook resmi `setup_wizard_complete` memasang `AIOS Client Profile`, mencabut `System Manager`, dan menyetel `aios_status = "Pending Provisioning"` (otomatis `enabled = 0` via `User.validate`, sehingga `/login` standar tertutup).
 6. **Aktivasi via Control Plane:** `AIOS Admin` menetapkan `aios_persona` (`executive`, `finance`, `sales`), lalu Control API *site* klien menyetel `User.aios_status = "Active"` (otomatis `User.enabled = 1`) dan menerbitkan tautan `/update-password?key=...` sekali pakai. Tautan dikirim `AIOS Admin` secara manual (WhatsApp/Telegram/email sendiri); client membuat **password sendiri** lewat halaman resmi Frappe itu, lalu login.
