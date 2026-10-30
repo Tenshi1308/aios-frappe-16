@@ -25,8 +25,8 @@ async function signIn() {
   try {
     await session.login(email.value.trim(), password.value);
     password.value = '';
-  } catch {
-    // pesan aman sudah di session.lockError
+  } catch (err) {
+    console.error('Sign-in failed:', err);
   }
 }
 </script>

@@ -58,7 +58,8 @@ export const useSessionStore = defineStore('session', {
         this.pushBoot('Menyiapkan desktop');
         this.online = true;
         this.setProgress(100);
-      } catch {
+      } catch (err) {
+        console.warn('Boot session check failed or no active session:', err);
         this.setProgress(55);
         this.pushBoot('Sesi tidak ditemukan — menyiapkan layar masuk');
         this.context = null;

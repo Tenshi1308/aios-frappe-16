@@ -40,17 +40,17 @@ function serverMessage(data: unknown): string | null {
   return null;
 }
 
-function safeMessage(data: unknown, fallback: string): string {
+export function safeMessage(data: unknown, fallback: string): string {
   return errorText(data) ?? serverMessage(data) ?? fallback;
 }
 
-async function readBody(res: Response): Promise<unknown> {
+export async function readBody(res: Response): Promise<unknown> {
   const text = await res.text();
   if (!text) return null;
   try {
     return JSON.parse(text);
   } catch {
-    return null;
+    return { error: text };
   }
 }
 
@@ -58,7 +58,8 @@ export async function apiFetch(url: string, init: RequestInit = {}): Promise<unk
   let res: Response;
   try {
     res = await fetch(url, { credentials: 'same-origin', ...init });
-  } catch {
+  } catch (err) {
+    console.error(`Network fetch failed for ${url}:`, err);
     throw new ApiError('Tidak dapat menghubungi server. Periksa koneksi.');
   }
   const data = await readBody(res);

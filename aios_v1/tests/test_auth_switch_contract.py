@@ -80,6 +80,19 @@ class TestFrontendAuthContract(unittest.TestCase):
         self.assertIn("csrfToken", src)
         self.assertIn("X-Frappe-CSRF-Token", src)
 
+    def test_no_silent_catch_in_frontend_auth(self):
+        """Zero Silent Errors: login dan boot tidak boleh menelan error dengan catch kosong."""
+        for path in (SESSION_API, LOGIN, CLIENT_API):
+            src = path.read_text(encoding="utf-8")
+            self.assertNotRegex(
+                src,
+                r"catch\s*\{\s*(?://[^\n]*)?\s*\}",
+                f"Ditemukan silent catch kosong di {path.name}",
+            )
+            if path == SESSION_API:
+                self.assertIn("safeMessage(", src, "login() harus membaca response error server via safeMessage")
+                self.assertIn("console.error", src, "login() harus mencatat network error ke console")
+
 
 if __name__ == "__main__":
     unittest.main()
