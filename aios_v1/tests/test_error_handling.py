@@ -89,7 +89,9 @@ class TestErrorHandling(IntegrationTestCase):
 
 		log.assert_called_once()
 		self.assertFalse(result["success"])
-		self.assertEqual(result["code"], "TOOL_FAILED")
+		# ValueError = input tak valid -> VALIDATION_FAILED agar agent bisa self-correct;
+		# TOOL_FAILED hanya untuk crash tak terduga (lihat test_validation_feedback_and_smart_lookup).
+		self.assertEqual(result["code"], "VALIDATION_FAILED")
 		self.assertNotIn(SECRET, json.dumps(result))
 
 	def test_dispatcher_wrapper_logs_and_returns_safe(self):

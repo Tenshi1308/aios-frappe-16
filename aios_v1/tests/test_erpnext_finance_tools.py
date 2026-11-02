@@ -459,7 +459,9 @@ class TestReportClientAccess(IntegrationTestCase):
     def test_purchase_register_still_rejected_for_client(self):
         result = self._execute_client({"report_name": "Purchase Register"})
         self.assertFalse(result.get("success", True))
-        self.assertEqual(result.get("code"), "TOOL_FAILED")
+        # `frappe.throw` (ValidationError) -> VALIDATION_FAILED, bukan TOOL_FAILED generik.
+        self.assertEqual(result.get("code"), "VALIDATION_FAILED")
+        self.assertIn("tidak diizinkan", result.get("error", ""))
 
     def test_purchase_invoice_list_and_get_as_client(self):
         rows = self._execute_doc_tool(

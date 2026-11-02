@@ -1,5 +1,6 @@
 """#4a-2 statis: tidak ada referensi AIOS Tenant / tenant_id di kode hidup."""
 
+import re
 import unittest
 from pathlib import Path
 
@@ -30,15 +31,34 @@ class TestNoTenantRefs(unittest.TestCase):
         self.assertEqual(offenders, [])
 
     def test_no_company_id_in_frontend(self):
+        """`companyId` hanya boleh dipakai untuk menampilkan data bootstrap server.
+
+        Larangan lamanya terlalu luas: ia menangkap semua substring `companyId`,
+        termasuk pemakaian display-only. Yang dilarang adalah memakai company dari
+        klien sebagai **scope request** — company selalu diturunkan server-side
+        (`aios_v1/api/desktop.py::_company_context`).
+        """
         frontend = REPO / "frontend"
+        # Baris display yang diizinkan: membaca `raw.company.id` dari respons server,
+        # memvalidasi kelengkapannya, dan memetakannya ke payload tampilan.
+        allowed = (
+            re.compile(r"^\s*const companyId = asString\(raw\.company\.id\);\s*$"),
+            re.compile(r"^\s*if \(!.*\bcompanyId\b.*\) \{\s*$"),
+            re.compile(r"^\s*id: companyId,\s*$"),
+            re.compile(r"^\s*name: asString\(raw\.company\.name, companyId\),\s*$"),
+        )
         offenders = []
         for path in frontend.rglob("*"):
             if not path.is_file() or path.suffix not in {".ts", ".tsx"}:
                 continue
             if any(part in {"node_modules", ".next"} for part in path.parts):
                 continue
-            if "companyId" in path.read_text(encoding="utf-8", errors="ignore"):
-                offenders.append(str(path.relative_to(REPO)))
+            for number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                if "companyId" not in line and "company_id" not in line:
+                    continue
+                if any(pattern.match(line) for pattern in allowed):
+                    continue
+                offenders.append(f"{path.relative_to(REPO)}:{number}: {line.strip()}")
         self.assertEqual(offenders, [])
 
 

@@ -252,7 +252,7 @@ class TestDelegationWorkerKey(IntegrationTestCase):
             return iter(["jawaban setelah delegasi"])
 
         def fake_runner(worker_key_arg, instruction, context_data, user, usage_records,
-                        result_holder, conversation_id=None):
+                        result_holder, conversation_id=None, created_file_ids=None):
             result_holder.append(json.dumps({"status": "success", "summary": "hasil worker"}))
             yield {"type": "trace_subagent_result", "agent": worker_key_arg}
 

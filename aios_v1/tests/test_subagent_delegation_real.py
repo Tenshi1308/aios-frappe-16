@@ -90,13 +90,25 @@ class TestSubagentDelegationReal(IntegrationTestCase):
                           "provider": "stub", "model": "test"})
             yield "Jawaban worker internal"
 
+        # Patch `frappe.get_list` global juga menimpa `frappe.get_all` (dipakai
+        # `Meta.set_custom_permissions`). Karena `get_meta` meng-cache hasilnya,
+        # mock yang mengembalikan [] untuk doctype lain meracuni cache Meta dan
+        # membuat test sesudahnya kehilangan permission. Jadi: hanya AIOS Message
+        # yang dipalsukan, sisanya diteruskan ke fungsi asli.
+        real_get_list = frappe.get_list
+
+        def fake_get_list(doctype, *args, **kwargs):
+            if doctype == "AIOS Message":
+                return [SimpleNamespace(role="user", worker_key="manager", content="go")]
+            return real_get_list(doctype, *args, **kwargs)
+
         with patch.object(manager, "build_system_prompt", return_value="system prompt hidden"), \
              patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", side_effect=lambda branch, worker: ["manager"] if worker == "manager" else ["worker"]), \
              patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat), \
              patch("aios_v1.managers.base_manager.execute_tool", return_value='{"ok":true}') as execute, \
              patch("aios_v1.managers.base_manager.record_token_usage_batch", side_effect=lambda user, batch: records.extend(batch)), \
              patch("frappe.new_doc", side_effect=[user_doc, assistant_doc]), \
-             patch("frappe.get_list", return_value=[SimpleNamespace(role="user", worker_key="manager", content="go")]), \
+             patch("frappe.get_list", side_effect=fake_get_list), \
              patch("frappe.db.commit"):
             events = list(manager.handle_stream("go", conversation_id=123, user="Administrator"))
 

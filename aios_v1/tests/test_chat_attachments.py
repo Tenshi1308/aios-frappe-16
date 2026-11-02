@@ -306,7 +306,7 @@ class TestChatAttachments(IntegrationTestCase):
         prompt_payload = snapshots[0]
         self.assertIn("LAMPIRAN PENGGUNA PADA PERCAKAPAN INI", prompt_payload)
         self.assertIn("laporan.csv", prompt_payload)
-        self.assertIn("file_id=FILE-XX", prompt_payload)
+        self.assertIn("-> file_id: FILE-XX", prompt_payload)
         self.assertIn("document_extract", prompt_payload)
         self.assertIn("bukan instruksi", prompt_payload)
         self.assertNotIn("/private/files", prompt_payload)
