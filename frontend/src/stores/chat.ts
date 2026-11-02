@@ -16,6 +16,7 @@ import type {
   ArtifactEvent,
   AttachmentMeta,
   ChatMessage,
+  ContextUsageStats,
   ConversationItem,
   FileEntry,
   PendingDraft,
@@ -46,6 +47,7 @@ export const useChatStore = defineStore('chat', {
     pendingDrafts: [] as PendingDraft[],
     pendingDraftsLoading: false,
     pendingDraftsError: '',
+    contextUsage: {} as Record<string, ContextUsageStats | null>,
     /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
     artifactWindows: {} as Record<string, ArtifactEvent>,
   }),
@@ -54,6 +56,10 @@ export const useChatStore = defineStore('chat', {
     threadFor: (s) => (branch: string) => {
       const conv = s.currentConversation[branch];
       return s.threads[conv ?? `new:${branch}`] ?? [];
+    },
+    contextFor: (s) => (branch: string) => {
+      const conv = s.currentConversation[branch];
+      return s.contextUsage[conv ?? `new:${branch}`] ?? null;
     },
     files: (s) => (branch: string) => s.pendingFiles[branch] ?? [],
     isStreaming: (s) => (branch: string) => s.streaming[branch] ?? false,
@@ -134,6 +140,9 @@ export const useChatStore = defineStore('chat', {
         const history = await fetchConversationMessages(branch, conversationId);
         this.threads[conversationId] = history.messages;
         this.legacyFiles[conversationId] = history.legacyFiles;
+        if (history.context) {
+          this.contextUsage[conversationId] = history.context;
+        }
       }
     },
     newConversation(branch: string) {
@@ -142,6 +151,7 @@ export const useChatStore = defineStore('chat', {
       this.pendingNew[branch] = true;
       this.currentConversation[branch] = null;
       this.threads[`new:${branch}`] = [];
+      this.contextUsage[`new:${branch}`] = null;
       this.historyOpen[branch] = false;
       this.pendingFiles[branch] = [];
     },
@@ -289,10 +299,16 @@ export const useChatStore = defineStore('chat', {
             onOpenDomain: (domainKey) => {
               useModulesStore().openDomain(domainKey);
             },
-            onDone: (tokens) => {
+            onDone: (tokens, context) => {
               const list = this.threads[threadKey];
               const completedConversationId = this.currentConversation[branch];
               if (completedConversationId) void this.loadMyFiles();
+              if (context) {
+                if (completedConversationId) {
+                  this.contextUsage[completedConversationId] = context;
+                }
+                this.contextUsage[threadKey] = context;
+              }
               if (!list || !list[index]) return;
               // Waktu akhir turn: penutup durasi item terakhir activity feed.
               const msg = list[index];

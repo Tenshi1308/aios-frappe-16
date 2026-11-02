@@ -654,13 +654,21 @@ def _handle_api_request():
                     }
                     for file_doc in legacy_files
                 ]
+                from aios_v1.lib.context_manager import calculate_conversation_context_stats
+
+                context_stats = calculate_conversation_context_stats(
+                    conversation_id=str(conv.name),
+                    branch=str(conv.branch or branch),
+                )
                 return json_response(
                     {
                         "conversation": {
                             "id": conv.name,
                             "title": conv.title,
+                            "branch": conv.branch,
                             "messages": msgs,
                             "legacyFiles": legacy_attachments,
+                            "context": context_stats,
                         }
                     }
                 )

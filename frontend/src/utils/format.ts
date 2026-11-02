@@ -17,6 +17,15 @@ export function formatDurationMs(ms: number | undefined): string {
   return `${(ms / 1000).toFixed(1)} dtk`;
 }
 
+/** Format jumlah token ringkas (contoh: 2700 -> 2.7K, 18300 -> 18.3K, 128000 -> 128K, 1M). */
+export function formatTokenCount(n: number | undefined): string {
+  if (!n || n < 0) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 100_000) return `${Math.round(n / 1_000)}K`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(Math.round(n));
+}
+
 /** Teks JSON rapi untuk panel detail; gagal parse → string apa adanya. */
 export function prettyJson(value: unknown): string {
   if (value === null || value === undefined) return '';

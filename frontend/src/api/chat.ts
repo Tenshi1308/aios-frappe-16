@@ -3,6 +3,7 @@ import type {
   ArtifactEvent,
   AttachmentMeta,
   ChatMessage,
+  ContextUsageStats,
   ConversationItem,
   DraftActionResult,
   DraftDetail,
@@ -24,7 +25,7 @@ export interface StreamHandlers {
   onArtifact?: (artifact: ArtifactEvent) => void;
   onOpenModule?: (moduleKey: string) => void;
   onOpenDomain?: (domainKey: string) => void;
-  onDone?: (tokens?: number) => void;
+  onDone?: (tokens?: number, context?: ContextUsageStats) => void;
 }
 
 interface RawConversationList {
@@ -37,6 +38,7 @@ interface RawConversationDetail {
     title?: unknown;
     messages?: { id?: unknown; role?: unknown; content?: unknown; artifacts?: unknown }[];
     legacyFiles?: unknown;
+    context?: ContextUsageStats;
   };
 }
 
@@ -118,7 +120,7 @@ export async function fetchMyFiles(conversationId?: string): Promise<FileEntry[]
 export async function fetchConversationMessages(
   branch: string,
   conversationId: string,
-): Promise<{ messages: ChatMessage[]; legacyFiles: FileEntry[] }> {
+): Promise<{ messages: ChatMessage[]; legacyFiles: FileEntry[]; context?: ContextUsageStats }> {
   const raw = unwrapMessage<RawConversationDetail>(
     await apiFetch(`/api/chat/${encodeURIComponent(branch)}/conversations/${encodeURIComponent(conversationId)}`),
   );
@@ -139,7 +141,10 @@ export async function fetchConversationMessages(
         .map(toFileEntry)
         .filter((row): row is FileEntry => row !== null)
     : [];
-  return { messages, legacyFiles };
+  const context = raw?.conversation?.context && typeof raw.conversation.context === 'object'
+    ? (raw.conversation.context as ContextUsageStats)
+    : undefined;
+  return { messages, legacyFiles, context };
 }
 
 export async function uploadAttachment(
@@ -280,7 +285,10 @@ export async function streamChat(
           handlers.onOpenDomain?.(event.domain.trim());
         } else if (event.type === 'done') {
           const tokens = typeof event.tokens === 'number' ? event.tokens : undefined;
-          handlers.onDone?.(tokens);
+          const context = event.context && typeof event.context === 'object'
+            ? (event.context as ContextUsageStats)
+            : undefined;
+          handlers.onDone?.(tokens, context);
         }
       }
       boundary = buffer.indexOf('\n\n');

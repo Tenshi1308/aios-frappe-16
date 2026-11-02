@@ -273,3 +273,85 @@ def prune_intra_turn_tool_results(llm_messages: list[dict], context_limit: int) 
         log_exception("AIOS Context Pruning", context=f"Output tool lama dipangkas. Total token sebelumnya: {total_tokens}")
 
     return llm_messages
+
+
+def calculate_conversation_context_stats(
+    conversation_id: str | int | None = None,
+    branch: str = "",
+    system_tokens: int | None = None,
+    tool_tokens: int | None = None,
+) -> dict:
+    """Hitung rincian penggunaan token (system, tools, messages, total, limit, percent, compacted)."""
+    context_limit, _ = get_context_window_settings()
+    fallback_res = {
+        "total": 0,
+        "limit": context_limit,
+        "percent": 0.0,
+        "system": 0,
+        "tools": 0,
+        "messages": 0,
+        "compacted": False,
+    }
+    try:
+        conv_doc = None
+        target_branch = branch
+        compacted = False
+        messages_tokens = 0
+
+        cid_str = str(conversation_id) if conversation_id is not None else ""
+        if cid_str and not cid_str.startswith("new:") and frappe.db.exists("AIOS Conversation", cid_str):
+            conv_doc = frappe.get_doc("AIOS Conversation", cid_str)
+            if not target_branch and conv_doc.branch:
+                target_branch = str(conv_doc.branch)
+
+            summary = str(conv_doc.session_summary or "").strip()
+            compacted_count = int(conv_doc.compacted_message_count or 0)
+            compacted = bool(compacted_count > 0 or summary)
+
+            raw_msgs = frappe.get_all(
+                "AIOS Message",
+                filters={"conversation": cid_str},
+                fields=["content"],
+                order_by="creation asc",
+            )
+            for m in raw_msgs:
+                messages_tokens += estimate_tokens(m.content or "")
+            if summary:
+                messages_tokens += estimate_tokens(summary) + 20
+
+        sys_tokens = int(system_tokens) if system_tokens is not None else 0
+        tls_tokens = int(tool_tokens) if tool_tokens is not None else 0
+
+        if (system_tokens is None or tool_tokens is None) and target_branch:
+            try:
+                from aios_v1.managers.base_manager import BaseManager
+                from aios_v1.plugin_manager.registry import get_branch
+
+                b_def = get_branch(target_branch)
+                if b_def:
+                    mgr = BaseManager(b_def)
+                    user_for_prompt = conv_doc.user if conv_doc else getattr(frappe.session, "user", None)
+                    if system_tokens is None:
+                        prompt_str = mgr.build_system_prompt(None, user=user_for_prompt)
+                        sys_tokens = estimate_tokens(prompt_str)
+                    if tool_tokens is None:
+                        tool_schemas = mgr.get_tool_schemas(None)
+                        tls_tokens = estimate_tokens(json.dumps(tool_schemas))
+            except Exception as mgr_exc:
+                log_exception("AIOS Context Stats Branch Resolve", exc=mgr_exc)
+
+        total_tokens = sys_tokens + tls_tokens + messages_tokens
+        percent = round((total_tokens / context_limit) * 100, 1) if context_limit > 0 else 0.0
+
+        return {
+            "total": total_tokens,
+            "limit": context_limit,
+            "percent": percent,
+            "system": sys_tokens,
+            "tools": tls_tokens,
+            "messages": messages_tokens,
+            "compacted": compacted,
+        }
+    except Exception as exc:
+        log_exception("AIOS Context Stats Calc", exc=exc)
+        return fallback_res

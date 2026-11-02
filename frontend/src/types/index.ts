@@ -23,6 +23,16 @@ export interface Branch {
   workers: BranchWorker[];
 }
 
+export interface ContextUsageStats {
+  total: number;
+  limit: number;
+  percent: number;
+  system: number;
+  tools: number;
+  messages: number;
+  compacted: boolean;
+}
+
 export interface ConversationItem {
   id: string;
   title: string;

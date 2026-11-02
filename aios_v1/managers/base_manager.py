@@ -4,6 +4,8 @@ import frappe
 
 from aios_v1.lib.context_manager import (
     build_conversation_context,
+    calculate_conversation_context_stats,
+    estimate_tokens,
     get_context_window_settings,
     prune_intra_turn_tool_results,
 )
@@ -671,5 +673,14 @@ class BaseManager:
 
         frappe.db.commit()
 
-        # 6. Kirim Done Event
-        yield f"data: {json.dumps({'type': 'done', 'conversationId': conversation_id, 'delegatedTo': delegated_to, 'dataUsed': data_used, 'limitation': '', 'tokens': total_tokens + sum(int(item.get('total_tokens') or 0) for item in usage_records[:-1])})}\n\n"
+        # 6. Kirim Done Event dengan metadata context stats
+        sys_tokens = estimate_tokens(system_prompt)
+        tool_tokens = estimate_tokens(json.dumps(tool_schemas))
+        context_stats = calculate_conversation_context_stats(
+            conversation_id=conversation_id,
+            branch=self.branch.get("key") or "",
+            system_tokens=sys_tokens,
+            tool_tokens=tool_tokens,
+        )
+        total_spent = total_tokens + sum(int(item.get("total_tokens") or 0) for item in usage_records[:-1])
+        yield f"data: {json.dumps({'type': 'done', 'conversationId': conversation_id, 'delegatedTo': delegated_to, 'dataUsed': data_used, 'limitation': '', 'tokens': total_spent, 'context': context_stats})}\n\n"

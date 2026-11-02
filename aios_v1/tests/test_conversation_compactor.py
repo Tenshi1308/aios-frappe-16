@@ -14,6 +14,7 @@ from aios_v1.lib.context_manager import (
     DEFAULT_COMPACT_THRESHOLD_PERCENT,
     KEEP_VERBATIM_COUNT,
     build_conversation_context,
+    calculate_conversation_context_stats,
     estimate_tokens,
     get_context_window_settings,
     prune_intra_turn_tool_results,
@@ -24,10 +25,9 @@ from aios_v1.lib.context_manager import (
 class TestConversationCompactor(IntegrationTestCase):
     def setUp(self):
         super().setUp()
+        frappe.db.set_single_value("AIOS Setting", "context_window_limit", DEFAULT_CONTEXT_WINDOW_LIMIT)
+        frappe.db.set_single_value("AIOS Setting", "compact_threshold_percent", DEFAULT_COMPACT_THRESHOLD_PERCENT)
         frappe.clear_document_cache("AIOS Setting", "AIOS Setting")
-        setting = frappe.get_single("AIOS Setting")
-        self._orig_context_window_limit = setting.context_window_limit
-        self._orig_compact_threshold_percent = setting.compact_threshold_percent
 
         self.test_user = "test_compactor@example.com"
         if not frappe.db.exists("User", self.test_user):
@@ -191,3 +191,35 @@ class TestConversationCompactor(IntegrationTestCase):
 
         self.assertIn("Ringkasan awal.", fallback)
         self.assertIn("Toko Berkah beli 2 unit", fallback)
+
+    def test_calculate_conversation_context_stats(self):
+        self._add_message("user", "Pesan pertama pelanggan")
+        self._add_message("manager", "Pesan balasan manajer sales")
+
+        stats = calculate_conversation_context_stats(
+            conversation_id=self.conv.name,
+            branch="sales",
+            system_tokens=1500,
+            tool_tokens=2500,
+        )
+
+        self.assertGreater(stats["total"], 4000)
+        self.assertEqual(stats["system"], 1500)
+        self.assertEqual(stats["tools"], 2500)
+        self.assertGreater(stats["messages"], 0)
+        self.assertGreater(stats["limit"], 1000)
+        self.assertGreater(stats["percent"], 0.0)
+        self.assertFalse(stats["compacted"])
+
+        # Uji status compacted saat session_summary terisi
+        self.conv.session_summary = "Ringkasan memori sesi aktif."
+        self.conv.compacted_message_count = 2
+        self.conv.save(ignore_permissions=True)
+
+        stats2 = calculate_conversation_context_stats(
+            conversation_id=self.conv.name,
+            branch="sales",
+            system_tokens=1000,
+            tool_tokens=1000,
+        )
+        self.assertTrue(stats2["compacted"])

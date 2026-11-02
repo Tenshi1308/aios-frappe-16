@@ -6,7 +6,7 @@ import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
-import { formatDurationMs } from '../../utils/format';
+import { formatDurationMs, formatTokenCount } from '../../utils/format';
 import type { ArtifactEvent, ChatMessage, FileEntry } from '../../types';
 import AgentStep from './AgentStep.vue';
 import AppIcon from '../base/AppIcon.vue';
@@ -22,6 +22,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const threadEl = ref<HTMLElement | null>(null);
 const uploading = ref(false);
 const traceOpenId = ref<string | null>(null);
+const contextOpen = ref(false);
 
 void branches.load();
 void chat.loadPendingDrafts();
@@ -40,6 +41,30 @@ const legacyFiles = computed(() => {
 });
 
 const firstName = computed(() => session.firstName);
+const currentContext = computed(() => chat.contextFor(branchKey.value));
+
+const segSystem = computed(() => {
+  if (!currentContext.value || !currentContext.value.limit) return 0;
+  return Math.min(100, (currentContext.value.system / currentContext.value.limit) * 100);
+});
+const segTools = computed(() => {
+  if (!currentContext.value || !currentContext.value.limit) return 0;
+  return Math.min(100, (currentContext.value.tools / currentContext.value.limit) * 100);
+});
+const segMessages = computed(() => {
+  if (!currentContext.value || !currentContext.value.limit) return 0;
+  return Math.min(100, (currentContext.value.messages / currentContext.value.limit) * 100);
+});
+
+function onDocumentClick(e: MouseEvent) {
+  if (contextOpen.value) {
+    const target = e.target as HTMLElement | null;
+    if (!target?.closest('.ap-context-wrap')) {
+      contextOpen.value = false;
+    }
+  }
+}
+
 const greeting = computed(() => {
   const name = firstName.value ? `Halo, ${firstName.value}.` : 'Halo.';
   const b = branch.value;
@@ -74,11 +99,13 @@ const lastArtifactsLength = computed(() => messages.value[messages.value.length 
 const tick = ref(0);
 let tickTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
+  window.addEventListener('click', onDocumentClick);
   tickTimer = setInterval(() => {
     tick.value += 1;
   }, 1000);
 });
 onUnmounted(() => {
+  window.removeEventListener('click', onDocumentClick);
   if (tickTimer) clearInterval(tickTimer);
 });
 
@@ -385,6 +412,59 @@ async function onFilesPicked(e: Event) {
         <AppIcon name="send" :size="16" />
       </button>
     </form>
-    <div class="ap-foot">AIOS · jawaban AI dapat keliru — periksa kembali angka penting.</div>
+    <div class="ap-foot">
+      <span class="ap-foot-note">AIOS · jawaban AI dapat keliru — periksa kembali angka penting.</span>
+      <div v-if="currentContext" class="ap-context-wrap">
+        <button
+          type="button"
+          class="ap-context-pill"
+          :class="{
+            compacted: currentContext.compacted,
+            warn: currentContext.percent >= 75,
+          }"
+          :title="`Context: ${currentContext.percent}% (~${formatTokenCount(currentContext.total)} / ${formatTokenCount(currentContext.limit)})`"
+          :aria-expanded="contextOpen"
+          aria-label="Rincian penggunaan konteks AI Agent"
+          @click.stop="contextOpen = !contextOpen"
+        >
+          <span class="cp-ring" aria-hidden="true" />
+          <span class="cp-percent">{{ currentContext.percent }}%</span>
+          <span v-if="currentContext.compacted" class="cp-pill-tag">Compacted</span>
+        </button>
+
+        <div v-if="contextOpen" class="ap-context-popover" @click.stop>
+          <div class="cp-head">
+            <span class="cp-title">{{ currentContext.percent }}% of context used</span>
+            <span class="cp-ratio">~{{ formatTokenCount(currentContext.total) }} / {{ formatTokenCount(currentContext.limit) }}</span>
+          </div>
+          <div class="cp-bar" role="progressbar" :aria-valuenow="currentContext.percent" aria-valuemin="0" aria-valuemax="100">
+            <span class="seg seg-system" :style="{ width: `${segSystem}%` }" :title="`System: ~${formatTokenCount(currentContext.system)}`" />
+            <span class="seg seg-tools" :style="{ width: `${segTools}%` }" :title="`Tools: ~${formatTokenCount(currentContext.tools)}`" />
+            <span class="seg seg-messages" :style="{ width: `${segMessages}%` }" :title="`Messages: ~${formatTokenCount(currentContext.messages)}`" />
+          </div>
+          <div class="cp-breakdown">
+            <div class="cp-row">
+              <span class="cp-dot dot-system">■</span>
+              <span class="cp-label">System prompt</span>
+              <span class="cp-val">~{{ formatTokenCount(currentContext.system) }}</span>
+            </div>
+            <div class="cp-row">
+              <span class="cp-dot dot-tools">■</span>
+              <span class="cp-label">Tool definitions</span>
+              <span class="cp-val">~{{ formatTokenCount(currentContext.tools) }}</span>
+            </div>
+            <div class="cp-row">
+              <span class="cp-dot dot-messages">■</span>
+              <span class="cp-label">Messages</span>
+              <span class="cp-val">~{{ formatTokenCount(currentContext.messages) }}</span>
+            </div>
+          </div>
+          <div v-if="currentContext.compacted" class="cp-compacted-note">
+            <span class="cp-compacted-badge">Compacted</span>
+            <span>Memori bergulir aktif</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </aside>
 </template>
