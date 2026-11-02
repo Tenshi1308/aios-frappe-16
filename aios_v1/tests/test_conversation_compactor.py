@@ -223,3 +223,12 @@ class TestConversationCompactor(IntegrationTestCase):
             tool_tokens=1000,
         )
         self.assertTrue(stats2["compacted"])
+
+        # Uji resolusi otomatis tanpa passing manual (simulasi alur reload/refresh browser)
+        stats_auto = calculate_conversation_context_stats(
+            conversation_id=self.conv.name,
+            branch="sales",
+        )
+        self.assertGreater(stats_auto["tools"], 2000)
+        self.assertGreater(stats_auto["system"], 1000)
+        self.assertGreater(stats_auto["total"], 3000)

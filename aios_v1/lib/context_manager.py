@@ -324,6 +324,7 @@ def calculate_conversation_context_stats(
 
         if (system_tokens is None or tool_tokens is None) and target_branch:
             try:
+                from aios_v1.lib.tool_registry import get_tools_schema_for_worker
                 from aios_v1.managers.base_manager import BaseManager
                 from aios_v1.plugin_manager.registry import get_branch
 
@@ -335,7 +336,7 @@ def calculate_conversation_context_stats(
                         prompt_str = mgr.build_system_prompt(None, user=user_for_prompt)
                         sys_tokens = estimate_tokens(prompt_str)
                     if tool_tokens is None:
-                        tool_schemas = mgr.get_tool_schemas(None)
+                        tool_schemas = get_tools_schema_for_worker(target_branch, "manager")
                         tls_tokens = estimate_tokens(json.dumps(tool_schemas))
             except Exception as mgr_exc:
                 log_exception("AIOS Context Stats Branch Resolve", exc=mgr_exc)
