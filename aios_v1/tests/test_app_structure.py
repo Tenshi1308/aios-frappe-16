@@ -1,9 +1,7 @@
-"""Kontrak struktur app (K3/A3/A4/A9/A11). Merah di #0, hijau di #2 — xfail."""
+"""Kontrak struktur app (K3/A3/A4/A9/A11). Hijau sejak #2 — penjaga regresi."""
 
 import unittest
 from pathlib import Path
-
-import pytest
 
 # 16 skrip debug/test di root package (docs/05.2 §E, K3) — dihapus #2
 K3_SCRIPTS = [
@@ -33,7 +31,6 @@ OUTER_PKG = REPO_ROOT / "aios_v1"  # apps/aios_v1/aios_v1/ (K3, api.py, doctype,
 INNER_PKG = Path(__file__).resolve().parent.parent  # apps/aios_v1/aios_v1/ (managers, www)
 
 
-@pytest.mark.xfail(reason="target #2 (A3/A4/A9/A11/K3)", strict=False)
 class TestAppStructure(unittest.TestCase):
     def test_no_doctype_or_page_outside_package(self):
         self.assertFalse((OUTER_PKG / "doctype").exists(), "doctype/ di luar package")
