@@ -1426,7 +1426,8 @@ textarea {
   position: absolute;
   bottom: calc(100% + var(--space-8));
   right: 0;
-  width: 250px;
+  width: min(250px, calc(100vw - var(--space-28)));
+  max-width: 100%;
   padding: var(--space-12);
   background: var(--surface);
   border: var(--space-1) solid var(--line);
