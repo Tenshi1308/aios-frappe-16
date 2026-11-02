@@ -27,7 +27,7 @@ from aios_v1.shared.trace_events import (
     trace_subagent_tool,
 )
 
-MAX_TOOL_ROUNDS = 6
+MAX_TOOL_ROUNDS = 10
 TOOL_CONTEXT_ERROR_MESSAGE = "Konteks sesi untuk menjalankan tool tidak valid. Silakan mulai percakapan kembali."
 MAX_TOOL_ROUNDS_MESSAGE = "Batas langkah penggunaan tool tercapai. Silakan persempit permintaan dan coba lagi."
 TRUNCATION_NOTICE = "_[Jawaban terpotong karena batas output model.]_"

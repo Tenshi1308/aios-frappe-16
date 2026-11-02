@@ -234,7 +234,7 @@ class TestToolExecutionLoop(IntegrationTestCase):
         )
         self.assertTrue(any("nonce _Test MCP result" in event for event in events))
 
-    def test_six_round_limit_logs_and_returns_safe_message(self):
+    def test_tool_round_limit_logs_and_returns_safe_message(self):
         def scripted(round_number, usage, calls):
             usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
             calls.append(self._tool_call(round_number))
