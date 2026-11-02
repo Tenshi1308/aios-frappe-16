@@ -413,7 +413,7 @@ async function onFilesPicked(e: Event) {
       </button>
     </form>
     <div class="ap-foot">
-      <span class="ap-foot-note">AIOS · jawaban AI dapat keliru — periksa kembali angka penting.</span>
+      <span class="ap-foot-note">AIOS dapat keliru, periksa kembali info penting.</span>
       <div v-if="currentContext" class="ap-context-wrap">
         <button
           type="button"
