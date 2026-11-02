@@ -10,7 +10,9 @@
  "field_order": [
   "user",
   "branch",
-  "title"
+  "title",
+  "session_summary",
+  "compacted_message_count"
  ],
  "fields": [
   {
@@ -34,6 +36,17 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title"
+  },
+  {
+   "fieldname": "session_summary",
+   "fieldtype": "Long Text",
+   "label": "Session Summary"
+  },
+  {
+   "default": "0",
+   "fieldname": "compacted_message_count",
+   "fieldtype": "Int",
+   "label": "Compacted Message Count"
   }
  ],
  "grid_page_length": 50,

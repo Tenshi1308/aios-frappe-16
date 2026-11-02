@@ -16,6 +16,8 @@
   "model_name",
   "temperature",
   "default_max_tokens",
+  "context_window_limit",
+  "compact_threshold_percent",
   "system_ethos"
  ],
  "fields": [
@@ -68,6 +70,18 @@
    "fieldname": "default_max_tokens",
    "fieldtype": "Int",
    "label": "Default Max Tokens"
+  },
+  {
+   "default": "128000",
+   "fieldname": "context_window_limit",
+   "fieldtype": "Int",
+   "label": "Context Window Limit"
+  },
+  {
+   "default": "75",
+   "fieldname": "compact_threshold_percent",
+   "fieldtype": "Int",
+   "label": "Compact Threshold (%)"
   },
   {
    "fieldname": "system_ethos",

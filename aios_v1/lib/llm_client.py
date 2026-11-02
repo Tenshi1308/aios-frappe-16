@@ -143,3 +143,46 @@ def chat_stream(messages, max_tokens=None, temperature=None, timeout=None, usage
     if usage is not None:
         usage["failed"] = True
     yield "Mohon maaf, server AI memerlukan waktu lebih lama dari biasanya. Silakan coba ajukan pertanyaan kembali."
+
+
+def chat_completion(messages, max_tokens=None, temperature=None, timeout=None) -> str:
+    """One-shot non-streaming completion untuk tugas internal seperti compaction/summarization."""
+    cfg = get_llm_config()
+    meta = frappe.get_meta("AIOS Setting")
+    meta_default_tokens = int(meta.get_field("default_max_tokens").default)
+    token_limit = (
+        max_tokens
+        if max_tokens is not None
+        else (cfg.get("default_max_tokens") or meta_default_tokens)
+    )
+    req_timeout = timeout if timeout is not None else cfg["timeout"]
+    url = f"{cfg['base_url']}/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {cfg['api_key']}",
+    }
+    payload = {
+        "model": cfg["model"],
+        "messages": messages,
+        "max_tokens": token_limit,
+        "temperature": temperature if temperature is not None else cfg["temperature"],
+        "stream": False,
+    }
+    max_attempts = 2
+    for attempt in range(1, max_attempts + 1):
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=req_timeout)
+            if not res.ok:
+                raise Exception(f"HTTP {res.status_code}: {res.text[:200]}")
+            data = res.json()
+            choices = data.get("choices") or []
+            if not choices:
+                return ""
+            msg = choices[0].get("message") or {}
+            return msg.get("content") or ""
+        except Exception as exc:
+            log_exception("AIOS LLM Completion Request", exc=exc)
+            if attempt < max_attempts:
+                time.sleep(1)
+                continue
+    return ""

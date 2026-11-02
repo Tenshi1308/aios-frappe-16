@@ -2,6 +2,11 @@ import json
 
 import frappe
 
+from aios_v1.lib.context_manager import (
+    build_conversation_context,
+    get_context_window_settings,
+    prune_intra_turn_tool_results,
+)
 from aios_v1.lib.desktop_domains import get_domain_definition
 from aios_v1.lib.desktop_modules import get_module_definition
 from aios_v1.lib.error_utils import log_exception, safe_error
@@ -389,26 +394,17 @@ class BaseManager:
                 log_exception("AIOS User Message File Binding", exc=exc, context=exc.code)
         frappe.db.commit()
 
-        # 3. Ambil Riwayat Percakapan
-        recent_messages = frappe.get_list(
-            "AIOS Message",
-            filters={"conversation": str(conversation_id)},
-            fields=["role", "worker_key", "content"],
-            order_by="creation desc",
-            limit=6
-        )
-        recent_messages.reverse()
-
+        # 3. Ambil Riwayat Percakapan via Context Manager
         worker_def = self.get_worker_def(worker_key)
         system_prompt = self.build_system_prompt(worker_def, user)
 
         llm_messages = [{"role": "system", "content": system_prompt}]
-        for m in recent_messages[:-1]:
-            content = m.content
-            # Jika sedang di mode Manager, tandai riwayat sub-agent lama agar model tidak terdistraksi
-            if worker_def is None and m.worker_key and m.worker_key != "manager":
-                content = f"[{m.worker_key}]: {m.content}"
-            llm_messages.append({"role": "user" if m.role == "user" else "assistant", "content": content})
+        history_items = build_conversation_context(
+            conversation_id=str(conversation_id),
+            worker_def=worker_def,
+            new_user_message=user_message,
+        )
+        llm_messages.extend(history_items)
 
         # Suntikkan direktif peran aktif dan data aktual database client
         if worker_def is None:
@@ -479,7 +475,10 @@ class BaseManager:
                 accumulated_usage["model"] = turn_usage["model"]
             return turn_tool_calls
 
+        context_limit, _ = get_context_window_settings()
         for tool_round in range(MAX_TOOL_ROUNDS):
+            if tool_round >= 4:
+                llm_messages = prune_intra_turn_tool_results(llm_messages, context_limit)
             tool_calls = yield from stream_llm_turn()
             if failed or not tool_calls:
                 break
