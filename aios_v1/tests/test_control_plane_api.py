@@ -532,7 +532,16 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 			payload = self.api.set_user_status(site, "user@example.test", "Suspended")
 
 		mock_activate.assert_called_once_with(site, "user@example.test", "Suspended")
-		self.assertEqual(payload, {"ok": True, "site": site, "user": "user@example.test", "aios_status": "Suspended"})
+		self.assertEqual(
+			payload,
+			{
+				"ok": True,
+				"site": site,
+				"user": "user@example.test",
+				"aios_status": "Suspended",
+				"invitation_url": None,
+			},
+		)
 
 	def test_set_user_status_client_failure_passes_safe_payload_through(self):
 		site = _managed_site(f"test.setuser.fail.{uuid4().hex}.localhost").insert(
@@ -545,4 +554,13 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 		):
 			payload = self.api.set_user_status(site, "user@example.test", "Active")
 
-		self.assertEqual(payload, {"ok": False, "site": site, "user": "user@example.test", "aios_status": None})
+		self.assertEqual(
+			payload,
+			{
+				"ok": False,
+				"site": site,
+				"user": "user@example.test",
+				"aios_status": None,
+				"invitation_url": None,
+			},
+		)

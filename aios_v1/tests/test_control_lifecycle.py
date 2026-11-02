@@ -4,6 +4,7 @@ import importlib
 import logging
 from contextlib import contextmanager
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import frappe
@@ -113,7 +114,18 @@ class TestControlLifecycle(IntegrationTestCase):
 		target = self._make_user("AIOS Client", status="Active", enabled=1)
 		for status, enabled in (("Suspended", 0), ("Active", 1)):
 			result = self._invoke(control_api.activate_user, user=target, status=status)
-			self.assertEqual(result, {"ok": True, "user": target, "aios_status": status})
+			self.assertEqual(set(result), {"ok", "user", "aios_status", "invitation_url"})
+			self.assertEqual(
+				{key: result[key] for key in ("ok", "user", "aios_status")},
+				{"ok": True, "user": target, "aios_status": status},
+			)
+			if status == "Active":
+				# Tautan dinamis (host + key acak): yang diuji bentuknya, bukan URL eksak.
+				parsed = urlparse(result["invitation_url"])
+				self.assertEqual(parsed.path, "/update-password")
+				self.assertTrue(parse_qs(parsed.query).get("key"), "Tautan tanpa parameter key")
+			else:
+				self.assertIsNone(result["invitation_url"], "Status Suspended tidak menerbitkan tautan.")
 			self.assertEqual(
 				frappe.db.get_value("User", target, ["aios_status", "enabled"], as_dict=True),
 				{"aios_status": status, "enabled": enabled},
@@ -203,7 +215,10 @@ class TestControlLifecycle(IntegrationTestCase):
 		self.created_error_logs.extend(new_errors)
 		self.created_activity_logs.extend(self._activity_log_names() - before_activity)
 
-		self.assertEqual(result, {"ok": True, "user": target, "aios_status": "Suspended"})
+		self.assertEqual(
+			result,
+			{"ok": True, "user": target, "aios_status": "Suspended", "invitation_url": None},
+		)
 		self.assertEqual(
 			frappe.db.get_value("User", target, ["aios_status", "enabled"], as_dict=True),
 			{"aios_status": "Suspended", "enabled": 0},
