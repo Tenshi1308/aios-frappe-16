@@ -62,7 +62,10 @@ def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
         return frappe.get_doc(THREAD_DOCTYPE, name).as_dict()
 
     owner = _owner_user()
-    conversation = str(get_manager(BRANCH).ensure_conversation(owner))
+    # Satu conversation per thread: `ensure_conversation` tanpa `force_new` akan
+    # mengembalikan conversation terakhir user+branch, sehingga dua chat_id
+    # berbeda berbagi transkrip. Hanya thread baru yang sampai ke baris ini.
+    conversation = str(get_manager(BRANCH).ensure_conversation(owner, force_new=True))
     info = user_info or {}
     doc = frappe.new_doc(THREAD_DOCTYPE)
     doc.channel = CHANNEL

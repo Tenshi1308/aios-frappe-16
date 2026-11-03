@@ -23,6 +23,7 @@ FLAG = "AIOS Conversation Flag"
 OWNER = "_test.connector.owner@example.com"
 OTHER = "_test.connector.other@example.com"
 CHAT_ID = "99001122"
+CHAT_ID_B = "99003344"
 
 
 def _ensure_user(email: str, name: str) -> str:
@@ -69,7 +70,9 @@ class ConnectorTestBase(IntegrationTestCase):
         super().tearDown()
 
     def _cleanup_threads(self):
-        for name in frappe.get_all(THREAD, filters={"external_thread_id": CHAT_ID}, pluck="name"):
+        for name in frappe.get_all(
+            THREAD, filters={"external_thread_id": ("in", [CHAT_ID, CHAT_ID_B])}, pluck="name"
+        ):
             for flag in frappe.get_all(FLAG, filters={"thread": name}, pluck="name"):
                 frappe.delete_doc(FLAG, flag, ignore_permissions=True, force=True)
             conversation = frappe.db.get_value(THREAD, name, "conversation")
@@ -77,12 +80,12 @@ class ConnectorTestBase(IntegrationTestCase):
             if conversation and frappe.db.exists("AIOS Conversation", conversation):
                 frappe.delete_doc("AIOS Conversation", conversation, ignore_permissions=True, force=True)
 
-    def _update(self, text: str, update_id: int = 1) -> dict:
+    def _update(self, text: str, update_id: int = 1, chat_id: str | int | None = None) -> dict:
         return {
             "update_id": update_id,
             "message": {
                 "message_id": update_id,
-                "chat": {"id": int(CHAT_ID)},
+                "chat": {"id": int(chat_id if chat_id is not None else CHAT_ID)},
                 "from": {"first_name": "Budi", "username": "budi"},
                 "text": text,
             },
@@ -132,6 +135,35 @@ class TestConnectorDispatch(ConnectorTestBase):
         self.assertEqual(
             frappe.db.count(THREAD, {"external_thread_id": CHAT_ID}), 1
         )
+
+    def test_two_chats_get_separate_conversations(self):
+        """R1-a: dua chat_id tidak boleh berbagi satu AIOS Conversation."""
+        with patch.object(telegram_client, "send_message", return_value=True), \
+             patch.object(telegram_client, "send_chat_action", return_value=True), \
+             patch.object(dispatch, "_collect_reply", return_value="ok"):
+            res_a = dispatch.process_update(self._update("halo A", 1, chat_id=CHAT_ID))
+            res_b = dispatch.process_update(self._update("halo B", 2, chat_id=CHAT_ID_B))
+
+        self.assertTrue(res_a["success"])
+        self.assertTrue(res_b["success"])
+        thread_a = frappe.db.get_value(THREAD, {"external_thread_id": CHAT_ID}, "conversation")
+        thread_b = frappe.db.get_value(THREAD, {"external_thread_id": CHAT_ID_B}, "conversation")
+        self.assertTrue(thread_a, "thread A harus memiliki conversation")
+        self.assertTrue(thread_b, "thread B harus memiliki conversation")
+        self.assertNotEqual(thread_a, thread_b, "dua chat_id berbeda harus mendapat conversation berbeda")
+
+    def test_messages_of_chat_a_do_not_leak_into_transcript_of_chat_b(self):
+        """R1-b: pesan dari chat A tidak boleh muncul di transkrip chat B."""
+        with patch.object(telegram_client, "send_message", return_value=True), \
+             patch.object(telegram_client, "send_chat_action", return_value=True), \
+             patch.object(dispatch, "_collect_reply", return_value="jawaban bot"):
+            dispatch.process_update(self._update("rahasia chat A", 1, chat_id=CHAT_ID))
+            dispatch.process_update(self._update("pertanyaan chat B", 2, chat_id=CHAT_ID_B))
+
+        thread_b = frappe.get_doc(THREAD, {"external_thread_id": CHAT_ID_B})
+        transcript_b = dispatch._transcript(thread_b.conversation)
+        contents_b = [msg.get("content") for msg in transcript_b]
+        self.assertNotIn("rahasia chat A", contents_b, "pesan chat A tidak boleh ada di percakapan B")
 
     def test_missing_owner_fails_closed(self):
         frappe.db.set_value(SETTING, SETTING, "owner_user", None)
