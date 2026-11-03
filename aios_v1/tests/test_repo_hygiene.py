@@ -21,9 +21,9 @@ EMOJI_RE = re.compile(
 )
 
 # Batch 1 hanya modul PoC aktif; modul dormant menyusul #3.
+# `telegram_service.py` dan `order_service.py` dihapus bersama pensiun kanal lama
+# (F2 konektor Telegram); modul hidup baru wajib lolos aturan except.
 DORMANT_MODULES = {
-    "telegram_service.py",
-    "order_service.py",
     "skills_loader.py",
     "pdf_extractor.py",
     "inspect_setting.py",

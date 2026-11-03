@@ -23,7 +23,7 @@ K3_SCRIPTS = [
     "read_setting.py",
 ]
 
-EXPECTED_DOCTYPE_COUNT = 12  # Termasuk AIOS Plugin, Plugin Scope, dan Managed Site
+EXPECTED_DOCTYPE_COUNT = 12  # 10 lama, minus 2 kanal legacy, plus 2 kanal baru (Thread, Flag)
 
 # test file: apps/aios_v1/aios_v1/tests/test_app_structure.py
 REPO_ROOT = Path(__file__).resolve().parents[2]  # apps/aios_v1/

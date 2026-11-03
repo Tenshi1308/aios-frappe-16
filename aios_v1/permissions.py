@@ -14,6 +14,14 @@ OWNED_DOCTYPES = (
 	"AIOS Token Usage",
 )
 
+# DocType kanal yang memakai `owner_user` sebagai kunci kepemilikan (docs/02 §2.4).
+# Customer kanal eksternal bukan Frappe `User`, jadi `AIOS Conversation` tetap
+# dimiliki user workspace penerima; thread dan flag mengikuti pemilik yang sama.
+OWNER_USER_DOCTYPES = (
+	"AIOS Channel Thread",
+	"AIOS Conversation Flag",
+)
+
 # DocPerm dasar per role. `has_permission` hanya bisa MENOLAK, jadi izin dasar
 # harus tetap ada (docs/03 §2.1).
 CLIENT_PERMS = {
@@ -22,6 +30,8 @@ CLIENT_PERMS = {
 	"Pending Action Draft": ("read", "write", "create", "delete"),
 	"AIOS Message": ("read",),
 	"AIOS Token Usage": ("read",),
+	"AIOS Channel Thread": ("read",),
+	"AIOS Conversation Flag": ("read", "write"),
 }
 
 # Role layanan control plane: hanya baca User dan log token.
@@ -163,6 +173,24 @@ def message_query_conditions(user=None, doctype=None) -> str:
 	)
 
 
+def channel_thread_query_conditions(user=None, doctype=None) -> str:
+	"""Thread kanal hanya terlihat oleh pemilik workspace-nya."""
+	return _owner_user_condition(user, "AIOS Channel Thread")
+
+
+def conversation_flag_query_conditions(user=None, doctype=None) -> str:
+	"""Flag hanya terlihat oleh pemilik workspace yang harus menutupnya."""
+	return _owner_user_condition(user, "AIOS Conversation Flag")
+
+
+def _owner_user_condition(user: str, doctype: str) -> str:
+	if not user or user == "Guest":
+		return "1=0"
+	if _is_admin(user) or not _is_client(user):
+		return ""
+	return f"`tab{doctype}`.owner_user = {frappe.db.escape(user)}"
+
+
 def has_permission(doc, ptype=None, user=None, debug=False) -> bool:
 	"""Hook `has_permission`: tolak akses lintas-user pada `get_doc`/`save`."""
 	user = user or frappe.session.user
@@ -176,6 +204,8 @@ def has_permission(doc, ptype=None, user=None, debug=False) -> bool:
 		return True
 	if doc.doctype in OWNED_DOCTYPES:
 		return doc.get("user") == user
+	if doc.doctype in OWNER_USER_DOCTYPES:
+		return doc.get("owner_user") == user
 	if doc.doctype == "AIOS Message":
 		conversation_user = frappe.db.get_value(
 			"AIOS Conversation", doc.get("conversation"), "user"

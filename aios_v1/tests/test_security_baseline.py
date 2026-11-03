@@ -19,10 +19,16 @@ class TestEndpointAuthContract(unittest.TestCase):
     def test_require_session_helper_exists(self):
         self.assertIn("def require_session(", _source())
 
-    def test_chatbot_requires_admin_session(self):
+    def test_connector_routes_require_session(self):
         src = _source()
-        idx = src.index('if path.startswith("api/chatbot")')
-        self.assertIn('require_session(role="DEVELOPER")', src[idx : idx + 300])
+        idx = src.index('if path.startswith("api/connector")')
+        self.assertIn("require_session()", src[idx : idx + 300])
+
+    def test_dead_chatbot_routes_are_gone(self):
+        """Route chatbot lama dihapus, bukan dibiarkan mati di bawah `return`."""
+        src = _source()
+        self.assertNotIn("api/chatbot", src)
+        self.assertNotIn("TELEGRAM_DISABLED", src)
 
     def test_parse_pdf_requires_session_and_size_limit(self):
         src = _source()

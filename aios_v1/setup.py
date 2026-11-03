@@ -69,12 +69,35 @@ def after_install():
     setup_aios_identity()
     ensure_builtin_plugins()
     ensure_signup_utm_source()
+    ensure_connector_defaults()
 
 
 def after_migrate():
     setup_aios_identity()
     ensure_builtin_plugins()
     ensure_signup_utm_source()
+    ensure_connector_defaults()
+
+
+def ensure_connector_defaults():
+    """Siapkan prasyarat kanal Telegram: tipe notifikasi + kebijakan audit.
+
+    Idempoten dan tidak menimpa isian operator. Tidak mengisi `owner_user` dan
+    tidak menyentuh token: keduanya keputusan manusia (docs/02 §2.4).
+    """
+    from aios_v1.lib.connector.notify import ensure_notification_type
+
+    ensure_notification_type()
+    if not frappe.db.get_single_value("AIOS Telegram Setting", "connector_config_json"):
+        import json
+
+        from aios_v1.lib.connector.rules import DEFAULT_CONFIG
+
+        frappe.db.set_single_value(
+            "AIOS Telegram Setting",
+            "connector_config_json",
+            json.dumps(DEFAULT_CONFIG, indent=2),
+        )
 
 
 UTM_SOURCE_SIGNUP = "AIOS Signup"

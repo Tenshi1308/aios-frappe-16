@@ -193,6 +193,8 @@ permission_query_conditions = {
 	"Pending Action Draft": "aios_v1.permissions.draft_query_conditions",
 	"AIOS Message": "aios_v1.permissions.message_query_conditions",
 	"AIOS Token Usage": "aios_v1.permissions.token_usage_query_conditions",
+	"AIOS Channel Thread": "aios_v1.permissions.channel_thread_query_conditions",
+	"AIOS Conversation Flag": "aios_v1.permissions.conversation_flag_query_conditions",
 	**{
 		doctype: "aios_v1.permissions.erp_company_query_conditions"
 		for doctype in ERP_CLIENT_DOCTYPES
@@ -205,6 +207,8 @@ has_permission = {
 	"Pending Action Draft": "aios_v1.permissions.has_permission",
 	"AIOS Message": "aios_v1.permissions.has_permission",
 	"AIOS Token Usage": "aios_v1.permissions.has_permission",
+	"AIOS Channel Thread": "aios_v1.permissions.has_permission",
+	"AIOS Conversation Flag": "aios_v1.permissions.has_permission",
 	**{
 		doctype: "aios_v1.permissions.erp_company_has_permission"
 		for doctype in ERP_CLIENT_DOCTYPES

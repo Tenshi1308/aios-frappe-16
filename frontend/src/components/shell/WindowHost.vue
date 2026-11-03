@@ -6,6 +6,7 @@ import EkasaMark from '../base/EkasaMark.vue';
 import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
 import AboutWindow from '../windows/AboutWindow.vue';
 import ArtifactWindow from '../windows/ArtifactWindow.vue';
+import ChannelFlagsWindow from '../windows/ChannelFlagsWindow.vue';
 import FilesWindow from '../windows/FilesWindow.vue';
 import PendingDraftsWindow from '../windows/PendingDraftsWindow.vue';
 import SettingsWindow from '../windows/SettingsWindow.vue';
@@ -57,6 +58,7 @@ defineExpose({ openAbout });
         <SettingsWindow v-else-if="w.id === 'settings'" />
         <PendingDraftsWindow v-else-if="w.id === 'pending-drafts'" />
         <FilesWindow v-else-if="w.id === 'files'" />
+        <ChannelFlagsWindow v-else-if="w.id === 'channel-flags'" />
         <ApprovalCardWindow v-else-if="w.id.startsWith('approval:')" :draft-id="w.id.slice(9)" />
         <ArtifactWindow
           v-else-if="w.id.startsWith('artifact:')"

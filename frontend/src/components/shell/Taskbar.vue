@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { useWindowManager } from '../../composables/useWindowManager';
+import { fetchFlags } from '../../api/connector';
 import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
 
@@ -17,6 +18,31 @@ onMounted(() => {
   timer = window.setInterval(() => (now.value = new Date()), 15_000);
 });
 onUnmounted(() => window.clearInterval(timer));
+
+// Channel alert badge: the desk has no realtime subscription yet, so the count
+// is refreshed on a timer (docs/02 §2.4 "instan" = ≤ 30 s for the bell).
+const openFlagCount = ref(0);
+let flagTimer: number | undefined;
+
+async function refreshFlags() {
+  try {
+    const flags = await fetchFlags('Open');
+    openFlagCount.value = flags.length;
+  } catch {
+    // Badge is decoration; a failed poll must not disturb the taskbar.
+    openFlagCount.value = 0;
+  }
+}
+
+function openFlags() {
+  wm.open('channel-flags', 'Peringatan Kanal');
+}
+
+onMounted(() => {
+  void refreshFlags();
+  flagTimer = window.setInterval(() => void refreshFlags(), 30_000);
+});
+onUnmounted(() => window.clearInterval(flagTimer));
 
 const timeStr = computed(() => now.value.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 const shortDate = computed(() => now.value.toLocaleDateString('en-GB'));
@@ -65,6 +91,10 @@ const siteName = computed(() => session.context?.aios_company_name || session.co
       </button>
     </div>
     <div class="tb-right">
+      <button class="tray bell" aria-label="Peringatan kanal" title="Peringatan kanal" @click="openFlags()">
+        <AppIcon name="bell" :size="17" />
+        <span v-if="openFlagCount" class="bell-badge">{{ openFlagCount }}</span>
+      </button>
       <div class="tray" aria-label="Status koneksi">
         <AppIcon name="wifi" :size="16" />
       </div>
@@ -75,3 +105,31 @@ const siteName = computed(() => session.context?.aios_company_name || session.co
     </div>
   </footer>
 </template>
+
+<style scoped>
+.tray.bell {
+  position: relative;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-6);
+  background: transparent;
+  color: var(--fg);
+}
+.tray.bell:hover {
+  background: var(--hover);
+}
+.bell-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 15px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--bad);
+  color: var(--on-accent);
+  font-size: var(--fs-10);
+  font-weight: var(--fw-600);
+  line-height: 15px;
+  text-align: center;
+}
+</style>

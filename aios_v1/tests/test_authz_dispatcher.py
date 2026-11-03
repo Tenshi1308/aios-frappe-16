@@ -315,7 +315,9 @@ class TestChatEndpointIsolation(IntegrationTestCase):
     def test_aios_endpoints_without_session_return_401(self):
         frappe.set_user("Guest")
         cases = (
-            ("GET", "/api/chatbot/sessions", None),
+            ("GET", "/api/connector/threads", None),
+            ("GET", "/api/connector/flags", None),
+            ("GET", "/api/connector/health", None),
             ("POST", "/api/chat/parse-pdf", {}),
             ("POST", "/api/chat/upload", None),
             ("GET", "/api/chat/sales/conversations", None),

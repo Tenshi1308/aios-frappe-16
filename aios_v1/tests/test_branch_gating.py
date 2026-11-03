@@ -1,10 +1,10 @@
-"""Branch gating and dormant Telegram behavior tests."""
+"""Branch gating and channel connector gating tests."""
 
 from unittest.mock import patch
 
 import frappe
 
-from aios_v1.lib import telegram_service
+from aios_v1.lib.connector import telegram_client
 from aios_v1.lib.tool_registry import execute_tool, get_tools_schema_for_worker
 from aios_v1.managers import get_manager
 from aios_v1.plugin_manager.registry import get_branches, is_branch_enabled
@@ -46,29 +46,41 @@ class TestBranchGating(IntegrationTestCase):
         finally:
             frappe.request = previous_request
 
-    def test_telegram_endpoint_returns_safe_disabled_error(self):
-        from aios_v1.api import dispatcher
 
-        previous_request = frappe.request
-        frappe.request = type("Request", (), {
-            "path": "/api/chatbot/settings", "method": "GET", "headers": {},
-        })()
-        try:
-            with patch.object(dispatcher, "require_session", return_value={"role": "DEVELOPER"}):
-                with self.assertRaises(dispatcher.CustomAPIResponse) as raised:
-                    dispatcher._handle_api_request()
-            body = raised.exception.get_response().get_data(as_text=True)
-            self.assertIn("TELEGRAM_DISABLED", body)
-        finally:
-            frappe.request = previous_request
+class TestConnectorGating(IntegrationTestCase):
+    """The connector must not open a network connection without a token."""
 
-    def test_telegram_polling_and_send_do_not_open_network(self):
-        with patch.object(telegram_service.requests, "get") as get, \
-             patch.object(telegram_service.requests, "post") as post, \
-             patch.object(telegram_service.requests, "Session") as session:
-            self.assertEqual(telegram_service.poll_telegram_updates()["code"], "TELEGRAM_DISABLED")
-            self.assertEqual(telegram_service.send_telegram_message("1", "hello")["code"], "TELEGRAM_DISABLED")
-            self.assertFalse(telegram_service.test_telegram_connection()["success"])
-        get.assert_not_called()
+    def test_unconfigured_connector_opens_no_network(self):
+        with patch.object(telegram_client, "get_config", return_value={
+            "bot_token": "", "bot_username": "", "is_active": False,
+            "persona_tone": "", "custom_instructions": "",
+        }), patch.object(telegram_client.requests, "post") as post:
+            self.assertFalse(telegram_client.is_configured())
+            self.assertFalse(telegram_client.send_message("1", "hello"))
+            self.assertFalse(telegram_client.send_chat_action("1"))
+            with self.assertRaises(telegram_client.ConnectorError) as raised:
+                telegram_client.get_updates(0)
+            self.assertEqual(raised.exception.code, "CONNECTOR_NO_TOKEN")
         post.assert_not_called()
-        session.assert_not_called()
+
+    def test_connector_health_is_read_only(self):
+        from aios_v1.lib.connector.dispatch import health
+
+        with patch.object(telegram_client, "get_config", return_value={
+            "bot_token": "", "bot_username": "", "is_active": False,
+            "persona_tone": "", "custom_instructions": "",
+        }), patch.object(telegram_client.requests, "post") as post:
+            result = health()
+        post.assert_not_called()
+        self.assertTrue(result["success"])
+        self.assertFalse(result["has_token"])
+        self.assertEqual(result["channel"], "telegram")
+        self.assertEqual(result["branch"], "sales")
+
+    def test_poller_skips_when_not_configured(self):
+        from aios_v1.lib.connector import poller
+
+        with patch.object(telegram_client, "is_configured", return_value=False), \
+             patch.object(telegram_client, "get_updates") as get_updates:
+            self.assertEqual(poller.poll_once(), 0)
+        get_updates.assert_not_called()

@@ -1,13 +1,14 @@
-import frappe
-from werkzeug.wrappers import Response
-from werkzeug.exceptions import HTTPException
 import json
 from urllib.parse import unquote
+
+import frappe
+from werkzeug.exceptions import HTTPException
+from werkzeug.wrappers import Response
 
 # Batas ukuran file PDF yang boleh diproses (S4).
 MAX_PDF_BYTES = 5 * 1024 * 1024
 
-from aios_v1.lib.auth import verify_session_token, SESSION_COOKIE
+from aios_v1.lib.auth import SESSION_COOKIE, verify_session_token
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.workspace import (
     ATTACHMENT_EXTENSIONS,
@@ -19,9 +20,10 @@ from aios_v1.lib.workspace import (
     save_private_file,
     validate_attachments,
 )
-from aios_v1.plugin_manager.registry import get_public_branches, is_branch_enabled
 from aios_v1.managers import get_manager
+from aios_v1.plugin_manager.registry import get_public_branches, is_branch_enabled
 from aios_v1.services.usage import check_site_token_quota
+
 
 class CustomAPIResponse(HTTPException):
     def __init__(self, response):
@@ -238,7 +240,7 @@ def _handle_api_request():
         "api/payment",
         "api/monitoring",
         "api/chat",
-        "api/chatbot"
+        "api/connector"
     )
     if not any(path.startswith(p) for p in aios_prefixes):
         return
@@ -497,6 +499,7 @@ def _handle_api_request():
 
             try:
                 import io
+
                 from pypdf import PdfReader
 
                 reader = PdfReader(io.BytesIO(file_bytes), strict=False)
@@ -739,82 +742,43 @@ def _handle_api_request():
 
 
     # =========================================================================
-    # 8. CHATBOT MONITORING ROUTES
+    # 8. CHANNEL CONNECTOR ROUTES (Telegram, docs/02 §2.4)
     # =========================================================================
-    if path.startswith("api/chatbot"):
-        require_session(role="DEVELOPER")
-        return json_error(503, "TELEGRAM_DISABLED", "Integrasi Telegram belum diaktifkan.")
+    if path.startswith("api/connector"):
+        sess = require_session()
 
-        # GET /api/chatbot/sessions
-        if path == "api/chatbot/sessions" and method == "GET":
-            sessions = frappe.get_all(
-                "AIOS Telegram Session",
-                fields=[
-                    "name", "chat_id", "first_name", "last_name",
-                    "username", "status", "last_interaction",
-                    "lead", "last_message"
-                ],
-                order_by="last_interaction desc"
-            )
-            return json_response({"sessions": sessions})
+        if path == "api/connector/health" and method == "GET":
+            from aios_v1.lib.connector.dispatch import health as connector_health
 
-        # GET /api/chatbot/messages?session_id=<id>
-        if path == "api/chatbot/messages" and method == "GET":
-            session_id = frappe.request.args.get("session_id")
-            if not session_id:
-                return json_response({"error": "Parameter session_id wajib diisi"}, 400)
+            return json_response(connector_health())
 
-            messages = frappe.get_all(
-                "AIOS Telegram Message",
-                filters={"session": session_id},
-                fields=["name", "session", "sender", "message", "sent_at"],
-                order_by="sent_at asc"
-            )
-            return json_response({"messages": messages})
+        if path == "api/connector/threads" and method == "GET":
+            from aios_v1.lib.connector.views import list_threads
 
-        # GET /api/chatbot/settings
-        if path == "api/chatbot/settings" and method == "GET":
-            doc = frappe.get_single("AIOS Telegram Setting")
-            return json_response({
-                "persona_tone": getattr(doc, "persona_tone", None) or "Ramah & Kasual",
-                "custom_instructions": getattr(doc, "custom_instructions", None) or "",
-                "bot_username": getattr(doc, "bot_username", None) or "",
-                "is_active": bool(getattr(doc, "is_active", 1))
-            })
+            return json_response({"threads": list_threads(sess["user"])})
 
-        # POST /api/chatbot/settings
-        if path == "api/chatbot/settings" and method == "POST":
+        if path == "api/connector/flags" and method == "GET":
+            from aios_v1.lib.connector.views import list_flags
+
+            return json_response({"flags": list_flags(sess["user"])})
+
+        if path == "api/connector/flag/close" and method == "POST":
+            from aios_v1.lib.connector.views import close_flag
+
             body = frappe.request.get_json(force=True, silent=True) or {}
             if not body and frappe.request.data:
                 try:
                     body = json.loads(frappe.request.data.decode("utf-8"))
                 except Exception as exc:
-                    log_exception("AIOS Dispatcher: body chatbot settings tidak valid", exc=exc)
+                    log_exception("AIOS Dispatcher: body connector flag tidak valid", exc=exc)
                     return json_response({"error": "Body permintaan tidak valid"}, 400)
+            try:
+                result = close_flag(sess["user"], body.get("flag"), body.get("note") or "")
+            except WorkspaceError as exc:
+                log_exception("AIOS Connector Flag Close", context=exc.code)
+                return json_error(exc.status, exc.code, exc.message)
+            return json_response(result)
 
-            persona_tone = body.get("persona_tone", "Ramah & Kasual")
-            custom_instructions = body.get("custom_instructions", "")
-
-            if len(custom_instructions) > 1000:
-                return json_response({"error": "Instruksi khusus maksimal 1.000 karakter"}, 400)
-
-            allowed_tones = ["Ramah & Kasual", "Formal & Profesional", "Ringkas & Solutif"]
-            if persona_tone not in allowed_tones:
-                persona_tone = "Ramah & Kasual"
-
-            doc = frappe.get_single("AIOS Telegram Setting")
-            doc.persona_tone = persona_tone
-            doc.custom_instructions = custom_instructions
-            doc.save(ignore_permissions=True)
-            frappe.db.commit()
-
-            return json_response({
-                "success": True,
-                "message": "Pengaturan chatbot berhasil disimpan",
-                "settings": {
-                    "persona_tone": doc.persona_tone,
-                    "custom_instructions": doc.custom_instructions
-                }
-            })
+        return json_response({"error": "Endpoint not found"}, 404)
 
     return json_response({"error": "Endpoint not found"}, 404)

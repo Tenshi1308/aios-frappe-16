@@ -88,6 +88,58 @@ Keputusan tersebut khusus server MCP ERPNext. Client MCP Streamable HTTP fase H2
 
 ---
 
+## 2.4. Kanal Eksternal — Konektor Telegram (Sales and Distribution)
+
+Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan sistem paralel. Pesan masuk dari customer di Telegram diproses oleh manager cabang `sales` yang sama dengan yang dipakai Ekasa Desk (`get_manager("sales").handle_stream`), sehingga izin, `company` site, akuntansi token, dan gerbang approval berlaku identik. **Tidak ada jalur tulis ERPNext di konektor.**
+
+**Batas yang mengikat:**
+
+| Aturan | Penegakan |
+|---|---|
+| Kanal **tidak pernah** mengeksekusi aksi tulis | Hanya `Pending Action Draft` yang dibuat oleh tool; submit/cancel hanya lewat tombol Approve di Ekasa Desk (`docs/04` Alur 5) |
+| Inline-keyboard checkout **tidak ada** | `callback_query` diabaikan eksplisit (`CONNECTOR_CALLBACK_IGNORED`), tidak pernah dieksekusi |
+| Tidak ada auto-create `Lead`/`Customer` | `chat_id` hanya dipetakan ke pihak yang sudah ada setelah persetujuan manusia |
+| Identitas tidak bisa dipalsukan | Dispatch berjalan sebagai `owner_user` dari `AIOS Telegram Setting`; `frappe.set_user` dipulihkan di `finally`. Tanpa itu worker Frappe berjalan sebagai `Administrator` dan melewati semua izin |
+| Kuota site berlaku | `check_site_token_quota()` dipanggil sebelum LLM; kuota habis = balasan aman, tanpa panggilan model |
+| Token bot tidak pernah bocor | Dibaca lewat `doc.get_password("bot_token")` (field `Password`); tidak pernah masuk log, pesan error, atau payload respons |
+
+**Model data.** Transkrip tunggal di `AIOS Message` (percakapan `branch="sales"`). Dua DocType baru menjadi jembatan:
+
+- **`AIOS Channel Thread`** — `channel` + `external_thread_id` (unik, terindeks) → `conversation` (`AIOS Conversation`), `owner_user` (pemilik workspace, dasar scoping izin), `party_type`/`party` (Contact/Customer/Lead yang sudah ada), `status`, `last_inbound_at`, `last_outbound_at`.
+- **`AIOS Conversation Flag`** — `thread`, `rule_key`, `severity`, `status` (Open/Closed), `label`, `excerpt`, `message_ids` (bukti), `reason_text`, `closed_by`/`closed_at`/`closing_note`.
+
+`AIOS Telegram Session` dan `AIOS Telegram Message` **dipensiunkan**; `AIOS Telegram Setting` dipertahankan sebagai pemegang kredensial + kebijakan kanal (`owner_user`, `connector_config_json`, `poll_offset`).
+
+**Monitoring otonom (audit + fraud).**
+
+1. **Sinyal keras deterministik** (`aios_v1/lib/connector/rules.py`): permintaan transfer ke rekening pribadi, diskon di luar ambang (`discount_threshold_percent`), frasa terlarang dari config, dan nada yang melanggar SOP. **Tanpa LLM.**
+2. **LLM hanya menjelaskan.** `explain.py` menerima sinyal yang sudah diputuskan + potongan transkrip **teredaksi** dan menulis 1–2 kalimat netral untuk reviewer. Model tidak pernah diminta memutuskan fraud, dan outputnya tidak pernah menjadi putusan. Kegagalan LLM tidak menghapus flag.
+3. **Flag ditutup manusia.** `POST /api/connector/flag/close` hanya untuk `owner_user`; `closed_by`/`closed_at` diisi sistem. Tidak ada jalur otomatis yang membuka atau menutup flag.
+4. **PII**: transkrip disimpan mentah (bukti audit), payload ke model diredaksi (`redact.py`: rekening, telepon, email).
+
+**Audit ringan (deterministik, `audit.py`):** response time rata-rata + jumlah di atas target, chat yang masih menunggu jawaban, dan checklist SOP. Checklist adalah **aturan milik konektor** (`connector_config_json.sop_checklist`), bukan skill markdown agent — skill sales belum aktif karena tool yang dirujuk belum terdaftar, jadi kepatuhan SOP agent tidak boleh diklaim dari sini.
+
+**Notifikasi "instan".** Memakai pipeline resmi Frappe: `enqueue_create_notification` → `Notification Log` (scoped `for_user`) → `after_insert` mem-publish realtime dan mengirim email bila tipe diizinkan. Tipe `AIOS Channel Alert` dibuat + di-seed ke preferensi user oleh `after_migrate`.
+
+| Target | Angka | Catatan |
+|---|---|---|
+| Flag tersimpan | ≤ 5 detik | transaksi yang sama dengan pemrosesan pesan |
+| Baris `Notification Log` | ≤ 10 detik | pickup worker |
+| Bell menampilkan | ≤ 30 detik | poll 30 s; desk belum berlangganan realtime |
+| Email | best-effort | site klien mungkin belum punya `Email Account` outgoing |
+
+**Transport: long-poll terkelola, bukan `scheduler_events`.** Scheduler Frappe tidur sampai kelipatan `DEFAULT_SCHEDULER_TICK` (240 detik), sehingga cron per-menit pun dieksekusi tiap ~4 menit — tidak memenuhi kebutuhan chat. Proses terpisah menjalankan `aios_v1.lib.connector.poller.run_forever` (long-poll 25 s), memanggil `deleteWebhook` saat start (`getUpdates` dan webhook saling eksklusif), dan menyimpan offset di `AIOS Telegram Setting.poll_offset` (durable; redis cache lama memakai `save ""` + `allkeys-lru` sehingga restart bisa memutar ulang update).
+
+**Webhook di luar scope v1:** butuh HTTPS + sertifikat valid (CN persis) + port 443/80/88/8443 tanpa redirect, sementara bench lokal tidak punya URL publik. <https://core.telegram.org/bots/faq>
+
+**Permukaan API** (`/api/connector/*`, wajib sesi): `health`, `threads`, `flags`, `flag/close`. Tidak ada endpoint yang menulis ERPNext.
+
+**Non-scope v1:** checkout inline-keyboard, submit/cancel dari chat, auto-create Lead/Customer, media/grup/broadcast/multi-bot, 8 cabang lain, webhook produksi, AI Automation Drive/Sheets, AI Agents Supervisor, kanal WA/IG/Email, dan realtime socket.io di desk.
+
+**Kedudukan terhadap Flow Utama.** Konektor **di luar** kontrak `docs/00` §1.1 (keputusan owner 2026-11-03): Flow Utama mendefinisikan provisioning client, bukan katalog kemampuan. Konektor dirujuk dari `docs/04` Alur 4 (jawaban agent) dan Alur 5 (draft dari kanal).
+
+---
+
 ## 3. Kontrak *Live Agent Trace* & Artefak
 
 Tata letak antarmuka (desktop OS, taskbar, panel agent, jendela modul) diatur di **[`docs/08`](./08-desain-ekasa-desk.md)**. Bagian ini hanya menetapkan **kontrak** yang tidak boleh berubah walau tampilannya berubah. Kontrak transport dan event dasar di luar trace ada di §3.3.

@@ -10,9 +10,12 @@
   "bot_token",
   "bot_username",
   "is_active",
-  "lead_source",
+  "owner_user",
   "persona_tone",
-  "custom_instructions"
+  "custom_instructions",
+  "config_section",
+  "connector_config_json",
+  "poll_offset"
  ],
  "fields": [
   {
@@ -33,10 +36,11 @@
    "label": "Is Active"
   },
   {
-   "default": "Telegram",
-   "fieldname": "lead_source",
-   "fieldtype": "Data",
-   "label": "Lead Source"
+   "description": "Pemilik workspace penerima percakapan kanal dan flag audit (harus user AIOS Client aktif).",
+   "fieldname": "owner_user",
+   "fieldtype": "Link",
+   "label": "Owner User",
+   "options": "User"
   },
   {
    "default": "Ramah & Kasual",
@@ -49,13 +53,32 @@
    "fieldname": "custom_instructions",
    "fieldtype": "Small Text",
    "label": "Custom Instructions"
+  },
+  {
+   "fieldname": "config_section",
+   "fieldtype": "Section Break",
+   "label": "Kebijakan Kanal"
+  },
+  {
+   "description": "JSON kebijakan audit: discount_threshold_percent, forbidden_phrases, sop_checklist, response_target_seconds, unanswered_minutes.",
+   "fieldname": "connector_config_json",
+   "fieldtype": "Code",
+   "label": "Connector Config",
+   "options": "JSON"
+  },
+  {
+   "description": "Offset getUpdates terakhir; disimpan durable agar restart tidak memproses ulang pesan.",
+   "fieldname": "poll_offset",
+   "fieldtype": "Int",
+   "label": "Poll Offset",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-09-08 10:00:00.000000",
+ "modified": "2026-11-03 11:25:00.000000",
  "modified_by": "Administrator",
  "module": "AIOS V1",
  "name": "AIOS Telegram Setting",
