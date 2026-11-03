@@ -12,6 +12,8 @@ export interface ChannelThread {
   party_type?: string;
   party?: string;
   status: string;
+  linked_user?: string;
+  linked_at?: string;
   last_inbound_at?: string;
   last_outbound_at?: string;
 }
@@ -68,4 +70,41 @@ export async function closeFlag(
   });
   const status = (data as { status?: unknown })?.status;
   return { status: typeof status === 'string' ? status : 'Closed' };
+}
+
+export interface TelegramLinkStatus {
+  linked: boolean;
+  external_thread_id?: string;
+  telegram_username?: string;
+  display_name?: string;
+  linked_at?: string;
+}
+
+export async function fetchTelegramStatus(): Promise<TelegramLinkStatus> {
+  const data = await apiFetch('/api/connector/link-status');
+  return (data as TelegramLinkStatus) ?? { linked: false };
+}
+
+export async function createTelegramLinkToken(csrfToken: string): Promise<{ deep_link: string; expires_in_seconds: number }> {
+  const data = await apiFetch('/api/connector/link-token', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({}),
+  });
+  return data as { deep_link: string; expires_in_seconds: number };
+}
+
+export async function unlinkTelegramAccount(csrfToken: string): Promise<{ success: boolean }> {
+  const data = await apiFetch('/api/connector/unlink', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({}),
+  });
+  return data as { success: boolean };
 }

@@ -11,6 +11,8 @@
   "external_thread_id",
   "conversation",
   "owner_user",
+  "linked_user",
+  "linked_at",
   "display_name",
   "username",
   "party_section",
@@ -59,6 +61,21 @@
    "options": "User",
    "reqd": 1,
    "search_index": 1
+  },
+  {
+   "description": "User karyawan yang menautkan Telegram ini ke akun AIOS-nya.",
+   "fieldname": "linked_user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Linked User",
+   "options": "User"
+  },
+  {
+   "description": "Waktu akun Telegram ini berhasil ditautkan ke karyawan.",
+   "fieldname": "linked_at",
+   "fieldtype": "Datetime",
+   "label": "Linked At"
   },
   {
    "fieldname": "display_name",

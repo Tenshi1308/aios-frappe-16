@@ -62,7 +62,7 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
             frappe.log_error("Context tool bukan dict", "AIOS Tool Context")
             raise ToolContextError("Context tool harus dict")
         user = context.get("user") or context.get("user_id")
-        if not isinstance(user, str) or not user or user == "Guest":
+        if not isinstance(user, str) or not user:
             frappe.log_error("Context tool tanpa user valid", "AIOS Tool Context")
             raise ToolContextError("Context tool tanpa user valid")
         allowed_company = context.get("allowed_company") or _resolve_allowed_company()
@@ -74,7 +74,7 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
             )
             raise ToolContextError("Context tool eksplisit wajib di luar request HTTP")
         user = getattr(frappe.session, "user", None)
-        if not isinstance(user, str) or not user or user == "Guest":
+        if not isinstance(user, str) or not user:
             frappe.log_error("execute_tool tanpa sesi valid", "AIOS Tool Context")
             raise ToolContextError("Sesi tidak valid untuk execute_tool")
         allowed_company = _resolve_allowed_company()
@@ -346,6 +346,15 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         return json.dumps(safe_error("Tool ini belum aktif.", "TOOL_DORMANT"))
 
     tool_data = _TOOL_REGISTRY[name]
+
+    eff_user = (context or {}).get("user") or (context or {}).get("user_id") or getattr(frappe.session, "user", None)
+    guest_allowed = {"erpnext_doc_list", "erpnext_doc_get", "erpnext_doctype_schema", "erpnext_action_draft_create", "get_current_time"}
+    if eff_user == "Guest" and name not in guest_allowed:
+        return _log_tool_denial("GUEST_TOOL_FORBIDDEN", name)
+
+    if getattr(frappe.local, "aios_channel", None) == "telegram" and name not in guest_allowed:
+        return _log_tool_denial("TOOL_FORBIDDEN_ON_TELEGRAM", name)
+
     if name == "orchestrator_delegate_to_subagent":
         depth = (context or {}).get("delegation_depth", 0)
         if (worker_key not in {"manager", "ai_manager", f"{branch}_manager"}

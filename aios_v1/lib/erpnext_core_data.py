@@ -50,8 +50,27 @@ _DOC_SCHEMA_DESCRIPTION = (
 )
 
 
+GUEST_ALLOWED_DOCTYPES = frozenset({"Item", "Item Price"})
+STANDARD_SELLING_PRICE_LIST = "Standard Selling"
+
+
+def _is_guest() -> bool:
+    ctx_user = get_tool_context().get("user_id")
+    sess_user = getattr(frappe.session, "user", None)
+    return ctx_user == "Guest" or sess_user == "Guest"
+
+
 def _validate_doctype(doctype: str):
     """Kembalikan `safe_error` bila DocType di luar allowlist; None bila diizinkan."""
+    if _is_guest():
+        if doctype not in GUEST_ALLOWED_DOCTYPES:
+            return safe_error(
+                f"DocType '{doctype}' tidak diizinkan untuk tamu. "
+                f"DocType yang tersedia untuk tamu: {', '.join(sorted(GUEST_ALLOWED_DOCTYPES))}.",
+                "DOCTYPE_NOT_ALLOWED",
+            )
+        return None
+
     if doctype not in ERP_CLIENT_DOCTYPES:
         return safe_error(
             f"DocType '{doctype}' tidak diizinkan. DocType yang tersedia: "
@@ -110,6 +129,10 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
     elif meta.has_field("company"):
         filters["company"] = _company()
 
+    if doctype == "Item Price" and _is_guest():
+        filters["price_list"] = STANDARD_SELLING_PRICE_LIST
+        filters["selling"] = 1
+
     try:
         limit = DEFAULT_LIST_LIMIT if limit is None else int(limit)
         offset = int(offset or 0)
@@ -157,6 +180,12 @@ def erpnext_doc_get(doctype, name):
         frappe.throw("Dokumen tidak ditemukan untuk company aktif.")
     if frappe.get_meta(doctype).has_field("company") and doc.get("company") != _company():
         frappe.throw("Dokumen tidak ditemukan untuk company aktif.")
+    if doctype == "Item Price" and _is_guest():
+        if doc.get("price_list") != STANDARD_SELLING_PRICE_LIST or not doc.get("selling"):
+            return safe_error(
+                "Dokumen harga tidak ditemukan atau bukan harga jual standar.",
+                "PRICE_NOT_ALLOWED",
+            )
     return doc.as_dict()
 
 

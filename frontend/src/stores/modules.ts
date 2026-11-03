@@ -11,6 +11,12 @@ import {
 import { useWindowManager } from '../composables/useWindowManager';
 import { useSessionStore } from './session';
 import { reportClientError } from '../api/client';
+import {
+  fetchTelegramStatus,
+  createTelegramLinkToken,
+  unlinkTelegramAccount,
+  type TelegramLinkStatus,
+} from '../api/connector';
 import type {
   DomainDetailData,
   DomainMeta,
@@ -47,6 +53,11 @@ export const useModulesStore = defineStore('modules', {
     settingsLoading: false,
     settingsError: '',
     themeSaving: false,
+    telegramStatus: null as TelegramLinkStatus | null,
+    telegramDeepLink: '' as string,
+    telegramExpiresIn: null as number | null,
+    telegramLoading: false,
+    telegramError: '',
     bootstrapped: false,
     bootstrapError: '',
     _reqSeq: {} as Record<string, number>,
@@ -360,6 +371,46 @@ export const useModulesStore = defineStore('modules', {
             : 'Tema tidak dapat disimpan.';
       } finally {
         this.themeSaving = false;
+      }
+    },
+    async loadTelegramStatus() {
+      try {
+        this.telegramLoading = true;
+        this.telegramError = '';
+        this.telegramStatus = await fetchTelegramStatus();
+      } catch (err: unknown) {
+        this.telegramError = err instanceof Error ? err.message : 'Gagal memuat status Telegram.';
+      } finally {
+        this.telegramLoading = false;
+      }
+    },
+    async generateTelegramLink() {
+      const session = useSessionStore();
+      try {
+        this.telegramLoading = true;
+        this.telegramError = '';
+        const res = await createTelegramLinkToken(session.csrfToken);
+        this.telegramDeepLink = res.deep_link;
+        this.telegramExpiresIn = res.expires_in_seconds;
+      } catch (err: unknown) {
+        this.telegramError = err instanceof Error ? err.message : 'Gagal membuat tautan Telegram.';
+      } finally {
+        this.telegramLoading = false;
+      }
+    },
+    async unlinkTelegram() {
+      const session = useSessionStore();
+      try {
+        this.telegramLoading = true;
+        this.telegramError = '';
+        await unlinkTelegramAccount(session.csrfToken);
+        this.telegramStatus = { linked: false };
+        this.telegramDeepLink = '';
+        this.telegramExpiresIn = null;
+      } catch (err: unknown) {
+        this.telegramError = err instanceof Error ? err.message : 'Gagal memutuskan tautan Telegram.';
+      } finally {
+        this.telegramLoading = false;
       }
     },
   },

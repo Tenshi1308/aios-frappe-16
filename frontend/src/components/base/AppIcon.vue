@@ -13,6 +13,7 @@ const ICONS: Record<string, string[]> = {
   square: ['M5 5h14v14H5z'],
   restore: ['M8 8h11v11H8z', 'M5 16V5h11'],
   send: ['M22 2L11 13', 'M22 2l-7 20-4-9-9-4z'],
+  telegram: ['M17 7L7 12l4 1.5L15 9l-4 4.5V17l2.5-2 3.5 2L17 7z'],
   power: ['M12 2v10', 'M18.4 6.6a9 9 0 1 1-12.8 0'],
   lock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 8 0v4'],
   'arrow-right': ['M5 12h14', 'M12 5l7 7-7 7'],
@@ -78,6 +79,7 @@ const ICONS: Record<string, string[]> = {
 
 const ICON_CIRCLES: Record<string, Array<{ cx: number; cy: number; r: number }>> = {
   'user-round-check': [{ cx: 10, cy: 8, r: 5 }],
+  telegram: [{ cx: 12, cy: 12, r: 10 }],
 };
 
 const props = withDefaults(defineProps<{ name: string; size?: number | string }>(), { size: 18 });

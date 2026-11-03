@@ -11,6 +11,7 @@
   "bot_username",
   "is_active",
   "owner_user",
+  "link_code_expiry_seconds",
   "persona_tone",
   "custom_instructions",
   "config_section",
@@ -41,6 +42,13 @@
    "fieldtype": "Link",
    "label": "Owner User",
    "options": "User"
+  },
+  {
+   "default": "300",
+   "description": "Masa berlaku token tautan Telegram karyawan dalam detik (default 300 detik = 5 menit).",
+   "fieldname": "link_code_expiry_seconds",
+   "fieldtype": "Int",
+   "label": "Link Code Expiry Seconds"
   },
   {
    "default": "Ramah & Kasual",

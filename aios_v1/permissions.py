@@ -59,6 +59,7 @@ ERP_CLIENT_DOCTYPES = (
 	"Customer",
 	"Supplier",
 	"Item",
+	"Item Price",
 	"Company",
 	"Account",
 )
@@ -261,6 +262,10 @@ def ensure_aios_permissions() -> None:
 		if not frappe.db.exists("DocType", doctype):
 			continue
 		_ensure_role_perm(doctype, "AIOS Client", ERP_CLIENT_PERMS)
+
+	for doctype in ("Item", "Item Price"):
+		if frappe.db.exists("DocType", doctype):
+			_ensure_role_perm(doctype, "Guest", ("read",))
 
 	for doctype, ptypes in CONTROL_PERMS.items():
 		if not frappe.db.exists("DocType", doctype):

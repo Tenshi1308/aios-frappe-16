@@ -60,6 +60,7 @@ onMounted(() => {
   if (!data.value && !loading.value) {
     void modules.loadSettings(true);
   }
+  void modules.loadTelegramStatus();
   syncRemainingFromStore();
   countdownTimer = setInterval(() => {
     if (remainingSeconds.value !== null && remainingSeconds.value > 0) {
@@ -108,6 +109,35 @@ const countdownText = computed(() => {
 
 function refresh() {
   void modules.loadSettings(true);
+  void modules.loadTelegramStatus();
+}
+
+const copySuccess = ref(false);
+
+async function handleGenerateTelegram() {
+  await modules.generateTelegramLink();
+}
+
+async function handleCopyLink() {
+  if (!modules.telegramDeepLink) return;
+  try {
+    await navigator.clipboard.writeText(modules.telegramDeepLink);
+    copySuccess.value = true;
+    setTimeout(() => {
+      copySuccess.value = false;
+    }, 2500);
+  } catch {
+    copySuccess.value = true;
+  }
+}
+
+function handleOpenTelegram() {
+  if (!modules.telegramDeepLink) return;
+  window.open(modules.telegramDeepLink, '_blank');
+}
+
+async function handleUnlink() {
+  await modules.unlinkTelegram();
 }
 </script>
 
@@ -261,6 +291,68 @@ function refresh() {
           <b>{{ countdownText }}</b>
           <span v-if="data.reset.at_label" class="reset-time">pukul {{ data.reset.at_label }}</span>
         </div>
+      </section>
+
+      <!-- Telegram Connector Integration Card -->
+      <section class="settings-card" aria-label="Integrasi Telegram">
+        <div class="card-head">
+          <div class="tg-card-title">
+            <AppIcon name="telegram" :size="18" />
+            <h5>Integrasi Telegram</h5>
+          </div>
+          <span v-if="modules.telegramStatus?.linked" class="badge-linked">Tersambung</span>
+        </div>
+
+        <div v-if="modules.telegramLoading" class="tg-loading">
+          <span>Memproses…</span>
+        </div>
+
+        <div v-else-if="modules.telegramStatus?.linked" class="tg-linked-box">
+          <p class="tg-status-text">
+            Akun Anda terhubung dengan Telegram
+            <b v-if="modules.telegramStatus.telegram_username">@{{ modules.telegramStatus.telegram_username }}</b>
+            <span v-else>ID: {{ modules.telegramStatus.external_thread_id }}</span>.
+          </p>
+          <div>
+            <button type="button" class="btn-danger-outline" @click="handleUnlink">
+              Putuskan Tautan
+            </button>
+          </div>
+        </div>
+
+        <div v-else class="tg-unlinked-box">
+          <p class="tg-info-text">
+            Sambungkan akun Telegram Anda untuk bertindak sebagai staf resmi penjualan dan mengakses perintah internal.
+          </p>
+
+          <div v-if="!modules.telegramDeepLink">
+            <button type="button" class="btn-primary-tg" @click="handleGenerateTelegram">
+              <AppIcon name="telegram" :size="16" />
+              <span>Hubungkan ke Telegram</span>
+            </button>
+          </div>
+
+          <div v-else class="tg-actions-flow">
+            <div class="tg-warning-banner" role="alert">
+              <b>Peringatan:</b> Jangan bagikan tautan ini, siapa pun yang membukanya akan tersambung ke akunmu.
+            </div>
+
+            <div class="tg-buttons-dual">
+              <button type="button" class="btn-secondary-copy" @click="handleCopyLink">
+                <AppIcon name="file" :size="15" />
+                <span>{{ copySuccess ? 'Tersalin!' : 'Salin Tautan' }}</span>
+              </button>
+              <button type="button" class="btn-primary-tg" @click="handleOpenTelegram">
+                <AppIcon name="telegram" :size="15" />
+                <span>Buka Telegram Langsung</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <p v-if="modules.telegramError" class="tg-error" role="alert">
+          {{ modules.telegramError }}
+        </p>
       </section>
     </div>
   </div>
@@ -529,5 +621,124 @@ function refresh() {
   to {
     transform: rotate(360deg);
   }
+}
+
+.tg-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8, 8px);
+  color: var(--fg);
+}
+
+.badge-linked {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm, 4px);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tg-loading {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 6px 0;
+}
+
+.tg-linked-box,
+.tg-unlinked-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.tg-status-text,
+.tg-info-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0;
+}
+
+.btn-primary-tg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #0088cc;
+  color: #fff;
+  border: none;
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.btn-primary-tg:hover {
+  background: #0077b5;
+}
+
+.btn-secondary-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2, #f1f5f9);
+  color: var(--fg, #0f172a);
+  border: 1px solid var(--border, #cbd5e1);
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-danger-outline {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger-outline:hover {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: #ef4444;
+}
+
+.tg-actions-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tg-warning-banner {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #b45309;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.tg-buttons-dual {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tg-error {
+  color: #ef4444;
+  font-size: 12px;
+  margin: 6px 0 0 0;
 }
 </style>

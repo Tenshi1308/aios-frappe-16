@@ -779,6 +779,32 @@ def _handle_api_request():
                 return json_error(exc.status, exc.code, exc.message)
             return json_response(result)
 
+        if path == "api/connector/link-token" and method == "POST":
+            from aios_v1.lib.connector.linking import LinkError, create_link_token
+
+            body = frappe.request.get_json(force=True, silent=True) or {}
+            requested_user = body.get("user")
+            if requested_user and requested_user != sess["user"]:
+                return json_error(403, "FORBIDDEN", "Akses ditolak: hanya dapat membuat tautan untuk akun sendiri.")
+            try:
+                return json_response(create_link_token(sess["user"]))
+            except LinkError as exc:
+                log_exception("AIOS Connector Link Token", exc=exc, context=exc.code)
+                return json_error(400, exc.code, exc.message)
+            except frappe.PermissionError as exc:
+                return json_error(403, "FORBIDDEN", str(exc))
+
+        if path == "api/connector/link-status" and method == "GET":
+            from aios_v1.lib.connector.linking import get_link_status
+
+            return json_response(get_link_status(sess["user"]))
+
+        if path == "api/connector/unlink" and method == "POST":
+            from aios_v1.lib.connector.linking import unlink_by_user
+
+            success = unlink_by_user(sess["user"])
+            return json_response({"success": success})
+
         return json_response({"error": "Endpoint not found"}, 404)
 
     return json_response({"error": "Endpoint not found"}, 404)

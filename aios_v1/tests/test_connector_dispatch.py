@@ -48,6 +48,8 @@ def _ensure_user(email: str, name: str) -> str:
 class ConnectorTestBase(IntegrationTestCase):
     def setUp(self):
         super().setUp()
+        frappe.in_test = True
+        frappe.flags.in_test = True
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
         frappe.set_user("Administrator")
@@ -106,13 +108,14 @@ class TestConnectorDispatch(ConnectorTestBase):
         self.assertEqual(thread.external_thread_id, CHAT_ID)
         conversation = frappe.get_doc("AIOS Conversation", thread.conversation)
         self.assertEqual(conversation.branch, "sales")
-        self.assertEqual(conversation.user, self.owner)
+        # In Batch 2, unlinked guest thread conversation belongs to Guest
+        self.assertEqual(conversation.user, "Guest")
 
     def test_identity_is_owner_not_administrator(self):
-        """C6: the chat path reads frappe.session.user, so it must be the owner."""
+        """C6: the chat path reads frappe.session.user, so it must be Guest (or linked_user), never Administrator."""
         seen = {}
 
-        def fake_reply(manager, conversation, owner, text):
+        def fake_reply(manager, conversation, effective_user, text):
             seen["session"] = frappe.session.user
             return "ok"
 
@@ -121,7 +124,7 @@ class TestConnectorDispatch(ConnectorTestBase):
              patch.object(dispatch, "_collect_reply", side_effect=fake_reply):
             dispatch.process_update(self._update("halo"))
 
-        self.assertEqual(seen["session"], self.owner)
+        self.assertEqual(seen["session"], "Guest")
         self.assertEqual(frappe.session.user, "Administrator", "sesi harus dipulihkan setelah dispatch")
 
     def test_same_chat_reuses_thread(self):
@@ -316,7 +319,8 @@ class TestConnectorNotification(ConnectorTestBase):
         thread = self._make_thread()
         flag = frappe.get_all(FLAG, filters={"thread": thread}, pluck="name")[0]
         try:
-            notify.notify_flag(frappe.get_doc(FLAG, flag))
+            flag_doc = frappe.get_doc(FLAG, flag)
+            notify.notify_flag(flag_doc)
             rows = frappe.get_all(
                 "Notification Log", filters={"document_name": flag}, fields=["for_user"]
             )
@@ -450,3 +454,28 @@ class TestConnectorRulesFromSite(ConnectorTestBase):
             self.assertTrue(any(hit["rule_key"] == "forbidden_phrase" for hit in hits))
         finally:
             frappe.db.set_value(SETTING, SETTING, "connector_config_json", original)
+
+
+def run_tests():
+    import unittest
+    frappe.in_test = True
+    frappe.flags.in_test = True
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    for cls in [
+        TestConnectorDispatch,
+        TestConnectorFlags,
+        TestConnectorViews,
+        TestConnectorNotification,
+        TestConnectorOffset,
+        TestConnectorPollerLock,
+        TestConnectorRulesFromSite,
+    ]:
+        suite.addTests(loader.loadTestsFromTestCase(cls))
+    runner = unittest.TextTestRunner(verbosity=2)
+    res = runner.run(suite)
+    print(f"RESULT: wasSuccessful={res.wasSuccessful()}, testsRun={res.testsRun}, errors={len(res.errors)}, failures={len(res.failures)}")
+    if not res.wasSuccessful():
+        raise SystemExit(1)
+    return res.wasSuccessful()
+

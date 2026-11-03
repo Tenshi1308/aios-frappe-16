@@ -51,7 +51,12 @@ def _owner_user() -> str:
 
 
 def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
-    """Return the thread for this chat, creating conversation + thread once."""
+    """Return the thread for this chat, creating conversation + thread once.
+
+    Field separation:
+    - `thread.owner_user`: set to Setting.owner_user for workspace audit & flags.
+    - `conversation`: created with effective_user 'Guest' for new unlinked threads.
+    """
     external_id = str(chat_id)
     name = frappe.db.get_value(
         THREAD_DOCTYPE,
@@ -65,13 +70,16 @@ def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
     # Satu conversation per thread: `ensure_conversation` tanpa `force_new` akan
     # mengembalikan conversation terakhir user+branch, sehingga dua chat_id
     # berbeda berbagi transkrip. Hanya thread baru yang sampai ke baris ini.
-    conversation = str(get_manager(BRANCH).ensure_conversation(owner, force_new=True))
+    # Thread baru dimulai sebagai tamu (Guest).
+    conversation = str(get_manager(BRANCH).ensure_conversation("Guest", force_new=True))
     info = user_info or {}
     doc = frappe.new_doc(THREAD_DOCTYPE)
     doc.channel = CHANNEL
     doc.external_thread_id = external_id
     doc.conversation = conversation
     doc.owner_user = owner
+    doc.linked_user = None
+    doc.linked_at = None
     doc.display_name = " ".join(
         part for part in (info.get("first_name"), info.get("last_name")) if part
     ).strip()
@@ -81,7 +89,7 @@ def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
     return doc.as_dict()
 
 
-def _collect_reply(manager, conversation: str, owner: str, text: str) -> str:
+def _collect_reply(manager, conversation: str, user: str, text: str) -> str:
     """Drain the manager stream and keep only the answer text.
 
     SSE framing is stripped: the connector is a text channel, so trace and
@@ -92,7 +100,7 @@ def _collect_reply(manager, conversation: str, owner: str, text: str) -> str:
     for raw in manager.handle_stream(
         user_message=text,
         conversation_id=conversation,
-        user=owner,
+        user=user,
     ):
         line = (raw or "").strip()
         if not line.startswith("data:"):
@@ -200,16 +208,85 @@ def process_message(update: dict) -> dict:
         telegram_client.send_message(chat_id, QUOTA_REPLY)
         return {"success": False, "code": "CONNECTOR_QUOTA_EXHAUSTED"}
 
-    previous_user = frappe.session.user
-    frappe.set_user(owner)
-    try:
-        thread = get_or_create_thread(chat_id, from_user)
-        conversation = thread["conversation"]
+    clean_text = text.strip()
 
+    # 1. Deep link linking handler: /start LINK_<token>
+    if clean_text.startswith("/start LINK_"):
+        raw_token = clean_text[len("/start LINK_"):].strip()
+        from aios_v1.lib.connector.linking import link_thread_to_user, verify_and_consume_token
+
+        success, msg, target_user = verify_and_consume_token(chat_id, raw_token)
+        thread = get_or_create_thread(chat_id, from_user)
+        if success and target_user:
+            link_thread_to_user(chat_id, target_user, thread["name"])
+            thread["linked_user"] = target_user
+            reply = (
+                f"Akun Telegram Anda berhasil ditautkan ke akun AIOS '{target_user}'. "
+                "Sekarang Anda dapat menggunakan layanan karyawan."
+            )
+        else:
+            reply = msg
+
+        telegram_client.send_message(chat_id, reply)
+        return {
+            "success": success,
+            "thread": thread["name"],
+            "conversation": thread["conversation"],
+            "action": "link",
+            "reply": reply,
+        }
+
+    # 2. Greeting /start without token
+    if clean_text == "/start":
+        thread = get_or_create_thread(chat_id, from_user)
+        if thread.get("linked_user"):
+            reply = f"Halo {thread['linked_user']}! Anda terhubung sebagai karyawan. Ada yang bisa dibantu untuk urusan penjualan hari ini?"
+        else:
+            reply = "Halo! Selamat datang di layanan kami. Ada informasi barang atau katalog produk yang ingin Anda tanyakan?"
+        telegram_client.send_message(chat_id, reply)
+        return {
+            "success": True,
+            "thread": thread["name"],
+            "conversation": thread["conversation"],
+            "action": "start",
+            "reply": reply,
+        }
+
+    # 3. Unlink command: /unlink
+    if clean_text == "/unlink":
+        from aios_v1.lib.connector.linking import unlink_thread
+
+        thread = get_or_create_thread(chat_id, from_user)
+        if thread.get("linked_user"):
+            unlink_thread(chat_id)
+            thread["linked_user"] = None
+            reply = "Tautan akun Telegram telah diputuskan. Anda kini dilayani sebagai tamu."
+        else:
+            reply = "Chat Telegram ini belum tertaut ke akun karyawan mana pun."
+
+        telegram_client.send_message(chat_id, reply)
+        return {
+            "success": True,
+            "thread": thread["name"],
+            "conversation": thread["conversation"],
+            "action": "unlink",
+            "reply": reply,
+        }
+
+    # 4. Standard message processing
+    thread = get_or_create_thread(chat_id, from_user)
+    conversation = thread["conversation"]
+    effective_user = thread.get("linked_user") or "Guest"
+
+    previous_user = frappe.session.user
+    previous_channel = getattr(frappe.local, "aios_channel", None)
+    frappe.set_user(effective_user)
+    frappe.local.aios_channel = CHANNEL
+    try:
         telegram_client.send_chat_action(chat_id, "typing")
 
         try:
-            reply = _collect_reply(get_manager(BRANCH), conversation, owner, text)
+            reply = _collect_reply(get_manager(BRANCH), conversation, effective_user, text)
         except Exception as exc:
             log_exception("AIOS Connector Reply", exc=exc, context=f"thread={thread['name']}")
             reply = ""
@@ -245,6 +322,11 @@ def process_message(update: dict) -> dict:
         }
     finally:
         frappe.set_user(previous_user)
+        if previous_channel is None:
+            if hasattr(frappe.local, "aios_channel"):
+                delattr(frappe.local, "aios_channel")
+        else:
+            frappe.local.aios_channel = previous_channel
 
 
 def process_update(update: dict) -> dict:

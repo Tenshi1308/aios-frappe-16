@@ -48,8 +48,9 @@ def create_draft(
     created_by_agent: str = None,
     reason: str = "",
     expires_in_hours: int = 24,
+    user: str = None,
 ):
-    """Simpan draft baru; `user` tidak pernah diambil dari argumen pemanggil."""
+    """Simpan draft baru; `user` diambil dari parameter eksplisit atau sesi aktif."""
     if not task_id or not action_type:
         frappe.throw("task_id dan action_type wajib diisi.")
     if action_type not in ACTION_TYPES:
@@ -66,7 +67,7 @@ def create_draft(
     doc = frappe.get_doc(
         {
             "doctype": DRAFT_DOCTYPE,
-            "user": frappe.session.user,
+            "user": user or frappe.session.user,
             "task_id": task_id,
             "type": action_type,
             "branch": branch,

@@ -36,6 +36,16 @@ from aios_v1.lib.tool_registry import ai_tool, get_tool_context
     },
 )
 def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None):
+    ctx_user = get_tool_context().get("user_id")
+    sess_user = getattr(frappe.session, "user", None)
+    is_guest = (ctx_user == "Guest" or sess_user == "Guest")
+
+    if is_guest:
+        if action_type != "CREATE":
+            return safe_error("Tamu hanya diizinkan membuat draf baru (CREATE).", "ACTION_FORBIDDEN_FOR_GUEST")
+        if doctype not in {"Sales Order", "Quotation"}:
+            return safe_error("Tamu hanya diizinkan membuat draf pemesanan Sales Order atau Quotation.", "DOCTYPE_FORBIDDEN_FOR_GUEST")
+
     if action_type not in {"CREATE", "UPDATE_DRAFT", "CANCEL_AND_AMEND"}:
         return safe_error("Jenis aksi draft tidak didukung.", "ACTION_TYPE_UNSUPPORTED")
     if doctype not in ALLOWED_DRAFT_DOCTYPES:
@@ -73,6 +83,10 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
             "before": snapshot_fields(target, data),
         })
     tool_context = get_tool_context()
+    draft_owner = None
+    if is_guest:
+        draft_owner = frappe.db.get_single_value("AIOS Telegram Setting", "owner_user")
+
     draft = create_draft(
         task_id=f"AIOS-{uuid.uuid4()}",
         action_type=action_type,
@@ -80,6 +94,7 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
         branch=tool_context.get("branch"),
         created_by_agent=tool_context.get("worker_key"),
         reason=reason,
+        user=draft_owner,
     )
     return {
         "status": "PENDING_APPROVAL",
