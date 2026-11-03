@@ -336,6 +336,68 @@ class TestConnectorOffset(ConnectorTestBase):
         get_updates.assert_not_called()
 
 
+class TestConnectorPollerLock(ConnectorTestBase):
+    """Only one poller may run per site (docs/02 §2.4)."""
+
+    def test_second_poller_exits_without_polling(self):
+        """A held lock makes the second process log and return, without polling.
+
+        `_run_loop` is patched so that a regression (lock bypassed) fails the
+        assertion instead of blocking the test runner in a real poll loop.
+        """
+        from frappe.utils.synchronization import filelock
+
+        with patch.object(telegram_client, "is_configured", return_value=True), \
+             patch.object(poller, "_run_loop") as run_loop, \
+             patch.object(poller, "poll_once") as poll_once, \
+             patch.object(poller, "log_exception") as log_mock, \
+             filelock(poller.LOCK_NAME, timeout=0):
+            poller.run_forever()
+
+        run_loop.assert_not_called()
+        poll_once.assert_not_called()
+        log_mock.assert_called()
+        self.assertEqual(log_mock.call_args.args[0], "AIOS Connector Lock")
+
+    def test_lock_is_held_during_loop_and_released_after(self):
+        """The loop runs inside the lock; the lock is free once it returns."""
+        from filelock import FileLock, Timeout
+        from frappe.utils import get_site_path
+
+        lock_path = str(get_site_path("locks", f"{poller.LOCK_NAME}.lock"))
+        held_during_loop = {}
+
+        def fake_loop():
+            probe = FileLock(lock_path, timeout=0)
+            try:
+                probe.acquire()
+            except Timeout:
+                held_during_loop["value"] = True
+            else:
+                held_during_loop["value"] = False
+                probe.release()
+
+        with patch.object(telegram_client, "is_configured", return_value=True), \
+             patch.object(poller, "_run_loop", side_effect=fake_loop):
+            poller.run_forever()
+
+        self.assertTrue(held_during_loop.get("value"), "loop harus berjalan di dalam lock")
+
+        # Released afterwards: a fresh acquire with timeout=0 must succeed.
+        probe = FileLock(lock_path, timeout=0)
+        probe.acquire()
+        probe.release()
+
+    def test_unconfigured_poller_takes_no_lock(self):
+        """No token means no lock file churn and no loop."""
+        with patch.object(telegram_client, "is_configured", return_value=False), \
+             patch.object(poller, "log_exception") as log_mock, \
+             patch.object(poller, "_run_loop") as run_loop:
+            poller.run_forever()
+        run_loop.assert_not_called()
+        log_mock.assert_called_once()
+
+
 class TestConnectorRulesFromSite(ConnectorTestBase):
     def test_config_override_is_applied(self):
         import json

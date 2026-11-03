@@ -29,6 +29,8 @@ SETTING_DOCTYPE = "AIOS Telegram Setting"
 POLL_TIMEOUT = telegram_client.POLL_TIMEOUT
 IDLE_SLEEP = 1
 ERROR_SLEEP = 3
+# One poller per site. Held for the whole process lifetime by `run_forever`.
+LOCK_NAME = "aios_connector_poller"
 
 _STOP = False
 
@@ -51,7 +53,9 @@ def _store_offset(value: int) -> None:
 def poll_once() -> int:
     """Fetch and process one batch. Returns how many updates were handled.
 
-    Safe to call from tests and from a cron as a watchdog: it never loops.
+    Safe to call from tests and from a cron as a watchdog: it never loops. It
+    does not take the process lock — `run_forever` holds that for its whole
+    lifetime, and a one-shot call is bounded by a single batch.
     """
     if not telegram_client.is_configured():
         return 0
@@ -77,16 +81,12 @@ def poll_once() -> int:
     return processed
 
 
-def run_forever() -> None:
-    """Blocking loop for the managed process. Stops cleanly on SIGTERM/SIGINT."""
+def _run_loop() -> None:
+    """The actual poll loop. Only ever runs while holding the process lock."""
     global _STOP
     _STOP = False
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
-
-    if not telegram_client.is_configured():
-        log_exception("AIOS Connector Start", context="token/aktif belum diisi; poller tidak jalan")
-        return
 
     try:
         telegram_client.delete_webhook()
@@ -104,3 +104,29 @@ def run_forever() -> None:
             time.sleep(IDLE_SLEEP)
 
     log_exception("AIOS Connector Stop", context="poller berhenti")
+
+
+def run_forever() -> None:
+    """Blocking loop for the managed process, guarded by a single-process lock.
+
+    Two pollers on the same bot would race on `getUpdates` and on the offset,
+    producing duplicate replies and duplicate documents. The lock is held for the
+    whole lifetime; a second process gets `LockTimeoutError` immediately
+    (timeout 0), logs, and returns without polling anything.
+    """
+    from frappe.utils.file_lock import LockTimeoutError
+    from frappe.utils.synchronization import filelock
+
+    if not telegram_client.is_configured():
+        log_exception("AIOS Connector Start", context="token/aktif belum diisi; poller tidak jalan")
+        return
+
+    try:
+        with filelock(LOCK_NAME, timeout=0):
+            _run_loop()
+    except LockTimeoutError:
+        log_exception(
+            "AIOS Connector Lock",
+            context=f"{LOCK_NAME} sudah dipegang proses lain; proses ini keluar tanpa polling",
+        )
+        return

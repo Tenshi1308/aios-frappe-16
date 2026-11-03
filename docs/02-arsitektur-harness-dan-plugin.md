@@ -98,17 +98,20 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 |---|---|
 | Kanal **tidak pernah** mengeksekusi aksi tulis | Hanya `Pending Action Draft` yang dibuat oleh tool; submit/cancel hanya lewat tombol Approve di Ekasa Desk (`docs/04` Alur 5) |
 | Inline-keyboard checkout **tidak ada** | `callback_query` diabaikan eksplisit (`CONNECTOR_CALLBACK_IGNORED`), tidak pernah dieksekusi |
-| Tidak ada auto-create `Lead`/`Customer` | `chat_id` hanya dipetakan ke pihak yang sudah ada setelah persetujuan manusia |
+| Tidak ada auto-create `Lead`/`Customer` | Tidak ada pembuatan pihak otomatis **sama sekali** di v1 — karena tidak ada mapping pihak (lihat baris berikut). `party_type`/`party` ada di skema tetapi belum diisi siapa pun |
+| **v1 melayani `chat_id` mana pun** (batas yang diakui) | Thread dibuat per `chat_id` dengan nama tampilan dari profil Telegram; **tidak ada** mapping ke `Customer`/`Lead`/`Contact` dan tidak ada gerbang pihak. Siapa pun yang menemukan bot bisa memulai percakapan dan mendapat jawaban read-only dari data company site. Gate party = pekerjaan berikutnya, bukan penghalang v1 |
 | Identitas tidak bisa dipalsukan | Dispatch berjalan sebagai `owner_user` dari `AIOS Telegram Setting`; `frappe.set_user` dipulihkan di `finally`. Tanpa itu worker Frappe berjalan sebagai `Administrator` dan melewati semua izin |
 | Kuota site berlaku | `check_site_token_quota()` dipanggil sebelum LLM; kuota habis = balasan aman, tanpa panggilan model |
 | Token bot tidak pernah bocor | Dibaca lewat `doc.get_password("bot_token")` (field `Password`); tidak pernah masuk log, pesan error, atau payload respons |
 
 **Model data.** Transkrip tunggal di `AIOS Message` (percakapan `branch="sales"`). Dua DocType baru menjadi jembatan:
 
-- **`AIOS Channel Thread`** — `channel` + `external_thread_id` (unik, terindeks) → `conversation` (`AIOS Conversation`), `owner_user` (pemilik workspace, dasar scoping izin), `party_type`/`party` (Contact/Customer/Lead yang sudah ada), `status`, `last_inbound_at`, `last_outbound_at`.
+- **`AIOS Channel Thread`** — `channel` + `external_thread_id` (unik, terindeks) → `conversation` (`AIOS Conversation`), `owner_user` (pemilik workspace, dasar scoping izin), `party_type`/`party` (**belum diisi di v1**; skema disiapkan untuk gate pihak), `status`, `last_inbound_at`, `last_outbound_at`.
 - **`AIOS Conversation Flag`** — `thread`, `rule_key`, `severity`, `status` (Open/Closed), `label`, `excerpt`, `message_ids` (bukti), `reason_text`, `closed_by`/`closed_at`/`closing_note`.
 
 `AIOS Telegram Session` dan `AIOS Telegram Message` **dipensiunkan**; `AIOS Telegram Setting` dipertahankan sebagai pemegang kredensial + kebijakan kanal (`owner_user`, `connector_config_json`, `poll_offset`).
+
+**Pekerjaan berikutnya — gate pihak (bukan penghalang v1).** Yang belum ada dan tidak diklaim ada: mapping eksplisit `chat_id` → `Customer`/`Lead`/`Contact`, persetujuan PIC sebelum percakapan dilayani, dan konsekuensi ERPNext dari keterkaitan itu (mis. draft otomatis atas nama Customer tersebut). Bentuk yang dituju mengikuti pola token-paste yang sudah dipakai `docs/04` Alur 1/6 untuk aktivasi user: admin/PIC menempelkan kode sekali pakai ke bot, backend memverifikasi kode itu lalu menautkan `chat_id` ke pihak yang ditunjuk. Selama itu belum dibangun, v1 memperlakukan setiap `chat_id` sebagai lawan bicara anonim yang sah, dan itu tertulis di baris batas di atas.
 
 **Monitoring otonom (audit + fraud).**
 
@@ -129,6 +132,8 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 | Email | best-effort | site klien mungkin belum punya `Email Account` outgoing |
 
 **Transport: long-poll terkelola, bukan `scheduler_events`.** Scheduler Frappe tidur sampai kelipatan `DEFAULT_SCHEDULER_TICK` (240 detik), sehingga cron per-menit pun dieksekusi tiap ~4 menit — tidak memenuhi kebutuhan chat. Proses terpisah menjalankan `aios_v1.lib.connector.poller.run_forever` (long-poll 25 s), memanggil `deleteWebhook` saat start (`getUpdates` dan webhook saling eksklusif), dan menyimpan offset di `AIOS Telegram Setting.poll_offset` (durable; redis cache lama memakai `save ""` + `allkeys-lru` sehingga restart bisa memutar ulang update).
+
+**Satu poller per site.** `run_forever` memegang `filelock("aios_connector_poller")` (`frappe.utils.synchronization.filelock`) selama seluruh umur proses. Proses kedua memakai `timeout=0` sehingga langsung mendapat `LockTimeoutError`, menulis satu entri Error Log, dan keluar **tanpa** polling. Tanpa kunci ini, dua poller akan berebut `getUpdates` dan offset — balasan ganda dan dokumen ganda. `poll_once()` sengaja tidak mengambil kunci: ia dipakai test dan watchdog cron, dan dibatasi satu batch.
 
 **Webhook di luar scope v1:** butuh HTTPS + sertifikat valid (CN persis) + port 443/80/88/8443 tanpa redirect, sementara bench lokal tidak punya URL publik. <https://core.telegram.org/bots/faq>
 

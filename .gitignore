@@ -58,3 +58,6 @@ aios_v1/public/admin/
 
 # Aider AI Chat
 .aider*
+
+# Alat verifikasi UI lokal (port CDP + screenshot), bukan artefak produk
+artifacts/
