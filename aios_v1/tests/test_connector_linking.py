@@ -118,6 +118,18 @@ class TestConnectorLinking(FrappeTestCase):
         with self.assertRaises(frappe.PermissionError):
             linking.create_link_token(self.other_user)
 
+    def test_missing_bot_username_rejected(self):
+        """3b. Generate link token tanpa bot_username ditolak dengan BOT_USERNAME_MISSING."""
+        frappe.set_user(self.employee)
+        frappe.db.set_value(SETTING, SETTING, "bot_username", "")
+        try:
+            linking.create_link_token(self.employee)
+            self.fail("Harus gagal saat bot_username kosong")
+        except linking.LinkError as exc:
+            self.assertEqual(exc.code, "BOT_USERNAME_MISSING")
+        finally:
+            frappe.db.set_value(SETTING, SETTING, "bot_username", "test_aios_bot")
+
     def test_chat_already_linked_rejected(self):
         """4. Chat sudah tertaut ditolak tautan baru."""
         # Tautkan dulu chat ke employee

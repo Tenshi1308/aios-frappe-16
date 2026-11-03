@@ -25,7 +25,6 @@
    "label": "Bot Token"
   },
   {
-   "default": "aios_client_support_bot",
    "fieldname": "bot_username",
    "fieldtype": "Data",
    "label": "Bot Username"
