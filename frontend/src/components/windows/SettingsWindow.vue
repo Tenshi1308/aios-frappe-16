@@ -631,10 +631,10 @@ async function handleUnlink() {
 }
 
 .badge-linked {
-  background: rgba(34, 197, 94, 0.15);
-  color: #16a34a;
+  background: var(--ok-soft);
+  color: var(--ok);
   padding: 2px 8px;
-  border-radius: var(--radius-sm, 4px);
+  border-radius: var(--radius-4, 4px);
   font-size: 11px;
   font-weight: 600;
 }
@@ -665,28 +665,28 @@ async function handleUnlink() {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  background: #0088cc;
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   border: none;
   padding: 7px 14px;
   border-radius: 6px;
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .btn-primary-tg:hover {
-  background: #0077b5;
+  opacity: 0.9;
 }
 
 .btn-secondary-copy {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--surface-2, #f1f5f9);
-  color: var(--fg, #0f172a);
-  border: 1px solid var(--border, #cbd5e1);
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--line);
   padding: 7px 12px;
   border-radius: 6px;
   font-size: 12.5px;
@@ -698,8 +698,8 @@ async function handleUnlink() {
   display: inline-flex;
   align-items: center;
   background: transparent;
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--bad);
+  border: 1px solid var(--bad);
   padding: 5px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -709,8 +709,8 @@ async function handleUnlink() {
 }
 
 .btn-danger-outline:hover {
-  background: rgba(239, 68, 68, 0.08);
-  border-color: #ef4444;
+  background: var(--bad-soft);
+  border-color: var(--bad);
 }
 
 .tg-actions-flow {
@@ -720,9 +720,9 @@ async function handleUnlink() {
 }
 
 .tg-warning-banner {
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: #b45309;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn);
+  color: var(--warn);
   padding: 8px 12px;
   border-radius: 6px;
   font-size: 12px;
@@ -737,7 +737,7 @@ async function handleUnlink() {
 }
 
 .tg-error {
-  color: #ef4444;
+  color: var(--bad);
   font-size: 12px;
   margin: 6px 0 0 0;
 }

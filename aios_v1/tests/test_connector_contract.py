@@ -99,6 +99,7 @@ class TestConnectorModulesExist(unittest.TestCase):
             "telegram_client.py",
             "poller.py",
             "dispatch.py",
+            "linking.py",
             "rules.py",
             "audit.py",
             "redact.py",

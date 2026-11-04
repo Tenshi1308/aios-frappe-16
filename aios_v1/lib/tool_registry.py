@@ -347,20 +347,23 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
 
     tool_data = _TOOL_REGISTRY[name]
 
-    eff_user = (context or {}).get("user") or (context or {}).get("user_id") or getattr(frappe.session, "user", None)
-    guest_allowed = {"erpnext_doc_list", "erpnext_doc_get", "erpnext_doctype_schema", "erpnext_action_draft_create", "get_current_time"}
-    if eff_user == "Guest" and name not in guest_allowed:
-        return _log_tool_denial("GUEST_TOOL_FORBIDDEN", name)
-
-    if getattr(frappe.local, "aios_channel", None) == "telegram" and name not in guest_allowed:
-        return _log_tool_denial("TOOL_FORBIDDEN_ON_TELEGRAM", name)
-
-    if name == "orchestrator_delegate_to_subagent":
-        depth = (context or {}).get("delegation_depth", 0)
-        if (worker_key not in {"manager", "ai_manager", f"{branch}_manager"}
-                or depth != MAX_DELEGATION_DEPTH - 2):
-            return _log_tool_denial("DELEGATION_FORBIDDEN", name)
     try:
+        ctx = _build_tool_context(context)
+
+        eff_user = ctx.get("user_id") or getattr(frappe.session, "user", None)
+        guest_allowed = {"erpnext_doc_list", "erpnext_doc_get", "erpnext_doctype_schema", "erpnext_action_draft_create", "get_current_time"}
+        if eff_user == "Guest" and name not in guest_allowed:
+            return _log_tool_denial("GUEST_TOOL_FORBIDDEN", name)
+
+        if getattr(frappe.local, "aios_channel", None) == "telegram" and name not in guest_allowed:
+            return _log_tool_denial("TOOL_FORBIDDEN_ON_TELEGRAM", name)
+
+        if name == "orchestrator_delegate_to_subagent":
+            depth = (context or {}).get("delegation_depth", 0)
+            if (worker_key not in {"manager", "ai_manager", f"{branch}_manager"}
+                    or depth != MAX_DELEGATION_DEPTH - 2):
+                return _log_tool_denial("DELEGATION_FORBIDDEN", name)
+
         if tool_data.get("branch") and not _worker_access(tool_data, branch, worker_key):
             return _log_tool_denial("TOOL_WORKER_FORBIDDEN", name)
         if tool_data.get("plugin_key"):
@@ -372,8 +375,6 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         kwargs = json.loads(arguments_json)
         if not isinstance(kwargs, dict):
             raise ValueError("arguments_json harus object JSON")
-
-        ctx = _build_tool_context(context)
 
         for key in _HIDDEN_TOOL_PARAMS:
             kwargs.pop(key, None)

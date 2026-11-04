@@ -60,10 +60,14 @@ class ConnectorTestBase(IntegrationTestCase):
         self._orig_active = frappe.db.get_single_value(SETTING, "is_active")
         frappe.db.set_value(SETTING, SETTING, "is_active", 1)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)
+        dispatch.clear_rate_limit(CHAT_ID)
+        dispatch.clear_rate_limit(CHAT_ID_B)
         self._cleanup_threads()
 
     def tearDown(self):
         self._cleanup_threads()
+        dispatch.clear_rate_limit(CHAT_ID)
+        dispatch.clear_rate_limit(CHAT_ID_B)
         frappe.db.set_value(SETTING, SETTING, "owner_user", self._orig_owner)
         frappe.db.set_value(SETTING, SETTING, "is_active", self._orig_active)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)

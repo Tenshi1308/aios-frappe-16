@@ -779,6 +779,28 @@ def _handle_api_request():
                 return json_error(exc.status, exc.code, exc.message)
             return json_response(result)
 
+        if path == "api/connector/orders" and method == "GET":
+            from aios_v1.lib.connector.views import list_orders
+
+            return json_response({"orders": list_orders(sess["user"], unread_only=True)})
+
+        if path == "api/connector/order/review" and method == "POST":
+            from aios_v1.lib.connector.views import review_order
+
+            body = frappe.request.get_json(force=True, silent=True) or {}
+            if not body and frappe.request.data:
+                try:
+                    body = json.loads(frappe.request.data.decode("utf-8"))
+                except Exception as exc:
+                    log_exception("AIOS Dispatcher: body connector order review tidak valid", exc=exc)
+                    return json_response({"error": "Body permintaan tidak valid"}, 400)
+            try:
+                result = review_order(sess["user"], body.get("notification_id"))
+            except WorkspaceError as exc:
+                log_exception("AIOS Connector Order Review", context=exc.code)
+                return json_error(exc.status, exc.code, exc.message)
+            return json_response(result)
+
         if path == "api/connector/link-token" and method == "POST":
             from aios_v1.lib.connector.linking import LinkError, create_link_token
 
@@ -792,6 +814,7 @@ def _handle_api_request():
                 log_exception("AIOS Connector Link Token", exc=exc, context=exc.code)
                 return json_error(400, exc.code, exc.message)
             except frappe.PermissionError as exc:
+                log_exception("AIOS Connector Link Token Permission", exc=exc)
                 return json_error(403, "FORBIDDEN", str(exc))
 
         if path == "api/connector/link-status" and method == "GET":

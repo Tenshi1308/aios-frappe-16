@@ -103,6 +103,7 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 | Identitas tidak bisa dipalsukan | Dispatch berjalan sebagai `owner_user` dari `AIOS Telegram Setting`; `frappe.set_user` dipulihkan di `finally`. Tanpa itu worker Frappe berjalan sebagai `Administrator` dan melewati semua izin |
 | Kuota site berlaku | `check_site_token_quota()` dipanggil sebelum LLM; kuota habis = balasan aman, tanpa panggilan model |
 | Token bot tidak pernah bocor | Dibaca lewat `doc.get_password("bot_token")` (field `Password`); tidak pernah masuk log, pesan error, atau payload respons |
+| Batas pesan berlapis per `chat_id` | 15 per menit, 60 per jam, dan 200 per hari per `chat_id` dihitung terisolasi lewat `frappe.cache()`; batas tercapai = balasan ramah sementara, pesan diabaikan tanpa memanggil LLM dan tanpa mutasi dokumen |
 
 **Model data.** Transkrip tunggal di `AIOS Message` (percakapan `branch="sales"`). Dua DocType baru menjadi jembatan:
 
@@ -122,13 +123,18 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 
 **Audit ringan (deterministik, `audit.py`):** response time rata-rata + jumlah di atas target, chat yang masih menunggu jawaban, dan checklist SOP. Checklist adalah **aturan milik konektor** (`connector_config_json.sop_checklist`), bukan skill markdown agent — skill sales belum aktif karena tool yang dirujuk belum terdaftar, jadi kepatuhan SOP agent tidak boleh diklaim dari sini.
 
-**Notifikasi "instan".** Memakai pipeline resmi Frappe: `enqueue_create_notification` → `Notification Log` (scoped `for_user`) → `after_insert` mem-publish realtime dan mengirim email bila tipe diizinkan. Tipe `AIOS Channel Alert` dibuat + di-seed ke preferensi user oleh `after_migrate`.
+**Notifikasi "instan" (Flag Percakapan & Draf Pesanan).** Memakai pipeline resmi Frappe: `enqueue_create_notification` → `Notification Log` (scoped `for_user`) → `after_insert` mem-publish realtime dan mengirim email bila tipe diizinkan. Tipe `AIOS Channel Alert` dibuat + di-seed ke preferensi user oleh `after_migrate`.
+- **Penerima:** `owner_user` yang ditunjuk di `AIOS Telegram Setting`.
+- **Dua jenis item:**
+  1. **Flag Percakapan:** Pelanggaran aturan SOP/fraud (`AIOS Conversation Flag`).
+  2. **Draf Pesanan Baru:** Saat customer tamu membuat draf `Sales Order` atau `Quotation` (`Pending Action Draft`), memuat nama customer/chat yang sah, penegasan status catatan pembeli, dan waktu pembuatan.
+- **Bell Taskbar & Jendela Peringatan:** Dot bell menghitung gabungan flag `Open` dan pesanan belum dibaca (dibatasi `99+` bila > 99). Jendela `Peringatan Kanal` (`ChannelFlagsWindow.vue`) menampilkan kedua daftar, dengan tombol "Buka Draf" (`approval:<draft_id>`) dan "Tandai sudah ditinjau" yang langsung menurunkan dot.
 
 | Target | Angka | Catatan |
 |---|---|---|
-| Flag tersimpan | ≤ 5 detik | transaksi yang sama dengan pemrosesan pesan |
-| Baris `Notification Log` | ≤ 10 detik | pickup worker |
-| Bell menampilkan | ≤ 30 detik | poll 30 s; desk belum berlangganan realtime |
+| Flag & Draf Notifikasi tersimpan | ≤ 5 detik | transaksi yang sama dengan pembuatan flag / draf |
+| Baris `Notification Log` | ≤ 10 detik | pickup worker Frappe |
+| Bell Taskbar menampilkan | ≤ 30 detik | poll 30 s dan instan via event saat ditinjau |
 | Email | best-effort | site klien mungkin belum punya `Email Account` outgoing |
 
 **Transport: long-poll terkelola, bukan `scheduler_events`.** Scheduler Frappe tidur sampai kelipatan `DEFAULT_SCHEDULER_TICK` (240 detik), sehingga cron per-menit pun dieksekusi tiap ~4 menit — tidak memenuhi kebutuhan chat. Proses terpisah menjalankan `aios_v1.lib.connector.poller.run_forever` (long-poll 25 s), memanggil `deleteWebhook` saat start (`getUpdates` dan webhook saling eksklusif), dan menyimpan offset di `AIOS Telegram Setting.poll_offset` (durable; redis cache lama memakai `save ""` + `allkeys-lru` sehingga restart bisa memutar ulang update).
@@ -137,7 +143,7 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 
 **Webhook di luar scope v1:** butuh HTTPS + sertifikat valid (CN persis) + port 443/80/88/8443 tanpa redirect, sementara bench lokal tidak punya URL publik. <https://core.telegram.org/bots/faq>
 
-**Permukaan API** (`/api/connector/*`, wajib sesi): `health`, `threads`, `flags`, `flag/close`. Tidak ada endpoint yang menulis ERPNext.
+**Permukaan API** (`/api/connector/*`, wajib sesi): `health`, `threads`, `flags`, `flag/close`, `orders`, `order/review`, `link-token`, `link-status`, `unlink`. Tidak ada endpoint yang menulis ERPNext.
 
 **Non-scope v1:** checkout inline-keyboard, submit/cancel dari chat, auto-create Lead/Customer, media/grup/broadcast/multi-bot, 8 cabang lain, webhook produksi, AI Automation Drive/Sheets, AI Agents Supervisor, kanal WA/IG/Email, dan realtime socket.io di desk.
 

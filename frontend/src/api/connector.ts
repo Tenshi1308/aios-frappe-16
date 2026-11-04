@@ -35,12 +35,26 @@ export interface ChannelFlag {
   closing_note?: string;
 }
 
+export interface ChannelOrderNotification {
+  name: string;
+  draft_id: string;
+  doctype: string;
+  customer_name: string;
+  subject: string;
+  creation: string;
+  read: number;
+}
+
 interface RawThreads {
   threads?: ChannelThread[];
 }
 
 interface RawFlags {
   flags?: ChannelFlag[];
+}
+
+interface RawOrders {
+  orders?: ChannelOrderNotification[];
 }
 
 export async function fetchThreads(): Promise<ChannelThread[]> {
@@ -52,6 +66,28 @@ export async function fetchFlags(status?: 'Open' | 'Closed'): Promise<ChannelFla
   const query = status ? `?status=${encodeURIComponent(status)}` : '';
   const data = await apiFetch(`/api/connector/flags${query}`);
   return (data as RawFlags)?.flags ?? [];
+}
+
+export async function fetchOrderNotifications(unreadOnly = true): Promise<ChannelOrderNotification[]> {
+  const query = unreadOnly ? '?unread=1' : '';
+  const data = await apiFetch(`/api/connector/orders${query}`);
+  return (data as RawOrders)?.orders ?? [];
+}
+
+export async function reviewOrderNotification(
+  notificationId: string,
+  csrfToken: string,
+): Promise<{ success: boolean }> {
+  if (!notificationId) throw new ApiError('Notifikasi wajib dipilih.');
+  const data = await apiFetch('/api/connector/order/review', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Frappe-CSRF-Token': csrfToken,
+    },
+    body: JSON.stringify({ notification_id: notificationId }),
+  });
+  return (data as { success: boolean }) ?? { success: false };
 }
 
 export async function closeFlag(

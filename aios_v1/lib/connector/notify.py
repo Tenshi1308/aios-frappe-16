@@ -11,6 +11,8 @@ outgoing Email Account, and `send_notification_email` then only logs).
 
 from __future__ import annotations
 
+import json
+
 import frappe
 
 from aios_v1.lib.error_utils import log_exception
@@ -75,4 +77,62 @@ def notify_flag(flag) -> bool:
         return True
     except Exception as exc:
         log_exception("AIOS Connector Notification", exc=exc, context=f"flag={flag.name}")
+        return False
+
+
+def notify_order_draft(draft, thread: dict | None = None) -> bool:
+    """Send one in-app notification to the channel owner for an order draft. Never raises."""
+    try:
+        from frappe.desk.doctype.notification_log.notification_log import (
+            enqueue_create_notification,
+        )
+
+        owner = frappe.db.get_single_value("AIOS Telegram Setting", "owner_user")
+        if not owner:
+            log_exception("AIOS Connector Order Notification", context="owner_user belum diisi")
+            return False
+
+        target_doctype = "Pesanan"
+        if hasattr(draft, "payload") and draft.payload:
+            try:
+                parsed_payload = json.loads(draft.payload) if isinstance(draft.payload, str) else draft.payload
+                target_doctype = parsed_payload.get("doctype") or "Pesanan"
+            except (TypeError, ValueError) as exc:
+                log_exception("AIOS Order Draft Payload Parse", exc=exc, context=str(getattr(draft, "name", "")))
+
+        customer_label = ""
+        if thread:
+            customer_label = (thread.get("display_name") or "").strip()
+            if not customer_label and thread.get("username"):
+                customer_label = f"@{thread.get('username')}"
+            if not customer_label and thread.get("external_thread_id"):
+                customer_label = f"Chat ID {thread.get('external_thread_id')}"
+        if not customer_label:
+            customer_label = "Customer Telegram"
+
+        creation_dt = getattr(draft, "creation", None) or frappe.utils.now_datetime()
+        creation_str = frappe.utils.format_datetime(creation_dt)
+
+        title = f"Draf Pesanan Baru: {target_doctype} - {customer_label}"
+        description = (
+            f"<p>Draf <b>{target_doctype}</b> baru dibuat oleh customer <b>{frappe.utils.escape_html(customer_label)}</b>.</p>"
+            f"<p>Waktu dibuat: {creation_str}</p>"
+            f"<p>Catatan customer mau beli yang menunggu tindak lanjut staf.</p>"
+        )
+
+        enqueue_create_notification(
+            [owner],
+            {
+                "type": NOTIFICATION_TYPE,
+                "title": title,
+                "description": description,
+                "document_type": "Pending Action Draft",
+                "document_name": draft.name,
+                "link": f"/desk#Form/Pending Action Draft/{draft.name}",
+            },
+            dedupe_on=["document_name"],
+        )
+        return True
+    except Exception as exc:
+        log_exception("AIOS Connector Order Notification", exc=exc, context=f"draft={getattr(draft, 'name', None)}")
         return False

@@ -48,7 +48,8 @@ def get_expiry_seconds() -> int:
     try:
         val_int = int(val) if val is not None else DEFAULT_EXPIRY_SECONDS
         return val_int if val_int > 0 else DEFAULT_EXPIRY_SECONDS
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        frappe.log_error(title="AIOS Connector Linking Expiry Parse", message=str(exc))
         return DEFAULT_EXPIRY_SECONDS
 
 
@@ -110,7 +111,8 @@ def is_locked_out(chat_id: str | int) -> bool:
     attempts = frappe.cache().get_value(key)
     try:
         return bool(attempts and int(attempts) >= MAX_BRUTE_FORCE_ATTEMPTS)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        frappe.log_error(title="AIOS Connector Linking Lockout Parse", message=str(exc))
         return False
 
 
@@ -120,7 +122,8 @@ def record_attempt_failure(chat_id: str | int) -> int:
     attempts = frappe.cache().get_value(key)
     try:
         count = int(attempts) if attempts else 0
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        frappe.log_error(title="AIOS Connector Linking Attempt Count Parse", message=str(exc))
         count = 0
     count += 1
     frappe.cache().set_value(key, str(count), expires_in_sec=LOCKOUT_SECONDS)

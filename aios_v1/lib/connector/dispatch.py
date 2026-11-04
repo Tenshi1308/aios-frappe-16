@@ -15,6 +15,7 @@ set explicitly and restored in `finally`.
 from __future__ import annotations
 
 import json
+import time
 
 import frappe
 from frappe.utils import now_datetime
@@ -35,6 +36,68 @@ CONVERSATION_DOCTYPE = "AIOS Conversation"
 NO_OWNER_REPLY = "Maaf, layanan ini belum siap. Silakan hubungi admin."
 BUSY_REPLY = "Maaf, sedang ada kendala di sistem kami. Boleh coba lagi sebentar lagi?"
 QUOTA_REPLY = "Maaf, layanan sedang tidak tersedia. Silakan hubungi admin."
+RATE_LIMIT_MSG = "Maaf, Anda telah mencapai batas pengiriman pesan sementara. Mohon tunggu beberapa saat sebelum mengirim pesan kembali."
+
+RATE_LIMIT_MINUTE = 15
+RATE_LIMIT_HOUR = 60
+RATE_LIMIT_DAY = 200
+
+
+def check_and_increment_rate_limit(chat_id: str | int) -> tuple[bool, str | None]:
+    """Enforce multi-tiered rate limits per chat: 15/min, 60/hr, 200/day.
+
+    Counts are isolated per chat_id in frappe.cache() using time-bucket keys.
+    Returns (allowed: bool, warning_message: str | None).
+    """
+    chat_str = str(chat_id)
+    now = time.time()
+    m_bucket = int(now // 60)
+    h_bucket = int(now // 3600)
+    d_bucket = int(now // 86400)
+
+    cache = frappe.cache()
+    key_m = f"aios_tg_rate_m:{chat_str}:{m_bucket}"
+    key_h = f"aios_tg_rate_h:{chat_str}:{h_bucket}"
+    key_d = f"aios_tg_rate_d:{chat_str}:{d_bucket}"
+
+    def _get_count(k: str) -> int:
+        val = cache.get_value(k)
+        try:
+            return int(val) if val is not None else 0
+        except (TypeError, ValueError) as exc:
+            frappe.log_error(title="AIOS Rate Limit Count Error", message=str(exc))
+            return 0
+
+    c_m = _get_count(key_m)
+    c_h = _get_count(key_h)
+    c_d = _get_count(key_d)
+
+    if c_m >= RATE_LIMIT_MINUTE or c_h >= RATE_LIMIT_HOUR or c_d >= RATE_LIMIT_DAY:
+        warn_key = f"aios_tg_rate_warned:{chat_str}"
+        already_warned = cache.get_value(warn_key)
+        if not already_warned:
+            cache.set_value(warn_key, "1", expires_in_sec=60)
+            return False, RATE_LIMIT_MSG
+        return False, None
+
+    cache.set_value(key_m, str(c_m + 1), expires_in_sec=120)
+    cache.set_value(key_h, str(c_h + 1), expires_in_sec=7200)
+    cache.set_value(key_d, str(c_d + 1), expires_in_sec=172800)
+    return True, None
+
+
+def clear_rate_limit(chat_id: str | int) -> None:
+    """Clear rate limit counters for chat_id (e.g. for testing or reset)."""
+    chat_str = str(chat_id)
+    now = time.time()
+    cache = frappe.cache()
+    m_bucket = int(now // 60)
+    h_bucket = int(now // 3600)
+    d_bucket = int(now // 86400)
+    cache.delete_value(f"aios_tg_rate_m:{chat_str}:{m_bucket}")
+    cache.delete_value(f"aios_tg_rate_h:{chat_str}:{h_bucket}")
+    cache.delete_value(f"aios_tg_rate_d:{chat_str}:{d_bucket}")
+    cache.delete_value(f"aios_tg_rate_warned:{chat_str}")
 
 
 class ConnectorConfigError(Exception):
@@ -196,6 +259,12 @@ def process_message(update: dict) -> dict:
     if not text or chat_id is None:
         return {"success": False, "code": "CONNECTOR_IGNORED"}
 
+    allowed, rate_limit_warning = check_and_increment_rate_limit(chat_id)
+    if not allowed:
+        if rate_limit_warning:
+            telegram_client.send_message(chat_id, rate_limit_warning)
+        return {"success": False, "code": "CONNECTOR_RATE_LIMITED"}
+
     try:
         owner = _owner_user()
     except ConnectorConfigError as exc:
@@ -280,8 +349,10 @@ def process_message(update: dict) -> dict:
 
     previous_user = frappe.session.user
     previous_channel = getattr(frappe.local, "aios_channel", None)
+    previous_thread = getattr(frappe.local, "aios_channel_thread", None)
     frappe.set_user(effective_user)
     frappe.local.aios_channel = CHANNEL
+    frappe.local.aios_channel_thread = thread
     try:
         telegram_client.send_chat_action(chat_id, "typing")
 
@@ -327,6 +398,11 @@ def process_message(update: dict) -> dict:
                 delattr(frappe.local, "aios_channel")
         else:
             frappe.local.aios_channel = previous_channel
+        if previous_thread is None:
+            if hasattr(frappe.local, "aios_channel_thread"):
+                delattr(frappe.local, "aios_channel_thread")
+        else:
+            frappe.local.aios_channel_thread = previous_thread
 
 
 def process_update(update: dict) -> dict:

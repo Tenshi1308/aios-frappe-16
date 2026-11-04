@@ -3,7 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { useWindowManager } from '../../composables/useWindowManager';
-import { fetchFlags } from '../../api/connector';
+import { fetchFlags, fetchOrderNotifications } from '../../api/connector';
 import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
 
@@ -19,30 +19,42 @@ onMounted(() => {
 });
 onUnmounted(() => window.clearInterval(timer));
 
-// Channel alert badge: the desk has no realtime subscription yet, so the count
-// is refreshed on a timer (docs/02 §2.4 "instan" = ≤ 30 s for the bell).
-const openFlagCount = ref(0);
+// Channel alert badge: flags Open + unread order notifications
+// Refreshed on a 30s timer and whenever an 'aios:bell-refresh' event is fired.
+const bellCount = ref(0);
 let flagTimer: number | undefined;
 
-async function refreshFlags() {
+async function refreshBell() {
   try {
-    const flags = await fetchFlags('Open');
-    openFlagCount.value = flags.length;
+    const [flags, orders] = await Promise.all([
+      fetchFlags('Open'),
+      fetchOrderNotifications(true),
+    ]);
+    bellCount.value = flags.length + orders.length;
   } catch {
     // Badge is decoration; a failed poll must not disturb the taskbar.
-    openFlagCount.value = 0;
+    bellCount.value = 0;
   }
 }
+
+const bellBadgeText = computed(() => {
+  if (bellCount.value > 99) return '99+';
+  return bellCount.value > 0 ? String(bellCount.value) : '';
+});
 
 function openFlags() {
   wm.open('channel-flags', 'Peringatan Kanal');
 }
 
 onMounted(() => {
-  void refreshFlags();
-  flagTimer = window.setInterval(() => void refreshFlags(), 30_000);
+  void refreshBell();
+  flagTimer = window.setInterval(() => void refreshBell(), 30_000);
+  window.addEventListener('aios:bell-refresh', refreshBell);
 });
-onUnmounted(() => window.clearInterval(flagTimer));
+onUnmounted(() => {
+  if (flagTimer) window.clearInterval(flagTimer);
+  window.removeEventListener('aios:bell-refresh', refreshBell);
+});
 
 const timeStr = computed(() => now.value.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 const shortDate = computed(() => now.value.toLocaleDateString('en-GB'));
@@ -93,7 +105,7 @@ const siteName = computed(() => session.context?.aios_company_name || session.co
     <div class="tb-right">
       <button class="tray bell" aria-label="Peringatan kanal" title="Peringatan kanal" @click="openFlags()">
         <AppIcon name="bell" :size="17" />
-        <span v-if="openFlagCount" class="bell-badge">{{ openFlagCount }}</span>
+        <span v-if="bellCount" class="bell-badge">{{ bellBadgeText }}</span>
       </button>
       <div class="tray" aria-label="Status koneksi">
         <AppIcon name="wifi" :size="16" />

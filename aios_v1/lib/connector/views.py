@@ -7,6 +7,8 @@ is the human review step — there is no API path that reopens it automatically.
 
 from __future__ import annotations
 
+import json
+
 import frappe
 from frappe.utils import now_datetime
 
@@ -134,3 +136,82 @@ def thread_audit(user: str, thread_id: str) -> dict:
     if thread.owner_user != user:
         raise WorkspaceError(404, "THREAD_NOT_FOUND", "Percakapan tidak ditemukan.")
     return {"thread": thread.name, "audit": summarize(thread.conversation)}
+
+
+def list_orders(user: str, unread_only: bool = True, limit: int = 50) -> list[dict]:
+    """Order notifications for `user`, newest first."""
+    user = _require_owner(user)
+    limit = max(1, min(int(limit or 50), MAX_LIMIT))
+    filters: dict = {
+        "for_user": user,
+        "type": "AIOS Channel Alert",
+        "document_type": "Pending Action Draft",
+    }
+    if unread_only:
+        filters["read"] = 0
+
+    rows = frappe.get_all(
+        "Notification Log",
+        filters=filters,
+        fields=["name", "document_name", "subject", "email_content", "read", "creation"],
+        order_by="creation desc",
+        limit_page_length=limit,
+    )
+
+    orders: list[dict] = []
+    for r in rows:
+        draft_id = r.get("document_name") or ""
+        doctype = "Sales Order"
+        customer_name = ""
+        if draft_id and frappe.db.exists("Pending Action Draft", draft_id):
+            raw_payload = frappe.db.get_value("Pending Action Draft", draft_id, "payload")
+            if raw_payload:
+                try:
+                    p = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+                    doctype = p.get("doctype") or "Sales Order"
+                except Exception as exc:
+                    log_exception("AIOS Views list_orders: JSON parse error", exc=exc)
+
+        subject = r.get("subject") or ""
+        if " - " in subject:
+            customer_name = subject.split(" - ", 1)[1].strip()
+        elif not customer_name:
+            customer_name = "Customer Telegram"
+
+        orders.append({
+            "name": r["name"],
+            "draft_id": draft_id,
+            "doctype": doctype,
+            "customer_name": customer_name,
+            "subject": subject,
+            "creation": r["creation"],
+            "read": r.get("read") or 0,
+        })
+    return orders
+
+
+def review_order(user: str, notification_id: str | None) -> dict:
+    """Mark an order notification as reviewed (read = 1)."""
+    user = _require_owner(user)
+    if not notification_id:
+        raise WorkspaceError(400, "NOTIFICATION_REQUIRED", "Notifikasi wajib dipilih.")
+    if not frappe.db.exists("Notification Log", notification_id):
+        raise WorkspaceError(404, "NOTIFICATION_NOT_FOUND", "Notifikasi tidak ditemukan.")
+
+    doc = frappe.get_doc("Notification Log", notification_id)
+    if doc.for_user != user:
+        raise WorkspaceError(404, "NOTIFICATION_NOT_FOUND", "Notifikasi tidak ditemukan.")
+
+    if doc.read:
+        return {"success": True, "notification_id": doc.name, "read": 1}
+
+    try:
+        doc.read = 1
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+    except Exception as exc:
+        frappe.db.rollback()
+        log_exception("AIOS Connector Order Review", exc=exc, context=notification_id)
+        raise WorkspaceError(500, "ORDER_REVIEW_FAILED", "Gagal meninjau pesanan.") from exc
+
+    return {"success": True, "notification_id": doc.name, "read": 1}

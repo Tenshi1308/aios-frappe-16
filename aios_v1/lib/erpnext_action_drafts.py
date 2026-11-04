@@ -96,6 +96,11 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
         reason=reason,
         user=draft_owner,
     )
+    if is_guest:
+        from aios_v1.lib.connector.notify import notify_order_draft
+
+        thread = getattr(frappe.local, "aios_channel_thread", None)
+        notify_order_draft(draft, thread=thread)
     return {
         "status": "PENDING_APPROVAL",
         "draft_id": draft.name,

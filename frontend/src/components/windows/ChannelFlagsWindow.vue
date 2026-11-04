@@ -1,46 +1,65 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSessionStore } from '../../stores/session';
+import { useWindowManager } from '../../composables/useWindowManager';
 import {
   closeFlag,
   fetchFlags,
+  fetchOrderNotifications,
+  reviewOrderNotification,
   type ChannelFlag,
+  type ChannelOrderNotification,
 } from '../../api/connector';
 import { reportClientError } from '../../api/client';
 import { formatDateTime } from '../../utils/format';
 import AppIcon from '../base/AppIcon.vue';
 
 const session = useSessionStore();
+const wm = useWindowManager();
 
 /** Poll interval for the bell badge. Realtime socket.io is not wired in the
  *  desk yet, so the badge refreshes on a timer; 30 s is the agreed ceiling. */
 const POLL_MS = 30_000;
 
 const flags = ref<ChannelFlag[]>([]);
+const orders = ref<ChannelOrderNotification[]>([]);
 const loading = ref(false);
 const error = ref('');
 const closing = ref<string | null>(null);
+const reviewingOrder = ref<string | null>(null);
 let timer: number | undefined;
 
 const openFlags = computed(() => flags.value.filter((flag) => flag.status === 'Open'));
-const badge = computed(() => openFlags.value.length);
+const totalCount = computed(() => openFlags.value.length + orders.value.length);
+const badge = computed(() => (totalCount.value > 99 ? '99+' : String(totalCount.value)));
 
 async function load() {
   loading.value = true;
   error.value = '';
   try {
-    flags.value = await fetchFlags();
+    const [fetchedFlags, fetchedOrders] = await Promise.all([
+      fetchFlags(),
+      fetchOrderNotifications(true),
+    ]);
+    flags.value = fetchedFlags;
+    orders.value = fetchedOrders;
   } catch (err) {
-    error.value = 'Daftar peringatan tidak dapat dimuat.';
+    error.value = 'Daftar peringatan kanal tidak dapat dimuat.';
     void reportClientError(
       {
         message: err instanceof Error ? err.message : String(err),
-        context: 'connector:flags',
+        context: 'connector:channel-items',
       },
       session.csrfToken,
     );
   } finally {
     loading.value = false;
+  }
+}
+
+function notifyBell() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('aios:bell-refresh'));
   }
 }
 
@@ -50,6 +69,7 @@ async function review(flag: ChannelFlag) {
   try {
     await closeFlag(flag.name, '', session.csrfToken ?? '');
     await load();
+    notifyBell();
   } catch (err) {
     error.value = 'Peringatan tidak dapat ditutup.';
     void reportClientError(
@@ -64,6 +84,32 @@ async function review(flag: ChannelFlag) {
   }
 }
 
+async function handleReviewOrder(order: ChannelOrderNotification) {
+  if (reviewingOrder.value) return;
+  reviewingOrder.value = order.name;
+  try {
+    await reviewOrderNotification(order.name, session.csrfToken ?? '');
+    orders.value = orders.value.filter((o) => o.name !== order.name);
+    notifyBell();
+  } catch (err) {
+    error.value = 'Pesanan tidak dapat ditandai sudah ditinjau.';
+    void reportClientError(
+      {
+        message: err instanceof Error ? err.message : String(err),
+        context: 'connector:review-order',
+      },
+      session.csrfToken,
+    );
+  } finally {
+    reviewingOrder.value = null;
+  }
+}
+
+function openDraft(draftId: string) {
+  if (!draftId) return;
+  wm.open(`approval:${draftId}`, 'Persetujuan Aksi');
+}
+
 onMounted(() => {
   void load();
   timer = window.setInterval(() => void load(), POLL_MS);
@@ -75,8 +121,7 @@ onUnmounted(() => window.clearInterval(timer));
   <div class="cf">
     <div class="cf-head">
       <span>
-        <b>{{ badge }}</b> percakapan ditandai dan menunggu ditinjau. Tanda berasal dari aturan
-        otomatis; penilaian akhir tetap di tangan manusia.
+        <b>{{ badge }}</b> item menunggu ditinjau ({{ openFlags.length }} percakapan ditandai, {{ orders.length }} draf pesanan).
       </span>
       <button class="cf-btn" aria-label="Muat ulang" :disabled="loading" @click="load()">
         <AppIcon name="history" :size="15" />
@@ -88,12 +133,37 @@ onUnmounted(() => window.clearInterval(timer));
       <button class="cf-btn" type="button" :disabled="loading" @click="load()">Coba lagi</button>
     </div>
 
-    <div v-else-if="loading && !flags.length" class="cf-empty">Memuat peringatan…</div>
-    <div v-else-if="!openFlags.length" class="cf-empty">
-      Tidak ada percakapan yang perlu ditinjau.
+    <div v-else-if="loading && !totalCount" class="cf-empty">Memuat peringatan…</div>
+    <div v-else-if="!totalCount" class="cf-empty">
+      Tidak ada percakapan atau pesanan yang perlu ditinjau.
     </div>
 
     <ul v-else class="cf-list">
+      <!-- Unread order draft notifications -->
+      <li v-for="order in orders" :key="order.name" class="cf-item cf-item-order">
+        <div class="cf-row">
+          <span class="cf-badge-order">{{ order.doctype }}</span>
+          <b>{{ order.customer_name }}</b>
+          <small>{{ formatDateTime(order.creation) }}</small>
+        </div>
+        <p class="cf-desc">Draf pesanan {{ order.doctype }} baru menunggu tindak lanjut staf.</p>
+        <div class="cf-actions">
+          <button class="cf-btn-open" type="button" @click="openDraft(order.draft_id)">
+            <AppIcon name="desk" :size="13" />
+            <span>Buka Draf</span>
+          </button>
+          <button
+            class="cf-close"
+            type="button"
+            :disabled="reviewingOrder === order.name"
+            @click="handleReviewOrder(order)"
+          >
+            {{ reviewingOrder === order.name ? 'Menandai…' : 'Tandai sudah ditinjau' }}
+          </button>
+        </div>
+      </li>
+
+      <!-- Channel flags -->
       <li v-for="flag in openFlags" :key="flag.name" class="cf-item" :data-severity="flag.severity">
         <div class="cf-row">
           <span class="cf-sev">{{ flag.severity }}</span>
@@ -185,6 +255,9 @@ onUnmounted(() => window.clearInterval(timer));
 .cf-item[data-severity='high'] {
   border-left-color: var(--bad);
 }
+.cf-item-order {
+  border-left-color: var(--accent);
+}
 .cf-row {
   display: flex;
   align-items: baseline;
@@ -203,6 +276,35 @@ onUnmounted(() => window.clearInterval(timer));
   color: var(--muted);
   font-size: var(--fs-10);
   text-transform: uppercase;
+}
+.cf-badge-order {
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-3);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-10);
+  font-weight: var(--fw-600);
+  text-transform: uppercase;
+}
+.cf-desc {
+  margin: 0;
+  color: var(--fg);
+  font-size: var(--fs-12);
+}
+.cf-btn-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-6);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.cf-btn-open:hover {
+  background: var(--hover);
 }
 .cf-excerpt,
 .cf-reason {
