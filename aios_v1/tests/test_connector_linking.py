@@ -5,7 +5,10 @@ import json
 from unittest.mock import patch
 
 import frappe
-from frappe.tests.utils import FrappeTestCase
+try:
+    from frappe.tests import IntegrationTestCase
+except ImportError:
+    from frappe.tests.utils import FrappeTestCase as IntegrationTestCase
 
 from aios_v1.lib.connector import dispatch, linking, telegram_client
 from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
@@ -41,7 +44,7 @@ def _ensure_user(email: str, name: str) -> str:
     return doc.name
 
 
-class TestConnectorLinking(FrappeTestCase):
+class TestConnectorLinking(IntegrationTestCase):
     def setUp(self):
         super().setUp()
         frappe.in_test = True
