@@ -780,9 +780,33 @@ def _handle_api_request():
             return json_response(result)
 
         if path == "api/connector/orders" and method == "GET":
-            from aios_v1.lib.connector.views import list_orders
+            import math
 
-            return json_response({"orders": list_orders(sess["user"], unread_only=True)})
+            from aios_v1.lib.connector.views import count_orders, list_orders
+
+            raw_page = frappe.request.args.get("page") if hasattr(frappe.request, "args") else None
+            try:
+                page = max(1, int(raw_page)) if raw_page else 1
+            except (ValueError, TypeError):
+                page = 1
+
+            raw_unread = frappe.request.args.get("unread") if hasattr(frappe.request, "args") else None
+            unread_only = True
+            if raw_unread is not None:
+                unread_only = str(raw_unread).lower() in ("1", "true")
+
+            page_length = 20
+            total = count_orders(sess["user"], unread_only=unread_only)
+            total_pages = max(1, math.ceil(total / page_length)) if total > 0 else 1
+            orders = list_orders(sess["user"], unread_only=unread_only, page=page, page_length=page_length)
+
+            return json_response({
+                "orders": orders,
+                "total": total,
+                "page": page,
+                "page_length": page_length,
+                "total_pages": total_pages,
+            })
 
         if path == "api/connector/order/review" and method == "POST":
             from aios_v1.lib.connector.views import review_order

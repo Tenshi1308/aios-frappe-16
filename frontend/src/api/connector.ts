@@ -53,8 +53,20 @@ interface RawFlags {
   flags?: ChannelFlag[];
 }
 
+export interface OrderListResponse {
+  orders: ChannelOrderNotification[];
+  total: number;
+  page: number;
+  page_length: number;
+  total_pages: number;
+}
+
 interface RawOrders {
   orders?: ChannelOrderNotification[];
+  total?: number;
+  page?: number;
+  page_length?: number;
+  total_pages?: number;
 }
 
 export async function fetchThreads(): Promise<ChannelThread[]> {
@@ -68,10 +80,26 @@ export async function fetchFlags(status?: 'Open' | 'Closed'): Promise<ChannelFla
   return (data as RawFlags)?.flags ?? [];
 }
 
-export async function fetchOrderNotifications(unreadOnly = true): Promise<ChannelOrderNotification[]> {
-  const query = unreadOnly ? '?unread=1' : '';
-  const data = await apiFetch(`/api/connector/orders${query}`);
-  return (data as RawOrders)?.orders ?? [];
+export async function fetchOrderNotifications(
+  unreadOnly = true,
+  page = 1,
+): Promise<OrderListResponse> {
+  const unreadParam = unreadOnly ? 'unread=1' : 'unread=0';
+  const query = `?${unreadParam}&page=${encodeURIComponent(page)}`;
+  const data = (await apiFetch(`/api/connector/orders${query}`)) as RawOrders;
+  const orders = data?.orders ?? [];
+  const total = typeof data?.total === 'number' ? data.total : (orders.length || 0);
+  const total_pages = typeof data?.total_pages === 'number' ? data.total_pages : (Math.ceil(total / 20) || 1);
+  const resPage = typeof data?.page === 'number' ? data.page : page;
+  const page_length = typeof data?.page_length === 'number' ? data.page_length : 20;
+
+  return {
+    orders,
+    total,
+    page: resPage,
+    page_length,
+    total_pages,
+  };
 }
 
 export async function reviewOrderNotification(

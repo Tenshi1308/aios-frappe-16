@@ -138,10 +138,37 @@ def thread_audit(user: str, thread_id: str) -> dict:
     return {"thread": thread.name, "audit": summarize(thread.conversation)}
 
 
-def list_orders(user: str, unread_only: bool = True, limit: int = 50) -> list[dict]:
+def count_orders(user: str, unread_only: bool = True) -> int:
+    """Count order notifications for `user`."""
+    user = _require_owner(user)
+    filters: dict = {
+        "for_user": user,
+        "type": "AIOS Channel Alert",
+        "document_type": "Pending Action Draft",
+    }
+    if unread_only:
+        filters["read"] = 0
+    return int(frappe.db.count("Notification Log", filters=filters) or 0)
+
+
+def list_orders(
+    user: str,
+    unread_only: bool = True,
+    limit: int | None = None,
+    page: int = 1,
+    page_length: int = 20,
+) -> list[dict]:
     """Order notifications for `user`, newest first."""
     user = _require_owner(user)
-    limit = max(1, min(int(limit or 50), MAX_LIMIT))
+    page = max(1, int(page or 1))
+    page_length = 20
+    limit_start = (page - 1) * page_length
+    limit_page_length = page_length
+
+    if limit is not None:
+        limit_page_length = max(1, min(int(limit), MAX_LIMIT))
+        limit_start = 0
+
     filters: dict = {
         "for_user": user,
         "type": "AIOS Channel Alert",
@@ -155,7 +182,8 @@ def list_orders(user: str, unread_only: bool = True, limit: int = 50) -> list[di
         filters=filters,
         fields=["name", "document_name", "subject", "email_content", "read", "creation"],
         order_by="creation desc",
-        limit_page_length=limit,
+        limit_start=limit_start,
+        limit_page_length=limit_page_length,
     )
 
     orders: list[dict] = []

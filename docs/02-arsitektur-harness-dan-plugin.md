@@ -128,7 +128,7 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 - **Dua jenis item:**
   1. **Flag Percakapan:** Pelanggaran aturan SOP/fraud (`AIOS Conversation Flag`).
   2. **Draf Pesanan Baru:** Saat customer tamu membuat draf `Sales Order` atau `Quotation` (`Pending Action Draft`), memuat nama customer/chat yang sah, penegasan status catatan pembeli, dan waktu pembuatan.
-- **Bell Taskbar & Jendela Peringatan:** Dot bell menghitung gabungan flag `Open` dan pesanan belum dibaca (dibatasi `99+` bila > 99). Jendela `Peringatan Kanal` (`ChannelFlagsWindow.vue`) menampilkan kedua daftar, dengan tombol "Buka Draf" (`approval:<draft_id>`) dan "Tandai sudah ditinjau" yang langsung menurunkan dot.
+- **Bell Taskbar & Jendela Peringatan:** Dot bell menghitung gabungan flag `Open` dan total pesanan belum dibaca (dibatasi `99+` bila > 99). Jendela `Peringatan Kanal` (`ChannelFlagsWindow.vue`) menampilkan kedua daftar, dengan antrean draf pesanan dipaginasi 20 per halaman (tombol Sebelumnya/Berikutnya dan keterangan Halaman X dari Y), tombol "Buka Draf" (`approval:<draft_id>`), serta "Tandai sudah ditinjau" yang menyegarkan antrean dan langsung menurunkan dot. Kepala window menampilkan total pesanan belum dibaca, bukan panjang halaman yang sedang aktif.
 
 | Target | Angka | Catatan |
 |---|---|---|

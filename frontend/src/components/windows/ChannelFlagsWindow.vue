@@ -23,6 +23,9 @@ const POLL_MS = 30_000;
 
 const flags = ref<ChannelFlag[]>([]);
 const orders = ref<ChannelOrderNotification[]>([]);
+const orderPage = ref(1);
+const orderTotal = ref(0);
+const orderTotalPages = ref(1);
 const loading = ref(false);
 const error = ref('');
 const closing = ref<string | null>(null);
@@ -30,19 +33,34 @@ const reviewingOrder = ref<string | null>(null);
 let timer: number | undefined;
 
 const openFlags = computed(() => flags.value.filter((flag) => flag.status === 'Open'));
-const totalCount = computed(() => openFlags.value.length + orders.value.length);
+const totalCount = computed(() => openFlags.value.length + orderTotal.value);
 const badge = computed(() => (totalCount.value > 99 ? '99+' : String(totalCount.value)));
 
-async function load() {
+async function load(targetPage?: number) {
   loading.value = true;
   error.value = '';
+  let pageToFetch = targetPage ?? orderPage.value;
   try {
-    const [fetchedFlags, fetchedOrders] = await Promise.all([
+    const [fetchedFlags, orderRes] = await Promise.all([
       fetchFlags(),
-      fetchOrderNotifications(true),
+      fetchOrderNotifications(true, pageToFetch),
     ]);
     flags.value = fetchedFlags;
-    orders.value = fetchedOrders;
+    orderTotal.value = orderRes.total;
+    orderTotalPages.value = orderRes.total_pages;
+
+    // If current page is beyond total_pages and can step back, step back to last valid page
+    if (orderRes.total_pages > 0 && pageToFetch > orderRes.total_pages && pageToFetch > 1) {
+      pageToFetch = orderRes.total_pages;
+      orderPage.value = pageToFetch;
+      const validOrderRes = await fetchOrderNotifications(true, pageToFetch);
+      orders.value = validOrderRes.orders;
+      orderTotal.value = validOrderRes.total;
+      orderTotalPages.value = validOrderRes.total_pages;
+    } else {
+      orders.value = orderRes.orders;
+      orderPage.value = orderRes.page;
+    }
   } catch (err) {
     error.value = 'Daftar peringatan kanal tidak dapat dimuat.';
     void reportClientError(
@@ -55,6 +73,12 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function changeOrderPage(newPage: number) {
+  if (newPage < 1 || (orderTotalPages.value > 0 && newPage > orderTotalPages.value) || loading.value) return;
+  orderPage.value = newPage;
+  void load(newPage);
 }
 
 function notifyBell() {
@@ -89,8 +113,8 @@ async function handleReviewOrder(order: ChannelOrderNotification) {
   reviewingOrder.value = order.name;
   try {
     await reviewOrderNotification(order.name, session.csrfToken ?? '');
-    orders.value = orders.value.filter((o) => o.name !== order.name);
     notifyBell();
+    await load(orderPage.value);
   } catch (err) {
     error.value = 'Pesanan tidak dapat ditandai sudah ditinjau.';
     void reportClientError(
@@ -121,7 +145,7 @@ onUnmounted(() => window.clearInterval(timer));
   <div class="cf">
     <div class="cf-head">
       <span>
-        <b>{{ badge }}</b> item menunggu ditinjau ({{ openFlags.length }} percakapan ditandai, {{ orders.length }} draf pesanan).
+        <b>{{ badge }}</b> item menunggu ditinjau ({{ openFlags.length }} percakapan ditandai, {{ orderTotal }} draf pesanan).
       </span>
       <button class="cf-btn" aria-label="Muat ulang" :disabled="loading" @click="load()">
         <AppIcon name="history" :size="15" />
@@ -161,6 +185,27 @@ onUnmounted(() => window.clearInterval(timer));
             {{ reviewingOrder === order.name ? 'Menandai…' : 'Tandai sudah ditinjau' }}
           </button>
         </div>
+      </li>
+
+      <!-- Order pagination controls below order list -->
+      <li v-if="orderTotal > 0" class="cf-pagination">
+        <button
+          class="cf-btn cf-page-btn"
+          type="button"
+          :disabled="orderPage <= 1 || loading"
+          @click="changeOrderPage(orderPage - 1)"
+        >
+          Sebelumnya
+        </button>
+        <span class="cf-page-info">Halaman {{ orderPage }} dari {{ orderTotalPages }}</span>
+        <button
+          class="cf-btn cf-page-btn"
+          type="button"
+          :disabled="orderPage >= orderTotalPages || loading"
+          @click="changeOrderPage(orderPage + 1)"
+        >
+          Berikutnya
+        </button>
       </li>
 
       <!-- Channel flags -->
@@ -340,5 +385,26 @@ onUnmounted(() => window.clearInterval(timer));
 .cf-close:disabled {
   opacity: 0.65;
   cursor: wait;
+}
+.cf-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-6) var(--space-10);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-6);
+  background: var(--surface-1);
+  font-size: var(--fs-12);
+}
+.cf-page-info {
+  color: var(--muted);
+  font-weight: var(--fw-500);
+}
+.cf-page-btn {
+  padding: var(--space-4) var(--space-10);
+}
+.cf-page-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

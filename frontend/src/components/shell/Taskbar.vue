@@ -26,11 +26,11 @@ let flagTimer: number | undefined;
 
 async function refreshBell() {
   try {
-    const [flags, orders] = await Promise.all([
+    const [flags, orderData] = await Promise.all([
       fetchFlags('Open'),
-      fetchOrderNotifications(true),
+      fetchOrderNotifications(true, 1),
     ]);
-    bellCount.value = flags.length + orders.length;
+    bellCount.value = flags.length + orderData.total;
   } catch {
     // Badge is decoration; a failed poll must not disturb the taskbar.
     bellCount.value = 0;
