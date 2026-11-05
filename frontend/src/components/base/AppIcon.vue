@@ -17,6 +17,8 @@ const ICONS: Record<string, string[]> = {
   power: ['M12 2v10', 'M18.4 6.6a9 9 0 1 1-12.8 0'],
   lock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 8 0v4'],
   'arrow-right': ['M5 12h14', 'M12 5l7 7-7 7'],
+  'chevron-left': ['M15 18l-6-6 6-6'],
+  'chevron-right': ['M9 18l6-6-6-6'],
   plus: ['M12 5v14', 'M5 12h14'],
   refresh: ['M21 12a9 9 0 1 1-3-6.7L21 8', 'M21 3v5h-5'],
   file: ['M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z', 'M14 2v6h6'],

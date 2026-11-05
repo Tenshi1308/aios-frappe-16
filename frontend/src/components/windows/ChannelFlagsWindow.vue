@@ -216,19 +216,21 @@ onUnmounted(() => window.clearInterval(timer));
         <button
           class="cf-btn cf-page-btn"
           type="button"
+          aria-label="Halaman sebelumnya"
           :disabled="orderPage <= 1 || loading"
           @click="changeOrderPage(orderPage - 1)"
         >
-          Sebelumnya
+          <AppIcon name="chevron-left" :size="14" />
         </button>
-        <span class="cf-page-info">Halaman {{ orderPage }} dari {{ orderTotalPages }}</span>
+        <span class="cf-page-info">{{ orderPage }} / {{ orderTotalPages }}</span>
         <button
           class="cf-btn cf-page-btn"
           type="button"
+          aria-label="Halaman berikutnya"
           :disabled="orderPage >= orderTotalPages || loading"
           @click="changeOrderPage(orderPage + 1)"
         >
-          Berikutnya
+          <AppIcon name="chevron-right" :size="14" />
         </button>
       </footer>
     </template>
@@ -410,7 +412,12 @@ onUnmounted(() => window.clearInterval(timer));
   font-weight: var(--fw-500);
 }
 .cf-page-btn {
-  padding: var(--space-4) var(--space-10);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4) var(--space-8);
+  min-width: 28px;
+  min-height: 28px;
 }
 .cf-page-btn:disabled {
   opacity: 0.5;
