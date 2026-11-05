@@ -162,33 +162,57 @@ onUnmounted(() => window.clearInterval(timer));
       Tidak ada percakapan atau pesanan yang perlu ditinjau.
     </div>
 
-    <ul v-else class="cf-list">
-      <!-- Unread order draft notifications -->
-      <li v-for="order in orders" :key="order.name" class="cf-item cf-item-order">
-        <div class="cf-row">
-          <span class="cf-badge-order">{{ order.doctype }}</span>
-          <b>{{ order.customer_name }}</b>
-          <small>{{ formatDateTime(order.creation) }}</small>
-        </div>
-        <p class="cf-desc">Draf pesanan {{ order.doctype }} baru menunggu tindak lanjut staf.</p>
-        <div class="cf-actions">
-          <button class="cf-btn-open" type="button" @click="openDraft(order.draft_id)">
-            <AppIcon name="desk" :size="13" />
-            <span>Buka Draf</span>
-          </button>
-          <button
-            class="cf-close"
-            type="button"
-            :disabled="reviewingOrder === order.name"
-            @click="handleReviewOrder(order)"
-          >
-            {{ reviewingOrder === order.name ? 'Menandai…' : 'Tandai sudah ditinjau' }}
-          </button>
-        </div>
-      </li>
+    <template v-else>
+      <ul class="cf-list">
+        <!-- Unread order draft notifications -->
+        <li v-for="order in orders" :key="order.name" class="cf-item cf-item-order">
+          <div class="cf-row">
+            <span class="cf-badge-order">{{ order.doctype }}</span>
+            <b>{{ order.customer_name }}</b>
+            <small>{{ formatDateTime(order.creation) }}</small>
+          </div>
+          <p class="cf-desc">Draf pesanan {{ order.doctype }} baru menunggu tindak lanjut staf.</p>
+          <div class="cf-actions">
+            <button class="cf-btn-open" type="button" @click="openDraft(order.draft_id)">
+              <AppIcon name="desk" :size="13" />
+              <span>Buka Draf</span>
+            </button>
+            <button
+              class="cf-close"
+              type="button"
+              :disabled="reviewingOrder === order.name"
+              @click="handleReviewOrder(order)"
+            >
+              {{ reviewingOrder === order.name ? 'Menandai…' : 'Tandai sudah ditinjau' }}
+            </button>
+          </div>
+        </li>
+
+        <!-- Channel flags -->
+        <li v-for="flag in openFlags" :key="flag.name" class="cf-item" :data-severity="flag.severity">
+          <div class="cf-row">
+            <span class="cf-sev">{{ flag.severity }}</span>
+            <b>{{ flag.label || flag.rule_key }}</b>
+            <small>{{ formatDateTime(flag.creation) }}</small>
+          </div>
+          <p v-if="flag.excerpt" class="cf-excerpt">{{ flag.excerpt }}</p>
+          <p v-if="flag.reason_text" class="cf-reason">{{ flag.reason_text }}</p>
+          <div class="cf-actions">
+            <small v-if="flag.message_ids">Bukti: {{ flag.message_ids }}</small>
+            <button
+              class="cf-close"
+              type="button"
+              :disabled="closing === flag.name"
+              @click="review(flag)"
+            >
+              {{ closing === flag.name ? 'Menutup…' : 'Tandai sudah ditinjau' }}
+            </button>
+          </div>
+        </li>
+      </ul>
 
       <!-- Order pagination controls below order list -->
-      <li v-if="orderTotal > 0" class="cf-pagination">
+      <footer v-if="orderTotal > 0" class="cf-pagination">
         <button
           class="cf-btn cf-page-btn"
           type="button"
@@ -206,30 +230,8 @@ onUnmounted(() => window.clearInterval(timer));
         >
           Berikutnya
         </button>
-      </li>
-
-      <!-- Channel flags -->
-      <li v-for="flag in openFlags" :key="flag.name" class="cf-item" :data-severity="flag.severity">
-        <div class="cf-row">
-          <span class="cf-sev">{{ flag.severity }}</span>
-          <b>{{ flag.label || flag.rule_key }}</b>
-          <small>{{ formatDateTime(flag.creation) }}</small>
-        </div>
-        <p v-if="flag.excerpt" class="cf-excerpt">{{ flag.excerpt }}</p>
-        <p v-if="flag.reason_text" class="cf-reason">{{ flag.reason_text }}</p>
-        <div class="cf-actions">
-          <small v-if="flag.message_ids">Bukti: {{ flag.message_ids }}</small>
-          <button
-            class="cf-close"
-            type="button"
-            :disabled="closing === flag.name"
-            @click="review(flag)"
-          >
-            {{ closing === flag.name ? 'Menutup…' : 'Tandai sudah ditinjau' }}
-          </button>
-        </div>
-      </li>
-    </ul>
+      </footer>
+    </template>
   </div>
 </template>
 
@@ -239,7 +241,8 @@ onUnmounted(() => window.clearInterval(timer));
   flex-direction: column;
   gap: var(--space-8);
   height: 100%;
-  overflow: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 .cf-head {
   display: flex;
@@ -248,6 +251,7 @@ onUnmounted(() => window.clearInterval(timer));
   gap: var(--space-8);
   color: var(--muted);
   font-size: var(--fs-12);
+  flex-shrink: 0;
 }
 .cf-btn {
   display: inline-flex;
@@ -284,8 +288,11 @@ onUnmounted(() => window.clearInterval(timer));
   flex-direction: column;
   gap: var(--space-6);
   margin: 0;
-  padding: 0;
+  padding: 0 var(--space-4) 0 0;
   list-style: none;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 .cf-item {
   display: flex;
@@ -395,6 +402,8 @@ onUnmounted(() => window.clearInterval(timer));
   border-radius: var(--radius-6);
   background: var(--surface-1);
   font-size: var(--fs-12);
+  flex-shrink: 0;
+  margin-top: auto;
 }
 .cf-page-info {
   color: var(--muted);
