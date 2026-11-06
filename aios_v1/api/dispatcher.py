@@ -758,9 +758,13 @@ def _handle_api_request():
             return json_response({"threads": list_threads(sess["user"])})
 
         if path == "api/connector/flags" and method == "GET":
-            from aios_v1.lib.connector.views import list_flags
+            from aios_v1.lib.connector.views import count_flags, list_flags
 
-            return json_response({"flags": list_flags(sess["user"])})
+            raw_status = frappe.request.args.get("status") if hasattr(frappe.request, "args") else None
+            status = raw_status if raw_status in ("Open", "Closed") else None
+            flags = list_flags(sess["user"], status=status)
+            total = count_flags(sess["user"], status=status)
+            return json_response({"flags": flags, "total": total})
 
         if path == "api/connector/flag/close" and method == "POST":
             from aios_v1.lib.connector.views import close_flag

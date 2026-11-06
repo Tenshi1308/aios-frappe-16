@@ -49,8 +49,14 @@ interface RawThreads {
   threads?: ChannelThread[];
 }
 
+export interface FlagListResponse {
+  flags: ChannelFlag[];
+  total: number;
+}
+
 interface RawFlags {
   flags?: ChannelFlag[];
+  total?: number;
 }
 
 export interface OrderListResponse {
@@ -74,10 +80,15 @@ export async function fetchThreads(): Promise<ChannelThread[]> {
   return (data as RawThreads)?.threads ?? [];
 }
 
-export async function fetchFlags(status?: 'Open' | 'Closed'): Promise<ChannelFlag[]> {
+export async function fetchFlags(status?: 'Open' | 'Closed'): Promise<FlagListResponse> {
   const query = status ? `?status=${encodeURIComponent(status)}` : '';
-  const data = await apiFetch(`/api/connector/flags${query}`);
-  return (data as RawFlags)?.flags ?? [];
+  const data = (await apiFetch(`/api/connector/flags${query}`)) as RawFlags;
+  const flags = data?.flags ?? [];
+  const total = typeof data?.total === 'number' ? data.total : (flags.length || 0);
+  return {
+    flags,
+    total,
+  };
 }
 
 export async function fetchOrderNotifications(

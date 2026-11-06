@@ -55,6 +55,15 @@ def list_threads(user: str, limit: int = 50) -> list[dict]:
     return rows
 
 
+def count_flags(user: str, status: str | None = None) -> int:
+    """Count flags owned by `user`; `status` narrows to Open/Closed."""
+    user = _require_owner(user)
+    filters: dict = {"owner_user": user}
+    if status in ("Open", "Closed"):
+        filters["status"] = status
+    return int(frappe.db.count(FLAG_DOCTYPE, filters=filters) or 0)
+
+
 def list_flags(user: str, status: str | None = None, limit: int = 50) -> list[dict]:
     """Flags owned by `user`, newest first; `status` narrows to Open/Closed."""
     user = _require_owner(user)

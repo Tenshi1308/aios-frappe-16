@@ -22,6 +22,7 @@ const wm = useWindowManager();
 const POLL_MS = 30_000;
 
 const flags = ref<ChannelFlag[]>([]);
+const flagTotal = ref(0);
 const orders = ref<ChannelOrderNotification[]>([]);
 const orderPage = ref(1);
 const orderTotal = ref(0);
@@ -33,7 +34,7 @@ const reviewingOrder = ref<string | null>(null);
 let timer: number | undefined;
 
 const openFlags = computed(() => flags.value.filter((flag) => flag.status === 'Open'));
-const totalCount = computed(() => openFlags.value.length + orderTotal.value);
+const totalCount = computed(() => flagTotal.value + orderTotal.value);
 const badge = computed(() => (totalCount.value > 99 ? '99+' : String(totalCount.value)));
 
 async function load(targetPage?: number) {
@@ -41,11 +42,12 @@ async function load(targetPage?: number) {
   error.value = '';
   let pageToFetch = targetPage ?? orderPage.value;
   try {
-    const [fetchedFlags, orderRes] = await Promise.all([
-      fetchFlags(),
+    const [flagRes, orderRes] = await Promise.all([
+      fetchFlags('Open'),
       fetchOrderNotifications(true, pageToFetch),
     ]);
-    flags.value = fetchedFlags;
+    flags.value = flagRes.flags;
+    flagTotal.value = flagRes.total;
     orderTotal.value = orderRes.total;
     orderTotalPages.value = orderRes.total_pages;
 
@@ -145,7 +147,7 @@ onUnmounted(() => window.clearInterval(timer));
   <div class="cf">
     <div class="cf-head">
       <span>
-        <b>{{ badge }}</b> item menunggu ditinjau ({{ openFlags.length }} percakapan ditandai, {{ orderTotal }} draf pesanan).
+        <b>{{ badge }}</b> item menunggu ditinjau ({{ flagTotal }} percakapan ditandai, {{ orderTotal }} draf pesanan).
       </span>
       <button class="cf-btn" aria-label="Muat ulang" :disabled="loading" @click="load()">
         <AppIcon name="history" :size="15" />
