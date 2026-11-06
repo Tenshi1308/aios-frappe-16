@@ -150,7 +150,7 @@ def activate_user(user: str, status: str):
 			frappe.throw("User tidak ditemukan atau tidak dapat diubah.", frappe.ValidationError)
 
 		if status == "Active":
-			from aios_v1.setup import assert_within_max_users
+			from aios_v1.setup import _normalize_invitation_url, assert_within_max_users
 
 			assert_within_max_users(exclude_user=user)
 
@@ -176,7 +176,7 @@ def activate_user(user: str, status: str):
 				user_doc.flags.ignore_permissions = True
 				user_doc.flags.ignore_password_policy = True
 				user_doc.save(ignore_permissions=True)
-			invitation_url = user_doc._reset_password(send_email=False)
+			invitation_url = _normalize_invitation_url(user_doc._reset_password(send_email=False))
 
 		_record_activity(f"AIOS lifecycle: {user} → {status}")
 		_audit("activate_user", target=user, status=status)

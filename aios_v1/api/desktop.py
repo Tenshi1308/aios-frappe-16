@@ -801,7 +801,7 @@ def create_client_staff(email: str, full_name: str, persona: str = "sales"):
     try:
         from frappe.utils import validate_email_address
 
-        from aios_v1.setup import assert_within_max_users
+        from aios_v1.setup import _normalize_invitation_url, assert_within_max_users
 
         clean_email = validate_email_address((email or "").strip(), throw=True).lower()
         clean_name = (full_name or "").strip()
@@ -837,7 +837,7 @@ def create_client_staff(email: str, full_name: str, persona: str = "sales"):
         user_doc.flags.ignore_password_policy = True
         user_doc.insert(ignore_permissions=True)
 
-        invitation_url = user_doc._reset_password(send_email=False)
+        invitation_url = _normalize_invitation_url(user_doc._reset_password(send_email=False))
         _record_owner_activity(f"AIOS Staff Created: {clean_email} ({clean_persona})")
 
         payload = _build_staff_and_recipients_payload()
@@ -861,7 +861,7 @@ def create_client_staff(email: str, full_name: str, persona: str = "sales"):
 def set_client_staff_status(target_user: str, status: str):
     caller, _ = _require_active_client_owner()
     try:
-        from aios_v1.setup import assert_within_max_users
+        from aios_v1.setup import _normalize_invitation_url, assert_within_max_users
 
         target = (target_user or "").strip()
         if status not in ("Active", "Suspended"):
@@ -928,7 +928,9 @@ def regenerate_client_staff_invite(target_user: str):
                 frappe.ValidationError,
             )
 
-        invitation_url = user_doc._reset_password(send_email=False)
+        from aios_v1.setup import _normalize_invitation_url
+
+        invitation_url = _normalize_invitation_url(user_doc._reset_password(send_email=False))
         _record_owner_activity(f"AIOS Staff Invite Regenerated: {target}")
         return {
             "ok": True,

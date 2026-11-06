@@ -6,6 +6,8 @@ Custom Field `User`, Role, dan Role Profile didaftarkan lewat hook
 Tidak memakai fixtures dan tidak memutasi `tabDocField`.
 """
 
+from urllib.parse import urlsplit, urlunsplit
+
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
@@ -401,6 +403,34 @@ def validate_max_users(doc, method=None):
     if not is_active:
         return
     assert_within_max_users(exclude_user=doc.name if not doc.is_new() else None)
+
+
+def _normalize_invitation_url(raw_url: str | None) -> str | None:
+    """Normalisasi tautan undangan agar memuat port webserver bila bukan mode produksi.
+
+    Menghindari kegagalan koneksi ketika site klien diakses pada port non-standar (mis. port webserver lokal)
+    karena Frappe get_url(..., allow_header_override=False) mengabaikan webserver_port
+    bila developer_mode tidak aktif.
+    """
+    if not raw_url:
+        return raw_url
+
+    parsed = urlsplit(raw_url)
+    if parsed.port is not None or not parsed.hostname:
+        return raw_url
+
+    is_production = bool(
+        frappe.conf.get("restart_supervisor_on_update")
+        or frappe.conf.get("restart_systemd_on_update")
+    )
+    if is_production:
+        return raw_url
+
+    port = frappe.conf.get("http_port") or frappe.conf.get("webserver_port")
+    if not port:
+        return raw_url
+
+    return urlunsplit((parsed.scheme, f"{parsed.hostname}:{port}", parsed.path, parsed.query, ""))
 
 
 def on_login(login_manager):

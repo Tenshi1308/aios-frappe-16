@@ -696,3 +696,67 @@ class TestDesktopSettings(IntegrationTestCase):
         frappe.db.set_value("User", staff_email, "last_login", "2026-11-06 10:00:00", update_modified=False)
         with self.assertRaises(frappe.ValidationError):
             desktop_api.regenerate_client_staff_invite(target_user=staff_email)
+
+    def test_create_and_regenerate_client_staff_invitation_url_includes_webserver_port(self):
+        """Keputusan 1, 2, 3: invitation_url selalu memuat port webserver non-produksi tanpa hardcode."""
+        from urllib.parse import parse_qs, urlparse
+
+        self._make_owner_session()
+        staff_email = "_test.desktop.portcheck@example.com"
+        if frappe.db.exists("User", staff_email):
+            frappe.delete_doc("User", staff_email, force=True, ignore_permissions=True)
+
+        created = desktop_api.create_client_staff(
+            full_name="Port Tester", email=staff_email, persona="sales"
+        )
+        parsed_created = urlparse(created["invitation_url"])
+        expected_port = frappe.conf.http_port or frappe.conf.webserver_port
+        if expected_port and not (
+            frappe.conf.get("restart_supervisor_on_update")
+            or frappe.conf.get("restart_systemd_on_update")
+        ):
+            self.assertEqual(parsed_created.port, expected_port)
+        self.assertEqual(parsed_created.path, "/update-password")
+        self.assertTrue(parse_qs(parsed_created.query).get("key"))
+
+        reinvited = desktop_api.regenerate_client_staff_invite(target_user=staff_email)
+        parsed_reinvited = urlparse(reinvited["invitation_url"])
+        if expected_port and not (
+            frappe.conf.get("restart_supervisor_on_update")
+            or frappe.conf.get("restart_systemd_on_update")
+        ):
+            self.assertEqual(parsed_reinvited.port, expected_port)
+        self.assertEqual(parsed_reinvited.path, "/update-password")
+        self.assertTrue(parse_qs(parsed_reinvited.query).get("key"))
+
+    def test_normalize_invitation_url_unit_behavior(self):
+        """Uji perilaku helper _normalize_invitation_url: idempotent, jaga path+key, patuh produksi & config."""
+        from unittest.mock import patch
+        from urllib.parse import parse_qs, urlparse
+
+        from aios_v1.setup import _normalize_invitation_url
+
+        # (d) Normalisasi tidak menggandakan port bila link sudah ada port-nya
+        raw_with_port = "http://aios-dev.localhost:8001/update-password?key=secret123"
+        self.assertEqual(_normalize_invitation_url(raw_with_port), raw_with_port)
+
+        # (e) Path + key tidak berubah setelah normalisasi (hanya port yang ditambah)
+        raw_without_port = "http://aios-client1.localhost/update-password?key=secret123"
+        normalized = _normalize_invitation_url(raw_without_port)
+        parsed_raw = urlparse(raw_without_port)
+        parsed_norm = urlparse(normalized)
+        self.assertEqual(parsed_norm.path, parsed_raw.path)
+        self.assertEqual(parse_qs(parsed_norm.query), parse_qs(parsed_raw.query))
+        self.assertEqual(parsed_norm.scheme, parsed_raw.scheme)
+        self.assertEqual(parsed_norm.hostname, parsed_raw.hostname)
+        expected_port = frappe.conf.http_port or frappe.conf.webserver_port
+        if expected_port:
+            self.assertEqual(parsed_norm.port, expected_port)
+
+        # Mode produksi (restart_supervisor_on_update / restart_systemd_on_update): port tidak ditempel
+        with patch.dict(frappe.conf, {"restart_supervisor_on_update": True}):
+            self.assertEqual(_normalize_invitation_url(raw_without_port), raw_without_port)
+
+        # Link kosong / None
+        self.assertIsNone(_normalize_invitation_url(None))
+        self.assertEqual(_normalize_invitation_url(""), "")

@@ -167,3 +167,20 @@ class TestControlApiAuth(IntegrationTestCase):
 		self.assertIn(f"target={target}", logged)
 		self.assertNotIn(api_key, logged)
 		self.assertNotIn(api_secret, logged)
+
+	def test_t12_activate_user_invitation_url_includes_webserver_port(self):
+		control_api = _control_api()
+		target = self._make_user("AIOS Client", status="Pending Provisioning", enabled=0)
+		result = self._invoke(control_api.activate_user, user=target, status="Active")
+		self.assertTrue(result.get("ok"))
+		url = result.get("invitation_url")
+		self.assertTrue(url, "activate_user harus mengembalikan invitation_url saat status Active")
+		parsed = urlparse(url)
+		expected_port = frappe.conf.http_port or frappe.conf.webserver_port
+		if expected_port and not (
+			frappe.conf.get("restart_supervisor_on_update")
+			or frappe.conf.get("restart_systemd_on_update")
+		):
+			self.assertEqual(parsed.port, expected_port)
+		self.assertEqual(parsed.path, "/update-password")
+		self.assertTrue(parse_qs(parsed.query).get("key"))
