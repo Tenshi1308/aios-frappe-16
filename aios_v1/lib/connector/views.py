@@ -13,6 +13,7 @@ import frappe
 from frappe.utils import now_datetime
 
 from aios_v1.lib.connector.audit import summarize
+from aios_v1.lib.connector.notify import get_channel_recipients
 from aios_v1.lib.error_utils import log_exception
 from aios_v1.lib.workspace import WorkspaceError
 
@@ -23,19 +24,30 @@ CONVERSATION_DOCTYPE = "AIOS Conversation"
 MAX_LIMIT = 100
 
 
-def _require_owner(user: str) -> str:
+def _require_user(user: str) -> str:
     if not user or user == "Guest":
         raise WorkspaceError(401, "NOT_LOGGED_IN", "Belum login.")
     return user
 
 
+def _can_access_channel_doc(user: str, doc_owner: str | None = None) -> bool:
+    if user == "Administrator" or "AIOS Admin" in set(frappe.get_roles(user)):
+        return True
+    if doc_owner and doc_owner == user:
+        return True
+    return user in set(get_channel_recipients())
+
+
 def list_threads(user: str, limit: int = 50) -> list[dict]:
-    """Threads owned by `user`, newest activity first."""
-    user = _require_owner(user)
+    """Threads visible to channel recipient or owned by `user`, newest activity first."""
+    user = _require_user(user)
     limit = max(1, min(int(limit or 50), MAX_LIMIT))
+    filters: dict = {}
+    if not _can_access_channel_doc(user):
+        filters["owner"] = user
     rows = frappe.get_all(
         THREAD_DOCTYPE,
-        filters={"owner_user": user},
+        filters=filters,
         fields=[
             "name",
             "channel",
@@ -56,19 +68,23 @@ def list_threads(user: str, limit: int = 50) -> list[dict]:
 
 
 def count_flags(user: str, status: str | None = None) -> int:
-    """Count flags owned by `user`; `status` narrows to Open/Closed."""
-    user = _require_owner(user)
-    filters: dict = {"owner_user": user}
+    """Count flags visible to channel recipient or owned by `user`; `status` narrows to Open/Closed."""
+    user = _require_user(user)
+    filters: dict = {}
+    if not _can_access_channel_doc(user):
+        filters["owner"] = user
     if status in ("Open", "Closed"):
         filters["status"] = status
     return int(frappe.db.count(FLAG_DOCTYPE, filters=filters) or 0)
 
 
 def list_flags(user: str, status: str | None = None, limit: int = 50) -> list[dict]:
-    """Flags owned by `user`, newest first; `status` narrows to Open/Closed."""
-    user = _require_owner(user)
+    """Flags visible to channel recipient or owned by `user`, newest first; `status` narrows to Open/Closed."""
+    user = _require_user(user)
     limit = max(1, min(int(limit or 50), MAX_LIMIT))
-    filters: dict = {"owner_user": user}
+    filters: dict = {}
+    if not _can_access_channel_doc(user):
+        filters["owner"] = user
     if status in ("Open", "Closed"):
         filters["status"] = status
     return frappe.get_all(
@@ -96,15 +112,15 @@ def list_flags(user: str, status: str | None = None, limit: int = 50) -> list[di
 
 
 def close_flag(user: str, flag_id: str | None, note: str = "") -> dict:
-    """Mark a flag reviewed. Owner-only; idempotent for an already-closed flag."""
-    user = _require_owner(user)
+    """Mark a flag reviewed. Recipient/owner-only; idempotent for an already-closed flag."""
+    user = _require_user(user)
     if not flag_id:
         raise WorkspaceError(400, "FLAG_REQUIRED", "Flag wajib dipilih.")
     if not frappe.db.exists(FLAG_DOCTYPE, flag_id):
         raise WorkspaceError(404, "FLAG_NOT_FOUND", "Flag tidak ditemukan.")
 
     doc = frappe.get_doc(FLAG_DOCTYPE, flag_id)
-    if doc.owner_user != user:
+    if not _can_access_channel_doc(user, doc.owner):
         raise WorkspaceError(404, "FLAG_NOT_FOUND", "Flag tidak ditemukan.")
     if doc.status == "Closed":
         return {
@@ -137,19 +153,19 @@ def close_flag(user: str, flag_id: str | None, note: str = "") -> dict:
 
 
 def thread_audit(user: str, thread_id: str) -> dict:
-    """Deterministic audit snapshot for one owned thread."""
-    user = _require_owner(user)
+    """Deterministic audit snapshot for one visible thread."""
+    user = _require_user(user)
     if not thread_id or not frappe.db.exists(THREAD_DOCTYPE, thread_id):
         raise WorkspaceError(404, "THREAD_NOT_FOUND", "Percakapan tidak ditemukan.")
     thread = frappe.get_doc(THREAD_DOCTYPE, thread_id)
-    if thread.owner_user != user:
+    if not _can_access_channel_doc(user, thread.owner):
         raise WorkspaceError(404, "THREAD_NOT_FOUND", "Percakapan tidak ditemukan.")
     return {"thread": thread.name, "audit": summarize(thread.conversation)}
 
 
 def count_orders(user: str, unread_only: bool = True) -> int:
     """Count order notifications for `user`."""
-    user = _require_owner(user)
+    user = _require_user(user)
     filters: dict = {
         "for_user": user,
         "type": "AIOS Channel Alert",
@@ -168,7 +184,7 @@ def list_orders(
     page_length: int = 20,
 ) -> list[dict]:
     """Order notifications for `user`, newest first."""
-    user = _require_owner(user)
+    user = _require_user(user)
     page = max(1, int(page or 1))
     page_length = 20
     limit_start = (page - 1) * page_length
@@ -229,7 +245,7 @@ def list_orders(
 
 def review_order(user: str, notification_id: str | None) -> dict:
     """Mark an order notification as reviewed (read = 1)."""
-    user = _require_owner(user)
+    user = _require_user(user)
     if not notification_id:
         raise WorkspaceError(400, "NOTIFICATION_REQUIRED", "Notifikasi wajib dipilih.")
     if not frappe.db.exists("Notification Log", notification_id):

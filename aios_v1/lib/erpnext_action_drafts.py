@@ -85,7 +85,10 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
     tool_context = get_tool_context()
     draft_owner = None
     if is_guest:
-        draft_owner = frappe.db.get_single_value("AIOS Telegram Setting", "owner_user")
+        from aios_v1.lib.connector.notify import get_channel_recipients
+
+        recipients = get_channel_recipients()
+        draft_owner = recipients[0] if recipients else None
 
     draft = create_draft(
         task_id=f"AIOS-{uuid.uuid4()}",

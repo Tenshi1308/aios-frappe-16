@@ -52,6 +52,7 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		# `@rate_limit` aktif juga saat test; bersihkan counter supaya run ulang tidak terblokir.
 		frappe.cache.delete_keys("rl:")
 		frappe.set_user("Administrator")
+		frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
@@ -306,6 +307,8 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		roles = [r.role for r in user.roles]
 		self.assertNotIn(WIZARD_ROLE, roles)
 		self.assertIn(CLIENT_ROLE, roles)
+		self.assertNotIn("AIOS Client Owner", roles)
+		self.assertNotIn("AIOS Channel Receiver", roles)
 		self.assertIn(CLIENT_PROFILE, [r.role_profile for r in user.role_profiles])
 		self.assertEqual(user.user_type, "Website User")
 		self.assertEqual(user.aios_status, "Pending Provisioning")
@@ -344,6 +347,22 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		self.assertEqual(row.aios_status, "Active")
 		self.assertEqual(row.enabled, 1)
 		self.assertEqual(row.reset_password_key, sha256_hash(key), "Key harus tersimpan sebagai hash, bukan mentah.")
+
+	def test_step_4_activate_assigns_client_owner_profile_when_no_owner_exists(self):
+		"""Keputusan 16: saat aktivasi pertama di site, AIOS Client Owner Profile otomatis dipasang."""
+		frappe.db.delete(
+			"Has Role",
+			{"parenttype": "User", "role": "AIOS Client Owner"},
+		)
+		email = self._make_user(
+			self._email("owner_activate"), [CLIENT_ROLE], status="Pending Provisioning", enabled=0
+		)
+		self._activate(email)
+		user_doc = frappe.get_doc("User", email)
+		roles = [r.role for r in user_doc.roles]
+		profiles = [rp.role_profile for rp in user_doc.role_profiles]
+		self.assertIn("AIOS Client Owner", roles)
+		self.assertIn("AIOS Client Owner Profile", profiles)
 
 	# ---------------------------------------------------- Langkah 5: set password
 

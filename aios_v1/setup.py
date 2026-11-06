@@ -58,10 +58,14 @@ USER_CUSTOM_FIELDS = {
 AIOS_ROLES = {
     "AIOS Control": 0,
     "AIOS Client": 0,
+    "AIOS Channel Receiver": 0,
+    "AIOS Client Owner": 0,
 }
 
 AIOS_ROLE_PROFILES = {
     "AIOS Client Profile": ["AIOS Client"],
+    "AIOS Channel Receiver Profile": ["AIOS Channel Receiver"],
+    "AIOS Client Owner Profile": ["AIOS Client Owner"],
 }
 
 
@@ -74,9 +78,64 @@ def after_install():
 
 def after_migrate():
     setup_aios_identity()
+    migrate_owner_user_to_channel_roles()
     ensure_builtin_plugins()
     ensure_signup_utm_source()
     ensure_connector_defaults()
+
+
+def migrate_owner_user_to_channel_roles():
+    """Migrasi idempoten transisi owner_user ke Role baru + drop kolom owner_user."""
+    old_owner = frappe.db.get_value(
+        "Singles",
+        {"doctype": "AIOS Telegram Setting", "field": "owner_user"},
+        "value",
+        order_by=None,
+    )
+
+    if old_owner and frappe.db.exists("User", old_owner):
+        user_doc = frappe.get_doc("User", old_owner)
+        roles = {r.role for r in (user_doc.get("roles") or [])}
+        if (
+            "AIOS Client" in roles
+            and user_doc.get("aios_status") == "Active"
+            and int(user_doc.get("enabled") or 0) == 1
+        ):
+            profiles = {r.role_profile for r in (user_doc.get("role_profiles") or [])}
+            changed = False
+            if "AIOS Client Profile" not in profiles:
+                user_doc.append("role_profiles", {"role_profile": "AIOS Client Profile"})
+                changed = True
+            if "AIOS Client Owner Profile" not in profiles:
+                user_doc.append("role_profiles", {"role_profile": "AIOS Client Owner Profile"})
+                changed = True
+            if "AIOS Channel Receiver Profile" not in profiles:
+                user_doc.append("role_profiles", {"role_profile": "AIOS Channel Receiver Profile"})
+                changed = True
+            if changed:
+                user_doc.flags.ignore_permissions = True
+                user_doc.flags.ignore_password_policy = True
+                user_doc.save(ignore_permissions=True)
+
+    for dt in ("AIOS Channel Thread", "AIOS Conversation Flag"):
+        cols = [r[0] for r in frappe.db.sql(f"SHOW COLUMNS FROM `tab{dt}`")]
+        if "owner_user" in cols:
+            frappe.db.sql(
+                f"""
+                UPDATE `tab{dt}`
+                SET `owner` = `owner_user`
+                WHERE `owner_user` IS NOT NULL
+                  AND `owner_user` != ''
+                  AND `owner` != `owner_user`
+                """
+            )
+            frappe.db.sql_ddl(f"ALTER TABLE `tab{dt}` DROP COLUMN `owner_user`")
+            frappe.cache.delete_value("table_columns")
+
+    frappe.db.delete(
+        "Singles",
+        {"doctype": "AIOS Telegram Setting", "field": "owner_user"},
+    )
 
 
 def ensure_connector_defaults():
@@ -177,10 +236,17 @@ def _ensure_aios_permissions():
     ensure_aios_permissions()
 
 
+def ensure_roles_and_profiles():
+    _ensure_roles()
+    _ensure_role_profiles()
+
+
 def _ensure_roles():
     for role_name, desk_access in AIOS_ROLES.items():
         if frappe.db.exists("Role", role_name):
             role = frappe.get_doc("Role", role_name)
+            if int(role.desk_access or 0) == int(desk_access):
+                continue
         else:
             role = frappe.new_doc("Role")
             role.role_name = role_name
@@ -194,16 +260,26 @@ def _ensure_roles():
 
 
 def _ensure_role_profiles():
-    for profile_name, roles in AIOS_ROLE_PROFILES.items():
-        if frappe.db.exists("Role Profile", profile_name):
-            profile = frappe.get_doc("Role Profile", profile_name)
-        else:
-            profile = frappe.new_doc("Role Profile")
-            profile.role_profile = profile_name
-        profile.set("roles", [])
-        for role_name in roles:
-            profile.append("roles", {"role": role_name})
-        profile.save(ignore_permissions=True)
+    orig_in_install = getattr(frappe.flags, "in_install", False)
+    try:
+        frappe.flags.in_install = True
+        for profile_name, roles in AIOS_ROLE_PROFILES.items():
+            if frappe.db.exists("Role Profile", profile_name):
+                profile = frappe.get_doc("Role Profile", profile_name)
+                existing_roles = [r.role for r in (profile.get("roles") or [])]
+                if existing_roles == list(roles):
+                    continue
+            else:
+                profile = frappe.new_doc("Role Profile")
+                profile.role_profile = profile_name
+                profile.name = profile_name
+            profile.unlock()
+            profile.set("roles", [])
+            for role_name in roles:
+                profile.append("roles", {"role": role_name})
+            profile.save(ignore_permissions=True)
+    finally:
+        frappe.flags.in_install = orig_in_install
 
 
 def _is_aios_user(user: str) -> bool:
@@ -229,6 +305,102 @@ def sync_aios_status_enabled(doc, method=None):
     if not ({"AIOS Admin", "AIOS Client"} & roles):
         return
     doc.enabled = 1 if status == "Active" else 0
+
+
+CHANNEL_DEPENDENT_ROLES = {"AIOS Channel Receiver", "AIOS Client Owner"}
+CHANNEL_DEPENDENT_PROFILES = {"AIOS Channel Receiver Profile", "AIOS Client Owner Profile"}
+
+
+def validate_aios_channel_and_owner_roles(doc, method=None):
+    """User.validate: Keputusan #7 — Role penerima dan Role pengatur wajib AIOS Client aktif."""
+    if doc.name in ("Administrator", "Guest"):
+        return
+
+    roles = {row.role for row in (doc.get("roles") or [])}
+    profiles = {row.role_profile for row in (doc.get("role_profiles") or [])}
+
+    has_dependent_role = bool(roles & CHANNEL_DEPENDENT_ROLES)
+    has_dependent_profile = bool(profiles & CHANNEL_DEPENDENT_PROFILES)
+
+    if not has_dependent_role and not has_dependent_profile:
+        return
+
+    if "AIOS Client" not in roles or (profiles and "AIOS Client Profile" not in profiles):
+        frappe.throw(
+            "Role AIOS Channel Receiver dan AIOS Client Owner hanya dapat diberikan kepada "
+            "pengguna yang sudah memiliki Role AIOS Client.",
+            frappe.ValidationError,
+        )
+
+    if doc.get("aios_status") != "Active" or int(doc.get("enabled") or 0) != 1:
+        frappe.throw(
+            "Role AIOS Channel Receiver dan AIOS Client Owner hanya dapat diberikan kepada "
+            "pengguna AIOS Client yang berstatus Active.",
+            frappe.ValidationError,
+        )
+
+
+def count_active_client_users(exclude_user: str | None = None) -> int:
+    """Hitung jumlah User AIOS Client aktif di site saat ini."""
+    params: dict = {}
+    exclude_clause = ""
+    if exclude_user:
+        exclude_clause = "AND u.name != %(exclude_user)s"
+        params["exclude_user"] = exclude_user
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT COUNT(DISTINCT u.name)
+        FROM `tabUser` u
+        INNER JOIN `tabHas Role` r
+            ON r.parent = u.name AND r.parenttype = 'User' AND r.role = 'AIOS Client'
+        WHERE u.enabled = 1
+          AND u.aios_status = 'Active'
+          AND u.name NOT IN ('Administrator', 'Guest')
+          {exclude_clause}
+        """,
+        params,
+    )
+    return int(rows[0][0]) if rows else 0
+
+
+def assert_within_max_users(exclude_user: str | None = None) -> tuple[int, int]:
+    """Pastikan penambahan 1 user AIOS Client aktif tidak melampaui AIOS Setting.max_users.
+
+    Mengembalikan (current_active, max_users) sebelum penambahan 1 user baru.
+    """
+    max_users = int(frappe.db.get_single_value("AIOS Setting", "max_users") or 0)
+    if max_users <= 0:
+        frappe.throw(
+            "Batas maksimum pengguna (max_users) belum dikonfigurasi pada AIOS Setting.",
+            frappe.ValidationError,
+        )
+    current_active = count_active_client_users(exclude_user=exclude_user)
+    if current_active >= max_users:
+        frappe.throw(
+            f"Batas maksimum pengguna aktif site ini ({max_users} pengguna) telah tercapai. "
+            "Tidak dapat menambah atau mengaktifkan pengguna baru.",
+            frappe.ValidationError,
+        )
+    return current_active, max_users
+
+
+def validate_max_users(doc, method=None):
+    """Hook User.before_insert & User.validate: tegakkan plafon AIOS Setting.max_users."""
+    if doc.name in ("Administrator", "Guest"):
+        return
+    roles = {row.role for row in (doc.get("roles") or [])}
+    profiles = {row.role_profile for row in (doc.get("role_profiles") or [])}
+    is_client = ("AIOS Client" in roles) or ("AIOS Client Profile" in profiles)
+    if not is_client:
+        return
+    # Plafon hanya menghitung user AIOS Client yang aktif (enabled=1 dan aios_status='Active').
+    # Pendaftaran baru via normalize_wizard_user berstatus 'Pending Provisioning' (enabled=0),
+    # sehingga tidak dihitung sampai diaktifkan via activate_user.
+    is_active = doc.get("aios_status") == "Active" and int(doc.get("enabled") or 0) == 1
+    if not is_active:
+        return
+    assert_within_max_users(exclude_user=doc.name if not doc.is_new() else None)
 
 
 def on_login(login_manager):

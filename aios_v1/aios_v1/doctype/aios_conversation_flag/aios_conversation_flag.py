@@ -22,7 +22,6 @@ class AIOSConversationFlag(Document):
         excerpt: DF.SmallText | None
         label: DF.Data | None
         message_ids: DF.SmallText | None
-        owner_user: DF.Link
         reason_text: DF.SmallText | None
         rule_key: DF.Data
         severity: DF.Literal["low", "medium", "high"]

@@ -16,6 +16,7 @@ class AIOSSetting(Document):
 
 		api_key: DF.Password | None
 		base_url: DF.Data | None
+		max_users: DF.Int
 		model_name: DF.Data | None
 		default_max_tokens: DF.Int
 		system_ethos: DF.SmallText | None

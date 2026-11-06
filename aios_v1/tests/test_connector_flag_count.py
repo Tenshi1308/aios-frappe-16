@@ -32,8 +32,21 @@ OTHER = "_test.flagcnt.other@example.com"
 CHAT_ID = "77889900"
 
 
-def _ensure_user(email: str, name: str) -> str:
+def _ensure_user(email: str, name: str, is_receiver: bool = False) -> str:
+    roles = ["AIOS Client"]
+    profiles = ["AIOS Client Profile"]
+    if is_receiver:
+        roles.append("AIOS Channel Receiver")
+        profiles.append("AIOS Channel Receiver Profile")
     if frappe.db.exists("User", email):
+        doc = frappe.get_doc("User", email)
+        doc.aios_status = "Active"
+        doc.enabled = 1
+        doc.set("roles", [{"role": r} for r in roles])
+        doc.set("role_profiles", [{"role_profile": p} for p in profiles])
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_password_policy = True
+        doc.save(ignore_permissions=True)
         return email
     doc = frappe.get_doc(
         {
@@ -44,7 +57,8 @@ def _ensure_user(email: str, name: str) -> str:
             "send_welcome_email": 0,
             "user_type": "Website User",
             "aios_status": "Active",
-            "roles": [{"role": "AIOS Client"}],
+            "roles": [{"role": r} for r in roles],
+            "role_profiles": [{"role_profile": p} for p in profiles],
         }
     )
     doc.insert(ignore_permissions=True)
@@ -59,16 +73,18 @@ class TestConnectorFlagCount(IntegrationTestCase):
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
         frappe.set_user("Administrator")
-        self.owner = _ensure_user(OWNER, "FlagCnt Owner")
-        self.other = _ensure_user(OTHER, "FlagCnt Other")
-        self._orig_owner = frappe.db.get_single_value(SETTING, "owner_user")
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self.owner)
+        frappe.db.set_single_value("AIOS Setting", "max_users", 20)
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
+        self.owner = _ensure_user(OWNER, "FlagCnt Owner", is_receiver=True)
+        self.other = _ensure_user(OTHER, "FlagCnt Other", is_receiver=False)
         self._cleanup()
         self.thread_name = self._create_thread(self.owner)
 
     def tearDown(self):
         self._cleanup()
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self._orig_owner)
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
         super().tearDown()
@@ -76,7 +92,6 @@ class TestConnectorFlagCount(IntegrationTestCase):
     def _cleanup(self):
         for flag_name in frappe.get_all(
             FLAG,
-            filters={"owner_user": ("in", [self.owner, self.other])},
             pluck="name",
         ):
             frappe.delete_doc(FLAG, flag_name, ignore_permissions=True, force=True)
@@ -102,7 +117,7 @@ class TestConnectorFlagCount(IntegrationTestCase):
                 {
                     "doctype": FLAG,
                     "thread": self.thread_name,
-                    "owner_user": owner,
+                    "owner": owner,
                     "rule_key": "personal_account",
                     "severity": "high",
                     "status": status,
@@ -111,6 +126,8 @@ class TestConnectorFlagCount(IntegrationTestCase):
                 }
             )
             doc.insert(ignore_permissions=True)
+            if doc.owner != owner:
+                frappe.db.set_value(FLAG, doc.name, "owner", owner, update_modified=False)
             names.append(doc.name)
         return names
 

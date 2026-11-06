@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useModulesStore } from '../../stores/modules';
-import type { SettingsTheme } from '../../types';
+import { useSessionStore } from '../../stores/session';
+import type { ClientStaffUser, SettingsTheme } from '../../types';
 import { formatNumber } from '../../utils/format';
 import { resolveTheme } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
 
-type TabId = 'general' | 'connector' | 'personalization';
+type TabId = 'general' | 'connector' | 'personalization' | 'receivers' | 'staff';
 
 interface MenuTab {
   id: TabId;
@@ -14,10 +15,15 @@ interface MenuTab {
   icon: string;
 }
 
-const MENU_TABS: MenuTab[] = [
+const BASE_TABS: MenuTab[] = [
   { id: 'general', label: 'Umum', icon: 'gear' },
   { id: 'connector', label: 'Konektor', icon: 'link' },
   { id: 'personalization', label: 'Personalisasi', icon: 'sparkle' },
+];
+
+const OWNER_TABS: MenuTab[] = [
+  { id: 'receivers', label: 'Penerima Kanal', icon: 'bell' },
+  { id: 'staff', label: 'Kelola Staf', icon: 'users' },
 ];
 
 const THEME_LABELS: Record<SettingsTheme, string> = {
@@ -32,7 +38,23 @@ const THEME_ICONS: Record<SettingsTheme, string> = {
   Dark: 'moon',
 };
 
+const PERSONA_OPTIONS = [
+  { value: 'sales', label: 'Sales' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'operations', label: 'Operations' },
+  { value: 'executive', label: 'Executive' },
+  { value: 'system', label: 'System' },
+];
+
 const modules = useModulesStore();
+const session = useSessionStore();
+
+const isClientOwner = computed(() =>
+  (session.context?.roles ?? []).includes('AIOS Client Owner'),
+);
+const visibleTabs = computed<MenuTab[]>(() =>
+  isClientOwner.value ? [...BASE_TABS, ...OWNER_TABS] : BASE_TABS,
+);
 
 const activeTab = ref<TabId>('general');
 const tabRefs = ref<HTMLElement[]>([]);
@@ -45,28 +67,32 @@ function setTabRef(el: any, index: number) {
 
 function selectTab(id: TabId) {
   activeTab.value = id;
+  if ((id === 'receivers' || id === 'staff') && isClientOwner.value && !modules.staffData) {
+    void modules.loadClientStaffAndRecipients();
+  }
 }
 
 function onTabKeydown(e: KeyboardEvent, index: number) {
+  const tabs = visibleTabs.value;
   let targetIndex = index;
   if (e.key === 'ArrowDown') {
     e.preventDefault();
-    targetIndex = (index + 1) % MENU_TABS.length;
+    targetIndex = (index + 1) % tabs.length;
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    targetIndex = (index - 1 + MENU_TABS.length) % MENU_TABS.length;
+    targetIndex = (index - 1 + tabs.length) % tabs.length;
   } else if (e.key === 'Home') {
     e.preventDefault();
     targetIndex = 0;
   } else if (e.key === 'End') {
     e.preventDefault();
-    targetIndex = MENU_TABS.length - 1;
+    targetIndex = tabs.length - 1;
   } else {
     return;
   }
-  const nextTab = MENU_TABS[targetIndex];
+  const nextTab = tabs[targetIndex];
   if (nextTab) {
-    activeTab.value = nextTab.id;
+    selectTab(nextTab.id);
     tabRefs.value[targetIndex]?.focus();
   }
 }
@@ -122,6 +148,9 @@ onMounted(() => {
     void modules.loadSettings(true);
   }
   void modules.loadTelegramStatus();
+  if (isClientOwner.value) {
+    void modules.loadClientStaffAndRecipients();
+  }
   syncRemainingFromStore();
   countdownTimer = setInterval(() => {
     if (remainingSeconds.value !== null && remainingSeconds.value > 0) {
@@ -171,6 +200,9 @@ const countdownText = computed(() => {
 function refresh() {
   void modules.loadSettings(true);
   void modules.loadTelegramStatus();
+  if (isClientOwner.value) {
+    void modules.loadClientStaffAndRecipients();
+  }
 }
 
 const copySuccess = ref(false);
@@ -242,6 +274,83 @@ async function handleSavePersona() {
     personaSaving.value = false;
   }
 }
+
+// Penerima Kanal & Kelola Staf (AIOS Client Owner)
+const activeClientUsers = computed<ClientStaffUser[]>(() =>
+  (modules.staffData?.users ?? []).filter((u) => u.enabled && u.status === 'Active'),
+);
+
+const newStaffName = ref('');
+const newStaffEmail = ref('');
+const newStaffPersona = ref('sales');
+const newStaffInvitationUrl = ref('');
+const newStaffCreatedFor = ref('');
+const inviteCopied = ref(false);
+
+async function handleToggleReceiver(user: ClientStaffUser) {
+  if (modules.staffLoading) return;
+  try {
+    await modules.toggleChannelReceiver(user.user, !user.is_channel_receiver);
+  } catch {
+    // Error sudah diset di modules.staffError
+  }
+}
+
+async function handleCreateStaff() {
+  if (modules.staffLoading) return;
+  const fullName = newStaffName.value.trim();
+  const email = newStaffEmail.value.trim();
+  if (!fullName || !email) return;
+  try {
+    const res = await modules.addClientStaff({
+      email,
+      full_name: fullName,
+      persona: newStaffPersona.value,
+    });
+    newStaffInvitationUrl.value = res.invitation_url;
+    newStaffCreatedFor.value = res.user;
+    newStaffName.value = '';
+    newStaffEmail.value = '';
+    inviteCopied.value = false;
+  } catch {
+    // Error sudah diset di modules.staffError
+  }
+}
+
+async function handleCopyInviteUrl() {
+  if (!newStaffInvitationUrl.value) return;
+  try {
+    await navigator.clipboard.writeText(newStaffInvitationUrl.value);
+    inviteCopied.value = true;
+    setTimeout(() => {
+      inviteCopied.value = false;
+    }, 2500);
+  } catch {
+    inviteCopied.value = true;
+  }
+}
+
+async function handleRegenerateInvite(user: ClientStaffUser) {
+  if (modules.staffLoading) return;
+  try {
+    const res = await modules.regenerateStaffInvite(user.user);
+    newStaffInvitationUrl.value = res.invitation_url;
+    newStaffCreatedFor.value = res.user;
+    inviteCopied.value = false;
+  } catch {
+    // Error sudah diset di modules.staffError
+  }
+}
+
+async function handleToggleStaffStatus(user: ClientStaffUser) {
+  if (modules.staffLoading || user.is_client_owner) return;
+  const nextStatus = user.status === 'Active' ? 'Suspended' : 'Active';
+  try {
+    await modules.changeClientStaffStatus(user.user, nextStatus);
+  } catch {
+    // Error sudah diset di modules.staffError
+  }
+}
 </script>
 
 <template>
@@ -273,7 +382,7 @@ async function handleSavePersona() {
           aria-label="Menu Pengaturan"
         >
           <button
-            v-for="(tab, i) in MENU_TABS"
+            v-for="(tab, i) in visibleTabs"
             :key="tab.id"
             :ref="(el) => setTabRef(el, i)"
             :id="'settings-tab-' + tab.id"
@@ -579,6 +688,233 @@ async function handleSavePersona() {
               <p v-if="personaError" class="persona-error" role="alert">
                 {{ personaError }}
               </p>
+            </div>
+          </section>
+        </div>
+
+        <!-- Halaman PENERIMA KANAL (Khusus AIOS Client Owner) -->
+        <div v-else-if="activeTab === 'receivers' && isClientOwner" class="settings-sections">
+          <section class="settings-card" aria-label="Penerima Notifikasi Kanal">
+            <div class="card-head">
+              <div class="card-title-wrap">
+                <AppIcon name="bell" :size="16" />
+                <h5>Penerima Notifikasi Kanal</h5>
+              </div>
+              <span class="status-pill">
+                {{ (modules.staffData?.effective_recipients ?? []).length }} penerima aktif
+              </span>
+            </div>
+
+            <p class="tg-info-text">
+              Pilih pengguna aktif yang menerima notifikasi pesanan baru dan percakapan berbendera dari kanal Telegram.
+            </p>
+
+            <div
+              v-if="modules.staffData?.using_owner_fallback"
+              class="tg-warning-banner"
+              role="status"
+            >
+              <b>Mode Cadangan Pemilik:</b> Belum ada penerima khusus yang dipilih. Notifikasi saat ini otomatis dikirim ke pemilik klien aktif.
+            </div>
+
+            <div v-if="modules.staffLoading && !modules.staffData" class="tg-loading">
+              <span>Memuat daftar pengguna…</span>
+            </div>
+
+            <div v-else class="staff-list">
+              <div
+                v-for="u in activeClientUsers"
+                :key="u.user"
+                class="staff-row"
+              >
+                <div class="staff-info">
+                  <div class="staff-name-line">
+                    <span class="staff-name">{{ u.full_name }}</span>
+                    <span v-if="u.is_client_owner" class="badge-role owner">Pemilik</span>
+                    <span class="badge-role">{{ u.persona }}</span>
+                  </div>
+                  <span class="staff-email">{{ u.user }}</span>
+                </div>
+                <label class="receiver-toggle">
+                  <input
+                    type="checkbox"
+                    :checked="u.is_channel_receiver"
+                    :disabled="modules.staffLoading"
+                    :aria-label="'Jadikan ' + u.full_name + ' penerima notifikasi'"
+                    @change="handleToggleReceiver(u)"
+                  />
+                  <span>{{ u.is_channel_receiver ? 'Penerima' : 'Non-penerima' }}</span>
+                </label>
+              </div>
+            </div>
+
+            <p v-if="modules.staffError" class="tg-error" role="alert">
+              {{ modules.staffError }}
+            </p>
+          </section>
+        </div>
+
+        <!-- Halaman KELOLA STAF (Khusus AIOS Client Owner) -->
+        <div v-else-if="activeTab === 'staff' && isClientOwner" class="settings-sections">
+          <!-- Plafon Pengguna -->
+          <section class="settings-card" aria-label="Plafon pengguna aktif">
+            <div class="card-head">
+              <div class="card-title-wrap">
+                <AppIcon name="users" :size="16" />
+                <h5>Kuota Pengguna Aktif</h5>
+              </div>
+              <span class="quota-pct">
+                {{ modules.staffData?.quota.active_users ?? 0 }} / {{ modules.staffData?.quota.max_users ?? 0 }} aktif
+              </span>
+            </div>
+            <p class="tg-info-text">
+              Sisa slot pengguna aktif yang tersedia:
+              <b>{{ modules.staffData?.quota.remaining_slots ?? 0 }} kursi</b>.
+            </p>
+          </section>
+
+          <!-- Form Tambah Staf -->
+          <section class="settings-card" aria-label="Tambah staf baru">
+            <div class="card-head">
+              <h5>Tambah Staf Baru</h5>
+            </div>
+
+            <form class="staff-form" @submit.prevent="handleCreateStaff">
+              <div class="staff-form-grid">
+                <label class="staff-field">
+                  <span>Nama Lengkap</span>
+                  <input
+                    v-model="newStaffName"
+                    type="text"
+                    class="staff-input"
+                    placeholder="Contoh: Budi Santoso"
+                    maxlength="140"
+                    required
+                    :disabled="modules.staffLoading || (modules.staffData?.quota.remaining_slots ?? 0) <= 0"
+                  />
+                </label>
+                <label class="staff-field">
+                  <span>Email Login</span>
+                  <input
+                    v-model="newStaffEmail"
+                    type="email"
+                    class="staff-input"
+                    placeholder="staf@perusahaan.id"
+                    required
+                    :disabled="modules.staffLoading || (modules.staffData?.quota.remaining_slots ?? 0) <= 0"
+                  />
+                </label>
+                <label class="staff-field">
+                  <span>Persona</span>
+                  <select
+                    v-model="newStaffPersona"
+                    class="staff-input"
+                    :disabled="modules.staffLoading || (modules.staffData?.quota.remaining_slots ?? 0) <= 0"
+                  >
+                    <option v-for="p in PERSONA_OPTIONS" :key="p.value" :value="p.value">
+                      {{ p.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="staff-form-actions">
+                <button
+                  type="submit"
+                  class="btn-primary-staff"
+                  :disabled="
+                    modules.staffLoading ||
+                    !newStaffName.trim() ||
+                    !newStaffEmail.trim() ||
+                    (modules.staffData?.quota.remaining_slots ?? 0) <= 0
+                  "
+                >
+                  Buat Staf &amp; Tautan Undangan
+                </button>
+              </div>
+            </form>
+
+            <div v-if="newStaffInvitationUrl" class="invite-banner" role="region" aria-label="Tautan undangan staf">
+              <div class="invite-banner-head">
+                <b>Tautan Undangan untuk {{ newStaffCreatedFor }}</b>
+                <span class="invite-note">Berlaku 20 menit (sekali pakai)</span>
+              </div>
+              <div class="invite-url-row">
+                <input
+                  type="text"
+                  class="staff-input mono"
+                  :value="newStaffInvitationUrl"
+                  readonly
+                  aria-label="URL tautan undangan"
+                />
+                <button
+                  type="button"
+                  class="btn-secondary-copy-icon"
+                  :aria-label="inviteCopied ? 'Tersalin' : 'Salin tautan undangan'"
+                  :title="inviteCopied ? 'Tersalin' : 'Salin tautan undangan'"
+                  @click="handleCopyInviteUrl"
+                >
+                  <AppIcon :name="inviteCopied ? 'check' : 'copy'" :size="15" />
+                </button>
+              </div>
+            </div>
+
+            <p v-if="modules.staffError" class="tg-error" role="alert">
+              {{ modules.staffError }}
+            </p>
+          </section>
+
+          <!-- Daftar Staf -->
+          <section class="settings-card" aria-label="Daftar staf perusahaan">
+            <div class="card-head">
+              <h5>Daftar Staf Perusahaan</h5>
+            </div>
+
+            <div class="staff-list">
+              <div
+                v-for="u in modules.staffData?.users ?? []"
+                :key="u.user"
+                class="staff-row"
+              >
+                <div class="staff-info">
+                  <div class="staff-name-line">
+                    <span class="staff-name">{{ u.full_name }}</span>
+                    <span v-if="u.is_client_owner" class="badge-role owner">Pemilik</span>
+                    <span class="badge-role">{{ u.persona }}</span>
+                    <span
+                      class="status-pill"
+                      :class="{ 'ok': u.status === 'Active' }"
+                    >
+                      {{ u.status }}
+                    </span>
+                  </div>
+                  <span class="staff-email">{{ u.user }}</span>
+                </div>
+
+                <div v-if="!u.is_client_owner" class="staff-actions">
+                  <button
+                    v-if="u.status === 'Active' && !u.has_logged_in"
+                    type="button"
+                    class="btn-staff-secondary"
+                    :disabled="modules.staffLoading"
+                    @click="handleRegenerateInvite(u)"
+                  >
+                    Tautan Baru
+                  </button>
+                  <button
+                    type="button"
+                    class="btn-staff-secondary"
+                    :class="{ danger: u.status === 'Active' }"
+                    :disabled="
+                      modules.staffLoading ||
+                      (u.status !== 'Active' && (modules.staffData?.quota.remaining_slots ?? 0) <= 0)
+                    "
+                    @click="handleToggleStaffStatus(u)"
+                  >
+                    {{ u.status === 'Active' ? 'Nonaktifkan' : 'Aktifkan' }}
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -1104,6 +1440,197 @@ async function handleSavePersona() {
   margin: 0;
   color: var(--bad);
   font-size: var(--fs-12);
+}
+
+/* Penerima Kanal & Kelola Staf */
+.staff-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.staff-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+}
+
+.staff-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.staff-name-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.staff-name {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-600);
+  color: var(--fg);
+}
+
+.staff-email {
+  font-size: var(--fs-11-5);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.badge-role {
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-4);
+  font-size: var(--fs-10-5);
+  font-weight: var(--fw-600);
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  text-transform: capitalize;
+}
+
+.badge-role.owner {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: transparent;
+}
+
+.receiver-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-600);
+  color: var(--fg);
+  cursor: pointer;
+  user-select: none;
+}
+
+.staff-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.staff-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-8);
+}
+
+.staff-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--fs-11-5);
+  font-weight: var(--fw-600);
+  color: var(--muted);
+}
+
+.staff-input {
+  width: 100%;
+  padding: var(--space-7) var(--space-10);
+  border-radius: var(--radius-6);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12-5);
+  box-sizing: border-box;
+}
+
+.staff-input.mono {
+  font-family: var(--font-mono);
+}
+
+.staff-form-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-primary-staff {
+  padding: var(--space-7) var(--space-12);
+  border-radius: var(--radius-8);
+  border: none;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-ui);
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-600);
+  cursor: pointer;
+}
+
+.btn-primary-staff:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.invite-banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-10);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--ok);
+  background: var(--ok-soft);
+}
+
+.invite-banner-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  font-size: var(--fs-12);
+  color: var(--fg);
+}
+
+.invite-note {
+  font-size: var(--fs-11);
+  color: var(--muted);
+}
+
+.invite-url-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.staff-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+}
+
+.btn-staff-secondary {
+  padding: var(--space-5) var(--space-10);
+  border-radius: var(--radius-6);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: var(--fs-11-5);
+  font-weight: var(--fw-600);
+  cursor: pointer;
+}
+
+.btn-staff-secondary.danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.btn-staff-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 @media (max-width: 560px) {

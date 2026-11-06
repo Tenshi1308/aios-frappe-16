@@ -5,6 +5,7 @@ import json
 from unittest.mock import patch
 
 import frappe
+
 try:
     from frappe.tests import IntegrationTestCase
 except ImportError:
@@ -25,8 +26,21 @@ CHAT_ID = "88112233"
 OTHER_CHAT_ID = "88990011"
 
 
-def _ensure_user(email: str, name: str) -> str:
+def _ensure_user(email: str, name: str, is_receiver: bool = False) -> str:
+    roles = ["AIOS Client"]
+    profiles = ["AIOS Client Profile"]
+    if is_receiver:
+        roles.append("AIOS Channel Receiver")
+        profiles.append("AIOS Channel Receiver Profile")
     if frappe.db.exists("User", email):
+        doc = frappe.get_doc("User", email)
+        doc.aios_status = "Active"
+        doc.enabled = 1
+        doc.set("roles", [{"role": r} for r in roles])
+        doc.set("role_profiles", [{"role_profile": p} for p in profiles])
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_password_policy = True
+        doc.save(ignore_permissions=True)
         return email
     doc = frappe.get_doc(
         {
@@ -37,7 +51,8 @@ def _ensure_user(email: str, name: str) -> str:
             "send_welcome_email": 0,
             "user_type": "Website User",
             "aios_status": "Active",
-            "roles": [{"role": "AIOS Client"}],
+            "roles": [{"role": r} for r in roles],
+            "role_profiles": [{"role_profile": p} for p in profiles],
         }
     )
     doc.insert(ignore_permissions=True)
@@ -51,14 +66,18 @@ class TestConnectorLinking(IntegrationTestCase):
         frappe.flags.in_test = True
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        frappe.set_user("Administrator")
+        frappe.db.set_single_value("AIOS Setting", "max_users", 20)
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
 
-        self.owner = _ensure_user(OWNER, "Link Owner")
-        self.employee = _ensure_user(EMP, "Link Employee")
-        self.other_user = _ensure_user(OTHER_USER, "Link Other")
+        self.owner = _ensure_user(OWNER, "Link Owner", is_receiver=True)
+        self.employee = _ensure_user(EMP, "Link Employee", is_receiver=False)
+        self.other_user = _ensure_user(OTHER_USER, "Link Other", is_receiver=False)
 
-        self._orig_owner = frappe.db.get_single_value(SETTING, "owner_user")
         self._orig_bot = frappe.db.get_single_value(SETTING, "bot_username")
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self.owner)
         frappe.db.set_value(SETTING, SETTING, "bot_username", "test_aios_bot")
         frappe.db.set_value(SETTING, SETTING, "link_code_expiry_seconds", 300)
 
@@ -67,7 +86,6 @@ class TestConnectorLinking(IntegrationTestCase):
 
     def tearDown(self):
         self._cleanup()
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self._orig_owner)
         frappe.db.set_value(SETTING, SETTING, "bot_username", self._orig_bot)
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
@@ -105,7 +123,7 @@ class TestConnectorLinking(IntegrationTestCase):
         raw_token = res["deep_link"].split("LINK_")[1]
 
         # Pemakaian pertama sukses
-        success, msg, target = linking.verify_and_consume_token(CHAT_ID, raw_token)
+        success, _msg, target = linking.verify_and_consume_token(CHAT_ID, raw_token)
         self.assertTrue(success)
         self.assertEqual(target, self.employee)
 

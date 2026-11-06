@@ -9,7 +9,6 @@
  "field_order": [
   "thread",
   "conversation",
-  "owner_user",
   "rule_key",
   "severity",
   "status",
@@ -39,16 +38,6 @@
    "in_standard_filter": 1,
    "label": "Conversation",
    "options": "AIOS Conversation"
-  },
-  {
-   "description": "Pemilik workspace yang berhak melihat dan menutup flag ini.",
-   "fieldname": "owner_user",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Owner User",
-   "options": "User",
-   "reqd": 1,
-   "search_index": 1
   },
   {
    "description": "Kunci aturan deterministik yang memicu flag (bukan hasil penilaian LLM).",

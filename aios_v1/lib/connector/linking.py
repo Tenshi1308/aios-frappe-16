@@ -36,7 +36,7 @@ def _get_setting() -> dict[str, Any]:
     row = frappe.db.get_value(
         SETTING_DOCTYPE,
         SETTING_DOCTYPE,
-        ["bot_username", "link_code_expiry_seconds", "owner_user"],
+        ["bot_username", "link_code_expiry_seconds"],
         as_dict=True,
     )
     return row or {}

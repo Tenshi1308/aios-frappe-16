@@ -22,7 +22,12 @@ setup_wizard_complete = ["aios_v1.setup.normalize_wizard_user"]
 
 doc_events = {
     "User": {
-        "validate": "aios_v1.setup.sync_aios_status_enabled",
+        "before_insert": ["aios_v1.setup.validate_max_users"],
+        "validate": [
+            "aios_v1.setup.sync_aios_status_enabled",
+            "aios_v1.setup.validate_aios_channel_and_owner_roles",
+            "aios_v1.setup.validate_max_users",
+        ],
     },
     "Pending Action Draft": {
         "before_insert": "aios_v1.permissions.set_draft_user",

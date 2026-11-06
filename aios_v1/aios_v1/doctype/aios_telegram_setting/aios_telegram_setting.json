@@ -10,7 +10,6 @@
   "bot_token",
   "bot_username",
   "is_active",
-  "owner_user",
   "link_code_expiry_seconds",
   "persona_tone",
   "custom_instructions",
@@ -34,13 +33,6 @@
    "fieldname": "is_active",
    "fieldtype": "Check",
    "label": "Is Active"
-  },
-  {
-   "description": "Pemilik workspace penerima percakapan kanal dan flag audit (harus user AIOS Client aktif).",
-   "fieldname": "owner_user",
-   "fieldtype": "Link",
-   "label": "Owner User",
-   "options": "User"
   },
   {
    "default": "300",

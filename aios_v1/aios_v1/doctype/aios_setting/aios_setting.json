@@ -11,6 +11,7 @@
   "company_context_persona",
   "site_token_limit",
   "site_tokens_used",
+  "max_users",
   "api_key",
   "base_url",
   "model_name",
@@ -43,6 +44,13 @@
    "fieldtype": "Int",
    "label": "Site Tokens Used",
    "read_only": 1
+  },
+  {
+   "description": "Batas maksimum User AIOS Client aktif di site ini. Diatur saat provisioning site oleh Control Plane / Administrator.",
+   "fieldname": "max_users",
+   "fieldtype": "Int",
+   "label": "Max Users",
+   "non_negative": 1
   },
   {
    "fieldname": "api_key",

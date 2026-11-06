@@ -19,7 +19,6 @@ class AIOSChannelThread(Document):
         external_thread_id: DF.Data
         last_inbound_at: DF.Datetime | None
         last_outbound_at: DF.Datetime | None
-        owner_user: DF.Link
         party: DF.DynamicLink | None
         party_type: DF.Literal["", "Contact", "Customer", "Lead"]
         status: DF.Literal["Open", "Closed"]

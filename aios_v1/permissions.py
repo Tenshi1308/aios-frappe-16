@@ -14,10 +14,8 @@ OWNED_DOCTYPES = (
 	"AIOS Token Usage",
 )
 
-# DocType kanal yang memakai `owner_user` sebagai kunci kepemilikan (docs/02 §2.4).
-# Customer kanal eksternal bukan Frappe `User`, jadi `AIOS Conversation` tetap
-# dimiliki user workspace penerima; thread dan flag mengikuti pemilik yang sama.
-OWNER_USER_DOCTYPES = (
+# DocType kanal yang diakses oleh pemegang Role penerima kanal atau pemilik record (docs/02 §2.4).
+CHANNEL_DOCTYPES = (
 	"AIOS Channel Thread",
 	"AIOS Conversation Flag",
 )
@@ -154,7 +152,21 @@ def agent_state_query_conditions(user=None, doctype=None) -> str:
 
 
 def draft_query_conditions(user=None, doctype=None) -> str:
-	return _owned_condition(user, "Pending Action Draft")
+	if not user or user == "Guest":
+		return "1=0"
+	if _is_admin(user) or not _is_client(user):
+		return ""
+	own_cond = f"`tabPending Action Draft`.user = {frappe.db.escape(user)}"
+	from aios_v1.lib.connector.notify import get_channel_recipients
+
+	if user in set(get_channel_recipients()):
+		return (
+			f"({own_cond} OR `tabPending Action Draft`.name IN ("
+			"SELECT `document_name` FROM `tabNotification Log` "
+			"WHERE `type` = 'AIOS Channel Alert' AND `document_type` = 'Pending Action Draft'"
+			"))"
+		)
+	return own_cond
 
 
 def token_usage_query_conditions(user=None, doctype=None) -> str:
@@ -175,21 +187,25 @@ def message_query_conditions(user=None, doctype=None) -> str:
 
 
 def channel_thread_query_conditions(user=None, doctype=None) -> str:
-	"""Thread kanal hanya terlihat oleh pemilik workspace-nya."""
-	return _owner_user_condition(user, "AIOS Channel Thread")
+	"""Thread kanal terlihat oleh penerima kanal aktif atau pemilik record-nya."""
+	return _channel_recipient_condition(user, "AIOS Channel Thread")
 
 
 def conversation_flag_query_conditions(user=None, doctype=None) -> str:
-	"""Flag hanya terlihat oleh pemilik workspace yang harus menutupnya."""
-	return _owner_user_condition(user, "AIOS Conversation Flag")
+	"""Flag terlihat oleh penerima kanal aktif atau pemilik record-nya."""
+	return _channel_recipient_condition(user, "AIOS Conversation Flag")
 
 
-def _owner_user_condition(user: str, doctype: str) -> str:
+def _channel_recipient_condition(user: str, doctype: str) -> str:
 	if not user or user == "Guest":
 		return "1=0"
 	if _is_admin(user) or not _is_client(user):
 		return ""
-	return f"`tab{doctype}`.owner_user = {frappe.db.escape(user)}"
+	from aios_v1.lib.connector.notify import get_channel_recipients
+
+	if user in set(get_channel_recipients()):
+		return ""
+	return f"`tab{doctype}`.owner = {frappe.db.escape(user)}"
 
 
 def has_permission(doc, ptype=None, user=None, debug=False) -> bool:
@@ -203,10 +219,27 @@ def has_permission(doc, ptype=None, user=None, debug=False) -> bool:
 		return True
 	if ptype == "create" and not doc.get("user"):
 		return True
+	if doc.doctype == "Pending Action Draft":
+		if doc.get("user") == user:
+			return True
+		from aios_v1.lib.connector.notify import get_channel_recipients
+
+		if user in set(get_channel_recipients()) and frappe.db.exists(
+			"Notification Log",
+			{
+				"type": "AIOS Channel Alert",
+				"document_type": "Pending Action Draft",
+				"document_name": doc.name,
+			},
+		):
+			return True
+		return False
 	if doc.doctype in OWNED_DOCTYPES:
 		return doc.get("user") == user
-	if doc.doctype in OWNER_USER_DOCTYPES:
-		return doc.get("owner_user") == user
+	if doc.doctype in CHANNEL_DOCTYPES:
+		from aios_v1.lib.connector.notify import get_channel_recipients
+
+		return (user in set(get_channel_recipients())) or (doc.get("owner") == user)
 	if doc.doctype == "AIOS Message":
 		conversation_user = frappe.db.get_value(
 			"AIOS Conversation", doc.get("conversation"), "user"

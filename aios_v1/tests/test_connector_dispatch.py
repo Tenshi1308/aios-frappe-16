@@ -1,15 +1,17 @@
 """Integration tests for the Telegram channel connector (needs a site).
 
 Covers C5/C6/C7/C8/C10/C11/C13: one reply per update, identity is the configured
-owner (never `Administrator`), the site quota gates the channel, no ERPNext write
+recipient (never `Administrator`), the site quota gates the channel, no ERPNext write
 happens, flags are created by rules and closed by a human, notifications reach
-only the owner, and the poll offset is durable.
+all active channel recipients (with fallback to active client owners), and the poll
+offset is durable.
 """
 
 from unittest.mock import patch
 
 import frappe
 
+from aios_v1.lib import draft_manager
 from aios_v1.lib.connector import dispatch, notify, poller, rules, telegram_client, views
 
 try:
@@ -21,28 +23,54 @@ SETTING = "AIOS Telegram Setting"
 THREAD = "AIOS Channel Thread"
 FLAG = "AIOS Conversation Flag"
 OWNER = "_test.connector.owner@example.com"
+SECOND_RECEIVER = "_test.connector.receiver2@example.com"
 OTHER = "_test.connector.other@example.com"
 CHAT_ID = "99001122"
 CHAT_ID_B = "99003344"
 
 
-def _ensure_user(email: str, name: str) -> str:
-    if frappe.db.exists("User", email):
-        return email
-    doc = frappe.get_doc(
-        {
-            "doctype": "User",
-            "email": email,
-            "first_name": name,
-            "enabled": 1,
-            "send_welcome_email": 0,
-            "user_type": "Website User",
-            "aios_status": "Active",
-            "roles": [{"role": "AIOS Client"}],
-        }
-    )
-    doc.insert(ignore_permissions=True)
-    return doc.name
+def _ensure_user(email: str, name: str, extra_roles: list[str] | None = None) -> str:
+    roles = [{"role": "AIOS Client"}]
+    for role in extra_roles or []:
+        if role != "AIOS Client":
+            roles.append({"role": role})
+    if not frappe.db.exists("User", email):
+        doc = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": email,
+                "first_name": name,
+                "enabled": 1,
+                "send_welcome_email": 0,
+                "user_type": "Website User",
+                "aios_status": "Active",
+                "roles": roles,
+            }
+        )
+        doc.insert(ignore_permissions=True)
+    else:
+        frappe.db.set_value(
+            "User",
+            email,
+            {"enabled": 1, " user_type": "Website User", "aios_status": "Active"}
+            if False
+            else {"enabled": 1, "user_type": "Website User", "aios_status": "Active"},
+            update_modified=False,
+        )
+        for item in roles:
+            r = item["role"]
+            if not frappe.db.exists("Has Role", {"parent": email, "parenttype": "User", "role": r}):
+                frappe.get_doc(
+                    {
+                        "doctype": "Has Role",
+                        "parent": email,
+                        "parenttype": "User",
+                        "parentfield": "roles",
+                        "role": r,
+                    }
+                ).insert(ignore_permissions=True)
+    frappe.clear_cache(user=email)
+    return email
 
 
 class ConnectorTestBase(IntegrationTestCase):
@@ -53,10 +81,13 @@ class ConnectorTestBase(IntegrationTestCase):
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
         frappe.set_user("Administrator")
-        self.owner = _ensure_user(OWNER, "Connector Owner")
+        frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
+        self.owner = _ensure_user(OWNER, "Connector Owner", extra_roles=["AIOS Channel Receiver"])
         self.other = _ensure_user(OTHER, "Connector Other")
-        self._orig_owner = frappe.db.get_single_value(SETTING, "owner_user")
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self.owner)
         self._orig_active = frappe.db.get_single_value(SETTING, "is_active")
         frappe.db.set_value(SETTING, SETTING, "is_active", 1)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)
@@ -68,7 +99,6 @@ class ConnectorTestBase(IntegrationTestCase):
         self._cleanup_threads()
         dispatch.clear_rate_limit(CHAT_ID)
         dispatch.clear_rate_limit(CHAT_ID_B)
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self._orig_owner)
         frappe.db.set_value(SETTING, SETTING, "is_active", self._orig_active)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)
         frappe.db.commit = self._orig_commit
@@ -107,7 +137,7 @@ class TestConnectorDispatch(ConnectorTestBase):
 
         self.assertTrue(result["success"], result)
         thread = frappe.get_doc(THREAD, result["thread"])
-        self.assertEqual(thread.owner_user, self.owner)
+        self.assertEqual(thread.owner, self.owner)
         self.assertEqual(thread.channel, "telegram")
         self.assertEqual(thread.external_thread_id, CHAT_ID)
         conversation = frappe.get_doc("AIOS Conversation", thread.conversation)
@@ -173,7 +203,10 @@ class TestConnectorDispatch(ConnectorTestBase):
         self.assertNotIn("rahasia chat A", contents_b, "pesan chat A tidak boleh ada di percakapan B")
 
     def test_missing_owner_fails_closed(self):
-        frappe.db.set_value(SETTING, SETTING, "owner_user", None)
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
         with patch.object(telegram_client, "send_message", return_value=True) as send, \
              patch.object(telegram_client, "send_chat_action") as action, \
              patch.object(dispatch, "_collect_reply") as reply:
@@ -244,7 +277,7 @@ class TestConnectorFlags(ConnectorTestBase):
         flag = frappe.get_doc(FLAG, result["flags"][0])
         self.assertEqual(flag.rule_key, "personal_account")
         self.assertEqual(flag.status, "Open")
-        self.assertEqual(flag.owner_user, self.owner)
+        self.assertEqual(flag.owner, self.owner)
         self.assertTrue(flag.message_ids, "flag wajib menyimpan bukti pesan")
         self.assertEqual(flag.reason_text, "Alasan netral.")
         notify_mock.assert_called_once()
@@ -318,7 +351,7 @@ class TestConnectorViews(ConnectorTestBase):
 
 class TestConnectorNotification(ConnectorTestBase):
     def test_notification_log_is_scoped_to_owner(self):
-        """C11: the notification reaches the owner and nobody else."""
+        """C11: the notification reaches the active recipient and nobody else."""
         self.assertTrue(notify.ensure_notification_type())
         thread = self._make_thread()
         flag = frappe.get_all(FLAG, filters={"thread": thread}, pluck="name")[0]
@@ -332,6 +365,94 @@ class TestConnectorNotification(ConnectorTestBase):
         finally:
             for name in frappe.get_all("Notification Log", filters={"document_name": flag}, pluck="name"):
                 frappe.delete_doc("Notification Log", name, ignore_permissions=True, force=True)
+
+    def test_multiple_receivers_both_get_flag_and_order_notifications(self):
+        """Keputusan 2 & 4: dua pemegang Role AIOS Channel Receiver aktif keduanya menerima notifikasi."""
+        self.assertTrue(notify.ensure_notification_type())
+        receiver2 = _ensure_user(SECOND_RECEIVER, "Second Receiver", extra_roles=["AIOS Channel Receiver"])
+        self.assertEqual(sorted(notify.get_channel_recipients()), sorted([self.owner, receiver2]))
+
+        thread = self._make_thread()
+        flag = frappe.get_all(FLAG, filters={"thread": thread}, pluck="name")[0]
+        draft_doc = draft_manager.create_draft(
+            task_id="task-multi-1",
+            action_type="CREATE",
+            branch="sales",
+            created_by_agent="sales",
+            payload={"doctype": "Sales Order", "data": {"customer": "Budi", "items": [{"item_code": "ITEM-1", "qty": 2}]}},
+            user=self.owner,
+        )
+        try:
+            flag_doc = frappe.get_doc(FLAG, flag)
+            self.assertTrue(notify.notify_flag(flag_doc))
+            flag_users = frappe.get_all(
+                "Notification Log", filters={"document_name": flag}, pluck="for_user"
+            )
+            self.assertEqual(sorted(flag_users), sorted([self.owner, receiver2]))
+
+            self.assertTrue(
+                notify.notify_order_draft(
+                    draft_doc,
+                    thread={"display_name": "Budi", "external_thread_id": CHAT_ID},
+                )
+            )
+            draft_users = frappe.get_all(
+                "Notification Log", filters={"document_name": draft_doc.name}, pluck="for_user"
+            )
+            self.assertEqual(sorted(draft_users), sorted([self.owner, receiver2]))
+        finally:
+            for docname in [flag, draft_doc.name]:
+                for n in frappe.get_all("Notification Log", filters={"document_name": docname}, pluck="name"):
+                    frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+            frappe.delete_doc("Pending Action Draft", draft_doc.name, ignore_permissions=True, force=True)
+
+    def test_fallback_to_client_owner_when_no_receiver_and_stops_when_receiver_added(self):
+        """Keputusan 6: fallback ke AIOS Client Owner aktif bila belum ada AIOS Channel Receiver."""
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
+        owner_only = _ensure_user(OWNER, "Connector Owner", extra_roles=["AIOS Client Owner"])
+        self.assertEqual(notify.get_channel_recipients(), [owner_only])
+
+        # Begitu ada 1 pemegang AIOS Channel Receiver aktif, fallback berhenti:
+        receiver2 = _ensure_user(SECOND_RECEIVER, "Second Receiver", extra_roles=["AIOS Channel Receiver"])
+        self.assertEqual(notify.get_channel_recipients(), [receiver2])
+
+    def test_channel_draft_accessible_to_second_receiver_but_not_regular_client(self):
+        """Keputusan 13 (Opsi A): draf pesanan kanal dapat dibuka & ditindaklanjuti oleh penerima ke-2."""
+        self.assertTrue(notify.ensure_notification_type())
+        receiver2 = _ensure_user(SECOND_RECEIVER, "Second Receiver", extra_roles=["AIOS Channel Receiver"])
+        draft_doc = draft_manager.create_draft(
+            task_id="task-opt-a-1",
+            action_type="CREATE",
+            branch="sales",
+            created_by_agent="sales",
+            payload={"doctype": "Sales Order", "data": {"customer": "Budi", "items": [{"item_code": "ITEM-1", "qty": 1}]}},
+            user=self.owner,
+        )
+        try:
+            notify.notify_order_draft(
+                draft_doc,
+                thread={"display_name": "Budi", "external_thread_id": CHAT_ID},
+            )
+            # User AIOS Client biasa (bukan penerima) ditolak membaca draf kanal:
+            frappe.set_user(self.other)
+            with self.assertRaises(frappe.PermissionError):
+                draft_manager.get_draft(draft_doc.name)
+
+            # Penerima ke-2 (AIOS Channel Receiver aktif) diizinkan membaca & menolak draf kanal:
+            frappe.set_user(receiver2)
+            fetched = draft_manager.get_draft(draft_doc.name)
+            self.assertEqual(fetched["name"], draft_doc.name)
+            rejected = draft_manager.reject_draft(draft_doc.name, reason="Stok habis")
+            self.assertEqual(rejected["status"], "success")
+            self.assertEqual(frappe.db.get_value("Pending Action Draft", draft_doc.name, "status"), "REJECTED")
+        finally:
+            frappe.set_user("Administrator")
+            for n in frappe.get_all("Notification Log", filters={"document_name": draft_doc.name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+            frappe.delete_doc("Pending Action Draft", draft_doc.name, ignore_permissions=True, force=True)
 
     def _make_thread(self) -> str:
         with patch.object(telegram_client, "send_message", return_value=True), \
@@ -482,4 +603,3 @@ def run_tests():
     if not res.wasSuccessful():
         raise SystemExit(1)
     return res.wasSuccessful()
-

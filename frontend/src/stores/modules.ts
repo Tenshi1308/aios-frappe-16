@@ -8,6 +8,11 @@ import {
   saveTheme,
   saveCompanyPersona,
   search as apiSearch,
+  fetchClientStaffAndRecipients,
+  setChannelReceiver as apiSetChannelReceiver,
+  createClientStaff as apiCreateClientStaff,
+  setClientStaffStatus as apiSetClientStaffStatus,
+  regenerateClientStaffInvite as apiRegenerateClientStaffInvite,
 } from '@modules-api';
 import { useWindowManager } from '../composables/useWindowManager';
 import { useSessionStore } from './session';
@@ -19,11 +24,14 @@ import {
   type TelegramLinkStatus,
 } from '../api/connector';
 import type {
+  ClientStaffAndRecipientsData,
+  CreateClientStaffResponse,
   DomainDetailData,
   DomainMeta,
   ModuleDetailData,
   ModuleFilters,
   ModuleMeta,
+  RegenerateStaffInviteResponse,
   SearchResult,
   SettingsData,
   SettingsTheme,
@@ -59,6 +67,9 @@ export const useModulesStore = defineStore('modules', {
     telegramExpiresIn: null as number | null,
     telegramLoading: false,
     telegramError: '',
+    staffData: null as ClientStaffAndRecipientsData | null,
+    staffLoading: false,
+    staffError: '',
     bootstrapped: false,
     bootstrapError: '',
     _reqSeq: {} as Record<string, number>,
@@ -420,6 +431,80 @@ export const useModulesStore = defineStore('modules', {
         this.telegramError = err instanceof Error ? err.message : 'Gagal memutuskan tautan Telegram.';
       } finally {
         this.telegramLoading = false;
+      }
+    },
+    async loadClientStaffAndRecipients() {
+      const session = useSessionStore();
+      if (!(session.context?.roles ?? []).includes('AIOS Client Owner')) return;
+      try {
+        this.staffLoading = true;
+        this.staffError = '';
+        this.staffData = await fetchClientStaffAndRecipients();
+      } catch (err: unknown) {
+        this.staffError =
+          err instanceof Error ? err.message : 'Gagal memuat daftar staf dan penerima.';
+      } finally {
+        this.staffLoading = false;
+      }
+    },
+    async toggleChannelReceiver(targetUser: string, enabled: boolean) {
+      const session = useSessionStore();
+      try {
+        this.staffLoading = true;
+        this.staffError = '';
+        this.staffData = await apiSetChannelReceiver(targetUser, enabled, session.csrfToken);
+      } catch (err: unknown) {
+        this.staffError =
+          err instanceof Error ? err.message : 'Gagal memperbarui penerima notifikasi.';
+        throw err;
+      } finally {
+        this.staffLoading = false;
+      }
+    },
+    async addClientStaff(payload: {
+      email: string;
+      full_name: string;
+      persona: string;
+    }): Promise<CreateClientStaffResponse> {
+      const session = useSessionStore();
+      this.staffLoading = true;
+      this.staffError = '';
+      try {
+        const res = await apiCreateClientStaff(payload, session.csrfToken);
+        await this.loadClientStaffAndRecipients();
+        return res;
+      } catch (err: unknown) {
+        this.staffError = err instanceof Error ? err.message : 'Gagal menambahkan staf baru.';
+        throw err;
+      } finally {
+        this.staffLoading = false;
+      }
+    },
+    async changeClientStaffStatus(targetUser: string, status: 'Active' | 'Suspended') {
+      const session = useSessionStore();
+      try {
+        this.staffLoading = true;
+        this.staffError = '';
+        this.staffData = await apiSetClientStaffStatus(targetUser, status, session.csrfToken);
+      } catch (err: unknown) {
+        this.staffError = err instanceof Error ? err.message : 'Gagal mengubah status staf.';
+        throw err;
+      } finally {
+        this.staffLoading = false;
+      }
+    },
+    async regenerateStaffInvite(targetUser: string): Promise<RegenerateStaffInviteResponse> {
+      const session = useSessionStore();
+      this.staffLoading = true;
+      this.staffError = '';
+      try {
+        return await apiRegenerateClientStaffInvite(targetUser, session.csrfToken);
+      } catch (err: unknown) {
+        this.staffError =
+          err instanceof Error ? err.message : 'Gagal membuat ulang tautan undangan.';
+        throw err;
+      } finally {
+        this.staffLoading = false;
       }
     },
   },

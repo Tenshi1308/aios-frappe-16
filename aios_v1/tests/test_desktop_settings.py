@@ -35,7 +35,10 @@ class TestDesktopSettings(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
         frappe.set_user("Administrator")
+        frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
         self.user = self._ensure_user(
             self.USER,
             first_name="_Test Desktop Settings",
@@ -106,11 +109,19 @@ class TestDesktopSettings(IntegrationTestCase):
         request_params = {"sid": frappe.session.sid, **(params or {})}
         response = []
         site = frappe.local.site
+        main_db = frappe.local.db
         client = get_test_client()
         url = f"{get_url()}/api/method/aios_v1.api.desktop.{method_name}"
 
+        def share_test_db(set_admin_as_user=True):
+            frappe.local.db = main_db
+
         def dispatch():
-            with patch("frappe.app.get_site_name", return_value=site):
+            with (
+                patch("frappe.app.get_site_name", return_value=site),
+                patch("frappe.connect", side_effect=share_test_db),
+                patch("frappe.app.sync_database"),
+            ):
                 response.append(client.get(url, json=request_params))
 
         thread = Thread(target=dispatch)
@@ -120,6 +131,7 @@ class TestDesktopSettings(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
         super().tearDown()
 
@@ -531,3 +543,156 @@ class TestDesktopSettings(IntegrationTestCase):
         frappe.set_user(self.inactive_user.name)
         with self.assertRaises(frappe.AuthenticationError):
             save_method(company_context_persona="Test")
+
+    def _make_owner_session(self):
+        frappe.set_user("Administrator")
+        self.owner_user = self._ensure_user(
+            "_test.desktop.owner@example.com",
+            first_name="_Test Desktop Owner",
+            aios_persona="executive",
+            aios_status="Active",
+            roles=["AIOS Client", "AIOS Client Owner"],
+        )
+        frappe.set_user(self.owner_user.name)
+        frappe.local.session_obj = object()
+        return self.owner_user
+
+    def test_owner_endpoints_reject_guest_admin_and_regular_client(self):
+        """Keputusan 3 & 7 (Lapis 2): ke-5 endpoint khusus AIOS Client Owner menolak non-owner."""
+        endpoints = [
+            ("client_staff_and_recipients", ["GET"], {}),
+            ("set_channel_receiver", ["POST"], {"target_user": self.user.name, "enabled": True}),
+            ("create_client_staff", ["POST"], {"full_name": "Staf A", "email": "_test.staf.a@example.com"}),
+            ("set_client_staff_status", ["POST"], {"target_user": self.user.name, "status": "Suspended"}),
+            ("regenerate_client_staff_invite", ["POST"], {"target_user": self.user.name}),
+        ]
+        for name, expected_methods, kwargs in endpoints:
+            fn = getattr(desktop_api, name, None)
+            self.assertTrue(callable(fn), f"desktop.{name} belum tersedia")
+            self.assertIn(fn, frappe.whitelisted)
+            self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[fn], expected_methods)
+
+            frappe.set_user("Guest")
+            with self.assertRaises(frappe.AuthenticationError):
+                fn(**kwargs)
+
+            frappe.set_user("Administrator")
+            with self.assertRaises(frappe.PermissionError):
+                fn(**kwargs)
+
+            # Regular AIOS Client (bukan AIOS Client Owner) harus ditolak:
+            frappe.set_user(self.user.name)
+            with self.assertRaises(frappe.PermissionError):
+                fn(**kwargs)
+
+            frappe.set_user(self.inactive_user.name)
+            with self.assertRaises(frappe.AuthenticationError):
+                fn(**kwargs)
+
+    def test_client_staff_and_recipients_and_set_channel_receiver(self):
+        """Keputusan 2, 6, 9, 17: AIOS Client Owner dapat melihat daftar user & toggle AIOS Channel Receiver."""
+        owner = self._make_owner_session()
+        res = desktop_api.client_staff_and_recipients()
+        self.assertIn("users", res)
+        self.assertIn("effective_recipients", res)
+        self.assertIn("using_owner_fallback", res)
+        self.assertIn("quota", res)
+
+        # Toggle self.user menjadi penerima kanal:
+        toggled_on = desktop_api.set_channel_receiver(target_user=self.user.name, enabled=True)
+        self.assertIn(self.user.name, toggled_on["effective_recipients"])
+        self.assertFalse(toggled_on["using_owner_fallback"])
+        user_doc = frappe.get_doc("User", self.user.name)
+        self.assertIn("AIOS Channel Receiver", [r.role for r in user_doc.roles])
+        self.assertIn("AIOS Channel Receiver Profile", [rp.role_profile for rp in user_doc.role_profiles])
+
+        # Lepas kembali Role penerima dari self.user:
+        toggled_off = desktop_api.set_channel_receiver(target_user=self.user.name, enabled=False)
+        self.assertNotIn(self.user.name, toggled_off["effective_recipients"])
+        user_doc.reload()
+        self.assertNotIn("AIOS Channel Receiver", [r.role for r in user_doc.roles])
+        self.assertNotIn("AIOS Channel Receiver Profile", [rp.role_profile for rp in user_doc.role_profiles])
+
+        # Menolak user yang bukan AIOS Client aktif:
+        with self.assertRaises(frappe.ValidationError):
+            desktop_api.set_channel_receiver(target_user=self.inactive_user.name, enabled=True)
+        with self.assertRaises(frappe.ValidationError):
+            desktop_api.set_channel_receiver(target_user=self.non_client_user.name, enabled=True)
+        self.assertEqual(frappe.session.user, owner.name)
+
+    def test_create_client_staff_issues_invitation_url_and_respects_max_users(self):
+        """Keputusan 8, 18, 19, 20: Tambah Staf membuat User AIOS Client aktif + invitation_url dan patuh max_users."""
+        from urllib.parse import parse_qs, urlparse
+
+        from frappe.core.doctype.user.user import _get_user_for_update_password
+
+        self._make_owner_session()
+        staff_email = "_test.desktop.newstaff@example.com"
+        created = desktop_api.create_client_staff(
+            full_name="Siti Kasir", email=staff_email, persona="sales"
+        )
+        self.assertEqual(created["user"], staff_email)
+        parsed = urlparse(created["invitation_url"])
+        self.assertEqual(parsed.path, "/update-password")
+        key = parse_qs(parsed.query)["key"][0]
+        accepted = _get_user_for_update_password(key, None)
+        self.assertEqual(accepted.get("user"), staff_email)
+
+        staff_doc = frappe.get_doc("User", staff_email)
+        self.assertEqual(staff_doc.aios_status, "Active")
+        self.assertEqual(staff_doc.enabled, 1)
+        self.assertEqual(staff_doc.aios_persona, "sales")
+        roles = [r.role for r in staff_doc.roles]
+        self.assertIn("AIOS Client", roles)
+        self.assertNotIn("AIOS Channel Receiver", roles)
+        self.assertNotIn("AIOS Client Owner", roles)
+
+        # Uji batas max_users penuh:
+        active_count = created["quota"]["active_users"]
+        frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", active_count, update_modified=False)
+        with self.assertRaises(frappe.ValidationError):
+            desktop_api.create_client_staff(
+                full_name="Staf Lebih", email="_test.desktop.overstaff@example.com"
+            )
+
+    def test_set_client_staff_status_suspend_reactivate_and_blocks_owner_self_suspend(self):
+        """Keputusan 21: Nonaktifkan (Suspended) melepas penerima & membebaskan kursi; tidak boleh suspend owner."""
+        owner = self._make_owner_session()
+        staff_email = "_test.desktop.staffstatus@example.com"
+        desktop_api.create_client_staff(
+            full_name="Budi Gudang", email=staff_email, persona="operations"
+        )
+        desktop_api.set_channel_receiver(target_user=staff_email, enabled=True)
+
+        # Owner tidak boleh menonaktifkan dirinya sendiri / sesama owner:
+        with self.assertRaises(frappe.ValidationError):
+            desktop_api.set_client_staff_status(target_user=owner.name, status="Suspended")
+
+        # Nonaktifkan staf -> status Suspended, enabled=0, Role penerima otomatis dilepas:
+        suspended = desktop_api.set_client_staff_status(target_user=staff_email, status="Suspended")
+        self.assertNotIn(staff_email, suspended["effective_recipients"])
+        staff_doc = frappe.get_doc("User", staff_email)
+        self.assertEqual(staff_doc.aios_status, "Suspended")
+        self.assertEqual(staff_doc.enabled, 0)
+        self.assertNotIn("AIOS Channel Receiver", [r.role for r in staff_doc.roles])
+
+        # Aktifkan kembali -> status Active, enabled=1:
+        reactivated = desktop_api.set_client_staff_status(target_user=staff_email, status="Active")
+        staff_row = next(u for u in reactivated["users"] if u["user"] == staff_email)
+        self.assertEqual(staff_row["status"], "Active")
+        self.assertTrue(staff_row["enabled"])
+
+    def test_regenerate_client_staff_invite_works_for_unlogged_staff_and_rejects_logged_in(self):
+        """Keputusan 21: Buat ulang tautan undangan hanya untuk staf yang belum pernah login."""
+        self._make_owner_session()
+        staff_email = "_test.desktop.reinvite@example.com"
+        desktop_api.create_client_staff(
+            full_name="Rina Finance", email=staff_email, persona="finance"
+        )
+        reinvited = desktop_api.regenerate_client_staff_invite(target_user=staff_email)
+        self.assertIn("/update-password?key=", reinvited["invitation_url"])
+
+        # Bila staf sudah pernah login (last_login terisi), regenerate invite harus ditolak:
+        frappe.db.set_value("User", staff_email, "last_login", "2026-11-06 10:00:00", update_modified=False)
+        with self.assertRaises(frappe.ValidationError):
+            desktop_api.regenerate_client_staff_invite(target_user=staff_email)

@@ -113,8 +113,11 @@ class TestConnectorModulesExist(unittest.TestCase):
         found = {path.name for path in CONNECTOR.glob("*.py")}
         self.assertEqual(found, self.EXPECTED)
 
-    def test_owner_user_is_the_identity_key(self):
-        """Threads and flags are scoped by `owner_user`, not by channel chat_id."""
+    def test_owner_user_is_removed_and_channel_hooks_registered(self):
+        """`owner_user` is removed from all 3 DocTypes; permissions use channel recipient hooks."""
+        setting = (
+            REPO_ROOT / "aios_v1" / "aios_v1" / "doctype" / "aios_telegram_setting" / "aios_telegram_setting.json"
+        ).read_text(encoding="utf-8")
         thread = (
             REPO_ROOT / "aios_v1" / "aios_v1" / "doctype" / "aios_channel_thread" / "aios_channel_thread.json"
         ).read_text(encoding="utf-8")
@@ -126,7 +129,12 @@ class TestConnectorModulesExist(unittest.TestCase):
             / "aios_conversation_flag"
             / "aios_conversation_flag.json"
         ).read_text(encoding="utf-8")
-        self.assertIn("owner_user", thread)
-        self.assertIn("owner_user", flag)
+        self.assertNotIn("owner_user", setting)
+        self.assertNotIn("owner_user", thread)
+        self.assertNotIn("owner_user", flag)
+        aios_setting = (
+            REPO_ROOT / "aios_v1" / "aios_v1" / "doctype" / "aios_setting" / "aios_setting.json"
+        ).read_text(encoding="utf-8")
+        self.assertIn('"fieldname": "max_users"', aios_setting)
         hooks = (LIB.parent / "hooks.py").read_text(encoding="utf-8")
         self.assertIn("aios_v1.permissions.channel_thread_query_conditions", hooks)

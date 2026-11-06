@@ -1,5 +1,8 @@
 import type {
   BootstrapData,
+  ClientStaffAndRecipientsData,
+  ClientStaffUser,
+  CreateClientStaffResponse,
   DomainCard,
   DomainDetailData,
   DomainMeta,
@@ -9,6 +12,7 @@ import type {
   ModuleListData,
   ModuleMeta,
   ModulesApi,
+  RegenerateStaffInviteResponse,
   SearchResult,
   SettingsData,
   SettingsTheme,
@@ -236,6 +240,111 @@ export async function saveCompanyPersona(
   return mockCompanyPersona;
 }
 
+const mockStaffUsers: ClientStaffUser[] = [
+  {
+    user: 'mock@example.com',
+    full_name: 'Mock Client',
+    persona: 'finance',
+    status: 'Active',
+    enabled: true,
+    is_channel_receiver: true,
+    is_client_owner: true,
+    has_logged_in: true,
+  },
+];
+
+function buildMockStaffPayload(): ClientStaffAndRecipientsData {
+  const activeCount = mockStaffUsers.filter((u) => u.enabled && u.status === 'Active').length;
+  const maxUsers = 5;
+  const explicit = mockStaffUsers
+    .filter((u) => u.enabled && u.status === 'Active' && u.is_channel_receiver)
+    .map((u) => u.user);
+  const owners = mockStaffUsers
+    .filter((u) => u.enabled && u.status === 'Active' && u.is_client_owner)
+    .map((u) => u.user);
+  const effective = explicit.length > 0 ? explicit : owners;
+  return {
+    users: mockStaffUsers.map((u) => ({ ...u })),
+    effective_recipients: effective,
+    using_owner_fallback: explicit.length === 0 && effective.length > 0,
+    quota: {
+      active_users: activeCount,
+      max_users: maxUsers,
+      remaining_slots: Math.max(0, maxUsers - activeCount),
+    },
+  };
+}
+
+export async function fetchClientStaffAndRecipients(): Promise<ClientStaffAndRecipientsData> {
+  return buildMockStaffPayload();
+}
+
+export async function setChannelReceiver(
+  targetUser: string,
+  enabled: boolean,
+  _csrfToken: string,
+): Promise<ClientStaffAndRecipientsData> {
+  const item = mockStaffUsers.find((u) => u.user === targetUser);
+  if (item && item.enabled && item.status === 'Active') {
+    item.is_channel_receiver = enabled;
+  }
+  return buildMockStaffPayload();
+}
+
+export async function createClientStaff(
+  payload: { email: string; full_name: string; persona: string },
+  _csrfToken: string,
+): Promise<CreateClientStaffResponse> {
+  const email = payload.email.trim().toLowerCase();
+  mockStaffUsers.push({
+    user: email,
+    full_name: payload.full_name.trim() || email,
+    persona: payload.persona || 'sales',
+    status: 'Active',
+    enabled: true,
+    is_channel_receiver: false,
+    is_client_owner: false,
+    has_logged_in: false,
+  });
+  const current = buildMockStaffPayload();
+  return {
+    ok: true,
+    user: email,
+    full_name: payload.full_name.trim() || email,
+    persona: payload.persona || 'sales',
+    invitation_url: `/update-password?key=mock-key-${Date.now()}`,
+    quota: current.quota,
+    users: current.users,
+  };
+}
+
+export async function setClientStaffStatus(
+  targetUser: string,
+  status: 'Active' | 'Suspended',
+  _csrfToken: string,
+): Promise<ClientStaffAndRecipientsData> {
+  const item = mockStaffUsers.find((u) => u.user === targetUser && !u.is_client_owner);
+  if (item) {
+    item.status = status;
+    item.enabled = status === 'Active';
+    if (status === 'Suspended') {
+      item.is_channel_receiver = false;
+    }
+  }
+  return buildMockStaffPayload();
+}
+
+export async function regenerateClientStaffInvite(
+  targetUser: string,
+  _csrfToken: string,
+): Promise<RegenerateStaffInviteResponse> {
+  return {
+    ok: true,
+    user: targetUser,
+    invitation_url: `/update-password?key=mock-regen-${Date.now()}`,
+  };
+}
+
 export const modulesApi = {
   fetchBootstrap,
   fetchDomain,
@@ -245,4 +354,9 @@ export const modulesApi = {
   fetchSettings,
   saveTheme,
   saveCompanyPersona,
+  fetchClientStaffAndRecipients,
+  setChannelReceiver,
+  createClientStaff,
+  setClientStaffStatus,
+  regenerateClientStaffInvite,
 } satisfies ModulesApi;

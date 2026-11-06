@@ -33,8 +33,8 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 | B5 | Prosedur manual admin tertulis | sedang | **Dikerjakan** (`docs/04` §6.0) |
 | R1 | Endpoint guest tanpa verifikasi email | sedang | Risiko diterima untuk PoC |
 | R2 | Site klien baru tanpa outgoing `Email Account` | rendah | Risiko diterima; tautan dikirim manual |
-| C1 | Pendaftaran user ke-2 dst | — | **Ditunda** (di luar Flow Utama) |
-| C2 | `max_users` belum diimplementasikan | rendah | **Ditunda** (`#5`) |
+| C1 | Pendaftaran user ke-2 dst | sedang | **Dikerjakan** (2026-11-06: menu `Kelola Staf` khusus `AIOS Client Owner` + `invitation_url`) |
+| C2 | `max_users` belum diimplementasikan | sedang | **Dikerjakan** (2026-11-06: `AIOS Setting.max_users` + validasi `User.before_insert` & `User.validate`) |
 
 ---
 
@@ -169,11 +169,11 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 
 ### C1 — Pendaftaran user ke-2 dan seterusnya
 
-**Status: Ditunda.** Di luar Flow Utama. Pertanyaan terbuka (lewat `/register` di site klien atau undangan admin; siapa yang menyetujui) tetap dicatat di sini, tetapi **tidak boleh menghambat atau membentuk** A1/A3/B3/B4. `docs/03:51` (`max_users`) dan `docs/03:97` (banyak user per site) tetap benar.
+**Status: Dikerjakan (2026-11-06).** Pemilik klien (`AIOS Client Owner`) menambah staf ke-2 dst langsung dari Ekasa Desk lewat jendela `Pengaturan` → `Kelola Staf` (`aios_v1.api.desktop.create_client_staff`), dibatasi plafon `AIOS Setting.max_users`, dan menerima tautan undangan `/update-password?key=...` sekali pakai (berlaku 20 menit).
 
 ### C2 — `max_users`
 
-**Status: Ditunda** ke `#5` (`docs/05.1:65`; known gap `docs/00` §7). Kode: `grep max_users` di `aios_v1/` = nol; `hooks.py` hanya punya `doc_events.User.validate = sync_aios_status_enabled`.
+**Status: Dikerjakan (2026-11-06).** Field `max_users` (`Int`, `non_negative: 1`) telah ditambahkan ke `AIOS Setting` dan ditegakkan melalui `doc_events["User"]` (`before_insert` & `validate` → `aios_v1.setup.validate_max_users`), `activate_user`, dan `create_client_staff`.
 
 ---
 
@@ -190,12 +190,12 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | Setup wizard (fase manual) | Dijalankan admin, email + nama client, **tanpa `password`** |
 | User hasil wizard | Hook `setup_wizard_complete` → `AIOS Client Profile`, cabut `System Manager` |
 | Password client | Dibuat client sendiri lewat `/update-password` (tautan dari `activate_user`) |
-| `max_users` | Tetap di docs; ikut `#5` |
+| `max_users` | Dikerjakan (2026-11-06): `AIOS Setting.max_users` + validasi aktif `AIOS Client` |
 | `docs/03:51` & `:97` | Tidak dikoreksi — benar |
 | Arsitektur site | 1 frontend, N site, dipilih dari `Host` header |
 | `default_site` | Dihapus dari `common_site_config.json` (selesai) |
 | Customize Form + fixtures | Boleh untuk DocType non-core (`AGENTS.md` §7); saat ini tidak dipakai karena B2 dibatalkan |
-| C1, C2, A4 | Ditunda |
+| C1, C2 | Dikerjakan (2026-11-06); A4 tetap Ditunda |
 
 ---
 

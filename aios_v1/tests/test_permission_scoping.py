@@ -20,6 +20,7 @@ SYSTEM_MANAGER = "_test.scope.sysman@example.com"
 
 
 def _make_user(email, role, user_type="Website User"):
+    frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
     if frappe.db.exists("User", email):
         user = frappe.get_doc("User", email)
     else:
@@ -134,6 +135,119 @@ class TestPermissionScoping(IntegrationTestCase):
                 ),
                 doctype,
             )
+
+    def test_channel_and_owner_role_validation_requires_active_client(self):
+        """Keputusan 7 (Lapis 1): AIOS Channel Receiver & AIOS Client Owner wajib punya AIOS Client aktif."""
+        frappe.set_user("Administrator")
+        # 1) User tanpa Role AIOS Client ditolak:
+        non_client = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": "_test.scope.nonclient.role@example.com",
+                "first_name": "Non Client",
+                "enabled": 1,
+                "send_welcome_email": 0,
+                "user_type": "Website User",
+                "roles": [{"role": "AIOS Channel Receiver"}],
+            }
+        )
+        with self.assertRaises(frappe.ValidationError):
+            non_client.insert(ignore_permissions=True)
+
+        # 2) User AIOS Client yang belum Active (Pending Provisioning) ditolak diberi AIOS Client Owner:
+        pending_client = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": "_test.scope.pending.role@example.com",
+                "first_name": "Pending Client",
+                "enabled": 0,
+                "send_welcome_email": 0,
+                "user_type": "Website User",
+                "aios_status": "Pending Provisioning",
+                "roles": [{"role": "AIOS Client"}, {"role": "AIOS Client Owner"}],
+            }
+        )
+        with self.assertRaises(frappe.ValidationError):
+            pending_client.insert(ignore_permissions=True)
+
+        # 3) User AIOS Client aktif diizinkan menerima AIOS Channel Receiver Profile & AIOS Client Owner Profile:
+        self.alpha.append("role_profiles", {"role_profile": "AIOS Client Profile"})
+        self.alpha.append("role_profiles", {"role_profile": "AIOS Channel Receiver Profile"})
+        self.alpha.append("role_profiles", {"role_profile": "AIOS Client Owner Profile"})
+        self.alpha.save(ignore_permissions=True)
+        alpha_roles = [r.role for r in self.alpha.roles]
+        self.assertIn("AIOS Channel Receiver", alpha_roles)
+        self.assertIn("AIOS Client Owner", alpha_roles)
+
+    def test_max_users_validation_blocks_over_limit_and_allows_after_suspend(self):
+        """Keputusan 19: plafon AIOS Setting.max_users ditegakkan di User.before_insert & User.validate."""
+        from aios_v1.setup import count_active_client_users
+
+        frappe.set_user("Administrator")
+        current_active = count_active_client_users()
+        frappe.db.set_value(
+            "AIOS Setting", "AIOS Setting", "max_users", current_active, update_modified=False
+        )
+
+        # Penambahan user AIOS Client aktif baru ketika kursi penuh harus ditolak:
+        over_user = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": "_test.scope.overlimit@example.com",
+                "first_name": "Over Limit",
+                "enabled": 1,
+                "send_welcome_email": 0,
+                "user_type": "Website User",
+                "aios_status": "Active",
+                "roles": [{"role": "AIOS Client"}],
+            }
+        )
+        with self.assertRaises(frappe.ValidationError):
+            over_user.insert(ignore_permissions=True)
+
+        # Setelah 1 user AIOS Client dinonaktifkan (Suspended), slot terbuka dan insert berhasil:
+        self.beta.aios_status = "Suspended"
+        self.beta.enabled = 0
+        self.beta.save(ignore_permissions=True)
+        over_user.insert(ignore_permissions=True)
+        self.assertTrue(frappe.db.exists("User", over_user.name))
+
+    def test_channel_doctype_scoping_for_receiver_vs_regular_client(self):
+        """Penerima kanal aktif dapat mengakses AIOS Channel Thread & Flag; AIOS Client biasa ditolak."""
+        frappe.set_user("Administrator")
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
+        self.alpha.append("roles", {"role": "AIOS Channel Receiver"})
+        self.alpha.save(ignore_permissions=True)
+        frappe.clear_cache(user=self.alpha.name)
+        frappe.clear_cache(user=self.beta.name)
+
+        conv = frappe.get_doc(
+            {
+                "doctype": "AIOS Conversation",
+                "user": "Guest",
+                "branch": "sales",
+                "title": "Test Channel Thread",
+            }
+        ).insert(ignore_permissions=True)
+        thread = frappe.get_doc(
+            {
+                "doctype": "AIOS Channel Thread",
+                "channel": "telegram",
+                "external_thread_id": "scope-chat-1",
+                "conversation": conv.name,
+            }
+        ).insert(ignore_permissions=True)
+
+        frappe.set_user(self.alpha.name)
+        self.assertIn(thread.name, frappe.get_list("AIOS Channel Thread", pluck="name"))
+        self.assertTrue(frappe.has_permission("AIOS Channel Thread", "read", doc=thread))
+
+        frappe.set_user(self.beta.name)
+        self.assertNotIn(thread.name, frappe.get_list("AIOS Channel Thread", pluck="name"))
+        self.assertFalse(frappe.has_permission("AIOS Channel Thread", "read", doc=thread))
 
 
 def _active_company():

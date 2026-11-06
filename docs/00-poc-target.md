@@ -28,9 +28,9 @@ PoC **bukan** “semua fitur di docs selesai”. PoC adalah alur end-to-end di a
 1. **Client registrasi** di halaman `/register` (Vite). Hanya mengisi 3 hal esensial: nama lengkap, email, nama perusahaan. **Tanpa password dan tanpa pilihan negara** (negara disetel default Indonesia). Sistem membuat `Lead` (`utm_source` = "AIOS Signup") di **site developer**.
 2. **Client menunggu** konfirmasi `AIOS Admin` (layar "Pendaftaran Diterima").
 3. **`AIOS Admin` melihat pendaftar** (tab "Pendaftar" di `/aios-admin`), lalu menyiapkan site **secara manual**: `bench new-site` → install `erpnext` + `aios_v1` → setup wizard dengan email + nama client tanpa `password` (negara, mata uang, zona waktu, singkatan, COA, tahun fiskal diturunkan dari data pendaftar) → hook `setup_wizard_complete` menormalkan user client → buat user `AIOS Control` + API key/secret (`generate_keys`) → daftarkan di `AIOS Managed Site` (**aios manage site**).
-4. **`AIOS Admin` mengaktifkan** user (`aios_status = "Active"`), sistem menerbitkan tautan `/update-password?key=...` sekali pakai, admin mengirimnya ke client (WhatsApp/Telegram/email) bahwa app siap dipakai.
+4. **`AIOS Admin` mengaktifkan** user (`aios_status = "Active"`), sistem memasang `AIOS Client Owner Profile` (Role `AIOS Client Owner`) pada user pemilik pertama di site itu dan menerbitkan tautan `/update-password?key=...` sekali pakai, lalu admin mengirimnya ke client (WhatsApp/Telegram/email) bahwa app siap dipakai.
 5. **Client login** dengan password yang ia buat sendiri lewat tautan itu.
-6. **Client memakai app** (Ekasa Desk) di site-nya sendiri.
+6. **Client memakai app** (Ekasa Desk) di site-nya sendiri (termasuk mengatur penerima notifikasi kanal `AIOS Channel Receiver` dan menambahkan staf perusahaan dalam batas `AIOS Setting.max_users` dari jendela Pengaturan).
 
 ```mermaid
 flowchart LR
@@ -120,7 +120,9 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | **Administrator** | Root Frappe. Satu-satunya yang memakai **Frappe Desk** untuk setup/operasi darurat. Tidak pernah dimodifikasi. |
 | **AIOS Control** | Role layanan di **site klien**. Tanpa login manusia; `read` `User` + `AIOS Token Usage`, plus satu endpoint sync konfigurasi yang sempit; tanpa akses DocPerm umum ke `AIOS Setting`/ERPNext. |
 | **AIOS Client** | User bisnis di site klien. `Website User`, `desk_access=0`; memakai **Ekasa Desk**. |
-| **AIOS Setting** | Config site: company, kuota site, konteks bisnis, dan **satu model LLM** untuk PoC. |
+| **AIOS Client Owner** | Role pemilik klien di site klien (`desk_access=0`, dipasang via `AIOS Client Owner Profile` pada user `AIOS Client` aktif). Mengatur penerima notifikasi kanal (`Penerima Kanal`) dan mengelola staf perusahaan (`Kelola Staf`) di Ekasa Desk. |
+| **AIOS Channel Receiver** | Role penerima notifikasi kanal eksternal di site klien (`desk_access=0`, dipasang via `AIOS Channel Receiver Profile` pada user `AIOS Client` aktif). Menerima `Notification Log` (`AIOS Channel Alert`) untuk draf pesanan dan flag percakapan, dengan fallback ke `AIOS Client Owner` aktif bila belum ada penerima. |
+| **AIOS Setting** | Config site: company, kuota site, plafon user aktif (`max_users`), konteks bisnis, dan **satu model LLM** untuk PoC. |
 | **AIOS Token Usage** | DocType log pemakaian token/biaya per panggilan. Tidak ada link `conversation`. |
 | **AIOS LLM Provider** | Registry multi-provider (H1). **Tidak dipakai di PoC**; PoC single model di `AIOS Setting`. |
 | **AIOS Agent Model Route** | Mapping agent → provider/model (H1). **Ditunda** untuk PoC. |
@@ -166,6 +168,8 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-29 | Hook resmi `setup_wizard_complete` mencabut `System Manager` dari user client hasil wizard dan memasang `AIOS Client Profile`. |
 | 2026-10-29 | Site developer ditandai `aios_site_role = "developer"` di `site_config.json`; registrasi ditolak di site lain. |
 | 2026-10-29 | Pendaftaran user ke-2 dst (C1), `max_users` (C2), dan pengisian `contact_email` dari `Lead` (A4) ditunda; di luar Flow Utama. |
+| 2026-11-06 | Refactor `owner_user`: hapus field `owner_user` dari `AIOS Telegram Setting`, `AIOS Channel Thread`, dan `AIOS Conversation Flag`; ganti dengan Role `AIOS Channel Receiver` (`AIOS Channel Receiver Profile`) dan `AIOS Client Owner` (`AIOS Client Owner Profile`), validasi 3 lapis (wajib `AIOS Client` aktif), helper `get_channel_recipients()` dengan fallback ke `AIOS Client Owner` aktif, dan akses draf kanal bagi penerima aktif (Opsi A). |
+| 2026-11-06 | Implementasi `AIOS Setting.max_users` (divalidasi di `User.before_insert` & `User.validate`) dan fitur mandiri pemilik klien (`AIOS Client Owner`) melalui 2 menu baru di Pengaturan Ekasa Desk: **Penerima Kanal** dan **Kelola Staf** (membuat staf `AIOS Client` aktif + tautan `/update-password?key=...` sekali pakai, suspend/re-activate staf, dan buat ulang tautan undangan). |
 
 ---
 
@@ -173,13 +177,13 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 
 | Gap | Dampak |
 |---|---|
-| `AIOS Setting` JSON masih kurang `max_users` | `company_context_persona` sudah ada sejak `#8`; `max_users` menyusul `#5`. `default_user_token_limit` dibatalkan (kuota per user tidak dipakai). |
+| ~~`AIOS Setting` JSON masih kurang `max_users`~~ | ✅ `max_users` sudah ditambahkan ke `AIOS Setting` dan divalidasi di `User.before_insert` & `User.validate` (`setup.py::validate_max_users`). Sisa `#5` hanya pembersihan `User.aios_token_limit`. |
 | `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
 | ~~`/api/monitoring` masih pakai `AIOS Tenant`~~ | ✅ Dipindah ke `User` + `AIOS Token Usage` di `#4a-2`. |
 | ~~`register_account` masih membuat `User` (dengan password)~~ | ✅ Diselesaikan: membuat `Lead` di site developer (`utm_source = "AIOS Signup"`) tanpa password, dengan guard `aios_site_role`. Flow Utama langkah 1–2 terpenuhi. |
-| Tab "Pendaftar" + `signup_leads()` belum ada | Langkah 3 belum terlihat admin; `docs/09` A5/B3. |
-| Hook `setup_wizard_complete` belum ada | User hasil wizard masih `System Manager`; `docs/09` B4. |
-| `activate_user` belum menerbitkan tautan `/update-password` | Langkah 4–5 belum jalan; `docs/09` B1. |
+| ~~Tab "Pendaftar" + `signup_leads()` belum ada~~ | ✅ Diselesaikan di `aios_v1/api/control_plane.py` + `admin/`. |
+| ~~Hook `setup_wizard_complete` belum ada~~ | ✅ Diselesaikan (`aios_v1.setup.normalize_wizard_user`). |
+| ~~`activate_user` belum menerbitkan tautan `/update-password`~~ | ✅ Diselesaikan (`control.py::activate_user` menerbitkan `invitation_url` + memasang `AIOS Client Owner Profile`). |
 
 ---
 

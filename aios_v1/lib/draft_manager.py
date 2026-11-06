@@ -44,11 +44,11 @@ def create_draft(
     task_id: str,
     action_type: str,
     payload: dict,
-    branch: str = None,
-    created_by_agent: str = None,
+    branch: str | None = None,
+    created_by_agent: str | None = None,
     reason: str = "",
     expires_in_hours: int = 24,
-    user: str = None,
+    user: str | None = None,
 ):
     """Simpan draft baru; `user` diambil dari parameter eksplisit atau sesi aktif."""
     if not task_id or not action_type:
@@ -356,9 +356,28 @@ def list_pending_drafts(limit: int = 50) -> list:
     )
 
 
+def _is_channel_draft(draft_name: str) -> bool:
+    if not draft_name or not frappe.db.exists("DocType", "Notification Log"):
+        return False
+    return bool(
+        frappe.db.exists(
+            "Notification Log",
+            {
+                "type": "AIOS Channel Alert",
+                "document_type": "Pending Action Draft",
+                "document_name": draft_name,
+            },
+        )
+    )
+
+
 def _assert_draft_owner(doc) -> None:
     user = frappe.session.user
     if user != "Administrator" and doc.user != user:
+        from aios_v1.lib.connector.notify import get_channel_recipients
+
+        if user in set(get_channel_recipients()) and _is_channel_draft(doc.name):
+            return
         frappe.throw("Draft tidak ditemukan.", frappe.PermissionError)
 
 

@@ -135,11 +135,30 @@ class TestPermissionInstaller(IntegrationTestCase):
         self.assertEqual(perm["create"], 0)
         self.assertEqual(perm["delete"], 0)
 
+    def test_channel_and_owner_roles_and_profiles_exist(self):
+        """Keputusan 2, 3, 11: AIOS Channel Receiver & AIOS Client Owner beserta Role Profile-nya."""
+        from aios_v1.setup import ensure_roles_and_profiles
+
+        ensure_roles_and_profiles()
+        for role_name in ("AIOS Channel Receiver", "AIOS Client Owner"):
+            self.assertTrue(frappe.db.exists("Role", role_name), role_name)
+            self.assertEqual(frappe.db.get_value("Role", role_name, "desk_access"), 0, role_name)
+
+        receiver_profile = frappe.get_doc("Role Profile", "AIOS Channel Receiver Profile")
+        self.assertEqual([r.role for r in receiver_profile.roles], ["AIOS Channel Receiver"])
+
+        owner_profile = frappe.get_doc("Role Profile", "AIOS Client Owner Profile")
+        self.assertEqual([r.role for r in owner_profile.roles], ["AIOS Client Owner"])
+
+        client_profile = frappe.get_doc("Role Profile", "AIOS Client Profile")
+        self.assertEqual([r.role for r in client_profile.roles], ["AIOS Client"])
+
 
 CLIENT = "_test.report.roles@example.com"
 
 
 def _make_client_user():
+    frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
     if frappe.db.exists("User", CLIENT):
         return frappe.get_doc("User", CLIENT)
     doc = frappe.get_doc(

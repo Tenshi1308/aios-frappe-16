@@ -100,17 +100,17 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 | Inline-keyboard checkout **tidak ada** | `callback_query` diabaikan eksplisit (`CONNECTOR_CALLBACK_IGNORED`), tidak pernah dieksekusi |
 | Tidak ada auto-create `Lead`/`Customer` | Tidak ada pembuatan pihak otomatis **sama sekali** di v1 — karena tidak ada mapping pihak (lihat baris berikut). `party_type`/`party` ada di skema tetapi belum diisi siapa pun |
 | **v1 melayani `chat_id` mana pun** (batas yang diakui) | Thread dibuat per `chat_id` dengan nama tampilan dari profil Telegram; **tidak ada** mapping ke `Customer`/`Lead`/`Contact` dan tidak ada gerbang pihak. Siapa pun yang menemukan bot bisa memulai percakapan dan mendapat jawaban read-only dari data company site. Gate party = pekerjaan berikutnya, bukan penghalang v1 |
-| Identitas tidak bisa dipalsukan | Dispatch berjalan sebagai `owner_user` dari `AIOS Telegram Setting`; `frappe.set_user` dipulihkan di `finally`. Tanpa itu worker Frappe berjalan sebagai `Administrator` dan melewati semua izin |
+| Identitas tidak bisa dipalsukan | Dispatch berjalan sebagai `linked_user` (staf tertaut) atau `"Guest"` (tamu); `frappe.set_user` dipulihkan di `finally`. Tanpa itu worker Frappe berjalan sebagai `Administrator` dan melewati semua izin |
 | Kuota site berlaku | `check_site_token_quota()` dipanggil sebelum LLM; kuota habis = balasan aman, tanpa panggilan model |
 | Token bot tidak pernah bocor | Dibaca lewat `doc.get_password("bot_token")` (field `Password`); tidak pernah masuk log, pesan error, atau payload respons |
 | Batas pesan berlapis per `chat_id` | 15 per menit, 60 per jam, dan 200 per hari per `chat_id` dihitung terisolasi lewat `frappe.cache()`; batas tercapai = balasan ramah sementara, pesan diabaikan tanpa memanggil LLM dan tanpa mutasi dokumen |
 
 **Model data.** Transkrip tunggal di `AIOS Message` (percakapan `branch="sales"`). Dua DocType baru menjadi jembatan:
 
-- **`AIOS Channel Thread`** — `channel` + `external_thread_id` (unik, terindeks) → `conversation` (`AIOS Conversation`), `owner_user` (pemilik workspace, dasar scoping izin), `party_type`/`party` (**belum diisi di v1**; skema disiapkan untuk gate pihak), `status`, `last_inbound_at`, `last_outbound_at`.
+- **`AIOS Channel Thread`** — `channel` + `external_thread_id` (unik, terindeks) → `conversation` (`AIOS Conversation`), `linked_user`/`linked_at` (penautan staf), `owner` bawaan Frappe (`linked_user` atau `get_channel_recipients()[0]`), `party_type`/`party` (**belum diisi di v1**; skema disiapkan untuk gate pihak), `status`, `last_inbound_at`, `last_outbound_at`.
 - **`AIOS Conversation Flag`** — `thread`, `rule_key`, `severity`, `status` (Open/Closed), `label`, `excerpt`, `message_ids` (bukti), `reason_text`, `closed_by`/`closed_at`/`closing_note`.
 
-`AIOS Telegram Session` dan `AIOS Telegram Message` **dipensiunkan**; `AIOS Telegram Setting` dipertahankan sebagai pemegang kredensial + kebijakan kanal (`owner_user`, `connector_config_json`, `poll_offset`). Penautan dan pemutusan tautan akun Telegram staf dikelola lewat tab **Konektor** pada jendela Pengaturan di Ekasa Desk (`frontend/src/components/windows/SettingsWindow.vue`).
+`AIOS Telegram Session` dan `AIOS Telegram Message` **dipensiunkan**; `AIOS Telegram Setting` dipertahankan sebagai pemegang kredensial + kebijakan kanal (`connector_config_json`, `poll_offset` — field `owner_user` telah dihapus). Penautan akun Telegram staf dikelola lewat tab **Konektor**, sedangkan pengaturan penerima notifikasi (`AIOS Channel Receiver`) dan pengelolaan staf perusahaan dikelola oleh pemilik klien (`AIOS Client Owner`) lewat menu **Penerima Kanal** dan **Kelola Staf** pada jendela Pengaturan di Ekasa Desk (`frontend/src/components/windows/SettingsWindow.vue`).
 
 **Pekerjaan berikutnya — gate pihak (bukan penghalang v1).** Yang belum ada dan tidak diklaim ada: mapping eksplisit `chat_id` → `Customer`/`Lead`/`Contact`, persetujuan PIC sebelum percakapan dilayani, dan konsekuensi ERPNext dari keterkaitan itu (mis. draft otomatis atas nama Customer tersebut). Bentuk yang dituju mengikuti pola token-paste yang sudah dipakai `docs/04` Alur 1/6 untuk aktivasi user: admin/PIC menempelkan kode sekali pakai ke bot, backend memverifikasi kode itu lalu menautkan `chat_id` ke pihak yang ditunjuk. Selama itu belum dibangun, v1 memperlakukan setiap `chat_id` sebagai lawan bicara anonim yang sah, dan itu tertulis di baris batas di atas.
 
@@ -118,13 +118,13 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 
 1. **Sinyal keras deterministik** (`aios_v1/lib/connector/rules.py`): permintaan transfer ke rekening pribadi, diskon di luar ambang (`discount_threshold_percent`), frasa terlarang dari config, dan nada yang melanggar SOP. **Tanpa LLM.**
 2. **LLM hanya menjelaskan.** `explain.py` menerima sinyal yang sudah diputuskan + potongan transkrip **teredaksi** dan menulis 1–2 kalimat netral untuk reviewer. Model tidak pernah diminta memutuskan fraud, dan outputnya tidak pernah menjadi putusan. Kegagalan LLM tidak menghapus flag.
-3. **Flag ditutup manusia.** `POST /api/connector/flag/close` hanya untuk `owner_user`; `closed_by`/`closed_at` diisi sistem. Tidak ada jalur otomatis yang membuka atau menutup flag.
+3. **Flag ditutup manusia.** `POST /api/connector/flag/close` hanya untuk penerima aktif (`get_channel_recipients()`) atau `doc.owner`; `closed_by`/`closed_at` diisi sistem. Tidak ada jalur otomatis yang membuka atau menutup flag.
 4. **PII**: transkrip disimpan mentah (bukti audit), payload ke model diredaksi (`redact.py`: rekening, telepon, email).
 
 **Audit ringan (deterministik, `audit.py`):** response time rata-rata + jumlah di atas target, chat yang masih menunggu jawaban, dan checklist SOP. Checklist adalah **aturan milik konektor** (`connector_config_json.sop_checklist`), bukan skill markdown agent — skill sales belum aktif karena tool yang dirujuk belum terdaftar, jadi kepatuhan SOP agent tidak boleh diklaim dari sini.
 
 **Notifikasi "instan" (Flag Percakapan & Draf Pesanan).** Memakai pipeline resmi Frappe: `enqueue_create_notification` → `Notification Log` (scoped `for_user`) → `after_insert` mem-publish realtime dan mengirim email bila tipe diizinkan. Tipe `AIOS Channel Alert` dibuat + di-seed ke preferensi user oleh `after_migrate`.
-- **Penerima:** `owner_user` yang ditunjuk di `AIOS Telegram Setting`.
+- **Penerima (`get_channel_recipients()`):** Seluruh pengguna `AIOS Client` aktif (`enabled=1`, `aios_status="Active"`) yang memegang Role `AIOS Channel Receiver` (dipasang lewat `AIOS Channel Receiver Profile`), dengan fallback otomatis ke pemegang Role `AIOS Client Owner` aktif bila belum ada satu pun `AIOS Channel Receiver` aktif. Pemilik klien (`AIOS Client Owner`) mengelola penerima dari menu **Penerima Kanal** di Pengaturan Ekasa Desk.
 - **Dua jenis item:**
   1. **Flag Percakapan:** Pelanggaran aturan SOP/fraud (`AIOS Conversation Flag`).
   2. **Draf Pesanan Baru:** Saat customer tamu membuat draf `Sales Order` atau `Quotation` (`Pending Action Draft`), memuat nama customer/chat yang sah, penegasan status catatan pembeli, dan waktu pembuatan.

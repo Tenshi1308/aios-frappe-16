@@ -22,7 +22,7 @@ from frappe.utils import now_datetime
 
 from aios_v1.lib.connector import BRANCH, CHANNEL, audit, rules, telegram_client
 from aios_v1.lib.connector.explain import explain_flag
-from aios_v1.lib.connector.notify import notify_flag
+from aios_v1.lib.connector.notify import get_channel_recipients, notify_flag
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.managers import get_manager
 from aios_v1.services.usage import check_site_token_quota
@@ -104,20 +104,11 @@ class ConnectorConfigError(Exception):
     """Connector is not usable; the message is safe to log, never to send."""
 
 
-def _owner_user() -> str:
-    owner = frappe.db.get_single_value(SETTING_DOCTYPE, "owner_user")
-    if not owner:
-        raise ConnectorConfigError("AIOS Telegram Setting.owner_user belum diisi.")
-    if not frappe.db.exists("User", owner):
-        raise ConnectorConfigError("owner_user menunjuk User yang tidak ada.")
-    return owner
-
-
 def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
     """Return the thread for this chat, creating conversation + thread once.
 
     Field separation:
-    - `thread.owner_user`: set to Setting.owner_user for workspace audit & flags.
+    - `thread.owner`: set to linked_user or first recipient in `get_channel_recipients()`.
     - `conversation`: created with effective_user 'Guest' for new unlinked threads.
     """
     external_id = str(chat_id)
@@ -129,7 +120,11 @@ def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
     if name:
         return frappe.get_doc(THREAD_DOCTYPE, name).as_dict()
 
-    owner = _owner_user()
+    recipients = get_channel_recipients()
+    if not recipients:
+        raise ConnectorConfigError(
+            "Belum ada penerima notifikasi aktif (AIOS Channel Receiver / AIOS Client Owner)."
+        )
     # Satu conversation per thread: `ensure_conversation` tanpa `force_new` akan
     # mengembalikan conversation terakhir user+branch, sehingga dua chat_id
     # berbeda berbagi transkrip. Hanya thread baru yang sampai ke baris ini.
@@ -140,15 +135,19 @@ def get_or_create_thread(chat_id, user_info: dict | None = None) -> dict:
     doc.channel = CHANNEL
     doc.external_thread_id = external_id
     doc.conversation = conversation
-    doc.owner_user = owner
     doc.linked_user = None
     doc.linked_at = None
+    target_owner = doc.linked_user or recipients[0]
+    doc.owner = target_owner
     doc.display_name = " ".join(
         part for part in (info.get("first_name"), info.get("last_name")) if part
     ).strip()
     doc.username = info.get("username") or ""
     doc.status = "Open"
     doc.insert(ignore_permissions=True)
+    if doc.owner != target_owner:
+        frappe.db.set_value(THREAD_DOCTYPE, doc.name, "owner", target_owner, update_modified=False)
+        doc.owner = target_owner
     return doc.as_dict()
 
 
@@ -229,10 +228,11 @@ def _raise_flags(thread: dict, text: str, message_name: str | None) -> list[str]
     transcript = _transcript(thread["conversation"])
     created: list[str] = []
     for hit in hits:
+        target_owner = thread["owner"]
         flag = frappe.new_doc(FLAG_DOCTYPE)
         flag.thread = thread["name"]
         flag.conversation = thread["conversation"]
-        flag.owner_user = thread["owner_user"]
+        flag.owner = target_owner
         flag.rule_key = hit["rule_key"]
         flag.severity = hit["severity"]
         flag.status = "Open"
@@ -240,6 +240,9 @@ def _raise_flags(thread: dict, text: str, message_name: str | None) -> list[str]
         flag.excerpt = hit["excerpt"]
         flag.message_ids = message_name or ""
         flag.insert(ignore_permissions=True)
+        if flag.owner != target_owner:
+            frappe.db.set_value(FLAG_DOCTYPE, flag.name, "owner", target_owner, update_modified=False)
+            flag.owner = target_owner
         # Explanation is best-effort and never blocks the flag.
         reason = explain_flag(hit["label"], hit["excerpt"], transcript)
         if reason:
@@ -265,12 +268,20 @@ def process_message(update: dict) -> dict:
             telegram_client.send_message(chat_id, rate_limit_warning)
         return {"success": False, "code": "CONNECTOR_RATE_LIMITED"}
 
-    try:
-        owner = _owner_user()
-    except ConnectorConfigError as exc:
-        log_exception("AIOS Connector Config", context=str(exc))
-        telegram_client.send_message(chat_id, NO_OWNER_REPLY)
-        return {"success": False, "code": "CONNECTOR_NOT_CONFIGURED"}
+    recipients = get_channel_recipients()
+    if not recipients:
+        existing_linked = frappe.db.get_value(
+            THREAD_DOCTYPE,
+            {"channel": CHANNEL, "external_thread_id": str(chat_id)},
+            "linked_user",
+        )
+        if not existing_linked:
+            log_exception(
+                "AIOS Connector Config",
+                context="Belum ada penerima notifikasi aktif (AIOS Channel Receiver / AIOS Client Owner).",
+            )
+            telegram_client.send_message(chat_id, NO_OWNER_REPLY)
+            return {"success": False, "code": "CONNECTOR_NOT_CONFIGURED"}
 
     if not check_site_token_quota():
         log_exception("AIOS Connector Quota", context=f"chat={chat_id}")
@@ -429,7 +440,6 @@ def health() -> dict:
         "branch": BRANCH,
         "is_active": config["is_active"],
         "has_token": bool(config["bot_token"]),
-        "owner_user": frappe.db.get_single_value(SETTING_DOCTYPE, "owner_user"),
         "offset": frappe.db.get_single_value(SETTING_DOCTYPE, "poll_offset") or 0,
     }
 

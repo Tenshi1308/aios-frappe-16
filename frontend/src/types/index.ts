@@ -334,6 +334,46 @@ export interface SettingsData {
   company_context_persona: string;
 }
 
+export interface ClientStaffUser {
+  user: string;
+  full_name: string;
+  persona: string;
+  status: string;
+  enabled: boolean;
+  is_channel_receiver: boolean;
+  is_client_owner: boolean;
+  has_logged_in: boolean;
+}
+
+export interface ClientStaffQuota {
+  active_users: number;
+  max_users: number;
+  remaining_slots: number;
+}
+
+export interface ClientStaffAndRecipientsData {
+  users: ClientStaffUser[];
+  effective_recipients: string[];
+  using_owner_fallback: boolean;
+  quota: ClientStaffQuota;
+}
+
+export interface CreateClientStaffResponse {
+  ok: boolean;
+  user: string;
+  full_name: string;
+  persona: string;
+  invitation_url: string;
+  quota: ClientStaffQuota;
+  users: ClientStaffUser[];
+}
+
+export interface RegenerateStaffInviteResponse {
+  ok: boolean;
+  user: string;
+  invitation_url: string;
+}
+
 export interface ModulesApi {
   fetchBootstrap(): Promise<BootstrapData>;
   fetchDomain(key: string): Promise<DomainDetailData>;
@@ -350,4 +390,23 @@ export interface ModulesApi {
   fetchSettings(): Promise<SettingsData>;
   saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void>;
   saveCompanyPersona(companyContextPersona: string, csrfToken: string): Promise<string>;
+  fetchClientStaffAndRecipients(): Promise<ClientStaffAndRecipientsData>;
+  setChannelReceiver(
+    targetUser: string,
+    enabled: boolean,
+    csrfToken: string,
+  ): Promise<ClientStaffAndRecipientsData>;
+  createClientStaff(
+    payload: { email: string; full_name: string; persona: string },
+    csrfToken: string,
+  ): Promise<CreateClientStaffResponse>;
+  setClientStaffStatus(
+    targetUser: string,
+    status: 'Active' | 'Suspended',
+    csrfToken: string,
+  ): Promise<ClientStaffAndRecipientsData>;
+  regenerateClientStaffInvite(
+    targetUser: string,
+    csrfToken: string,
+  ): Promise<RegenerateStaffInviteResponse>;
 }

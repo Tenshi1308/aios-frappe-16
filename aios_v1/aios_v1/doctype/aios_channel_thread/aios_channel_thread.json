@@ -10,7 +10,6 @@
   "channel",
   "external_thread_id",
   "conversation",
-  "owner_user",
   "linked_user",
   "linked_at",
   "display_name",
@@ -51,16 +50,6 @@
    "label": "Conversation",
    "options": "AIOS Conversation",
    "reqd": 1
-  },
-  {
-   "description": "Pemilik workspace yang menerima percakapan ini; dasar scoping izin.",
-   "fieldname": "owner_user",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Owner User",
-   "options": "User",
-   "reqd": 1,
-   "search_index": 1
   },
   {
    "description": "User karyawan yang menautkan Telegram ini ke akun AIOS-nya.",

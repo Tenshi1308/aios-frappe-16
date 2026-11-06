@@ -149,6 +149,11 @@ def activate_user(user: str, status: str):
 			_audit("activate_user_rejected", target=user, reason="not_aios_client")
 			frappe.throw("User tidak ditemukan atau tidak dapat diubah.", frappe.ValidationError)
 
+		if status == "Active":
+			from aios_v1.setup import assert_within_max_users
+
+			assert_within_max_users(exclude_user=user)
+
 		frappe.db.set_value(
 			"User",
 			user,
@@ -158,6 +163,19 @@ def activate_user(user: str, status: str):
 		invitation_url = None
 		if status == "Active":
 			user_doc = frappe.get_doc("User", user)
+			has_owner_in_site = frappe.db.exists(
+				"Has Role",
+				{"parenttype": "User", "role": "AIOS Client Owner"},
+			)
+			if not has_owner_in_site:
+				profiles = {r.role_profile for r in (user_doc.get("role_profiles") or [])}
+				if "AIOS Client Profile" not in profiles:
+					user_doc.append("role_profiles", {"role_profile": "AIOS Client Profile"})
+				if "AIOS Client Owner Profile" not in profiles:
+					user_doc.append("role_profiles", {"role_profile": "AIOS Client Owner Profile"})
+				user_doc.flags.ignore_permissions = True
+				user_doc.flags.ignore_password_policy = True
+				user_doc.save(ignore_permissions=True)
 			invitation_url = user_doc._reset_password(send_email=False)
 
 		_record_activity(f"AIOS lifecycle: {user} → {status}")

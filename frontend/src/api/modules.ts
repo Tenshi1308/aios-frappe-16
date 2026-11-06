@@ -3,6 +3,10 @@ import type {
   BootstrapData,
   Branch,
   BranchWorker,
+  ClientStaffAndRecipientsData,
+  ClientStaffQuota,
+  ClientStaffUser,
+  CreateClientStaffResponse,
   DomainCard,
   DomainDetailData,
   DomainMeta,
@@ -25,6 +29,7 @@ import type {
   ModuleRowValue,
   ModulesApi,
   Pagination,
+  RegenerateStaffInviteResponse,
   SearchResult,
   SettingsData,
   SettingsResetSource,
@@ -571,6 +576,148 @@ export async function saveCompanyPersona(
   return companyContextPersona.trim();
 }
 
+function mapStaffUser(raw: unknown): ClientStaffUser | null {
+  if (!isRecord(raw) || typeof raw.user !== 'string' || !raw.user.trim()) return null;
+  const user = raw.user.trim();
+  return {
+    user,
+    full_name: asString(raw.full_name, user),
+    persona: asString(raw.persona, 'executive'),
+    status: asString(raw.status, 'Active'),
+    enabled: Boolean(raw.enabled),
+    is_channel_receiver: Boolean(raw.is_channel_receiver),
+    is_client_owner: Boolean(raw.is_client_owner),
+    has_logged_in: Boolean(raw.has_logged_in),
+  };
+}
+
+function mapStaffQuota(raw: unknown): ClientStaffQuota {
+  if (!isRecord(raw)) {
+    return { active_users: 0, max_users: 0, remaining_slots: 0 };
+  }
+  return {
+    active_users: Math.max(0, Math.trunc(asNumber(raw.active_users, 0))),
+    max_users: Math.max(0, Math.trunc(asNumber(raw.max_users, 0))),
+    remaining_slots: Math.max(0, Math.trunc(asNumber(raw.remaining_slots, 0))),
+  };
+}
+
+function mapStaffAndRecipients(raw: unknown): ClientStaffAndRecipientsData {
+  if (!isRecord(raw)) {
+    throw new ApiError('Respons daftar staf dan penerima tidak valid.');
+  }
+  const users = Array.isArray(raw.users)
+    ? raw.users.map(mapStaffUser).filter((u): u is ClientStaffUser => u !== null)
+    : [];
+  const effectiveRecipients = Array.isArray(raw.effective_recipients)
+    ? raw.effective_recipients.filter((r): r is string => typeof r === 'string' && !!r.trim())
+    : [];
+  return {
+    users,
+    effective_recipients: effectiveRecipients,
+    using_owner_fallback: Boolean(raw.using_owner_fallback),
+    quota: mapStaffQuota(raw.quota),
+  };
+}
+
+export async function fetchClientStaffAndRecipients(): Promise<ClientStaffAndRecipientsData> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.client_staff_and_recipients`),
+  );
+  return mapStaffAndRecipients(raw);
+}
+
+export async function setChannelReceiver(
+  targetUser: string,
+  enabled: boolean,
+  csrfToken: string,
+): Promise<ClientStaffAndRecipientsData> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.set_channel_receiver`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ target_user: targetUser, enabled }),
+    }),
+  );
+  return mapStaffAndRecipients(raw);
+}
+
+export async function createClientStaff(
+  payload: { email: string; full_name: string; persona: string },
+  csrfToken: string,
+): Promise<CreateClientStaffResponse> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.create_client_staff`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify(payload),
+    }),
+  );
+  if (!isRecord(raw)) {
+    throw new ApiError('Respons pembuatan staf tidak valid.');
+  }
+  const users = Array.isArray(raw.users)
+    ? raw.users.map(mapStaffUser).filter((u): u is ClientStaffUser => u !== null)
+    : [];
+  return {
+    ok: Boolean(raw.ok),
+    user: asString(raw.user, payload.email),
+    full_name: asString(raw.full_name, payload.full_name),
+    persona: asString(raw.persona, payload.persona),
+    invitation_url: asString(raw.invitation_url),
+    quota: mapStaffQuota(raw.quota),
+    users,
+  };
+}
+
+export async function setClientStaffStatus(
+  targetUser: string,
+  status: 'Active' | 'Suspended',
+  csrfToken: string,
+): Promise<ClientStaffAndRecipientsData> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.set_client_staff_status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ target_user: targetUser, status }),
+    }),
+  );
+  return mapStaffAndRecipients(raw);
+}
+
+export async function regenerateClientStaffInvite(
+  targetUser: string,
+  csrfToken: string,
+): Promise<RegenerateStaffInviteResponse> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.regenerate_client_staff_invite`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ target_user: targetUser }),
+    }),
+  );
+  if (!isRecord(raw)) {
+    throw new ApiError('Respons tautan undangan tidak valid.');
+  }
+  return {
+    ok: Boolean(raw.ok),
+    user: asString(raw.user, targetUser),
+    invitation_url: asString(raw.invitation_url),
+  };
+}
+
 export const modulesApi = {
   fetchBootstrap,
   fetchDomain,
@@ -580,6 +727,11 @@ export const modulesApi = {
   fetchSettings,
   saveTheme,
   saveCompanyPersona,
+  fetchClientStaffAndRecipients,
+  setChannelReceiver,
+  createClientStaff,
+  setClientStaffStatus,
+  regenerateClientStaffInvite,
 } satisfies ModulesApi;
 
 export { reportClientError, type ClientErrorPayload } from './client';

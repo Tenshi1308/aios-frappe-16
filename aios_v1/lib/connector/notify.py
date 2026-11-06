@@ -52,15 +52,64 @@ def ensure_notification_type() -> str | None:
     return NOTIFICATION_TYPE
 
 
+RECEIVER_ROLE = "AIOS Channel Receiver"
+OWNER_ROLE = "AIOS Client Owner"
+CLIENT_ROLE = "AIOS Client"
+
+
+def _query_active_clients_with_role(role: str) -> list[str]:
+    rows = frappe.db.sql(
+        """
+        SELECT DISTINCT u.name
+        FROM `tabUser` u
+        INNER JOIN `tabHas Role` r_target
+            ON r_target.parent = u.name
+           AND r_target.parenttype = 'User'
+           AND r_target.role = %(role)s
+        INNER JOIN `tabHas Role` r_client
+            ON r_client.parent = u.name
+           AND r_client.parenttype = 'User'
+           AND r_client.role = %(client_role)s
+        WHERE u.enabled = 1
+          AND u.aios_status = 'Active'
+          AND u.name NOT IN ('Administrator', 'Guest')
+        ORDER BY u.creation ASC, u.name ASC
+        """,
+        {"role": role, "client_role": CLIENT_ROLE},
+        as_dict=True,
+    )
+    return [r.name for r in rows]
+
+
+def get_channel_recipients() -> list[str]:
+    """Return active AIOS Client users with AIOS Channel Receiver role.
+
+    Fallback (Keputusan #6): if none exist, return active AIOS Client users
+    with AIOS Client Owner role. If still empty, return [].
+    """
+    receivers = _query_active_clients_with_role(RECEIVER_ROLE)
+    if receivers:
+        return receivers
+    return _query_active_clients_with_role(OWNER_ROLE)
+
+
 def notify_flag(flag) -> bool:
-    """Send one in-app notification to the flag owner. Never raises."""
+    """Send in-app notifications to channel recipients. Never raises."""
     try:
         from frappe.desk.doctype.notification_log.notification_log import (
             enqueue_create_notification,
         )
 
+        recipients = get_channel_recipients()
+        if not recipients:
+            log_exception(
+                "AIOS Connector Notification",
+                context=f"flag={getattr(flag, 'name', None)}: tidak ada penerima aktif (AIOS Channel Receiver / AIOS Client Owner)",
+            )
+            return False
+
         enqueue_create_notification(
-            [flag.owner_user],
+            recipients,
             {
                 "type": NOTIFICATION_TYPE,
                 "title": f"Percakapan perlu dicek: {flag.label or flag.rule_key}",
@@ -81,15 +130,18 @@ def notify_flag(flag) -> bool:
 
 
 def notify_order_draft(draft, thread: dict | None = None) -> bool:
-    """Send one in-app notification to the channel owner for an order draft. Never raises."""
+    """Send in-app notifications to channel recipients for an order draft. Never raises."""
     try:
         from frappe.desk.doctype.notification_log.notification_log import (
             enqueue_create_notification,
         )
 
-        owner = frappe.db.get_single_value("AIOS Telegram Setting", "owner_user")
-        if not owner:
-            log_exception("AIOS Connector Order Notification", context="owner_user belum diisi")
+        recipients = get_channel_recipients()
+        if not recipients:
+            log_exception(
+                "AIOS Connector Order Notification",
+                context="tidak ada penerima aktif (AIOS Channel Receiver / AIOS Client Owner)",
+            )
             return False
 
         target_doctype = "Pesanan"
@@ -121,7 +173,7 @@ def notify_order_draft(draft, thread: dict | None = None) -> bool:
         )
 
         enqueue_create_notification(
-            [owner],
+            recipients,
             {
                 "type": NOTIFICATION_TYPE,
                 "title": title,

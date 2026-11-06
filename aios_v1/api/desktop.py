@@ -19,7 +19,7 @@ from aios_v1.lib.desktop_modules import (
     get_module_catalog,
     get_module_definition,
 )
-from aios_v1.lib.error_utils import log_exception
+from aios_v1.lib.error_utils import log_exception, sanitize_text
 from aios_v1.lib.tool_registry import _resolve_allowed_company
 from aios_v1.permissions import ERP_CLIENT_DOCTYPES
 from aios_v1.plugin_manager.registry import get_public_branches
@@ -657,4 +657,287 @@ def log_client_error(message: str, context: str = "", stack: str = ""):
     except Exception as exc:
         log_exception("AIOS Desk Client Error", exc=exc, context="log_client_error")
         frappe.throw(_("Permintaan gagal."), frappe.ValidationError)
+
+
+_ALLOWED_STAFF_PERSONAS = frozenset({"executive", "finance", "sales", "operations", "system"})
+
+
+def _require_active_client_owner() -> tuple[str, dict]:
+    user, user_state = _require_active_client()
+    roles = set(frappe.get_roles(user))
+    if "AIOS Client Owner" not in roles:
+        frappe.throw("Hanya pemilik klien yang dapat mengelola penerima dan staf.", frappe.PermissionError)
+    return user, user_state
+
+
+def _record_owner_activity(subject: str) -> None:
+    try:
+        frappe.get_doc(
+            {
+                "doctype": "Activity Log",
+                "user": frappe.session.user,
+                "status": "Success",
+                "subject": sanitize_text(subject)[:140],
+            }
+        ).insert(ignore_permissions=True, ignore_links=True)
+    except Exception as exc:
+        log_exception("AIOS Desktop Owner Activity", exc=exc, context="activity_log")
+
+
+def _build_staff_and_recipients_payload() -> dict:
+    from aios_v1.lib.connector.notify import get_channel_recipients
+    from aios_v1.setup import count_active_client_users
+
+    rows = frappe.db.sql(
+        """
+        SELECT DISTINCT u.name, u.full_name, u.aios_persona, u.aios_status, u.enabled, u.last_login, u.creation
+        FROM `tabUser` u
+        INNER JOIN `tabHas Role` r
+            ON r.parent = u.name AND r.parenttype = 'User' AND r.role = 'AIOS Client'
+        WHERE u.name NOT IN ('Administrator', 'Guest')
+        ORDER BY u.creation ASC, u.name ASC
+        """,
+        as_dict=True,
+    )
+
+    users_payload = []
+    has_explicit_receiver = False
+    for r in rows:
+        u_roles = set(frappe.get_roles(r.name))
+        is_active = bool(r.enabled) and r.aios_status == "Active"
+        is_receiver = ("AIOS Channel Receiver" in u_roles) and is_active
+        is_owner = "AIOS Client Owner" in u_roles
+        if is_receiver:
+            has_explicit_receiver = True
+        users_payload.append(
+            {
+                "user": r.name,
+                "full_name": r.full_name or r.name,
+                "persona": r.aios_persona or "executive",
+                "status": r.aios_status or ("Active" if r.enabled else "Suspended"),
+                "enabled": bool(r.enabled),
+                "is_channel_receiver": is_receiver,
+                "is_client_owner": is_owner,
+                "has_logged_in": bool(r.last_login),
+            }
+        )
+
+    effective_recipients = get_channel_recipients()
+    max_users = int(frappe.db.get_single_value("AIOS Setting", "max_users") or 0)
+    active_count = count_active_client_users()
+    remaining_slots = max(0, max_users - active_count) if max_users > 0 else 0
+
+    return {
+        "users": users_payload,
+        "effective_recipients": effective_recipients,
+        "using_owner_fallback": bool(effective_recipients) and not has_explicit_receiver,
+        "quota": {
+            "active_users": active_count,
+            "max_users": max_users,
+            "remaining_slots": remaining_slots,
+        },
+    }
+
+
+@_safe_api_errors("desktop.client_staff_and_recipients")
+def client_staff_and_recipients():
+    _require_active_client_owner()
+    return _build_staff_and_recipients_payload()
+
+
+@frappe.whitelist(methods=["POST"])
+def set_channel_receiver(target_user: str, enabled: bool | int = True):
+    _require_active_client_owner()
+    try:
+        target = (target_user or "").strip()
+        if not target or target in ("Administrator", "Guest") or not frappe.db.exists("User", target):
+            frappe.throw("Pengguna tidak ditemukan.", frappe.ValidationError)
+
+        user_doc = frappe.get_doc("User", target)
+        roles = {r.role for r in (user_doc.get("roles") or [])}
+        if (
+            "AIOS Client" not in roles
+            or user_doc.get("aios_status") != "Active"
+            or int(user_doc.get("enabled") or 0) != 1
+        ):
+            frappe.throw(
+                "Hanya pengguna AIOS Client aktif yang dapat diatur sebagai penerima notifikasi.",
+                frappe.ValidationError,
+            )
+
+        enable_flag = bool(int(enabled)) if isinstance(enabled, (int, str)) and str(enabled).isdigit() else bool(enabled)
+        profiles = [r.role_profile for r in (user_doc.get("role_profiles") or [])]
+        if "AIOS Client Profile" not in profiles:
+            user_doc.append("role_profiles", {"role_profile": "AIOS Client Profile"})
+
+        if enable_flag:
+            if "AIOS Channel Receiver Profile" not in profiles:
+                user_doc.append("role_profiles", {"role_profile": "AIOS Channel Receiver Profile"})
+        else:
+            user_doc.role_profiles = [
+                r for r in (user_doc.get("role_profiles") or []) if r.role_profile != "AIOS Channel Receiver Profile"
+            ]
+            user_doc.roles = [
+                r for r in (user_doc.get("roles") or []) if r.role != "AIOS Channel Receiver"
+            ]
+
+        user_doc.flags.ignore_permissions = True
+        user_doc.flags.ignore_password_policy = True
+        user_doc.save(ignore_permissions=True)
+
+        action_label = "ditambahkan ke" if enable_flag else "dihapus dari"
+        _record_owner_activity(f"AIOS Channel Receiver: {target} {action_label} penerima notifikasi")
+        return _build_staff_and_recipients_payload()
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception("AIOS Desktop API", exc=exc, context="desktop.set_channel_receiver", defer_insert=True)
+        frappe.throw("Gagal memperbarui penerima notifikasi. Coba lagi nanti.", frappe.ValidationError)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_client_staff(email: str, full_name: str, persona: str = "sales"):
+    _require_active_client_owner()
+    try:
+        from frappe.utils import validate_email_address
+
+        from aios_v1.setup import assert_within_max_users
+
+        clean_email = validate_email_address((email or "").strip(), throw=True).lower()
+        clean_name = (full_name or "").strip()
+        clean_persona = (persona or "").strip().lower()
+
+        if not clean_name or len(clean_name) > 140:
+            frappe.throw("Nama lengkap staf wajib diisi (maksimal 140 karakter).", frappe.ValidationError)
+        if clean_persona not in _ALLOWED_STAFF_PERSONAS:
+            frappe.throw("Persona staf tidak valid.", frappe.ValidationError)
+        if clean_email in ("administrator", "guest") or frappe.db.exists("User", clean_email):
+            frappe.throw("Email sudah terdaftar di sistem.", frappe.ValidationError)
+
+        assert_within_max_users()
+
+        company_name = _company_context().get("name") or ""
+        user_doc = frappe.get_doc(
+            {
+                "doctype": "User",
+                "email": clean_email,
+                "first_name": clean_name,
+                "full_name": clean_name,
+                "user_type": "Website User",
+                "send_welcome_email": 0,
+                "aios_persona": clean_persona,
+                "aios_status": "Active",
+                "aios_company_name": company_name,
+                "enabled": 1,
+                "roles": [{"role": "AIOS Client"}],
+                "role_profiles": [{"role_profile": "AIOS Client Profile"}],
+            }
+        )
+        user_doc.flags.ignore_permissions = True
+        user_doc.flags.ignore_password_policy = True
+        user_doc.insert(ignore_permissions=True)
+
+        invitation_url = user_doc._reset_password(send_email=False)
+        _record_owner_activity(f"AIOS Staff Created: {clean_email} ({clean_persona})")
+
+        payload = _build_staff_and_recipients_payload()
+        return {
+            "ok": True,
+            "user": clean_email,
+            "full_name": clean_name,
+            "persona": clean_persona,
+            "invitation_url": invitation_url,
+            "quota": payload["quota"],
+            "users": payload["users"],
+        }
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception("AIOS Desktop API", exc=exc, context="desktop.create_client_staff", defer_insert=True)
+        frappe.throw("Gagal menambahkan staf baru. Coba lagi nanti.", frappe.ValidationError)
+
+
+@frappe.whitelist(methods=["POST"])
+def set_client_staff_status(target_user: str, status: str):
+    caller, _ = _require_active_client_owner()
+    try:
+        from aios_v1.setup import assert_within_max_users
+
+        target = (target_user or "").strip()
+        if status not in ("Active", "Suspended"):
+            frappe.throw("Status harus Active atau Suspended.", frappe.ValidationError)
+        if not target or target in ("Administrator", "Guest") or not frappe.db.exists("User", target):
+            frappe.throw("Pengguna tidak ditemukan.", frappe.ValidationError)
+        if target == caller:
+            frappe.throw("Pemilik klien tidak dapat menonaktifkan akunnya sendiri.", frappe.ValidationError)
+
+        target_roles = set(frappe.get_roles(target))
+        if "AIOS Client" not in target_roles:
+            frappe.throw("Pengguna bukan anggota staf klien.", frappe.ValidationError)
+        if "AIOS Client Owner" in target_roles:
+            frappe.throw("Status akun pemilik klien tidak dapat diubah dari menu ini.", frappe.ValidationError)
+
+        if status == "Active":
+            assert_within_max_users(exclude_user=target)
+
+        user_doc = frappe.get_doc("User", target)
+        user_doc.aios_status = status
+        user_doc.enabled = 1 if status == "Active" else 0
+        if status == "Suspended":
+            user_doc.role_profiles = [
+                r for r in (user_doc.get("role_profiles") or []) if r.role_profile != "AIOS Channel Receiver Profile"
+            ]
+            user_doc.roles = [
+                r for r in (user_doc.get("roles") or []) if r.role != "AIOS Channel Receiver"
+            ]
+
+        user_doc.flags.ignore_permissions = True
+        user_doc.flags.ignore_password_policy = True
+        user_doc.save(ignore_permissions=True)
+
+        _record_owner_activity(f"AIOS Staff Status: {target} → {status}")
+        return _build_staff_and_recipients_payload()
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception("AIOS Desktop API", exc=exc, context="desktop.set_client_staff_status", defer_insert=True)
+        frappe.throw("Gagal mengubah status staf. Coba lagi nanti.", frappe.ValidationError)
+
+
+@frappe.whitelist(methods=["POST"])
+def regenerate_client_staff_invite(target_user: str):
+    _require_active_client_owner()
+    try:
+        target = (target_user or "").strip()
+        if not target or target in ("Administrator", "Guest") or not frappe.db.exists("User", target):
+            frappe.throw("Pengguna tidak ditemukan.", frappe.ValidationError)
+
+        target_roles = set(frappe.get_roles(target))
+        if "AIOS Client" not in target_roles:
+            frappe.throw("Pengguna bukan anggota staf klien.", frappe.ValidationError)
+
+        user_doc = frappe.get_doc("User", target)
+        if user_doc.get("aios_status") != "Active" or int(user_doc.get("enabled") or 0) != 1:
+            frappe.throw(
+                "Hanya staf berstatus Active yang dapat dibuatkan tautan undangan.",
+                frappe.ValidationError,
+            )
+        if user_doc.get("last_login"):
+            frappe.throw(
+                "Staf ini sudah pernah masuk dan menyetel kata sandi.",
+                frappe.ValidationError,
+            )
+
+        invitation_url = user_doc._reset_password(send_email=False)
+        _record_owner_activity(f"AIOS Staff Invite Regenerated: {target}")
+        return {
+            "ok": True,
+            "user": target,
+            "invitation_url": invitation_url,
+        }
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception("AIOS Desktop API", exc=exc, context="desktop.regenerate_client_staff_invite", defer_insert=True)
+        frappe.throw("Gagal membuat ulang tautan undangan. Coba lagi nanti.", frappe.ValidationError)
 

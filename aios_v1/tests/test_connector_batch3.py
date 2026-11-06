@@ -26,8 +26,21 @@ CHAT_A = "88112233"
 CHAT_B = "88112244"
 
 
-def _ensure_user(email: str, name: str) -> str:
+def _ensure_user(email: str, name: str, is_receiver: bool = False) -> str:
+    roles = ["AIOS Client"]
+    profiles = ["AIOS Client Profile"]
+    if is_receiver:
+        roles.append("AIOS Channel Receiver")
+        profiles.append("AIOS Channel Receiver Profile")
     if frappe.db.exists("User", email):
+        doc = frappe.get_doc("User", email)
+        doc.aios_status = "Active"
+        doc.enabled = 1
+        doc.set("roles", [{"role": r} for r in roles])
+        doc.set("role_profiles", [{"role_profile": p} for p in profiles])
+        doc.flags.ignore_permissions = True
+        doc.flags.ignore_password_policy = True
+        doc.save(ignore_permissions=True)
         return email
     doc = frappe.get_doc(
         {
@@ -38,7 +51,8 @@ def _ensure_user(email: str, name: str) -> str:
             "send_welcome_email": 0,
             "user_type": "Website User",
             "aios_status": "Active",
-            "roles": [{"role": "AIOS Client"}],
+            "roles": [{"role": r} for r in roles],
+            "role_profiles": [{"role_profile": p} for p in profiles],
         }
     )
     doc.insert(ignore_permissions=True)
@@ -53,10 +67,14 @@ class ConnectorBatch3Test(IntegrationTestCase):
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
         frappe.set_user("Administrator")
-        self.owner = _ensure_user(OWNER, "Batch3 Owner")
-        self.other = _ensure_user(OTHER, "Batch3 Other")
-        self._orig_owner = frappe.db.get_single_value(SETTING, "owner_user")
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self.owner)
+        frappe.db.set_single_value("AIOS Setting", "max_users", 20)
+        # Clear any pre-existing channel receiver/owner roles from non-test users during test
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
+        self.owner = _ensure_user(OWNER, "Batch3 Owner", is_receiver=True)
+        self.other = _ensure_user(OTHER, "Batch3 Other", is_receiver=False)
         self._orig_active = frappe.db.get_single_value(SETTING, "is_active")
         frappe.db.set_value(SETTING, SETTING, "is_active", 1)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)
@@ -64,7 +82,6 @@ class ConnectorBatch3Test(IntegrationTestCase):
 
     def tearDown(self):
         self._cleanup_data()
-        frappe.db.set_value(SETTING, SETTING, "owner_user", self._orig_owner)
         frappe.db.set_value(SETTING, SETTING, "is_active", self._orig_active)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)
         frappe.db.commit = self._orig_commit

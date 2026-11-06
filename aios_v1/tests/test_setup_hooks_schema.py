@@ -20,7 +20,9 @@ class TestSetupHooks(unittest.TestCase):
         self.assertIn('after_migrate = "aios_v1.setup.after_migrate"', src)
         self.assertIn('on_login = "aios_v1.setup.on_login"', src)
         self.assertIn('auth_hooks = ["aios_v1.setup.validate_aios_status"]', src)
-        self.assertIn('"validate": "aios_v1.setup.sync_aios_status_enabled"', src)
+        self.assertIn('"aios_v1.setup.sync_aios_status_enabled"', src)
+        self.assertIn('"aios_v1.setup.validate_aios_channel_and_owner_roles"', src)
+        self.assertIn('"aios_v1.setup.validate_max_users"', src)
 
     def test_no_fixtures(self):
         src = HOOKS.read_text(encoding="utf-8")
@@ -52,9 +54,13 @@ class TestSetupHooks(unittest.TestCase):
         src = SETUP.read_text(encoding="utf-8")
         self.assertIn('"AIOS Control": 0', src)
         self.assertIn('"AIOS Client": 0', src)
+        self.assertIn('"AIOS Channel Receiver": 0', src)
+        self.assertIn('"AIOS Client Owner": 0', src)
         self.assertNotIn('"AIOS Admin": 1', src)
         self.assertNotIn('"AIOS Admin Profile"', src)
         self.assertIn("AIOS Client Profile", src)
+        self.assertIn("AIOS Channel Receiver Profile", src)
+        self.assertIn("AIOS Client Owner Profile", src)
         self.assertIn("role.desk_access = desk_access", src)
 
     def test_aios_status_has_no_default(self):
