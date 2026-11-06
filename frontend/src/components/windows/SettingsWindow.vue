@@ -16,7 +16,7 @@ interface MenuTab {
 
 const MENU_TABS: MenuTab[] = [
   { id: 'general', label: 'Umum', icon: 'gear' },
-  { id: 'connector', label: 'Konektor', icon: 'telegram' },
+  { id: 'connector', label: 'Konektor', icon: 'link' },
   { id: 'personalization', label: 'Personalisasi', icon: 'sparkle' },
 ];
 
@@ -246,28 +246,6 @@ async function handleSavePersona() {
 
 <template>
   <div class="settings-win">
-    <header class="settings-head">
-      <div class="settings-title-wrap">
-        <span class="tile sm neutral">
-          <AppIcon name="gear" :size="15" />
-        </span>
-        <div>
-          <h4 class="settings-title">Pengaturan</h4>
-          <span class="settings-sub">Profil, tema, konektor, dan personalisasi</span>
-        </div>
-      </div>
-      <button
-        type="button"
-        class="settings-refresh-btn"
-        :disabled="loading"
-        aria-label="Muat ulang pengaturan"
-        title="Muat ulang pengaturan"
-        @click="refresh"
-      >
-        <AppIcon name="refresh" :size="15" :class="{ spin: loading }" />
-      </button>
-    </header>
-
     <div v-if="error" class="settings-error" role="alert">
       <span>{{ error }}</span>
       <button
@@ -287,30 +265,45 @@ async function handleSavePersona() {
 
     <div v-else-if="data" class="settings-body">
       <!-- Menu Kiri -->
-      <aside
-        class="settings-nav"
-        role="tablist"
-        aria-orientation="vertical"
-        aria-label="Menu Pengaturan"
-      >
-        <button
-          v-for="(tab, i) in MENU_TABS"
-          :key="tab.id"
-          :ref="(el) => setTabRef(el, i)"
-          :id="'settings-tab-' + tab.id"
-          type="button"
-          role="tab"
-          class="settings-nav-item"
-          :class="{ active: activeTab === tab.id }"
-          :aria-selected="activeTab === tab.id"
-          :aria-controls="'settings-panel-' + tab.id"
-          :tabindex="activeTab === tab.id ? 0 : -1"
-          @click="selectTab(tab.id)"
-          @keydown="onTabKeydown($event, i)"
+      <aside class="settings-nav" aria-label="Navigasi Pengaturan">
+        <div
+          class="settings-nav-list"
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label="Menu Pengaturan"
         >
-          <AppIcon :name="tab.icon" :size="16" />
-          <span>{{ tab.label }}</span>
-        </button>
+          <button
+            v-for="(tab, i) in MENU_TABS"
+            :key="tab.id"
+            :ref="(el) => setTabRef(el, i)"
+            :id="'settings-tab-' + tab.id"
+            type="button"
+            role="tab"
+            class="settings-nav-item"
+            :class="{ active: activeTab === tab.id }"
+            :aria-selected="activeTab === tab.id"
+            :aria-controls="'settings-panel-' + tab.id"
+            :tabindex="activeTab === tab.id ? 0 : -1"
+            @click="selectTab(tab.id)"
+            @keydown="onTabKeydown($event, i)"
+          >
+            <AppIcon :name="tab.icon" :size="16" />
+            <span>{{ tab.label }}</span>
+          </button>
+        </div>
+
+        <div class="settings-nav-footer">
+          <button
+            type="button"
+            class="settings-refresh-btn"
+            :disabled="loading"
+            aria-label="Muat ulang pengaturan"
+            title="Muat ulang pengaturan"
+            @click="refresh"
+          >
+            <AppIcon name="refresh" :size="15" :class="{ spin: loading }" />
+          </button>
+        </div>
       </aside>
 
       <!-- Panel Konten Kanan -->
@@ -546,10 +539,6 @@ async function handleSavePersona() {
               <span v-else-if="personaSaving" class="save-status-pill">Menyimpan…</span>
             </div>
 
-            <p class="settings-card-desc">
-              Informasi profil perusahaan (bidang bisnis, produk/layanan, atau aturan operasional) yang disertakan ke seluruh agen AI di site ini.
-            </p>
-
             <div class="persona-form">
               <textarea
                 v-model="personaDraft"
@@ -611,36 +600,6 @@ async function handleSavePersona() {
   box-sizing: border-box;
 }
 
-.settings-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-12);
-  padding-bottom: var(--space-10);
-  border-bottom: 1px solid var(--line);
-  flex: none;
-}
-
-.settings-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--space-10);
-}
-
-.settings-title {
-  margin: 0;
-  font-size: var(--fs-15);
-  font-weight: var(--fw-700);
-  line-height: 1.2;
-}
-
-.settings-sub {
-  display: block;
-  margin-top: var(--space-2);
-  font-size: var(--fs-11-5);
-  color: var(--muted);
-}
-
 .settings-refresh-btn,
 .settings-retry-btn {
   display: inline-flex;
@@ -699,10 +658,25 @@ async function handleSavePersona() {
 .settings-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  justify-content: space-between;
   padding-right: var(--space-8);
   border-right: 1px solid var(--line);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-nav-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
   overflow-y: auto;
+}
+
+.settings-nav-footer {
+  margin-top: auto;
+  padding-top: var(--space-10);
+  display: flex;
+  align-items: center;
 }
 
 .settings-nav-item {
@@ -779,13 +753,6 @@ async function handleSavePersona() {
   align-items: center;
   gap: var(--space-8);
   color: var(--fg);
-}
-
-.settings-card-desc {
-  margin: 0;
-  font-size: var(--fs-12-5);
-  line-height: 1.5;
-  color: var(--muted);
 }
 
 .status-pill,
@@ -1107,48 +1074,27 @@ async function handleSavePersona() {
   gap: var(--space-8);
 }
 
-.btn-save-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-8);
-  border: none;
-  background: var(--ok);
-  color: var(--surface);
-  cursor: pointer;
-  transition: opacity var(--dur-15) ease;
-}
-
-.btn-save-icon:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.btn-save-icon:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
+.btn-save-icon,
 .btn-cancel-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-8);
   border: 1px solid var(--line);
-  background: var(--surface-2);
-  color: var(--muted);
+  background: var(--surface);
+  color: var(--fg);
   cursor: pointer;
   transition: background var(--dur-15) ease;
 }
 
+.btn-save-icon:hover:not(:disabled),
 .btn-cancel-icon:hover:not(:disabled) {
   background: var(--hover);
-  color: var(--fg);
 }
 
+.btn-save-icon:disabled,
 .btn-cancel-icon:disabled {
   opacity: 0.4;
   cursor: default;
@@ -1175,11 +1121,21 @@ async function handleSavePersona() {
   }
   .settings-nav {
     flex-direction: row;
+    align-items: center;
     border-right: none;
     border-bottom: 1px solid var(--line);
     padding-right: 0;
     padding-bottom: var(--space-8);
     overflow-x: auto;
+  }
+  .settings-nav-list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .settings-nav-footer {
+    margin-top: 0;
+    padding-top: 0;
+    margin-left: auto;
   }
   .settings-nav-item {
     width: auto;

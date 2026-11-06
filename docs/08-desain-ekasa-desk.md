@@ -153,7 +153,7 @@ Modul dan bidang bersifat **baca saja**. Penulisan tetap lewat approval.
 
 ### 6.4. Jendela Pengaturan (*Settings*)
 
-Jendela **Pengaturan** (`frontend/src/components/windows/SettingsWindow.vue`, window ID `settings`, dibuka dari Start Menu) memiliki tata letak 2 kolom: menu navigasi kiri (`168px`, `role="tablist"`) dengan 3 tab (**Umum**, **Konektor**, **Personalisasi**) dan panel konten kanan (`role="tabpanel"`) dengan scroll mandiri. Seluruh tombol aksi di dalam jendela menggunakan tombol ikon minimalis (`AppIcon`, 16×16 px) yang dilengkapi `title` dan `aria-label` eksplisit untuk aksesibilitas keyboard dan pembaca layar.
+Jendela **Pengaturan** (`frontend/src/components/windows/SettingsWindow.vue`, window ID `settings`, dibuka dari Start Menu) memiliki tata letak 2 kolom: menu navigasi kiri (`168px`) dengan 3 tab (**Umum** dengan ikon `gear`, **Konektor** dengan ikon umum `link`, **Personalisasi** dengan ikon `sparkle`) beserta tombol muat ulang pengaturan di kiri bawah, dan panel konten kanan (`role="tabpanel"`) dengan scroll mandiri. Judul jendela tidak diduplikasi di dalam area konten window. Seluruh tombol aksi di dalam jendela menggunakan tombol ikon minimalis (`AppIcon`, border tipis, latar surface seragam) yang dilengkapi `title` dan `aria-label` eksplisit untuk aksesibilitas keyboard dan pembaca layar.
 
 - **Tab Umum:**
   - **Profil pengguna:** `name` (`User.full_name` atau `user`), `persona` (`User.aios_persona`), dan `status` (`User.aios_status`).
@@ -162,12 +162,13 @@ Jendela **Pengaturan** (`frontend/src/components/windows/SettingsWindow.vue`, wi
   - **Kuota site:** menampilkan plafon tingkat site (`AIOS Setting.site_token_limit` dan `site_tokens_used`, bukan per user) dengan label eksplisit **Kuota site**, progress bar (`percent_used`, dibatasi 100% untuk lebar bar), nilai `terpakai / limit`, serta `remaining` (bernilai `null` bila `limit <= 0`).
   - **Jadwal reset kuota site:** waktu reset berikutnya diambil server dari method internal Frappe `ScheduledJobType.get_next_execution()` untuk job `aios_v1.services.usage.reset_daily_counters`. Server menghitung `seconds_remaining` (`int`) dan `at_label` (`HH:mm`). Bila hitung mundur mencapai `0`, UI menampilkan **"Menunggu reset berikutnya"**. Bila scheduler tidak aktif atau job tidak ditemukan, UI menampilkan peringatan **"Reset belum terjadwal"**.
 - **Tab Konektor:**
+  - Diwakili oleh ikon konektor umum `link` pada menu kiri.
   - Menampilkan kartu **Integrasi Telegram** (dipindahkan dari kartu bertumpuk lama ke tab terisolasi).
   - Status tersambung menampilkan `@username` staf/ID Telegram dengan tombol aksi ikon `unlink` (**Putuskan Tautan**).
   - Status belum tersambung menampilkan instruksi penautan dengan tombol aksi ikon `telegram` (**Hubungkan ke Telegram**), tombol ikon `copy` (**Salin Tautan**, berubah jadi ikon `check` saat tersalin), dan tombol ikon `external-link` (**Buka Telegram Langsung**).
 - **Tab Personalisasi:**
   - Menampilkan kartu **Konteks Perusahaan** yang memetakan field `AIOS Setting.company_context_persona` (`Small Text`, dibatasi maksimal 2000 karakter).
-  - Menyediakan area teks multi-baris (`textarea`) dengan counter karakter real-time `X / 2000 karakter`, indikator status simpan ("Menyimpan...", "Tersimpan", "Gagal menyimpan"), tombol aksi ikon `check` (**Simpan**, aktif hanya bila ada perubahan/dirty dan valid), serta tombol aksi ikon `x` (**Batalkan perubahan**).
+  - Menyediakan area teks multi-baris (`textarea`) tanpa subjudul deskripsi kartu yang redundan, dengan counter karakter real-time `X / 2000 karakter`, indikator status simpan ("Menyimpan...", "Tersimpan", "Gagal menyimpan"), tombol aksi ikon `check` (**Simpan**, seragam 32×32 px border line latar surface, aktif hanya bila ada perubahan/dirty dan valid), serta tombol aksi ikon `x` (**Batalkan perubahan**).
   - Teks ini menjadi knowledge base dasar perusahaan yang disuntikkan ke seluruh agen AI di site tersebut.
   - Pengubahan disimpan oleh client melalui endpoint sempit `POST /api/method/aios_v1.api.desktop.save_company_persona`.
 - **Kerahasiaan `AIOS Setting`:** endpoint `desktop.settings` hanya membaca field yang diizinkan untuk antarmuka pengguna (`site_token_limit`, `site_tokens_used`, `company_context_persona`); field sensitif/konfigurasi internal backend (`api_key`, `system_ethos`, `model_name`, `base_url`, `temperature`) tetap terlarang keras dan tidak pernah disertakan dalam respons maupun direferensikan di komponen UI.
