@@ -1106,14 +1106,6 @@ async function handleSavePersona() {
   font-size: var(--fs-12);
 }
 
-:global(.win.max) .settings-body {
-  grid-template-columns: 180px minmax(0, 1fr);
-}
-
-:global(.win.max) .settings-pane {
-  max-width: 680px;
-}
-
 @media (max-width: 560px) {
   .settings-body {
     grid-template-columns: 1fr;
