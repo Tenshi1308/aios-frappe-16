@@ -6,6 +6,7 @@ import {
   fetchModule,
   fetchSettings,
   saveTheme,
+  saveCompanyPersona,
   search as apiSearch,
 } from '@modules-api';
 import { useWindowManager } from '../composables/useWindowManager';
@@ -372,6 +373,14 @@ export const useModulesStore = defineStore('modules', {
       } finally {
         this.themeSaving = false;
       }
+    },
+    async saveCompanyPersona(persona: string): Promise<string> {
+      const session = useSessionStore();
+      const cleaned = await saveCompanyPersona(persona, session.csrfToken);
+      if (this.settings) {
+        this.settings.company_context_persona = cleaned;
+      }
+      return cleaned;
     },
     async loadTelegramStatus() {
       try {

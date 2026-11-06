@@ -21,7 +21,6 @@ except ModuleNotFoundError:
 RESET_JOB_METHOD = "aios_v1.services.usage.reset_daily_counters"
 FORBIDDEN_SETTING_KEYS = {
     "api_key",
-    "company_context_persona",
     "system_ethos",
     "model_name",
     "base_url",
@@ -157,7 +156,11 @@ class TestDesktopSettings(IntegrationTestCase):
         self.assertTrue(callable(method), "desktop.settings belum tersedia")
 
         result = frappe.call(method)
-        self.assertEqual(set(result.keys()), {"profile", "company", "quota", "reset", "theme"})
+        self.assertEqual(
+            set(result.keys()),
+            {"profile", "company", "quota", "reset", "theme", "company_context_persona"},
+        )
+        self.assertIsInstance(result["company_context_persona"], str)
         self.assertEqual(set(result["profile"].keys()), {"name", "persona", "status"})
         self.assertEqual(set(result["company"].keys()), {"id", "name", "currency"})
         self.assertEqual(set(result["quota"].keys()), {"limit", "used", "remaining", "percent_used"})
@@ -351,7 +354,11 @@ class TestDesktopSettings(IntegrationTestCase):
         response = self._http_get("settings")
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         message = response.json["message"]
-        self.assertEqual(set(message.keys()), {"profile", "company", "quota", "reset", "theme"})
+        self.assertEqual(
+            set(message.keys()),
+            {"profile", "company", "quota", "reset", "theme", "company_context_persona"},
+        )
+        self.assertIsInstance(message["company_context_persona"], str)
         self.assertEqual(set(message["profile"].keys()), {"name", "persona", "status"})
         self.assertEqual(set(message["company"].keys()), {"id", "name", "currency"})
         self.assertEqual(set(message["quota"].keys()), {"limit", "used", "remaining", "percent_used"})
@@ -439,3 +446,88 @@ class TestDesktopSettings(IntegrationTestCase):
 
         self.assertEqual(response[0].status_code, 200, response[0].get_data(as_text=True))
         self.assertEqual(frappe.db.get_value("User", self.user.name, "desk_theme"), "Dark")
+
+    def test_settings_returns_empty_company_context_persona_by_default(self):
+        method = getattr(desktop_api, "settings", None)
+        self.assertTrue(callable(method), "desktop.settings belum tersedia")
+
+        frappe.db.set_single_value("AIOS Setting", "company_context_persona", None)
+        res_none = frappe.call(method)
+        self.assertEqual(res_none["company_context_persona"], "")
+
+        frappe.db.set_single_value("AIOS Setting", "company_context_persona", "   ")
+        res_spaces = frappe.call(method)
+        self.assertEqual(res_spaces["company_context_persona"], "")
+
+    def test_save_company_persona_updates_db_and_reflects_in_system_prompt(self):
+        save_method = getattr(desktop_api, "save_company_persona", None)
+        settings_method = getattr(desktop_api, "settings", None)
+        self.assertTrue(callable(save_method), "desktop.save_company_persona belum tersedia")
+
+        test_text = "  Distributor resmi peralatan medis dan laboratorium se-Jawa Timur.  "
+        expected_cleaned = "Distributor resmi peralatan medis dan laboratorium se-Jawa Timur."
+
+        result = frappe.call(save_method, company_context_persona=test_text)
+        self.assertEqual(result, {"company_context_persona": expected_cleaned})
+
+        db_val = frappe.db.get_single_value("AIOS Setting", "company_context_persona")
+        self.assertEqual(db_val, expected_cleaned)
+
+        settings_val = frappe.call(settings_method)
+        self.assertEqual(settings_val["company_context_persona"], expected_cleaned)
+
+        from aios_v1.managers.base_manager import BaseManager
+
+        manager = BaseManager({"key": "sales", "name": "Sales"})
+        prompt = manager.build_system_prompt(None, user=self.user.name)
+        self.assertIn(f"Konteks company: {expected_cleaned}", prompt)
+
+    def test_save_company_persona_can_clear_to_empty(self):
+        save_method = getattr(desktop_api, "save_company_persona", None)
+        self.assertTrue(callable(save_method), "desktop.save_company_persona belum tersedia")
+
+        frappe.call(save_method, company_context_persona="Profil sementara")
+        self.assertEqual(frappe.db.get_single_value("AIOS Setting", "company_context_persona"), "Profil sementara")
+
+        cleared_result = frappe.call(save_method, company_context_persona="   ")
+        self.assertEqual(cleared_result, {"company_context_persona": ""})
+        self.assertEqual(frappe.db.get_single_value("AIOS Setting", "company_context_persona"), "")
+
+    def test_save_company_persona_rejects_over_limit_and_non_string(self):
+        save_method = getattr(desktop_api, "save_company_persona", None)
+        self.assertTrue(callable(save_method), "desktop.save_company_persona belum tersedia")
+
+        frappe.db.set_single_value("AIOS Setting", "company_context_persona", "Teks Awal")
+
+        over_limit_text = "x" * 2001
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(save_method, company_context_persona=over_limit_text)
+
+        self.assertEqual(frappe.db.get_single_value("AIOS Setting", "company_context_persona"), "Teks Awal")
+
+        with self.assertRaises((frappe.ValidationError, frappe.exceptions.FrappeTypeError)):
+            frappe.call(save_method, company_context_persona=12345)
+
+        self.assertEqual(frappe.db.get_single_value("AIOS Setting", "company_context_persona"), "Teks Awal")
+
+    def test_save_company_persona_permissions_and_post_method(self):
+        save_method = getattr(desktop_api, "save_company_persona", None)
+        self.assertTrue(callable(save_method), "desktop.save_company_persona belum tersedia")
+        self.assertIn(save_method, frappe.whitelisted)
+        self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[save_method], ["POST"])
+
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.AuthenticationError):
+            save_method(company_context_persona="Test")
+
+        frappe.set_user("Administrator")
+        with self.assertRaises(frappe.PermissionError):
+            save_method(company_context_persona="Test")
+
+        frappe.set_user(self.non_client_user.name)
+        with self.assertRaises(frappe.PermissionError):
+            save_method(company_context_persona="Test")
+
+        frappe.set_user(self.inactive_user.name)
+        with self.assertRaises(frappe.AuthenticationError):
+            save_method(company_context_persona="Test")

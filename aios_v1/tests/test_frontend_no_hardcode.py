@@ -31,7 +31,6 @@ CHAT_STORE = STORES_DIR / "chat.ts"
 
 FORBIDDEN_SETTING_FIELDS = (
     "api_key",
-    "company_context_persona",
     "system_ethos",
     "model_name",
     "base_url",
@@ -241,7 +240,7 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIsNone(API_MOCK_RE.search("import { fetchModule } from '@modules-api';"))
 
         self.assertIsNotNone(FORBIDDEN_SETTING_RE.search("const key = data.api_key;"))
-        self.assertIsNotNone(FORBIDDEN_SETTING_RE.search("<span>{{ company_context_persona }}</span>"))
+        self.assertIsNotNone(FORBIDDEN_SETTING_RE.search("<span>{{ system_ethos }}</span>"))
         self.assertIsNone(FORBIDDEN_SETTING_RE.search("<span>{{ data.quota.limit }}</span>"))
 
         self.assertIsNotNone(EMPTY_CATCH_RE.search("try { await load(); } catch {}"))

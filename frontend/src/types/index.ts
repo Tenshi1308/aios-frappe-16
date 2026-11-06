@@ -331,6 +331,7 @@ export interface SettingsData {
     value: SettingsTheme;
     options: SettingsTheme[];
   };
+  company_context_persona: string;
 }
 
 export interface ModulesApi {
@@ -348,4 +349,5 @@ export interface ModulesApi {
   search(q: string, limit?: number): Promise<SearchResult[]>;
   fetchSettings(): Promise<SettingsData>;
   saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void>;
+  saveCompanyPersona(companyContextPersona: string, csrfToken: string): Promise<string>;
 }

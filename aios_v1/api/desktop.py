@@ -32,6 +32,7 @@ RESET_JOB_METHOD = "aios_v1.services.usage.reset_daily_counters"
 _ALLOWED_FILTER_KEYS = frozenset({"date_from", "date_to", "status", "party"})
 _THEME_OPTIONS = ("Automatic", "Light", "Dark")
 _ALLOWED_THEMES = frozenset(_THEME_OPTIONS)
+MAX_COMPANY_PERSONA_LENGTH = 2000
 
 
 def _safe_api_errors(method_name: str):
@@ -578,6 +579,8 @@ def settings():
     persona = frappe.db.get_value("User", user, "aios_persona")
     raw_theme = frappe.db.get_value("User", user, "desk_theme")
     theme_value = raw_theme if raw_theme in _ALLOWED_THEMES else "Automatic"
+    raw_persona = frappe.db.get_single_value("AIOS Setting", "company_context_persona")
+    company_persona = (raw_persona or "").strip() if isinstance(raw_persona, str) else ""
     return {
         "profile": {
             "name": user_state.full_name or user,
@@ -591,7 +594,34 @@ def settings():
             "value": theme_value,
             "options": [*_THEME_OPTIONS],
         },
+        "company_context_persona": company_persona,
     }
+
+
+@frappe.whitelist(methods=["POST"])
+def save_company_persona(company_context_persona: str = ""):
+    """Simpan konteks profil perusahaan ke AIOS Setting untuk AI Manager/Sub-Agents."""
+    _require_active_client()
+    try:
+        if not isinstance(company_context_persona, str):
+            frappe.throw("Konteks perusahaan harus berupa teks.", frappe.ValidationError)
+
+        cleaned = company_context_persona.strip()
+        if len(cleaned) > MAX_COMPANY_PERSONA_LENGTH:
+            frappe.throw("Konteks perusahaan maksimal 2.000 karakter.", frappe.ValidationError)
+
+        frappe.db.set_single_value("AIOS Setting", "company_context_persona", cleaned)
+        return {"company_context_persona": cleaned}
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception(
+            "AIOS Desktop API",
+            exc=exc,
+            context="desktop.save_company_persona",
+            defer_insert=True,
+        )
+        frappe.throw("Gagal menyimpan konteks perusahaan. Coba lagi nanti.", frappe.ValidationError)
 
 
 @frappe.whitelist(methods=["POST"])

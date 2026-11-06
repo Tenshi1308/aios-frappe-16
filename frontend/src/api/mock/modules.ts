@@ -16,6 +16,7 @@ import type {
 import { ALLOWED_THEMES, normalizeTheme } from '../../utils/theme';
 
 let mockThemeValue: SettingsTheme = 'Automatic';
+let mockCompanyPersona = '';
 
 const MOCK_DOMAINS: DomainMeta[] = [
   {
@@ -219,11 +220,20 @@ export async function fetchSettings(): Promise<SettingsData> {
       value: mockThemeValue,
       options: [...ALLOWED_THEMES],
     },
+    company_context_persona: mockCompanyPersona,
   };
 }
 
 export async function saveTheme(theme: SettingsTheme, _csrfToken: string): Promise<void> {
   mockThemeValue = normalizeTheme(theme);
+}
+
+export async function saveCompanyPersona(
+  companyContextPersona: string,
+  _csrfToken: string,
+): Promise<string> {
+  mockCompanyPersona = (companyContextPersona || '').trim();
+  return mockCompanyPersona;
 }
 
 export const modulesApi = {
@@ -234,4 +244,5 @@ export const modulesApi = {
   search,
   fetchSettings,
   saveTheme,
+  saveCompanyPersona,
 } satisfies ModulesApi;

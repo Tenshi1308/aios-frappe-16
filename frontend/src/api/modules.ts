@@ -34,6 +34,7 @@ import { ALLOWED_THEMES, isSettingsTheme, normalizeTheme } from '../utils/theme'
 
 const DESKTOP_API = '/api/method/aios_v1.api.desktop';
 const SWITCH_THEME_API = '/api/method/frappe.core.doctype.user.user.switch_theme';
+const SAVE_COMPANY_PERSONA_API = '/api/method/aios_v1.api.desktop.save_company_persona';
 
 const ALLOWED_FILTER_KEYS: ReadonlySet<ModuleFilterKey> = new Set([
   'date_from',
@@ -505,6 +506,7 @@ export async function fetchSettings(): Promise<SettingsData> {
     ? themeRecord.options.filter(isSettingsTheme)
     : [];
   const themeOptions: SettingsTheme[] = rawOptions.length > 0 ? rawOptions : [...ALLOWED_THEMES];
+  const companyContextPersona = asString(raw.company_context_persona, '');
 
   return {
     profile: {
@@ -534,6 +536,7 @@ export async function fetchSettings(): Promise<SettingsData> {
       value: themeValue,
       options: themeOptions,
     },
+    company_context_persona: companyContextPersona,
   };
 }
 
@@ -548,6 +551,26 @@ export async function saveTheme(theme: SettingsTheme, csrfToken: string): Promis
   });
 }
 
+export async function saveCompanyPersona(
+  companyContextPersona: string,
+  csrfToken: string,
+): Promise<string> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(SAVE_COMPANY_PERSONA_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ company_context_persona: companyContextPersona }),
+    }),
+  );
+  if (isRecord(raw) && typeof raw.company_context_persona === 'string') {
+    return raw.company_context_persona;
+  }
+  return companyContextPersona.trim();
+}
+
 export const modulesApi = {
   fetchBootstrap,
   fetchDomain,
@@ -556,6 +579,7 @@ export const modulesApi = {
   search,
   fetchSettings,
   saveTheme,
+  saveCompanyPersona,
 } satisfies ModulesApi;
 
 export { reportClientError, type ClientErrorPayload } from './client';
