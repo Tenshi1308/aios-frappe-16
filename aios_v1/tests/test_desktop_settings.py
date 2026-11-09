@@ -37,6 +37,7 @@ class TestDesktopSettings(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
         self.user = self._ensure_user(
@@ -129,10 +130,36 @@ class TestDesktopSettings(IntegrationTestCase):
         thread.join()
         return response[0]
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for email in (
+            self.USER,
+            self.NON_CLIENT_USER,
+            self.INACTIVE_USER,
+            "_test.desktop.newstaff@example.com",
+            "_test.desktop.overstaff@example.com",
+            "_test.desktop.owner@example.com",
+            "_test.desktop.portcheck@example.com",
+            "_test.desktop.reinvite@example.com",
+            "_test.desktop.staffstatus@example.com",
+            "_test.staf.a@example.com",
+        ):
+            for conv in frappe.get_all("AIOS Conversation", filters={"user": email}, pluck="name"):
+                for msg in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", msg, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
         super().tearDown()
 
     def test_settings_api_is_registered_with_frappe_whitelist(self):

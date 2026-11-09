@@ -25,7 +25,13 @@ class TestClientErrorLog(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
+        self._existing_error_logs = set(
+            frappe.get_all("Error Log", filters={"method": "AIOS Desk Client Error"}, pluck="name")
+        )
         self.user = self._ensure_user(
             self.USER,
             first_name="_Test Client Error",
@@ -39,13 +45,31 @@ class TestClientErrorLog(IntegrationTestCase):
         # Bersihkan kunci redis rate limit agar tes terisolasi
         frappe.cache.delete_keys("rl:aios_v1.api.desktop.log_client_error*")
 
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
         frappe.set_user("Administrator")
-        # Hanya bersihkan Error Log yang dibuat oleh tes ini (K3)
-        for log_name in self.created_error_logs:
+        current_logs = set(
+            frappe.get_all("Error Log", filters={"method": "AIOS Desk Client Error"}, pluck="name")
+        )
+        for log_name in set(self.created_error_logs) | (current_logs - self._existing_error_logs):
             if frappe.db.exists("Error Log", log_name):
-                frappe.db.delete("Error Log", log_name)
+                frappe.delete_doc("Error Log", log_name, ignore_permissions=True, force=True, delete_permanently=True)
+        for conv in frappe.get_all("AIOS Conversation", filters={"user": self.USER}, pluck="name"):
+            for msg in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                frappe.delete_doc("AIOS Message", msg, ignore_permissions=True, force=True, delete_permanently=True)
+            frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+        for cname in frappe.get_all("Contact", filters={"user": self.USER}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.USER):
+            frappe.delete_doc("Notification Settings", self.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", self.USER):
+            frappe.delete_doc("User", self.USER, ignore_permissions=True, force=True, delete_permanently=True)
         frappe.cache.delete_keys("rl:aios_v1.api.desktop.log_client_error*")
+        self._restore_and_rollback()
         super().tearDown()
 
     def _ensure_user(self, email: str, first_name: str, aios_persona: str, aios_status: str, roles: list[str]):

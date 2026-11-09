@@ -46,6 +46,8 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		super().setUp()
 		self._orig_commit = frappe.db.commit
 		frappe.db.commit = lambda *a, **k: None
+		self._cleaned_up = False
+		self.addCleanup(self._restore_and_rollback)
 		self._had_role = SITE_ROLE_KEY in frappe.conf
 		self._orig_role = frappe.conf.get(SITE_ROLE_KEY)
 		self.created_users: list[str] = []
@@ -54,17 +56,27 @@ class TestFlowUtamaContract(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
 
-	def tearDown(self):
+	def _restore_and_rollback(self):
+		if getattr(self, "_cleaned_up", False):
+			return
+		self._cleaned_up = True
 		frappe.set_user("Administrator")
-		if self._had_role:
+		if getattr(self, "_had_role", False):
 			frappe.conf[SITE_ROLE_KEY] = self._orig_role
 		else:
 			frappe.conf.pop(SITE_ROLE_KEY, None)
-		for user in reversed(self.created_users):
+		for user in reversed(getattr(self, "created_users", [])):
+			for contact_name in frappe.get_all("Contact", filters={"user": user}, pluck="name"):
+				frappe.delete_doc("Contact", contact_name, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("Notification Settings", user):
+				frappe.delete_doc("Notification Settings", user, ignore_permissions=True, force=True, delete_permanently=True)
 			if frappe.db.exists("User", user):
-				frappe.delete_doc("User", user, ignore_permissions=True, force=True)
+				frappe.delete_doc("User", user, ignore_permissions=True, force=False, delete_permanently=True)
 		frappe.db.commit = self._orig_commit
 		frappe.db.rollback()
+
+	def tearDown(self):
+		self._restore_and_rollback()
 		super().tearDown()
 
 	# ------------------------------------------------------------------ helpers

@@ -42,6 +42,7 @@ class TestArtifactDraftToErpnext(IntegrationTestCase):
 		super().setUp()
 		self._orig_commit = frappe.db.commit
 		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		_make_user(self.EMAIL, "_Test Artifact SO")
 		frappe.set_user(self.EMAIL)
 		self.company = frappe.db.get_single_value("AIOS Setting", "default_company") or frappe.db.get_single_value(
@@ -85,10 +86,20 @@ class TestArtifactDraftToErpnext(IntegrationTestCase):
 				)
 				self.warehouse = self.warehouse[0] if self.warehouse else None
 
-	def tearDown(self):
+	def _restore_and_rollback(self):
 		frappe.set_user("Administrator")
 		frappe.db.commit = self._orig_commit
 		frappe.db.rollback()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		for cname in frappe.get_all("Contact", filters={"user": self.EMAIL}, pluck="name"):
+			frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+		if frappe.db.exists("Notification Settings", self.EMAIL):
+			frappe.delete_doc("Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True)
+		if frappe.db.exists("User", self.EMAIL):
+			frappe.delete_doc("User", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
 
 	def test_draft_sales_order_cycle_creates_exact_submitted_document(self):
 		if not self.company or not self.customer or not self.item or not self.price_list:

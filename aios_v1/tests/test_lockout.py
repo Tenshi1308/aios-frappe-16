@@ -21,15 +21,23 @@ class TestLockout(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         self.tracker = get_login_attempt_tracker(
             self.EMAIL, raise_locked_exception=False
         )
         self.tracker.add_success_attempt()
 
+    def _restore_and_rollback(self):
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
         tracker = get_login_attempt_tracker(self.EMAIL, raise_locked_exception=False)
         tracker.add_success_attempt()
-        frappe.db.rollback()
+        self._restore_and_rollback()
+        super().tearDown()
 
     def test_locks_after_threshold(self):
         settings = frappe.get_doc("System Settings")

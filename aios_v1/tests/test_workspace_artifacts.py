@@ -64,22 +64,45 @@ class TestWorkspaceArtifacts(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
+        self._physical_files = []
         _make_user(self.USER, "_Test Artifact Builder")
         ensure_builtin_plugins()
         self.conversation = frappe.get_doc(
             {"doctype": "AIOS Conversation", "user": self.USER, "branch": "finance", "title": "_Test Artifacts"}
         ).insert(ignore_permissions=True)
-        self._physical_files = []
 
-    def tearDown(self):
-        frappe.db.commit = self.original_commit
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.set_user("Administrator")
+        for conv_name in frappe.get_all("AIOS Conversation", filters={"user": self.USER}, pluck="name"):
+            for f_name in frappe.get_all("File", filters={"attached_to_doctype": "AIOS Conversation", "attached_to_name": str(conv_name)}, pluck="name"):
+                frappe.delete_doc("File", f_name, ignore_permissions=True, force=True, delete_permanently=True)
+            for msg_name in frappe.get_all("AIOS Message", filters={"conversation": conv_name}, pluck="name"):
+                for f_name in frappe.get_all("File", filters={"attached_to_doctype": "AIOS Message", "attached_to_name": str(msg_name)}, pluck="name"):
+                    frappe.delete_doc("File", f_name, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True)
+            frappe.delete_doc("AIOS Conversation", conv_name, ignore_permissions=True, force=True, delete_permanently=True)
+        for contact_name in frappe.get_all("Contact", filters={"user": self.USER}, pluck="name"):
+            frappe.delete_doc("Contact", contact_name, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.USER):
+            frappe.delete_doc("Notification Settings", self.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", self.USER):
+            frappe.delete_doc("User", self.USER, ignore_permissions=True, force=False, delete_permanently=True)
+        frappe.db.commit = self.original_commit
         frappe.db.rollback()
-        for path in self._physical_files:
+        for path in getattr(self, "_physical_files", []):
             try:
                 os.remove(path)
             except FileNotFoundError:
                 pass
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def _create(
         self, file_name, file_format, rows=None, content=None, conversation_id=None, user=None, created_file_ids=None

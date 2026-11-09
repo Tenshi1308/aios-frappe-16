@@ -36,6 +36,9 @@ class TestDesktopDomains(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         if frappe.db.exists("User", self.USER):
             self.user = frappe.get_doc("User", self.USER)
@@ -76,9 +79,25 @@ class TestDesktopDomains(IntegrationTestCase):
         frappe.set_user(self.user.name)
         frappe.local.session_obj = object()
 
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.rollback()
+        for email in (self.USER, self.NON_CLIENT_USER):
+            for conv in frappe.get_all("AIOS Conversation", filters={"user": email}, pluck="name"):
+                for msg in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", msg, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
         super().tearDown()
 
     def _http_get(self, method_name, params=None):
@@ -92,11 +111,19 @@ class TestDesktopDomains(IntegrationTestCase):
         request_params = {"sid": frappe.session.sid, **(params or {})}
         response = []
         site = frappe.local.site
+        main_db = frappe.local.db
         client = get_test_client()
         url = f"{get_url()}/api/method/aios_v1.api.desktop.{method_name}"
 
+        def share_test_db(set_admin_as_user=True):
+            frappe.local.db = main_db
+
         def dispatch():
-            with patch("frappe.app.get_site_name", return_value=site):
+            with (
+                patch("frappe.app.get_site_name", return_value=site),
+                patch("frappe.connect", side_effect=share_test_db),
+                patch("frappe.app.sync_database"),
+            ):
                 response.append(client.get(url, json=request_params))
 
         thread = Thread(target=dispatch)

@@ -61,6 +61,9 @@ def _usage(user, model="test-model"):
 class TestPermissionScoping(IntegrationTestCase):
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         self.alpha = _make_user(ALPHA, "AIOS Client")
         self.beta = _make_user(BETA, "AIOS Client")
@@ -71,9 +74,37 @@ class TestPermissionScoping(IntegrationTestCase):
         self.usage_alpha = _usage(self.alpha.name)
         self.usage_beta = _usage(self.beta.name)
 
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.rollback()
+        for tname in frappe.get_all("AIOS Channel Thread", filters={"external_thread_id": "scope-chat-1"}, pluck="name"):
+            conv = frappe.db.get_value("AIOS Channel Thread", tname, "conversation")
+            frappe.delete_doc("AIOS Channel Thread", tname, ignore_permissions=True, force=True, delete_permanently=True)
+            if conv and frappe.db.exists("AIOS Conversation", conv):
+                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+        for email in (
+            ALPHA,
+            BETA,
+            CONTROL,
+            SYSTEM_MANAGER,
+            "_test.scope.nonclient.role@example.com",
+            "_test.scope.pending.role@example.com",
+            "_test.scope.overlimit@example.com",
+        ):
+            for uname in frappe.get_all("AIOS Token Usage", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("AIOS Token Usage", uname, ignore_permissions=True, force=True, delete_permanently=True)
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
+        super().tearDown()
 
     def test_client_sees_only_own_token_usage(self):
         frappe.set_user(self.alpha.name)
@@ -266,6 +297,9 @@ class TestERPCompanyScope(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         self.alpha = _make_user(ALPHA, "AIOS Client")
         self.allowed = _active_company()
@@ -278,9 +312,21 @@ class TestERPCompanyScope(IntegrationTestCase):
         if not self.other:
             self.skipTest("Butuh dua company non-test untuk membedakan scope.")
 
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.rollback()
+        for cname in frappe.get_all("Contact", filters={"user": ALPHA}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", ALPHA):
+            frappe.delete_doc("Notification Settings", ALPHA, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", ALPHA):
+            frappe.delete_doc("User", ALPHA, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
+        super().tearDown()
 
     def test_client_list_gl_entry_only_active_company(self):
         frappe.set_user(self.alpha.name)

@@ -27,24 +27,36 @@ class _AuditHandler(logging.Handler):
 class TestControlLifecycle(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
+		self._orig_commit = frappe.db.commit
+		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		frappe.set_user("Administrator")
 		self.created_users = []
 		self.created_activity_logs = []
 		self.created_error_logs = []
 		self.control_user = self._make_user("AIOS Control")
 
+	def _restore_and_rollback(self):
+		frappe.set_user("Administrator")
+		frappe.db.commit = self._orig_commit
+		frappe.db.rollback()
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		for name in reversed(self.created_activity_logs):
 			if frappe.db.exists("Activity Log", name):
-				frappe.delete_doc("Activity Log", name, force=True, ignore_permissions=True)
+				frappe.delete_doc("Activity Log", name, force=True, ignore_permissions=True, delete_permanently=True)
 		for name in reversed(self.created_error_logs):
 			if frappe.db.exists("Error Log", name):
-				frappe.delete_doc("Error Log", name, force=True, ignore_permissions=True)
+				frappe.delete_doc("Error Log", name, force=True, ignore_permissions=True, delete_permanently=True)
 		for user in reversed(self.created_users):
+			for cname in frappe.get_all("Contact", filters={"user": user}, pluck="name"):
+				frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("Notification Settings", user):
+				frappe.delete_doc("Notification Settings", user, ignore_permissions=True, force=True, delete_permanently=True)
 			if frappe.db.exists("User", user):
-				frappe.delete_doc("User", user, ignore_permissions=True)
-		frappe.db.rollback()
+				frappe.delete_doc("User", user, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
 		super().tearDown()
 
 	def _activity_log_names(self):

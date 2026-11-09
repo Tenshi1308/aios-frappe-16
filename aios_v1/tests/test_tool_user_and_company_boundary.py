@@ -72,14 +72,23 @@ class TestToolContextBoundary(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
         frappe.local.request = None
         frappe.set_user("Guest")
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.db.commit = self._orig_commit
         frappe.local.request = None
         frappe.set_user("Administrator")
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def _execute(self, args=None, context=None):
         return json.loads(execute_tool(PROBE, json.dumps(args or {}), context=context))

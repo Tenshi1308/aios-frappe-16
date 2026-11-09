@@ -39,10 +39,18 @@ class TestValidationFeedbackAndSmartLookup(IntegrationTestCase):
 
 	def setUp(self):
 		super().setUp()
+		self._orig_commit = frappe.db.commit
+		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		frappe.set_user(self.USER)
 
-	def tearDown(self):
+	def _restore_and_rollback(self):
 		frappe.set_user("Administrator")
+		frappe.db.commit = self._orig_commit
+		frappe.db.rollback()
+
+	def tearDown(self):
+		self._restore_and_rollback()
 		super().tearDown()
 
 	def test_validate_data_fields_rejects_unknown_field_with_doctype_name_and_schema_hint(self):

@@ -60,12 +60,16 @@ class TestDocumentIntelligence(IntegrationTestCase):
 		super().setUp()
 		self.original_commit = frappe.db.commit
 		frappe.db.commit = lambda *args, **kwargs: None
+		self.addCleanup(self._restore_and_rollback)
 		frappe.set_user(self.USER)
 
-	def tearDown(self):
-		frappe.db.commit = self.original_commit
+	def _restore_and_rollback(self):
 		frappe.set_user("Administrator")
+		frappe.db.commit = self.original_commit
 		frappe.db.rollback()
+
+	def tearDown(self):
+		self._restore_and_rollback()
 
 	def _file(self, **overrides):
 		values = {

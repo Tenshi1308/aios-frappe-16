@@ -66,6 +66,7 @@ class TestConnectorLinking(IntegrationTestCase):
         frappe.flags.in_test = True
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         frappe.db.set_single_value("AIOS Setting", "max_users", 20)
         frappe.db.delete(
@@ -84,11 +85,23 @@ class TestConnectorLinking(IntegrationTestCase):
         frappe.set_user(self.employee)
         self._cleanup()
 
-    def tearDown(self):
-        self._cleanup()
-        frappe.db.set_value(SETTING, SETTING, "bot_username", self._orig_bot)
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        self._cleanup()
+        for email in (OWNER, EMP, OTHER_USER):
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        frappe.db.set_value(SETTING, SETTING, "bot_username", self._orig_bot)
+        self._restore_and_rollback()
         super().tearDown()
 
     def _cleanup(self):
@@ -98,9 +111,9 @@ class TestConnectorLinking(IntegrationTestCase):
             threads = frappe.get_all(THREAD, filters={"external_thread_id": chat}, pluck="name")
             for t in threads:
                 conv = frappe.db.get_value(THREAD, t, "conversation")
-                frappe.delete_doc(THREAD, t, ignore_permissions=True, force=True)
+                frappe.delete_doc(THREAD, t, ignore_permissions=True, force=True, delete_permanently=True)
                 if conv and frappe.db.exists(CONV, conv):
-                    frappe.delete_doc(CONV, conv, ignore_permissions=True, force=True)
+                    frappe.delete_doc(CONV, conv, ignore_permissions=True, force=True, delete_permanently=True)
 
     def test_token_expiry_rejected(self):
         """1. Token kedaluwarsa ditolak."""

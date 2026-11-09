@@ -75,14 +75,28 @@ class TestDraftApprovalFlow(IntegrationTestCase):
 		super().setUp()
 		self._orig_commit = frappe.db.commit
 		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		_make_user(EMAIL, "_Test Draft Flow")
 		_make_user(OTHER, "_Test Draft Flow Other")
 		frappe.set_user(EMAIL)
 
-	def tearDown(self):
+	def _restore_and_rollback(self):
 		frappe.set_user("Administrator")
 		frappe.db.commit = self._orig_commit
 		frappe.db.rollback()
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		for email in (EMAIL, OTHER):
+			for pad in frappe.get_all("Pending Action Draft", filters={"user": email}, pluck="name"):
+				frappe.delete_doc("Pending Action Draft", pad, ignore_permissions=True, force=True, delete_permanently=True)
+			for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+				frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("Notification Settings", email):
+				frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("User", email):
+				frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
 
 	def _draft(self, payload=None, task_id="TEST-FLOW-001"):
 		return create_draft(

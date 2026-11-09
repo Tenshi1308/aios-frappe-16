@@ -47,18 +47,40 @@ class TestTokenQuota(IntegrationTestCase):
 		super().setUp()
 		self._orig_commit = frappe.db.commit
 		frappe.db.commit = lambda *a, **k: None
-		_make_user(EMAIL)
+		self._cleaned_up = False
+		self.addCleanup(self._restore_and_rollback)
 		self._orig_limit = frappe.db.get_single_value("AIOS Setting", "site_token_limit")
 		self._orig_site_used = frappe.db.get_single_value("AIOS Setting", "site_tokens_used")
+		_make_user(EMAIL)
 		self._orig_user_used = frappe.db.get_value("User", EMAIL, "aios_tokens_used") or 0
 
-	def tearDown(self):
+	def _restore_and_rollback(self):
+		if getattr(self, "_cleaned_up", False):
+			return
+		self._cleaned_up = True
 		frappe.set_user("Administrator")
-		frappe.db.set_single_value("AIOS Setting", "site_token_limit", self._orig_limit or 0)
-		frappe.db.set_single_value("AIOS Setting", "site_tokens_used", self._orig_site_used or 0)
-		frappe.db.set_value("User", EMAIL, "aios_tokens_used", self._orig_user_used)
+		if hasattr(self, "_orig_limit"):
+			frappe.db.set_single_value("AIOS Setting", "site_token_limit", self._orig_limit or 0)
+		if hasattr(self, "_orig_site_used"):
+			frappe.db.set_single_value("AIOS Setting", "site_tokens_used", self._orig_site_used or 0)
+		for row_name in frappe.get_all("AIOS Token Usage", filters={"user": EMAIL}, pluck="name"):
+			frappe.delete_doc("AIOS Token Usage", row_name, ignore_permissions=True, force=True, delete_permanently=True)
+		for conv_name in frappe.get_all("AIOS Conversation", filters={"user": EMAIL}, pluck="name"):
+			for msg_name in frappe.get_all("AIOS Message", filters={"conversation": conv_name}, pluck="name"):
+				frappe.delete_doc("AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True)
+			frappe.delete_doc("AIOS Conversation", conv_name, ignore_permissions=True, force=True, delete_permanently=True)
+		for contact_name in frappe.get_all("Contact", filters={"user": EMAIL}, pluck="name"):
+			frappe.delete_doc("Contact", contact_name, ignore_permissions=True, force=True, delete_permanently=True)
+		if frappe.db.exists("Notification Settings", EMAIL):
+			frappe.delete_doc("Notification Settings", EMAIL, ignore_permissions=True, force=True, delete_permanently=True)
+		if frappe.db.exists("User", EMAIL):
+			frappe.delete_doc("User", EMAIL, ignore_permissions=True, force=False, delete_permanently=True)
 		frappe.db.commit = self._orig_commit
 		frappe.db.rollback()
+
+	def tearDown(self):
+		self._restore_and_rollback()
+		super().tearDown()
 
 	def _set_site(self, limit, used):
 		frappe.db.set_single_value("AIOS Setting", "site_token_limit", limit)

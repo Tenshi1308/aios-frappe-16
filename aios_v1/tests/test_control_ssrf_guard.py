@@ -50,15 +50,23 @@ def _error_log_names():
 class TestControlSsrfGuard(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
+		self._orig_commit = frappe.db.commit
+		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		frappe.set_user("Administrator")
 		self.created_sites = []
+
+	def _restore_and_rollback(self):
+		frappe.set_user("Administrator")
+		frappe.db.commit = self._orig_commit
+		frappe.db.rollback()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		for site in reversed(self.created_sites):
 			if frappe.db.exists("AIOS Managed Site", site):
-				frappe.delete_doc("AIOS Managed Site", site, ignore_permissions=True)
-		frappe.db.rollback()
+				frappe.delete_doc("AIOS Managed Site", site, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
 		super().tearDown()
 
 	def _insert_site(self, **kwargs):

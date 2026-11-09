@@ -20,6 +20,8 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
         self._had_role = "aios_site_role" in frappe.conf
         self._orig_role = frappe.conf.get("aios_site_role")
         frappe.conf["aios_site_role"] = "developer"
@@ -29,13 +31,16 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         frappe.local.request = None
         frappe.set_user("Guest")
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.set_user("Administrator")
-        for lead_name in reversed(self.created_leads):
+        for lead_name in reversed(getattr(self, "created_leads", [])):
             if frappe.db.exists("Lead", lead_name):
-                frappe.delete_doc("Lead", lead_name, ignore_permissions=True, force=True)
+                frappe.delete_doc("Lead", lead_name, ignore_permissions=True, force=True, delete_permanently=True)
 
-        if self._had_role:
+        if getattr(self, "_had_role", False):
             frappe.conf["aios_site_role"] = self._orig_role
         else:
             frappe.conf.pop("aios_site_role", None)
@@ -43,6 +48,9 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         frappe.db.commit = self._orig_commit
         frappe.local.request = None
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
         super().tearDown()
 
     def _email(self, label: str) -> str:

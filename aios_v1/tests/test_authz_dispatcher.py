@@ -67,6 +67,8 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self._physical_files = []
+        self.addCleanup(self._restore_and_rollback)
         _make_test_user(self.ALPHA, "_Test Endpoint Alpha")
         _make_test_user(self.BETA, "_Test Endpoint Beta")
         self.alpha_conv = frappe.get_doc(
@@ -85,7 +87,6 @@ class TestChatEndpointIsolation(IntegrationTestCase):
                 "title": "_Test Beta endpoint",
             }
         ).insert(ignore_permissions=True)
-        self._physical_files = []
 
     def test_branches_endpoint_returns_display_fields_only(self):
         frappe.set_user(self.ALPHA)
@@ -123,16 +124,31 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         self.assertTrue(branches)
         self.assertTrue(all(branch.get("manager_persona") for branch in branches))
 
-    def tearDown(self):
-        frappe.db.commit = self._orig_commit
+    def _restore_and_rollback(self):
         frappe.local.request = None
         frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
-        for path in self._physical_files:
+        for path in getattr(self, "_physical_files", []):
             try:
                 os.remove(path)
             except FileNotFoundError:
                 pass
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for email in (self.ALPHA, self.BETA):
+            for conv in frappe.get_all("AIOS Conversation", filters={"user": email}, pluck="name"):
+                for msg in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", msg, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
 
     def _track_private_file(self, file_url):
         import frappe.utils

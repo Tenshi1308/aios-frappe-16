@@ -43,12 +43,29 @@ class TestUserIsolation(IntegrationTestCase):
         # Penangkal db.commit() manual di kode AIOS lama (docs/05.2 §G)
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         _make_test_user(self.ALPHA, "_Test User Alpha")
         _make_test_user(self.BETA, "_Test User Beta")
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for email in (self.ALPHA, self.BETA):
+            for conv in frappe.get_all("AIOS Conversation", filters={"user": email}, pluck="name"):
+                for msg in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", msg, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
 
     def _beta_resources(self):
         """Kembalikan (doctype, name) milik Beta untuk tiap resource."""

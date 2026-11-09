@@ -77,11 +77,34 @@ def ensure_managed_site_admin_permission_state():
 class TestManagedSiteRegistry(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
+		self._orig_commit = frappe.db.commit
+		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		frappe.set_user("Administrator")
+
+	def _restore_and_rollback(self):
+		frappe.set_user("Administrator")
+		frappe.db.commit = self._orig_commit
+		frappe.db.rollback()
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
-		frappe.db.rollback()
+		for sname in (
+			"test.managed-site.localhost",
+			"test.duplicate.managed-site.localhost",
+			"test.denied.managed-site.localhost",
+		):
+			if frappe.db.exists("AIOS Managed Site", sname):
+				frappe.delete_doc("AIOS Managed Site", sname, ignore_permissions=True, force=True, delete_permanently=True)
+		for email in (ADMIN_USER, CLIENT_USER, CONTROL_USER):
+			for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+				frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("Notification Settings", email):
+				frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("User", email):
+				frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
+		super().tearDown()
 
 	def test_managed_site_doctype_exists(self):
 		self.assertTrue(

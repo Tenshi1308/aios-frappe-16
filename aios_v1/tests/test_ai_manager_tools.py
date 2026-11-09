@@ -48,15 +48,26 @@ class TestAIManagerTools(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         _make_test_user(self.EMAIL, "_Test AI Manager")
         frappe.set_user(self.EMAIL)
         self.context = {"user": self.EMAIL, "allowed_company": "_Test Company",
                         "branch": "finance", "worker_key": "manager", "delegation_depth": 0}
 
-    def tearDown(self):
-        frappe.db.commit = self._orig_commit
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for cname in frappe.get_all("Contact", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.EMAIL):
+            frappe.delete_doc("Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", self.EMAIL):
+            frappe.delete_doc("User", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
 
     def test_all_seven_tools_registered(self):
         expected_tools = [
@@ -205,13 +216,17 @@ class TestDelegationWorkerKey(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         self.manager = BaseManager(get_branch("finance"))
         self.doc = MagicMock()
 
-    def tearDown(self):
-        frappe.db.commit = self._orig_commit
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
 
     def test_registry_normalizes_worker_key_variants(self):
         self.assertEqual(get_worker("finance", "financial_analyst")["key"], "financial-analyst")

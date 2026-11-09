@@ -80,6 +80,7 @@ class ConnectorTestBase(IntegrationTestCase):
         frappe.flags.in_test = True
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         frappe.db.set_value("AIOS Setting", "AIOS Setting", "max_users", 20, update_modified=False)
         frappe.db.delete(
@@ -95,14 +96,26 @@ class ConnectorTestBase(IntegrationTestCase):
         dispatch.clear_rate_limit(CHAT_ID_B)
         self._cleanup_threads()
 
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
+        frappe.set_user("Administrator")
         self._cleanup_threads()
         dispatch.clear_rate_limit(CHAT_ID)
         dispatch.clear_rate_limit(CHAT_ID_B)
+        for email in (OWNER, OTHER, SECOND_RECEIVER):
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
         frappe.db.set_value(SETTING, SETTING, "is_active", self._orig_active)
         frappe.db.set_value(SETTING, SETTING, "poll_offset", 0)
-        frappe.db.commit = self._orig_commit
-        frappe.db.rollback()
+        self._restore_and_rollback()
         super().tearDown()
 
     def _cleanup_threads(self):
@@ -110,11 +123,11 @@ class ConnectorTestBase(IntegrationTestCase):
             THREAD, filters={"external_thread_id": ("in", [CHAT_ID, CHAT_ID_B])}, pluck="name"
         ):
             for flag in frappe.get_all(FLAG, filters={"thread": name}, pluck="name"):
-                frappe.delete_doc(FLAG, flag, ignore_permissions=True, force=True)
+                frappe.delete_doc(FLAG, flag, ignore_permissions=True, force=True, delete_permanently=True)
             conversation = frappe.db.get_value(THREAD, name, "conversation")
-            frappe.delete_doc(THREAD, name, ignore_permissions=True, force=True)
+            frappe.delete_doc(THREAD, name, ignore_permissions=True, force=True, delete_permanently=True)
             if conversation and frappe.db.exists("AIOS Conversation", conversation):
-                frappe.delete_doc("AIOS Conversation", conversation, ignore_permissions=True, force=True)
+                frappe.delete_doc("AIOS Conversation", conversation, ignore_permissions=True, force=True, delete_permanently=True)
 
     def _update(self, text: str, update_id: int = 1, chat_id: str | int | None = None) -> dict:
         return {

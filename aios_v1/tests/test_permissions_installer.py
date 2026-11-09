@@ -16,11 +16,19 @@ except ImportError:  # frappe < 15 fallback
 class TestPermissionInstaller(IntegrationTestCase):
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def _perm(self, doctype, role, table="Custom DocPerm"):
         return frappe.db.get_value(
@@ -187,6 +195,9 @@ class TestReportRolesInstaller(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         self.client_user = _make_client_user()
         from aios_v1.lib.erpnext_financial_reports import ALLOWED_REPORTS
@@ -196,9 +207,23 @@ class TestReportRolesInstaller(IntegrationTestCase):
             if not frappe.db.exists("Report", report_name):
                 self.skipTest(f"Report {report_name} tidak ada di site.")
 
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.rollback()
+        if frappe.db.exists("Report", "_Test Open Report"):
+            frappe.delete_doc("Report", "_Test Open Report", ignore_permissions=True, force=True, delete_permanently=True)
+        for cname in frappe.get_all("Contact", filters={"user": CLIENT}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", CLIENT):
+            frappe.delete_doc("Notification Settings", CLIENT, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", CLIENT):
+            frappe.delete_doc("User", CLIENT, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
+        super().tearDown()
 
     def _custom_roles(self, report_name):
         doc = frappe.get_doc("Custom Role", {"report": report_name})
@@ -240,10 +265,13 @@ class TestReportRolesInstaller(IntegrationTestCase):
             self.assertIn(role, roles)
 
     def test_rebuild_picks_up_new_has_role(self):
+        from unittest.mock import patch
+
         ensure_aios_permissions()
         report_doc = frappe.get_doc("Report", "Trial Balance")
         report_doc.append("roles", {"role": "Sales Manager"})
-        report_doc.save(ignore_permissions=True)
+        with patch.object(report_doc, "export_doc"):
+            report_doc.save(ignore_permissions=True)
         ensure_aios_permissions()
         roles = self._custom_roles("Trial Balance")
         self.assertIn("Sales Manager", roles)

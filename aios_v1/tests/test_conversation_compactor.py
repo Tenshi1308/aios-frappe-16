@@ -25,6 +25,11 @@ from aios_v1.lib.context_manager import (
 class TestConversationCompactor(IntegrationTestCase):
     def setUp(self):
         super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+        self._orig_context_window_limit = frappe.db.get_single_value("AIOS Setting", "context_window_limit")
+        self._orig_compact_threshold_percent = frappe.db.get_single_value("AIOS Setting", "compact_threshold_percent")
         frappe.db.set_single_value("AIOS Setting", "context_window_limit", DEFAULT_CONTEXT_WINDOW_LIMIT)
         frappe.db.set_single_value("AIOS Setting", "compact_threshold_percent", DEFAULT_COMPACT_THRESHOLD_PERCENT)
         frappe.clear_document_cache("AIOS Setting", "AIOS Setting")
@@ -43,16 +48,27 @@ class TestConversationCompactor(IntegrationTestCase):
         self.conv.title = "Test Compaction Sesi"
         self.conv.insert(ignore_permissions=True)
 
-    def tearDown(self):
-        try:
-            setting = frappe.get_single("AIOS Setting")
-            setting.context_window_limit = self._orig_context_window_limit
-            setting.compact_threshold_percent = self._orig_compact_threshold_percent
-            setting.save(ignore_permissions=True)
-            frappe.clear_document_cache("AIOS Setting", "AIOS Setting")
-        except Exception:
-            pass
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+        frappe.clear_document_cache("AIOS Setting", "AIOS Setting")
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for conv in frappe.get_all("AIOS Conversation", filters={"user": self.test_user}, pluck="name"):
+            for msg in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                frappe.delete_doc("AIOS Message", msg, ignore_permissions=True, force=True, delete_permanently=True)
+            frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
+        for cname in frappe.get_all("Contact", filters={"user": self.test_user}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.test_user):
+            frappe.delete_doc("Notification Settings", self.test_user, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", self.test_user):
+            frappe.delete_doc("User", self.test_user, ignore_permissions=True, force=True, delete_permanently=True)
+        frappe.db.set_single_value("AIOS Setting", "context_window_limit", self._orig_context_window_limit)
+        frappe.db.set_single_value("AIOS Setting", "compact_threshold_percent", self._orig_compact_threshold_percent)
+        self._restore_and_rollback()
         super().tearDown()
 
     def _add_message(self, role: str, content: str, worker_key: str = "manager") -> str:

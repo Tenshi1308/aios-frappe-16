@@ -20,14 +20,23 @@ class TestToolExecutionLoop(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
         self.manager = BaseManager({"key": "finance", "name": "Finance"})
         self.doc = MagicMock()
         self.llm_message_snapshots = []
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.db.commit = self.original_commit
         frappe.set_user("Administrator")
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def _run_manager(self, chat_side_effect, tool_result=None, tool_error=None):
         tool_result = tool_result or '{"ok": true}'
@@ -362,14 +371,23 @@ class TestTruncationMarker(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
         self.manager = BaseManager({"key": "finance", "name": "Finance"})
         self.doc = MagicMock()
         self.llm_message_snapshots = []
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.db.commit = self.original_commit
         frappe.set_user("Administrator")
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def _run_with_truncation(self, chat_side_effect):
         self.llm_message_snapshots = []
@@ -455,11 +473,20 @@ class TestPhase2aEvents(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
 
-    def tearDown(self):
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.db.commit = self.original_commit
         frappe.set_user("Administrator")
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def test_subagent_draft_create_emits_approval_card(self):
         from aios_v1.plugin_manager.registry import get_branch

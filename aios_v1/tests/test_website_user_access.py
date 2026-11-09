@@ -41,12 +41,27 @@ class TestWebsiteUserAccess(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
         _make_test_user(self.EMAIL, "_Test Website User")
 
-    def tearDown(self):
-        frappe.db.commit = self._orig_commit
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.set_user("Administrator")
+        for contact_name in frappe.get_all("Contact", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc("Contact", contact_name, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.EMAIL):
+            frappe.delete_doc("Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", self.EMAIL):
+            frappe.delete_doc("User", self.EMAIL, ignore_permissions=True, force=False, delete_permanently=True)
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def test_client_role_has_no_desk_access(self):
         self.assertEqual(

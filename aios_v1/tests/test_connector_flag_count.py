@@ -72,6 +72,7 @@ class TestConnectorFlagCount(IntegrationTestCase):
         frappe.flags.in_test = True
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         frappe.db.set_single_value("AIOS Setting", "max_users", 20)
         frappe.db.delete(
@@ -83,10 +84,22 @@ class TestConnectorFlagCount(IntegrationTestCase):
         self._cleanup()
         self.thread_name = self._create_thread(self.owner)
 
-    def tearDown(self):
-        self._cleanup()
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        self._cleanup()
+        for email in (OWNER, OTHER):
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
         super().tearDown()
 
     def _cleanup(self):
@@ -94,16 +107,16 @@ class TestConnectorFlagCount(IntegrationTestCase):
             FLAG,
             pluck="name",
         ):
-            frappe.delete_doc(FLAG, flag_name, ignore_permissions=True, force=True)
+            frappe.delete_doc(FLAG, flag_name, ignore_permissions=True, force=True, delete_permanently=True)
         for thread_name in frappe.get_all(
             THREAD,
             filters={"external_thread_id": CHAT_ID},
             pluck="name",
         ):
             conv = frappe.db.get_value(THREAD, thread_name, "conversation")
-            frappe.delete_doc(THREAD, thread_name, ignore_permissions=True, force=True)
+            frappe.delete_doc(THREAD, thread_name, ignore_permissions=True, force=True, delete_permanently=True)
             if conv and frappe.db.exists("AIOS Conversation", conv):
-                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True)
+                frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
 
     def _create_thread(self, owner_user: str) -> str:
         thread = dispatch.get_or_create_thread(CHAT_ID)

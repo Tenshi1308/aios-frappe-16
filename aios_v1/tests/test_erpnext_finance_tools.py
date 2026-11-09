@@ -50,6 +50,7 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self.addCleanup(self._restore_and_rollback)
         _ensure_client_user(self.USER)
         frappe.set_user(self.USER)
         self.context = {
@@ -59,10 +60,19 @@ class TestERPNextFinanceTools(IntegrationTestCase):
             "worker_key": "manager",
         }
 
-    def tearDown(self):
-        frappe.db.commit = self.original_commit
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
+        for cname in frappe.get_all("Contact", filters={"user": self.USER}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.USER):
+            frappe.delete_doc("Notification Settings", self.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", self.USER):
+            frappe.delete_doc("User", self.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        frappe.db.commit = self.original_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
 
     def _execute(self, name, args):
         return json.loads(execute_tool(name, json.dumps(args), context=self.context))
@@ -286,6 +296,7 @@ class TestReportFilterGuide(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self.addCleanup(self._restore_and_rollback)
         from aios_v1.permissions import ensure_aios_permissions
 
         # Rollback antar test menghapus `Custom Role` hasil B/C; setiap class
@@ -293,10 +304,19 @@ class TestReportFilterGuide(IntegrationTestCase):
         ensure_aios_permissions()
         _ensure_client_user(TestERPNextFinanceTools.USER)
 
-    def tearDown(self):
-        frappe.db.commit = self.original_commit
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
+        for cname in frappe.get_all("Contact", filters={"user": TestERPNextFinanceTools.USER}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", TestERPNextFinanceTools.USER):
+            frappe.delete_doc("Notification Settings", TestERPNextFinanceTools.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", TestERPNextFinanceTools.USER):
+            frappe.delete_doc("User", TestERPNextFinanceTools.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        frappe.db.commit = self.original_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
 
     def _execute_client(self, arguments):
         frappe.set_user(TestERPNextFinanceTools.USER)
@@ -389,16 +409,26 @@ class TestReportClientAccess(IntegrationTestCase):
         super().setUp()
         self.original_commit = frappe.db.commit
         frappe.db.commit = lambda *args, **kwargs: None
+        self.addCleanup(self._restore_and_rollback)
         from aios_v1.permissions import ensure_aios_permissions
 
         ensure_aios_permissions()
         _ensure_client_user(TestERPNextFinanceTools.USER)
         self.company = _resolve_allowed_company()
 
-    def tearDown(self):
-        frappe.db.commit = self.original_commit
+    def _restore_and_rollback(self):
         frappe.set_user("Administrator")
+        for cname in frappe.get_all("Contact", filters={"user": TestERPNextFinanceTools.USER}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", TestERPNextFinanceTools.USER):
+            frappe.delete_doc("Notification Settings", TestERPNextFinanceTools.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("User", TestERPNextFinanceTools.USER):
+            frappe.delete_doc("User", TestERPNextFinanceTools.USER, ignore_permissions=True, force=True, delete_permanently=True)
+        frappe.db.commit = self.original_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
 
     def _execute_client(self, arguments):
         frappe.set_user(TestERPNextFinanceTools.USER)

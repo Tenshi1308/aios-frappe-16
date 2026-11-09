@@ -73,6 +73,7 @@ class TestConnectorOrdersPagination(IntegrationTestCase):
         frappe.flags.in_test = True
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
         frappe.set_user("Administrator")
         frappe.db.set_single_value("AIOS Setting", "max_users", 20)
         frappe.db.delete(
@@ -83,10 +84,22 @@ class TestConnectorOrdersPagination(IntegrationTestCase):
         self.other = _ensure_user(OTHER, "Pag Other", is_receiver=False)
         self._cleanup()
 
-    def tearDown(self):
-        self._cleanup()
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        self._cleanup()
+        for email in (OWNER, OTHER):
+            for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=True, delete_permanently=True)
+        self._restore_and_rollback()
         super().tearDown()
 
     def _cleanup(self):
@@ -95,13 +108,13 @@ class TestConnectorOrdersPagination(IntegrationTestCase):
             filters={"for_user": ("in", [self.owner, self.other])},
             pluck="name",
         ):
-            frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+            frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True, delete_permanently=True)
         for pad in frappe.get_all(
             "Pending Action Draft",
             filters={"user": ("in", [self.owner, self.other])},
             pluck="name",
         ):
-            frappe.delete_doc("Pending Action Draft", pad, ignore_permissions=True, force=True)
+            frappe.delete_doc("Pending Action Draft", pad, ignore_permissions=True, force=True, delete_permanently=True)
 
     def _seed_orders(self, count: int, user: str) -> list[str]:
         draft_names = []

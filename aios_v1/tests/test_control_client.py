@@ -54,6 +54,9 @@ def _new_error_log_texts(before):
 class TestControlClient(IntegrationTestCase):
 	def setUp(self):
 		super().setUp()
+		self._orig_commit = frappe.db.commit
+		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		frappe.set_user("Administrator")
 		self.site_name = f"test.control-client.{uuid4().hex}.localhost"
 		self.site = frappe.get_doc(
@@ -65,11 +68,16 @@ class TestControlClient(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
+	def _restore_and_rollback(self):
+		frappe.set_user("Administrator")
+		frappe.db.commit = self._orig_commit
+		frappe.db.rollback()
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		if frappe.db.exists("AIOS Managed Site", self.site_name):
-			frappe.delete_doc("AIOS Managed Site", self.site_name, ignore_permissions=True)
-		frappe.db.rollback()
+			frappe.delete_doc("AIOS Managed Site", self.site_name, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
 		super().tearDown()
 
 	def test_health_returns_unwrapped_payload_and_uses_registry_url(self):

@@ -49,14 +49,30 @@ class TestLoginFlow(IntegrationTestCase):
         super().setUp()
         self._orig_commit = frappe.db.commit
         frappe.db.commit = lambda *a, **k: None
+        self._cleaned_up = False
+        self.addCleanup(self._restore_and_rollback)
         _make_test_user(self.ACTIVE, "_Test Login Active", "Active")
         _make_test_user(self.PENDING, "_Test Login Pending", "Pending Provisioning")
         _make_test_user(self.SUSPENDED, "_Test Login Suspended", "Suspended")
 
-    def tearDown(self):
-        frappe.db.commit = self._orig_commit
+    def _restore_and_rollback(self):
+        if getattr(self, "_cleaned_up", False):
+            return
+        self._cleaned_up = True
         frappe.set_user("Administrator")
+        for email in (self.ACTIVE, self.PENDING, self.SUSPENDED):
+            for contact_name in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("Contact", contact_name, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Notification Settings", email):
+                frappe.delete_doc("Notification Settings", email, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("User", email):
+                frappe.delete_doc("User", email, ignore_permissions=True, force=False, delete_permanently=True)
+        frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+
+    def tearDown(self):
+        self._restore_and_rollback()
+        super().tearDown()
 
     def test_on_login_allows_active(self):
         on_login(SimpleNamespace(user=self.ACTIVE))

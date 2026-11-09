@@ -73,18 +73,27 @@ class TestControlPlaneDashboardApi(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		self._orig_commit = frappe.db.commit
 		frappe.db.commit = lambda *a, **k: None
+		self.addCleanup(self._restore_and_rollback)
 		self.created_users = []
 		self.admin = self._make_user("AIOS Admin", user_type="System User")
 		self.client_user = self._make_user("AIOS Client", user_type="Website User")
 		self.api = _control_plane_api()
 
+	def _restore_and_rollback(self):
+		frappe.set_user("Administrator")
+		frappe.db.commit = self._orig_commit
+		frappe.db.rollback()
+
 	def tearDown(self):
 		frappe.set_user("Administrator")
 		for user in reversed(self.created_users):
+			for cname in frappe.get_all("Contact", filters={"user": user}, pluck="name"):
+				frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+			if frappe.db.exists("Notification Settings", user):
+				frappe.delete_doc("Notification Settings", user, ignore_permissions=True, force=True, delete_permanently=True)
 			if frappe.db.exists("User", user):
-				frappe.delete_doc("User", user, ignore_permissions=True)
-		frappe.db.commit = self._orig_commit
-		frappe.db.rollback()
+				frappe.delete_doc("User", user, ignore_permissions=True, force=True, delete_permanently=True)
+		self._restore_and_rollback()
 		super().tearDown()
 
 	def _make_user(self, role, user_type="System User"):
