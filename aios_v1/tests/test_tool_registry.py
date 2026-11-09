@@ -32,6 +32,6 @@ class TestToolRegistry(unittest.TestCase):
 
     def test_execute_tool_invalid_args(self):
         # Pass invalid json arguments
-        result_json = execute_tool("get_current_time", "{invalid_json}")
+        result_json = execute_tool("get_current_time", "{invalid_json}", context=CONTEXT)
         result = json.loads(result_json)
         self.assertIn("error", result)
