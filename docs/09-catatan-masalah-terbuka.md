@@ -232,7 +232,7 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | Hook `setup_wizard_complete` (`normalize_wizard_user`) di `setup.py` + `hooks.py` (B4) | commit `4b4c034` (2026-10-30) |
 | Kelola Staf, `AIOS Setting.max_users`, dan `AIOS Client Owner Profile` (C1 + C2) | commit `70b54ee` (2026-11-06) |
 | Pembersihan 10 baris `Has Role` yatim di site developer (A6) | perubahan data tanpa commit, terverifikasi (0 orphan) |
-| Proteksi UI tombol Daftar di site client & route guard `/register` → `/lock` (A1.4) | commit `2b26fa3` (2026-10-30) |
+| Proteksi UI tombol Daftar di site client & route guard `/register` → `/lock` (A1.4) | commit `2b26fa3` (2026-11-09) |
 | Kolom usang `aios_token_limit` dihapus dari `tabUser` | commit `d5dbe6b` (2026-11-09) |
 | Perbaikan `test_tool_registry` (konteks eksplisit pada invalid args) | commit `4ff8cc8` (2026-11-09) |
 | Perbaikan silent except di `api/dispatcher.py` (`?page=`) tanpa log spam | commit `3b39d94` (2026-11-09) |
