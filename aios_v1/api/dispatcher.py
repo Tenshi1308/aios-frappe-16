@@ -789,10 +789,9 @@ def _handle_api_request():
             from aios_v1.lib.connector.views import count_orders, list_orders
 
             raw_page = frappe.request.args.get("page") if hasattr(frappe.request, "args") else None
-            try:
-                page = max(1, int(raw_page)) if raw_page else 1
-            except (ValueError, TypeError):
-                page = 1
+            clean_page = raw_page.strip() if isinstance(raw_page, str) else ""
+            digits = clean_page[1:] if clean_page.startswith(("+", "-")) else clean_page
+            page = max(1, int(clean_page)) if digits.isascii() and digits.isdigit() else 1
 
             raw_unread = frappe.request.args.get("unread") if hasattr(frappe.request, "args") else None
             unread_only = True
