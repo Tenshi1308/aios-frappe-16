@@ -572,16 +572,16 @@ class TestDesktopSettings(IntegrationTestCase):
 
     def _make_owner_session(self):
         frappe.set_user("Administrator")
-        self.owner_user = self._ensure_user(
+        self.client_owner = self._ensure_user(
             "_test.desktop.owner@example.com",
             first_name="_Test Desktop Owner",
             aios_persona="executive",
             aios_status="Active",
             roles=["AIOS Client", "AIOS Client Owner"],
         )
-        frappe.set_user(self.owner_user.name)
+        frappe.set_user(self.client_owner.name)
         frappe.local.session_obj = object()
-        return self.owner_user
+        return self.client_owner
 
     def test_owner_endpoints_reject_guest_admin_and_regular_client(self):
         """Keputusan 3 & 7 (Lapis 2): ke-5 endpoint khusus AIOS Client Owner menolak non-owner."""

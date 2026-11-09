@@ -5,7 +5,7 @@ existing workspace user, and (b) a reply produced by the existing Sales manager
 stream. No ERPNext writes happen here — the manager's tool loop only creates
 `Pending Action Draft` documents, which a human approves in Ekasa Desk.
 
-Identity: the whole block runs as the configured `owner_user` because the chat
+Identity: the whole block runs as the resolved channel user (linked user or Guest) because the chat
 path (`handle_stream`, `create_draft`, `save_private_file`) reads
 `frappe.session.user`. In a background worker `frappe.connect()` leaves the
 session as `Administrator`, which would bypass every permission — so the user is

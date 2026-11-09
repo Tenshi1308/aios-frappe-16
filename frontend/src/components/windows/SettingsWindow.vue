@@ -1447,6 +1447,9 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: var(--space-4);
 }
 
 .staff-row {

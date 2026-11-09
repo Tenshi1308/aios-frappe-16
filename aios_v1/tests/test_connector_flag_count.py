@@ -118,12 +118,12 @@ class TestConnectorFlagCount(IntegrationTestCase):
             if conv and frappe.db.exists("AIOS Conversation", conv):
                 frappe.delete_doc("AIOS Conversation", conv, ignore_permissions=True, force=True, delete_permanently=True)
 
-    def _create_thread(self, owner_user: str) -> str:
+    def _create_thread(self, owner: str) -> str:
         thread = dispatch.get_or_create_thread(CHAT_ID)
         return thread["name"]
 
-    def _seed_flags(self, count: int, status: str, owner_user: str | None = None) -> list[int | str]:
-        owner = owner_user or self.owner
+    def _seed_flags(self, count: int, status: str, owner: str | None = None) -> list[int | str]:
+        owner = owner or self.owner
         names: list[int | str] = []
         for i in range(count):
             doc = frappe.get_doc(

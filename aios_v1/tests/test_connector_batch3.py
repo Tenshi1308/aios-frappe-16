@@ -200,7 +200,7 @@ class ConnectorBatch3Test(IntegrationTestCase):
     # 2. Order draft notification tests
     # =========================================================================
     def test_guest_order_draft_creates_notification_log(self):
-        """When a guest creates an order draft, a Notification Log is created for owner_user."""
+        """When a guest creates an order draft, a Notification Log is created for the channel receiver / client owner."""
         payload = {
             "doctype": "Sales Order",
             "data": {"items": [{"item_code": "GENSET-01", "qty": 1, "rate": 5000000}]},

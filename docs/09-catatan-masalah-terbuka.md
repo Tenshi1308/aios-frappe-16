@@ -2,11 +2,11 @@
 
 > **Status dokumen:** *catatan kerja* — bukan spesifikasi normatif, bukan roadmap, bukan kontrak scope PoC.
 > Isinya temuan yang **sudah dikonfirmasi** lewat pembacaan kode/docs/runtime, beserta keputusan yang sudah diambil.
-> Dokumen ini **belum dikerjakan**. Titik lanjut kerja berikutnya.
+> Dokumen ini **telah disinkronkan** dengan implementasi kode dan runtime saat ini (2026-11-09).
 
 > **Aturan induk: Frappe resmi menang.** Bila isi dokumen ini, `docs/`, atau `AGENTS.md` berbeda dengan perilaku/dokumentasi resmi Frappe/ERPNext (docs.frappe.io, source `apps/frappe`, `apps/erpnext`), yang resmi menang. Jangan menebak: cari primitif resmi dulu. Lihat `AGENTS.md` §2 dan `docs/00` §6.
 
-Tanggal catat: 2026-10-29 (direvisi 2026-10-29). Repo pada `feat/plugin-mcp-manager`, commit dasar `852b8b8`.
+Tanggal catat: 2026-10-29 (direvisi 2026-11-09). Repo pada `feat/plugin-mcp-manager`, commit HEAD `3b39d94`.
 
 ## Flow Utama (acuan)
 
@@ -22,19 +22,19 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 |---|---|---|---|
 | A1 | `register_account` membuat `User` di site yang salah; belum ada guard site developer | **tinggi** | **Dikerjakan** (selesai: Lead di site developer + guard) |
 | A2 | `docs/04` Alur 1 kontradiksi soal password | sedang | **Dikerjakan** (docs 04 dikoreksi) |
-| A3 | `RegisterView.vue` masih meminta password | sedang | **Dikerjakan** (selesai: form hanya 3 field esensial) |
+| A3 | `RegisterView.vue` masih meminta password | sedang | **Dikerjakan** (selesai: form hanya 3 field esensial, tanpa field negara) |
 | A4 | `AIOS Managed Site.contact_email` kosong | rendah | **Ditunda** |
-| A5 | `pending_inbox()` tidak melihat pendaftar di site developer | **tinggi** | Belum |
-| A6 | Baris `Has Role` yatim + 1 user uji | rendah | Belum (kapan saja) |
-| B1 | Tautan undangan `/update-password` belum diterbitkan `activate_user` | **tinggi** | Belum |
+| A5 | `pending_inbox()` tidak melihat pendaftar di site developer | **tinggi** | **Dikerjakan** (selesai: `signup_leads()` di `control_plane.py:420`, commit `4b4c034`) |
+| A6 | Baris `Has Role` yatim + 1 user uji | rendah | **Dikerjakan** (selesai: 10 orphan dihapus di dev, query live 0 orphan) |
+| B1 | Tautan undangan `/update-password` belum diterbitkan `activate_user` | **tinggi** | **Dikerjakan** (selesai: `invitation_url` di `control.py:179,187` + modal di admin `App.vue`, commit `a994143`) |
 | B2 | ~~Custom Field `Lead.app_source`~~ | — | **Dikerjakan** (selesai: `Lead.utm_source` + auto seed) |
-| B3 | Tab "Pendaftar" + `signup_leads()` | sedang | Belum |
-| B4 | Hook `setup_wizard_complete` (normalisasi user hasil wizard) | **tinggi** | Belum (baru) |
+| B3 | Tab "Pendaftar" + `signup_leads()` | sedang | **Dikerjakan** (selesai: tab Pendaftar di `admin/src/App.vue:34` + API, commit `a994143`) |
+| B4 | Hook `setup_wizard_complete` (normalisasi user hasil wizard) | **tinggi** | **Dikerjakan** (selesai: `hooks.py:21` + `normalize_wizard_user` `setup.py:495`, commit `4b4c034`) |
 | B5 | Prosedur manual admin tertulis | sedang | **Dikerjakan** (`docs/04` §6.0) |
 | R1 | Endpoint guest tanpa verifikasi email | sedang | Risiko diterima untuk PoC |
 | R2 | Site klien baru tanpa outgoing `Email Account` | rendah | Risiko diterima; tautan dikirim manual |
-| C1 | Pendaftaran user ke-2 dst | sedang | **Dikerjakan** (2026-11-06: menu `Kelola Staf` khusus `AIOS Client Owner` + `invitation_url`) |
-| C2 | `max_users` belum diimplementasikan | sedang | **Dikerjakan** (2026-11-06: `AIOS Setting.max_users` + validasi `User.before_insert` & `User.validate`) |
+| C1 | Pendaftaran user ke-2 dst | sedang | **Dikerjakan** (2026-11-06: menu `Kelola Staf` khusus `AIOS Client Owner` + `invitation_url`, commit `70b54ee`) |
+| C2 | `max_users` belum diimplementasikan | sedang | **Dikerjakan** (2026-11-06: `AIOS Setting.max_users` + validasi `User.before_insert` & `User.validate`, commit `70b54ee`) |
 
 ---
 
@@ -68,7 +68,9 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 
 **Kondisi:** `frontend/src/views/RegisterView.vue:8` mendeklarasikan `form = reactive({ full_name, email, password, company_name })`; baris 36-46 memuat `<input type="password" ... required minlength="8">`.
 
-**Keputusan:** hapus password dari `RegisterView.vue`, `frontend/src/stores/session.ts` (`register()`), dan `frontend/src/api/session.ts` (tipe payload). **Tambah field negara** (dibutuhkan setup wizard; nilai dari daftar `Country` Frappe, bukan literal). `PendingView.vue` jangan menjanjikan email otomatis.
+**Keputusan:** hapus password dari `RegisterView.vue`, `frontend/src/stores/session.ts` (`register()`), dan `frontend/src/api/session.ts` (tipe payload). `PendingView.vue` jangan menjanjikan email otomatis.
+
+**Koreksi 2026-11-09:** Keputusan awal "Tambah field negara" dibatalkan/digantikan oleh kontrak `docs/00` §1.1 (negara disetel default Indonesia; form `RegisterView.vue:7` hanya memuat 3 field esensial: `full_name`, `email`, `company_name` tanpa pilihan negara).
 
 **File ikut berubah:** `aios_v1/tests/test_auth_switch_contract.py` dan `aios_v1/tests/test_self_register_pending_provisioning.py` (meng-assert perilaku lama).
 
@@ -82,6 +84,8 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 
 ### A5 — `pending_inbox()` tidak melihat pendaftar di site developer
 
+**Status: Dikerjakan.** Endpoint `signup_leads()` di `aios_v1/api/control_plane.py:420` membaca `Lead` dengan `utm_source = "AIOS Signup"` di site developer (commit `4b4c034`, 2026-10-30).
+
 **Kondisi:** `aios_v1/api/control_plane.py:266-330` memindai hanya `AIOS Managed Site`, lalu `control_client.users(site, status="Pending Provisioning")` per site. Site developer tidak ada di registry.
 
 **Bukti:** `samuelkarel1308@gmail.com` ada di site developer (`aios_status = "Pending Provisioning"`) tetapi tidak pernah muncul di dashboard.
@@ -91,6 +95,8 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 ---
 
 ### A6 — Baris `Has Role` yatim + 1 user uji
+
+**Status: Dikerjakan.** 10 baris `Has Role` yatim di site developer `aios-v16.localhost` telah dibersihkan; verifikasi query SQL live menghasilkan 0 orphan (2026-11-09).
 
 **Kondisi:** user uji dihapus dengan `frappe.db.delete` (raw SQL), child table `Has Role` tidak ikut terhapus.
 
@@ -112,6 +118,8 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 ## B. Yang belum ada
 
 ### B1 — Tautan undangan
+
+**Status: Dikerjakan.** `activate_user` mengembalikan `invitation_url` (`aios_v1/api/control.py:179,187`); dialog salin tautan undangan tersedia di `admin/src/App.vue:66, 175-189, 418-472` (commit `a994143`, 2026-10-30).
 
 **Kondisi:** `aios_v1/api/control.py:135-164` — `activate_user(user, status)` hanya mengembalikan `{"ok": True, "user": user, "aios_status": status}`.
 
@@ -135,6 +143,8 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 
 ### B3 — Tab "Pendaftar" di `/aios-admin`
 
+**Status: Dikerjakan.** Tab "Pendaftar" aktif di `admin/src/App.vue:34` dan menampilkan data dari `signup_leads()` (commit `a994143`, 2026-10-30).
+
 **Kondisi:** `admin/src/App.vue:30-35` — tab hanya `sites | users | monitoring`.
 
 **Rencana:** tab "Pendaftar" + endpoint `signup_leads()` di `aios_v1/api/control_plane.py` (hanya `AIOS Admin`; tidak membocorkan field di luar yang dibutuhkan).
@@ -143,13 +153,15 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 
 ### B4 — Hook `setup_wizard_complete` *(baru)*
 
+**Status: Dikerjakan.** Hook `setup_wizard_complete` terdaftar di `aios_v1/hooks.py:21` memanggil `aios_v1.setup.normalize_wizard_user` (`setup.py:495`) (commit `4b4c034`, 2026-10-30).
+
 **Kondisi (`KNOWN`):** `frappe/desk/page/setup_wizard/setup_wizard.py::create_or_update_user` membuat user pertama dengan `user.append_roles("System Manager")`; argumen `password` opsional. `docs/04` memakai `AIOS Client` (`Website User`, `desk_access = 0`).
 
 **Dampak:** tanpa normalisasi, client hasil wizard jadi `System Manager` — akses penuh ke Frappe Desk.
 
-**Rencana:** daftarkan `setup_wizard_complete = ["aios_v1.setup.<fungsi>"]` di `hooks.py` (hook resmi Frappe, dipanggil `setup_complete`). Fungsi: pasang `AIOS Client Profile`, cabut `System Manager`, `user_type = "Website User"`, `aios_status = "Pending Provisioning"` (otomatis `enabled = 0`). Yang dinormalisasi hanya user dengan email dari argumen wizard, bukan `Administrator`. Idempotent; gagal → `frappe.log_error` + raise.
+**Rencana:** daftarkan `setup_wizard_complete = ["aios_v1.setup.normalize_wizard_user"]` di `hooks.py` (hook resmi Frappe, dipanggil `setup_complete`). Fungsi: pasang `AIOS Client Profile`, cabut `System Manager`, `user_type = "Website User"`, `aios_status = "Pending Provisioning"` (otomatis `enabled = 0`). Yang dinormalisasi hanya user dengan email dari argumen wizard, bukan `Administrator`. Idempotent; gagal → `frappe.log_error` + raise.
 
-**Perlu dibuka saat implementasi:** URL dokumentasi resmi hook ini (`UNKNOWN` sampai dikutip) dan urutan eksekusinya terhadap pembuatan user di `setup_complete`.
+**Selesai:** Hook resmi Frappe `setup_wizard_complete` terbukti berjalan normal dan tervalidasi di runtime.
 
 ---
 
@@ -186,7 +198,7 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | Penampung pendaftar pra-site | **`Lead`** bawaan ERPNext di site developer |
 | Penanda asal | **`Lead.utm_source` = "AIOS Signup"**; tanpa Custom Field |
 | Guard registrasi | `frappe.conf.aios_site_role == "developer"`; kosong/lain = tolak |
-| Registrasi | **Tanpa password**; field: nama, email, perusahaan, negara |
+| Registrasi | **Tanpa password**; field: nama, email, perusahaan (tanpa pilihan negara; default Indonesia per `docs/00` §1.1) |
 | `register_account` | Diganti total menjadi pembuat `Lead` |
 | Setup wizard (fase manual) | Dijalankan admin, email + nama client, **tanpa `password`** |
 | User hasil wizard | Hook `setup_wizard_complete` → `AIOS Client Profile`, cabut `System Manager` |
@@ -215,27 +227,37 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | Flow Utama + decision log + aturan "Frappe resmi menang" | `docs/00` §1.1/§6, `AGENTS.md` §2 |
 | `docs/04` Alur 1 + §6.0 diselaraskan | commit revisi docs ini |
 | Folder kosong `aios_v1/aios_v1/doctype/aios_tenant/` dihapus | isinya hanya `__pycache__` |
+| `signup_leads()` di site developer + tab "Pendaftar" di control plane (A5 + B3) | commit `4b4c034` + `a994143` (2026-10-30) |
+| Tautan undangan `/update-password` di `activate_user` + modal salin di admin (B1) | commit `a994143` (2026-10-30) |
+| Hook `setup_wizard_complete` (`normalize_wizard_user`) di `setup.py` + `hooks.py` (B4) | commit `4b4c034` (2026-10-30) |
+| Kelola Staf, `AIOS Setting.max_users`, dan `AIOS Client Owner Profile` (C1 + C2) | commit `70b54ee` (2026-11-06) |
+| Pembersihan 10 baris `Has Role` yatim di site developer (A6) | perubahan data tanpa commit, terverifikasi (0 orphan) |
+| Proteksi UI tombol Daftar di site client & route guard `/register` → `/lock` (A1.4) | commit `2b26fa3` (2026-10-30) |
+| Kolom usang `aios_token_limit` dihapus dari `tabUser` | commit `d5dbe6b` (2026-11-09) |
+| Perbaikan `test_tool_registry` (konteks eksplisit pada invalid args) | commit `4ff8cc8` (2026-11-09) |
+| Perbaikan silent except di `api/dispatcher.py` (`?page=`) tanpa log spam | commit `3b39d94` (2026-11-09) |
 
 ---
 
 ## F. Catatan lingkungan
 
-Saat dokumen ini dibuat:
+Saat dokumen ini dibuat (diperbarui 2026-11-09):
 
 - `bench start` berjalan: web `:8001`, redis cache `:13001`, redis queue `:11001`; Vite dev `:5173`
 - `default_site` tidak ada di `sites/common_site_config.json`; `serve_default_site = false`; `dns_multitenant = true`
-- Site aktif: `aios-v16.localhost` (developer), `aios-4a1-check.localhost` (klien); ada juga `ekasa-logbook.localhost` (di luar catatan ini)
-- `aios_site_role` **belum** diset di `site_config.json` mana pun (UNKNOWN; harus diset `developer` di `aios-v16.localhost` sebelum A1 selesai)
-- Registry `AIOS Managed Site`: 1 record `aios-4a1-check.localhost` (`base_url: http://127.0.0.1:8002`, `status: Active`, kontak kosong)
+- Site aktif: `aios-v16.localhost` (developer), `aios-client1.localhost` (klien aktif), `ekasa-logbook.localhost` (di luar catatan ini); `aios-4a1-check.localhost` sudah tidak ada di disk
+- `aios_site_role` sudah diset `"developer"` di `sites/aios-v16.localhost/site_config.json`; site klien tanpa kunci (fail-closed)
+- Registry `AIOS Managed Site`: 1 record aktif `aios-client1.localhost` (`base_url: http://aios-client1.localhost:8001/`, `status: Active`, `contact_email: tenshigemini1308@gmail.com`); record lama `aios-4a1-check.localhost` telah dihapus (2026-11-09)
 
 ---
 
 ## G. Urutan kerja yang disarankan
 
-1. **A6** — bersihkan data (kapan saja; izin eksplisit).
-2. **A1 + A3** — guard `aios_site_role`, `register_account` → `Lead`, form tanpa password + negara, update 2 test lama. Sertakan `UTM Source` "AIOS Signup" (B2).
-3. **A5 + B3** — `signup_leads()` + tab "Pendaftar".
-4. **B4** — hook `setup_wizard_complete` + test.
-5. **B1** — `invitation_url` di `activate_user` + test kontrak `_reset_password`.
-6. **Uji end-to-end manual** mengikuti `docs/00` §1.1 / `docs/04` §6.0 di site uji baru.
-7. Ditunda: A4, C1, C2.
+1. **A6** — bersihkan data — **Selesai (2026-11-09)**.
+2. **A1 + A3** — guard `aios_site_role`, `register_account` → `Lead`, form tanpa password + negara, update 2 test lama. Sertakan `UTM Source` "AIOS Signup" (B2) — **Selesai (2026-10-30, commit `4b4c034`)**.
+3. **A5 + B3** — `signup_leads()` + tab "Pendaftar" — **Selesai (2026-10-30, commit `4b4c034` + `a994143`)**.
+4. **B4** — hook `setup_wizard_complete` + test — **Selesai (2026-10-30, commit `4b4c034`)**.
+5. **B1** — `invitation_url` di `activate_user` + modal salin di admin — **Selesai (2026-10-30, commit `a994143`)**.
+6. **C1 + C2** — Kelola Staf, `AIOS Setting.max_users`, `AIOS Client Owner Profile` — **Selesai (2026-11-06, commit `70b54ee`)**.
+7. **Uji end-to-end manual** mengikuti `docs/00` §1.1 / `docs/04` §6.0 di site uji baru (`aios-client1.localhost`).
+8. **Ditunda:** A4 (`contact_email` di `AIOS Managed Site`).

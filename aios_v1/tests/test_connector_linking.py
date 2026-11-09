@@ -290,7 +290,7 @@ class TestConnectorLinking(IntegrationTestCase):
                     reason="Order dari web chat",
                 )
                 self.assertEqual(draft_res["status"], "PENDING_APPROVAL")
-                # Pemilik draf untuk tamu diarahkan ke owner_user Setting
+                # Pemilik draf untuk tamu diarahkan ke penerima kanal aktif
                 _, draft_kw = mock_draft.call_args
                 self.assertEqual(draft_kw.get("user"), self.owner)
 

@@ -45,7 +45,7 @@ dilakukan oleh Frappe dari `Host` header request — mekanisme resmi
 Frappe (lihat docs.frappe.io Sites § Site Resolution). Karena itu:
 
 - Akses dev memakai `<site>.localhost:<port>`, bukan `localhost:<port>`.
-  Contoh: `aios-4a1-check.localhost:5173`.
+  Contoh: `aios-client1.localhost:5173`.
 - Proxy Vite **tidak boleh menimpa** `Host` header. Override Host membuat
   semua request dilayani sebagai satu site saja, sehingga registrasi
   client masuk ke site yang salah.
@@ -53,9 +53,7 @@ Frappe (lihat docs.frappe.io Sites § Site Resolution). Karena itu:
   tidak bisa dipakai (mis. reverse proxy yang mengganti Host).
 - **Deteksi Peran Site Frontend:** Frontend mendeteksi peran site saat `boot()` via endpoint publik hanya-baca `aios_v1.auth.get_registration_status`. Pada site client, tombol "Daftar" disembunyikan (`v-if="session.canRegister"`) dan akses langsung `/register` dialihkan ke `/lock`.
 
-Konsekuensi alur: client membuka `<site>.localhost:<port>/register`,
-`register_account()` membuat `User` di site itu, dan user pending langsung
-terlihat oleh `pending_inbox()` di control plane.
+Konsekuensi alur: pendaftaran mandiri hanya dapat dilakukan di site developer (`/register`). `register_account()` membuat `Lead` bawaan ERPNext di site developer (tanpa membuat `User`), yang langsung terlihat oleh admin di tab "Pendaftar" (`signup_leads()`) di Developer Control Plane. Pada site client, registrasi mandiri ditutup dan dialihkan ke login.
 
 Target backend dan port dev dibaca dari environment (`VITE_BACKEND_TARGET`,
 `VITE_DEV_PORT`) — lihat `frontend/.env.example`. Tanpa nilai itu, dev

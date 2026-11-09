@@ -1,6 +1,6 @@
 """Read/close endpoints for channel threads and flags.
 
-Every function takes the caller's user explicitly and scopes by `owner_user`;
+Every function takes the caller's user explicitly and scopes by active channel recipient roles;
 `AIOS Client` can only see their own workspace's channel traffic. Closing a flag
 is the human review step — there is no API path that reopens it automatically.
 """
