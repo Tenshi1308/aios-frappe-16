@@ -42,17 +42,11 @@ USER_CUSTOM_FIELDS = {
             "insert_after": "aios_status",
         },
         {
-            "fieldname": "aios_token_limit",
-            "fieldtype": "Int",
-            "label": "AIOS Token Limit",
-            "insert_after": "aios_company_name",
-        },
-        {
             "fieldname": "aios_tokens_used",
             "fieldtype": "Int",
             "label": "AIOS Tokens Used",
             "read_only": 1,
-            "insert_after": "aios_token_limit",
+            "insert_after": "aios_company_name",
         },
     ]
 }
@@ -473,7 +467,6 @@ def get_session_context():
             "full_name",
             "aios_persona",
             "aios_status",
-            "aios_token_limit",
             "aios_tokens_used",
             "aios_company_name",
         ],
@@ -492,7 +485,6 @@ def get_session_context():
         "roles": frappe.get_roles(user),
         "aios_persona": user_doc.get("aios_persona"),
         "aios_status": user_doc.get("aios_status"),
-        "aios_token_limit": user_doc.get("aios_token_limit"),
         "aios_tokens_used": user_doc.get("aios_tokens_used"),
         "aios_company_name": user_doc.get("aios_company_name"),
         "company": company,

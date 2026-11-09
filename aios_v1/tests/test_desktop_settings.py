@@ -347,7 +347,6 @@ class TestDesktopSettings(IntegrationTestCase):
             "aios_persona",
             "aios_status",
             "enabled",
-            "aios_token_limit",
             "aios_tokens_used",
         ]
 

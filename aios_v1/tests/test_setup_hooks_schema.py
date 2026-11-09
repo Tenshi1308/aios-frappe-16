@@ -33,7 +33,7 @@ class TestSetupHooks(unittest.TestCase):
         self.assertIn("create_custom_fields(USER_CUSTOM_FIELDS, update=True)", src)
         self.assertNotIn('doc.append("fields"', src)
 
-    def test_six_user_custom_fields(self):
+    def test_five_user_custom_fields(self):
         src = SETUP.read_text(encoding="utf-8")
         fields = re.findall(r'"fieldname": "(aios_[a-z_]+)"', src)
         self.assertEqual(
@@ -44,7 +44,6 @@ class TestSetupHooks(unittest.TestCase):
                     "aios_persona_context",
                     "aios_status",
                     "aios_company_name",
-                    "aios_token_limit",
                     "aios_tokens_used",
                 ]
             ),

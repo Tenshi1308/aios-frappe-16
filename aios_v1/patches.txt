@@ -7,6 +7,8 @@ aios_v1.patches.v1_0.retire_legacy_telegram_doctypes
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 aios_v1.patches.v1_0.drop_party_link_columns
+# #5: buang Custom Field User.aios_token_limit (bukan gerbang kuota sejak #7b).
+aios_v1.patches.v1_0.delete_aios_token_limit_field
 
 [post_fixture_sync]
 # Patches added in this section will be executed after fixtures and customizations

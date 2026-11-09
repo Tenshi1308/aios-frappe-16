@@ -177,7 +177,8 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 
 | Gap | Dampak |
 |---|---|
-| ~~`AIOS Setting` JSON masih kurang `max_users`~~ | ✅ `max_users` sudah ditambahkan ke `AIOS Setting` dan divalidasi di `User.before_insert` & `User.validate` (`setup.py::validate_max_users`). Sisa `#5` hanya pembersihan `User.aios_token_limit`. |
+| ~~`AIOS Setting` JSON masih kurang `max_users`~~ | ✅ `max_users` sudah ditambahkan ke `AIOS Setting` dan divalidasi di `User.before_insert` & `User.validate` (`setup.py::validate_max_users`). |
+| ~~`User.aios_token_limit` masih terpasang~~ | ✅ Dibersihkan di `#5`: definisi dihapus dari `setup.py`, dokumen Custom Field dibuang lewat `delete_custom_fields` (patch `v1_0.delete_aios_token_limit_field`), kolom `tabUser` di-trim per-doctype. `User.aios_tokens_used` tetap dipakai. |
 | `AIOS Admin` role/profile lama masih ada di site existing (`desk_access=0`, tanpa DocPerm); tidak dibuat di site baru | Role/profile control plane menyusul `#11`. |
 | ~~`/api/monitoring` masih pakai `AIOS Tenant`~~ | ✅ Dipindah ke `User` + `AIOS Token Usage` di `#4a-2`. |
 | ~~`register_account` masih membuat `User` (dengan password)~~ | ✅ Diselesaikan: membuat `Lead` di site developer (`utm_source = "AIOS Signup"`) tanpa password, dengan guard `aios_site_role`. Flow Utama langkah 1–2 terpenuhi. |
