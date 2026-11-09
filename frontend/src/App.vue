@@ -27,10 +27,14 @@ const onColorSchemeChange = () => {
   }
 };
 
-onMounted(() => {
+onMounted(async () => {
   mq.addEventListener('change', onMq);
   colorSchemeMq.addEventListener('change', onColorSchemeChange);
-  void session.boot();
+  const initialRoute = router.currentRoute.value.name;
+  await session.boot();
+  if (initialRoute === 'register' && session.canRegister) {
+    session.phase = 'register';
+  }
 });
 onUnmounted(() => {
   mq.removeEventListener('change', onMq);
@@ -40,6 +44,10 @@ onUnmounted(() => {
 watch(
   () => session.phase,
   (phase) => {
+    if (phase === 'register' && !session.canRegister) {
+      session.phase = 'lock';
+      return;
+    }
     const target = routeForPhase(phase);
     if (router.currentRoute.value.name !== target) void router.replace({ name: target });
     if (phase === 'desktop' && !modules.settings && !modules.settingsLoading) {
@@ -62,7 +70,7 @@ watch(
   <main class="os" :class="{ narrow }">
     <BootScreen v-if="session.phase === 'boot'" />
     <DesktopView v-else-if="session.phase === 'desktop'" :narrow="narrow" />
-    <RegisterView v-else-if="session.phase === 'register'" />
+    <RegisterView v-else-if="session.phase === 'register' && session.canRegister" />
     <PendingView v-else-if="session.phase === 'pending'" />
     <LoginView v-else />
   </main>

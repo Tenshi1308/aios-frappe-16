@@ -31,6 +31,14 @@ class TestRegisterAccountContract(unittest.TestCase):
         self.assertIn("developer", src)
         self.assertNotIn('frappe.new_doc("AIOS Tenant")', src)
 
+    def test_get_registration_status_contract(self):
+        src = AUTH.read_text(encoding="utf-8")
+        self.assertIn("def get_registration_status", src)
+        self.assertIn('@frappe.whitelist(allow_guest=True, methods=["GET"])', src)
+        self.assertIn('"can_register"', src)
+        self.assertIn('"site_role"', src)
+
+
 
 class TestDispatcherAuthContract(unittest.TestCase):
     def test_old_login_register_deprecated(self):

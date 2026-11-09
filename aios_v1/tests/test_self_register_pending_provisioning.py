@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import frappe
 
-from aios_v1.auth import register_account
+from aios_v1.auth import get_registration_status, register_account
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -104,3 +104,19 @@ class TestSelfRegisterPendingProvisioning(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             register_account("Test Zeta", email, "PT Zeta")
         self.assertFalse(frappe.db.exists("Lead", {"email_id": email}))
+
+    def test_get_registration_status_developer_site(self):
+        frappe.conf["aios_site_role"] = "developer"
+        status = get_registration_status()
+        self.assertEqual(status, {"can_register": True, "site_role": "developer"})
+
+    def test_get_registration_status_client_site(self):
+        frappe.conf["aios_site_role"] = "client"
+        status = get_registration_status()
+        self.assertEqual(status, {"can_register": False, "site_role": "client"})
+
+    def test_get_registration_status_default_when_no_role(self):
+        frappe.conf.pop("aios_site_role", None)
+        status = get_registration_status()
+        self.assertEqual(status, {"can_register": False, "site_role": "client"})
+

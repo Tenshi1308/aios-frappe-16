@@ -73,7 +73,12 @@ async function signIn() {
         <button class="btn agent wide" type="submit" :disabled="session.loggingIn">
           {{ session.loggingIn ? 'Memproses…' : 'Masuk' }}
         </button>
-        <button class="lock-link" type="button" @click="session.phase = 'register'">
+        <button
+          v-if="session.canRegister"
+          class="lock-link"
+          type="button"
+          @click="session.phase = 'register'"
+        >
           Belum punya akun? Daftar
         </button>
       </div>

@@ -11,12 +11,24 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 from frappe.utils import validate_email_address
 
+from typing import Any
+
 from aios_v1.lib.error_utils import log_exception
 
 SITE_ROLE_KEY = "aios_site_role"
 DEVELOPER_ROLE_VALUE = "developer"
 UTM_SOURCE_NAME = "AIOS Signup"
 GENERIC_PENDING_RESPONSE = {"status": "PENDING_PROVISIONING"}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def get_registration_status() -> dict[str, Any]:
+    """Kembalikan status pendaftaran mandiri berdasarkan peran site di site_config."""
+    site_role = frappe.conf.get(SITE_ROLE_KEY)
+    return {
+        "can_register": site_role == DEVELOPER_ROLE_VALUE,
+        "site_role": site_role or "client",
+    }
 
 
 @frappe.whitelist(allow_guest=True)

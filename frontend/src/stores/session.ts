@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { fetchSessionContext, login as apiLogin, registerAccount } from '../api/session';
+import { fetchRegistrationStatus, fetchSessionContext, login as apiLogin, registerAccount } from '../api/session';
 import { apiFetch } from '../api/client';
 import type { SessionContext } from '../types';
 
@@ -16,6 +16,9 @@ export const useSessionStore = defineStore('session', {
     registerError: '',
     registering: false,
     loggingIn: false,
+    /** Default false (fail-closed): tombol Daftar hanya aktif di site developer. */
+    canRegister: false,
+    siteRole: 'client',
     /** Pesan aman saat status akun memblokir akses desktop (fail-closed). */
     blockedMessage: '',
   }),
@@ -50,6 +53,15 @@ export const useSessionStore = defineStore('session', {
       this.setProgress(10);
       this.pushBoot('Menghubungkan ke server');
       try {
+        const regStatus = await fetchRegistrationStatus();
+        this.canRegister = regStatus.can_register;
+        this.siteRole = regStatus.site_role;
+      } catch (err) {
+        console.warn('Gagal memuat status registrasi site (fail-closed):', err);
+        this.canRegister = false;
+        this.siteRole = 'client';
+      }
+      try {
         const ctx = await fetchSessionContext();
         this.setProgress(55);
         this.pushBoot('Memulihkan sesi');
@@ -67,6 +79,13 @@ export const useSessionStore = defineStore('session', {
         this.setProgress(100);
         this.phase = 'lock';
       }
+    },
+    setPhase(phase: SessionPhase) {
+      if (phase === 'register' && !this.canRegister) {
+        this.phase = 'lock';
+        return;
+      }
+      this.phase = phase;
     },
     applyContext(ctx: SessionContext) {
       this.context = ctx;
@@ -112,6 +131,11 @@ export const useSessionStore = defineStore('session', {
       }
     },
     async register(payload: { full_name: string; email: string; company_name: string }) {
+      if (!this.canRegister) {
+        this.registerError = 'Pendaftaran mandiri hanya dapat dilakukan melalui portal pengembang.';
+        this.phase = 'lock';
+        throw new Error(this.registerError);
+      }
       this.registering = true;
       this.registerError = '';
       try {

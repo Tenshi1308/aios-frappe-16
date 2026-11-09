@@ -4,7 +4,7 @@ import DesktopView from '../views/DesktopView.vue';
 import LockScreen from '../views/LoginView.vue';
 import PendingView from '../views/PendingView.vue';
 import RegisterView from '../views/RegisterView.vue';
-import type { SessionPhase } from '../stores/session';
+import { useSessionStore, type SessionPhase } from '../stores/session';
 
 const ROUTE_FOR: Record<SessionPhase, string> = {
   boot: 'boot',
@@ -24,6 +24,16 @@ const router = createRouter({
     { path: '/pending', name: 'pending', component: PendingView },
     { path: '/:pathMatch(.*)*', redirect: { name: 'desktop' } },
   ],
+});
+
+router.beforeEach((to) => {
+  const session = useSessionStore();
+  if (to.name === 'register' && !session.canRegister) {
+    if (session.phase === 'register') {
+      session.phase = 'lock';
+    }
+    return { name: 'lock', replace: true };
+  }
 });
 
 export function routeForPhase(phase: SessionPhase): string {

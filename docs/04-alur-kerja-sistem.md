@@ -51,6 +51,7 @@ Frappe (lihat docs.frappe.io Sites § Site Resolution). Karena itu:
   client masuk ke site yang salah.
 - `X-Frappe-Site-Name` adalah header resmi Frappe alternatif bila Host
   tidak bisa dipakai (mis. reverse proxy yang mengganti Host).
+- **Deteksi Peran Site Frontend:** Frontend mendeteksi peran site saat `boot()` via endpoint publik hanya-baca `aios_v1.auth.get_registration_status`. Pada site client, tombol "Daftar" disembunyikan (`v-if="session.canRegister"`) dan akses langsung `/register` dialihkan ke `/lock`.
 
 Konsekuensi alur: client membuka `<site>.localhost:<port>/register`,
 `register_account()` membuat `User` di site itu, dan user pending langsung

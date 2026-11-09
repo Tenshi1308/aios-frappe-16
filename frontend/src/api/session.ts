@@ -9,6 +9,20 @@ export async function fetchSessionContext(): Promise<SessionContext> {
   return ctx;
 }
 
+export interface SiteRegistrationStatus {
+  can_register: boolean;
+  site_role: string;
+}
+
+export async function fetchRegistrationStatus(): Promise<SiteRegistrationStatus> {
+  const raw = await apiFetch('/api/method/aios_v1.auth.get_registration_status');
+  const data = unwrapMessage<SiteRegistrationStatus>(raw);
+  return {
+    can_register: Boolean(data?.can_register),
+    site_role: typeof data?.site_role === 'string' ? data.site_role : 'client',
+  };
+}
+
 export async function login(usr: string, pwd: string): Promise<void> {
   let res: Response;
   try {

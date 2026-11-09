@@ -52,8 +52,9 @@ Legenda status: `Dikerjakan` · `Belum` · `Ditunda` · `Dibatalkan`.
 1. Ganti `register_account` agar membuat **`Lead`** bawaan ERPNext di site developer. Field: `lead_name`, `email_id`, `company_name`, `country`, `utm_source = "AIOS Signup"`. Tanpa Custom Field.
 2. **Akar masalah = routing, bukan tipe dokumen.** `Lead` pun akan tercipta di site klien bila request mendarat di sana. Maka endpoint **wajib menolak** bila `frappe.conf.aios_site_role != "developer"` (kunci `site_config.json`, primitif konfigurasi resmi Frappe). Kunci kosong = gagal eksplisit.
 3. Email duplikat: `Lead.validate` → `check_email_id_is_unique` melempar error. Tangkap, `frappe.log_error`, respons tetap seragam (anti-enumerasi).
+4. **Proteksi Tampilan UI:** Tombol "Daftar" di `LoginView.vue` disembunyikan pada site client (`v-if="session.canRegister"`), route `/register` dialihkan ke `/lock` via navigation guard, dan endpoint status publik `aios_v1.auth.get_registration_status` mengekspos ketersediaan registrasi secara fail-closed.
 
-**Catatan:** `aios_v1/auth.py` hanya berisi satu fungsi ini; nama file tetap dipakai. Rate limit `@rate_limit` tetap.
+**Catatan:** `aios_v1/auth.py` berisi `register_account` dan `get_registration_status`. Rate limit `@rate_limit` tetap.
 
 ---
 
