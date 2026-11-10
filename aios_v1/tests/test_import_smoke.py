@@ -12,7 +12,10 @@ from pathlib import Path
 try:
     import frappe
 
-    HAVE_FRAPPE = True
+    HAVE_FRAPPE = bool(
+        getattr(frappe, "__file__", None) is not None
+        and hasattr(frappe, "whitelist")
+    )
 except Exception:
     HAVE_FRAPPE = False
 
