@@ -553,7 +553,7 @@ def _notify_rejection(doc, reason: str) -> None:
         f"Mohon maaf, pengajuan pesanan Anda belum dapat disetujui oleh tim kami.\n"
         f"Catatan dari tim kami: {reason or 'Perlu penyesuaian data pesanan'}.\n\n"
         f"Anda tidak perlu mengulang seluruh pesanan Anda. Silakan sampaikan perbaikan data di atas "
-        f"agar kami dapat langsung memperbarui pesanan Anda. Terima kasih! 🙏"
+        f"agar kami dapat langsung memperbarui pesanan Anda. Terima kasih!"
     )
     _send_proactive_guest_notification(doc, guest_msg)
 
@@ -753,7 +753,7 @@ def approve_and_execute_draft(draft_id: str) -> dict:
         guest_msg = (
             f"Halo! Ada sedikit kendala saat kami memproses pesanan Anda: {error_desc}.\n\n"
             f"Anda tidak perlu mengulang pesanan dari awal. Cukup informasikan perbaikan data tersebut kepada kami di sini "
-            f"agar kami dapat segera melanjutkan proses pesanan Anda. Terima kasih! 🙏"
+            f"agar kami dapat segera melanjutkan proses pesanan Anda. Terima kasih!"
         )
         _send_proactive_guest_notification(doc, guest_msg)
 

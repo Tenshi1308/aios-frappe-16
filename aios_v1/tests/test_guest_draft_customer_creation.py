@@ -574,6 +574,11 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertEqual(str(sent_messages[0][0]), test_chat_id)
         self.assertIn("Nomor HP tidak dapat dihubungi", sent_messages[0][1])
         self.assertIn("Anda tidak perlu mengulang", sent_messages[0][1])
+        # Tegaskan pesan proaktif saat reject draf TIDAK mengandung karakter emoji
+        import re
+        emoji_pattern = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf]")
+        self.assertFalse(bool(emoji_pattern.search(sent_messages[0][1])), "Pesan proaktif saat reject draf tidak boleh memuat emoji")
+        self.assertNotIn("🙏", sent_messages[0][1])
 
         # 2. Uji notifikasi saat approve gagal eksekusi
         draft_fail = create_draft(
@@ -601,6 +606,9 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertEqual(len(sent_fail_messages), 1, "Pesan Telegram harus terkirim saat approve gagal")
         self.assertEqual(str(sent_fail_messages[0][0]), test_chat_id)
         self.assertIn("Kota pada alamat pengiriman tidak ditemukan", sent_fail_messages[0][1])
+        # Tegaskan pesan proaktif saat approve gagal TIDAK mengandung karakter emoji
+        self.assertFalse(bool(emoji_pattern.search(sent_fail_messages[0][1])), "Pesan proaktif saat approve gagal tidak boleh memuat emoji")
+        self.assertNotIn("🙏", sent_fail_messages[0][1])
 
     def test_contact_name_not_duplicated(self):
         """10.f. Kontak primer yang dibuat untuk nama lengkap tidak mengalami duplikasi nama (first/middle/last rapi)."""
