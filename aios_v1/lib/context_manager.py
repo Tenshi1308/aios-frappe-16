@@ -336,7 +336,7 @@ def calculate_conversation_context_stats(
                         prompt_str = mgr.build_system_prompt(None, user=user_for_prompt)
                         sys_tokens = estimate_tokens(prompt_str)
                     if tool_tokens is None:
-                        tool_schemas = get_tools_schema_for_worker(target_branch, "manager")
+                        tool_schemas = get_tools_schema_for_worker(target_branch, "manager", user=user_for_prompt)
                         tls_tokens = estimate_tokens(json.dumps(tool_schemas))
             except Exception as mgr_exc:
                 log_exception("AIOS Context Stats Branch Resolve", exc=mgr_exc)

@@ -51,7 +51,28 @@ _DOC_SCHEMA_DESCRIPTION = (
 
 
 GUEST_ALLOWED_DOCTYPES = frozenset({"Item", "Item Price"})
+_GUEST_ALLOWED_DOCTYPE_TEXT = ", ".join(sorted(GUEST_ALLOWED_DOCTYPES))
 STANDARD_SELLING_PRICE_LIST = "Standard Selling"
+
+_GUEST_DOC_LIST_DESCRIPTION = (
+    f"Membaca daftar dokumen katalog perusahaan. "
+    f"DocType yang diizinkan: {_GUEST_ALLOWED_DOCTYPE_TEXT}."
+    " Saat menggunakan hasil tool ini, sebutkan filter yang kamu pakai dan "
+    "cakupannya; jangan menyebut hasil terfilter sebagai seluruh data."
+)
+_GUEST_DOC_GET_DESCRIPTION = (
+    f"Membaca detail satu dokumen katalog perusahaan yang diizinkan. "
+    f"DocType yang diizinkan: {_GUEST_ALLOWED_DOCTYPE_TEXT}."
+)
+_GUEST_DOC_SCHEMA_DESCRIPTION = (
+    f"Membaca field yang tersedia pada DocType katalog perusahaan yang diizinkan. "
+    f"DocType yang diizinkan: {_GUEST_ALLOWED_DOCTYPE_TEXT}."
+)
+GUEST_TOOL_DESCRIPTIONS = {
+    "erpnext_doc_list": _GUEST_DOC_LIST_DESCRIPTION,
+    "erpnext_doc_get": _GUEST_DOC_GET_DESCRIPTION,
+    "erpnext_doctype_schema": _GUEST_DOC_SCHEMA_DESCRIPTION,
+}
 
 
 def _is_guest() -> bool:

@@ -9,6 +9,13 @@ from aios_v1.lib.error_utils import log_exception, safe_error, sanitize_text
 
 _TOOL_REGISTRY: Dict[str, Any] = {}
 _HIDDEN_TOOL_PARAMS = frozenset({"user_id", "allowed_company"})
+GUEST_ALLOWED_TOOLS = frozenset({
+    "erpnext_doc_list",
+    "erpnext_doc_get",
+    "erpnext_doctype_schema",
+    "erpnext_action_draft_create",
+    "get_current_time",
+})
 MAX_DELEGATION_DEPTH = 2
 
 
@@ -257,7 +264,7 @@ def get_all_tools_schema():
         })
     return schemas
 
-def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
+def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: str | None = None):
     """
     Mengembalikan skema tools khusus yang diizinkan untuk worker/role tertentu (Prinsip Least Privilege).
     """
@@ -268,9 +275,17 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
     if any(not is_branch_enabled(item) for item in requested_branches):
         return []
     worker_lower = worker_key.lower() if worker_key else "manager"
+    eff_user = user if user is not None else getattr(getattr(frappe, "session", None), "user", None)
+    is_guest = (eff_user == "Guest")
+    guest_descriptions = {}
+    if is_guest:
+        from aios_v1.lib.erpnext_core_data import GUEST_TOOL_DESCRIPTIONS
+        guest_descriptions = GUEST_TOOL_DESCRIPTIONS
     
     for t_name, t_data in _TOOL_REGISTRY.items():
         if t_data.get("dormant"):
+            continue
+        if is_guest and t_name not in GUEST_ALLOWED_TOOLS:
             continue
         allowed_branches = [
             item for item in requested_branches if _worker_access(t_data, item, worker_lower)
@@ -281,11 +296,12 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
             ):
                 continue
             parameters, required = _public_parameters(t_data["parameters"])
+            description = guest_descriptions.get(t_name, t_data["description"]) if is_guest else t_data["description"]
             schemas.append({
                 "type": "function",
                 "function": {
                     "name": t_data["name"],
-                    "description": t_data["description"],
+                    "description": description,
                     "parameters": {
                         "type": "object",
                         "properties": parameters,
@@ -293,10 +309,11 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager"):
                     }
                 }
             })
-    from aios_v1.lib.mcp_client import get_mcp_tools_schema_for_worker
+    if not is_guest:
+        from aios_v1.lib.mcp_client import get_mcp_tools_schema_for_worker
 
-    for requested_branch in requested_branches:
-        schemas.extend(get_mcp_tools_schema_for_worker(requested_branch, worker_lower))
+        for requested_branch in requested_branches:
+            schemas.extend(get_mcp_tools_schema_for_worker(requested_branch, worker_lower))
     return schemas
 
 def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any]] = None):

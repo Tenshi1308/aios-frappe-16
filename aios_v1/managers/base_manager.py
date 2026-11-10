@@ -24,6 +24,7 @@ from aios_v1.plugin_manager.registry import get_branch, get_worker, is_branch_en
 from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
 from aios_v1.shared.base_persona import BASE_PERSONA
+from aios_v1.shared.guest_persona import GUEST_ACTIVE_DIRECTIVE, GUEST_CS_PERSONA
 from aios_v1.shared.trace_events import (
     approval_card_artifact,
     file_artifact,
@@ -216,16 +217,27 @@ class BaseManager:
         ]
 
     def build_system_prompt(self, worker_def, user: str = None) -> str:
+        eff_user = user or getattr(frappe.session, "user", None)
+        setting = frappe.get_single("AIOS Setting")
+        persona_context = (setting.get("company_context_persona") or "").strip()
+
+        if eff_user == "Guest":
+            default_company = (setting.get("default_company") or "").strip()
+            if not default_company and frappe.db.exists("DocType", "Global Defaults"):
+                default_company = (frappe.db.get_single_value("Global Defaults", "default_company") or "").strip()
+            return GUEST_CS_PERSONA.format(
+                default_company=default_company,
+                company_context_persona=persona_context,
+            )
+
         if worker_def:
             parts = self._build_worker_prompt(worker_def)
         else:
             parts = self._build_manager_prompt()
 
-        setting = frappe.get_single("AIOS Setting")
-        persona_context = (setting.get("company_context_persona") or "").strip()
         user_context = frappe.db.get_value(
             "User",
-            user or frappe.session.user,
+            eff_user,
             ["aios_persona", "aios_persona_context"],
             as_dict=True,
         ) or {}
@@ -409,7 +421,12 @@ class BaseManager:
         llm_messages.extend(history_items)
 
         # Suntikkan direktif peran aktif dan data aktual database client
-        if worker_def is None:
+        if user == "Guest":
+            llm_messages.append({
+                "role": "system",
+                "content": GUEST_ACTIVE_DIRECTIVE,
+            })
+        elif worker_def is None:
             llm_messages.append({
                 "role": "system",
                 "content": (
@@ -455,7 +472,7 @@ class BaseManager:
         created_file_ids = []
         failed = False
         last_finish_reason = ""
-        tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager")
+        tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager", user=user)
 
         def stream_llm_turn():
             nonlocal full_reply, failed, last_finish_reason

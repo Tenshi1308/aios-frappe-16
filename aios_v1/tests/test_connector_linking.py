@@ -373,6 +373,126 @@ class TestConnectorLinking(IntegrationTestCase):
 
         self.assertEqual(seen_sessions, ["Guest"])
 
+    def test_guest_system_prompt_uses_cs_persona_and_excludes_internal_manager_claims(self):
+        """9a. Prompt sistem untuk Guest memakai persona CS tamu dan bersih dari klaim AI Manager internal."""
+        from aios_v1.managers import get_manager
+
+        sales_mgr = get_manager("sales")
+        prompt = sales_mgr.build_system_prompt(None, user="Guest")
+
+        self.assertIn("Asisten Layanan Pelanggan resmi perusahaan kami.", prompt)
+        self.assertIn("Menampilkan daftar produk beserta spesifikasi dasar dari katalog perusahaan.", prompt)
+        self.assertIn("Membantu mencatat pesanan pembelian baru dan permintaan penawaran harga", prompt)
+
+        for forbidden in (
+            "AI Manager",
+            "AI MANAGER",
+            "HomeHub",
+            "Ekasa Desk",
+            "open_module",
+            "orchestrator_delegate_to_subagent",
+            "Task Orchestration and Delegation Workflow",
+        ):
+            self.assertNotIn(forbidden, prompt)
+
+    def test_linked_vs_unlinked_telegram_dispatch_prompt_separation(self):
+        """9d. Simulasi chat tamu -> tautkan akun -> /unlink: prompt berganti CS tamu -> AI Manager -> CS tamu."""
+        captured_prompts = []
+
+        def fake_chat(messages, usage=None, tools=None, tool_calls=None):
+            sys_msgs = [m.get("content", "") for m in messages if m.get("role") == "system"]
+            captured_prompts.append("\n".join(sys_msgs))
+            if usage is not None:
+                usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            return iter(["Balasan simulasi"])
+
+        with (
+            patch.object(telegram_client, "send_message", return_value=True),
+            patch.object(telegram_client, "send_chat_action", return_value=True),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat),
+            patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+        ):
+            # 1. Chat sebagai tamu (linked_user=None)
+            res1 = dispatch.process_update(
+                {
+                    "update_id": 10,
+                    "message": {
+                        "message_id": 10,
+                        "chat": {"id": int(CHAT_ID)},
+                        "from": {"first_name": "Tamu"},
+                        "text": "Disini ada apa aja?",
+                    },
+                }
+            )
+            self.assertTrue(res1["success"])
+            self.assertEqual(len(captured_prompts), 1)
+            self.assertIn("Asisten Layanan Pelanggan resmi perusahaan kami.", captured_prompts[0])
+            self.assertNotIn("AI Manager bidang Sales and Distribution", captured_prompts[0])
+
+            # 2. Tautkan akun karyawan
+            frappe.set_user(self.employee)
+            link_res = linking.create_link_token(self.employee)
+            raw_token = link_res["deep_link"].split("LINK_")[1]
+            res_link = dispatch.process_update(
+                {
+                    "update_id": 11,
+                    "message": {
+                        "message_id": 11,
+                        "chat": {"id": int(CHAT_ID)},
+                        "from": {"first_name": "Karyawan"},
+                        "text": f"/start LINK_{raw_token}",
+                    },
+                }
+            )
+            self.assertTrue(res_link["success"])
+
+            # Kirim pesan sebagai karyawan tertaut
+            res2 = dispatch.process_update(
+                {
+                    "update_id": 12,
+                    "message": {
+                        "message_id": 12,
+                        "chat": {"id": int(CHAT_ID)},
+                        "from": {"first_name": "Karyawan"},
+                        "text": "Halo, cek layanan",
+                    },
+                }
+            )
+            self.assertTrue(res2["success"])
+            self.assertEqual(len(captured_prompts), 2)
+            self.assertIn("AI Manager bidang Sales and Distribution", captured_prompts[1])
+            self.assertIn("AI MANAGER SALES AND DISTRIBUTION (UMUM)", captured_prompts[1])
+
+            # 3. Putuskan tautan (/unlink) lalu kirim pesan lagi sebagai tamu
+            res_unlink = dispatch.process_update(
+                {
+                    "update_id": 13,
+                    "message": {
+                        "message_id": 13,
+                        "chat": {"id": int(CHAT_ID)},
+                        "from": {"first_name": "Tamu"},
+                        "text": "/unlink",
+                    },
+                }
+            )
+            self.assertTrue(res_unlink["success"])
+
+            res3 = dispatch.process_update(
+                {
+                    "update_id": 14,
+                    "message": {
+                        "message_id": 14,
+                        "chat": {"id": int(CHAT_ID)},
+                        "from": {"first_name": "Tamu"},
+                        "text": "Halo lagi setelah unlink",
+                    },
+                }
+            )
+            self.assertTrue(res3["success"])
+            self.assertEqual(len(captured_prompts), 3)
+            self.assertIn("Asisten Layanan Pelanggan resmi perusahaan kami.", captured_prompts[2])
+            self.assertNotIn("AI Manager bidang Sales and Distribution", captured_prompts[2])
+
 
 def run_tests():
     import unittest

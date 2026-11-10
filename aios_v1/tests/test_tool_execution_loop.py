@@ -279,6 +279,116 @@ class TestToolExecutionLoop(IntegrationTestCase):
         self.assertIn("_Test Company Persona", prompt)
         self.assertIn("finance", prompt)
         self.assertIn("_Test user context", prompt)
+
+    def test_guest_system_prompt_uses_cs_persona_and_excludes_internal_manager_claims(self):
+        from aios_v1.managers import get_manager
+
+        sales_mgr = get_manager("sales")
+        setting = MagicMock()
+        setting.get.side_effect = lambda k, default=None: {
+            "default_company": "_Test Company",
+            "company_context_persona": "_Test Bidang Usaha",
+        }.get(k, default)
+        with (
+            patch("aios_v1.managers.base_manager.frappe.get_single", return_value=setting),
+            patch("aios_v1.managers.base_manager.frappe.db.get_value") as mock_user_get_value,
+        ):
+            prompt = sales_mgr.build_system_prompt(None, user="Guest")
+
+        self.assertIn("Asisten Layanan Pelanggan resmi perusahaan kami.", prompt)
+        self.assertIn("Menampilkan daftar produk beserta spesifikasi dasar dari katalog perusahaan.", prompt)
+        self.assertIn("Membantu mencatat pesanan pembelian baru dan permintaan penawaran harga", prompt)
+        self.assertIn("Perusahaan: _Test Company", prompt)
+        self.assertIn("Bidang usaha: _Test Bidang Usaha", prompt)
+        mock_user_get_value.assert_not_called()
+
+        for forbidden in (
+            "AI Manager",
+            "AI MANAGER",
+            "HomeHub",
+            "Ekasa Desk",
+            "open_module",
+            "orchestrator_delegate_to_subagent",
+            "Task Orchestration and Delegation Workflow",
+        ):
+            self.assertNotIn(forbidden, prompt)
+
+    def test_employee_system_prompt_unchanged(self):
+        from aios_v1.managers import get_manager
+
+        sales_mgr = get_manager("sales")
+        setting = MagicMock()
+        setting.get.return_value = "_Test Company Persona"
+        user_context = {"aios_persona": "sales", "aios_persona_context": "_Test sales context"}
+        with (
+            patch("aios_v1.managers.base_manager.frappe.get_single", return_value=setting),
+            patch("aios_v1.managers.base_manager.frappe.db.get_value", return_value=user_context),
+        ):
+            prompt = sales_mgr.build_system_prompt(None, user="_test.employee@example.com")
+
+        self.assertIn("AI Manager bidang Sales and Distribution", prompt)
+        self.assertIn("Ekosistem 9 Cabang ERP AIOS", prompt)
+        self.assertIn("Task Orchestration and Delegation Workflow", prompt)
+
+    def test_guest_handle_stream_injects_cs_active_directive_and_guest_tool_schemas(self):
+        from aios_v1.managers import get_manager
+
+        sales_mgr = get_manager("sales")
+        captured_messages = []
+        captured_tools = []
+
+        def fake_chat(messages, usage=None, tools=None, tool_calls=None):
+            captured_messages.append(deepcopy(messages))
+            captured_tools.append(deepcopy(tools or []))
+            if usage is not None:
+                usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            return iter(["Halo, saya Asisten Layanan Pelanggan."])
+
+        setting = MagicMock()
+        setting.get.return_value = "_Test Co"
+        with (
+            patch.object(sales_mgr, "ensure_conversation", return_value=99),
+            patch("aios_v1.managers.base_manager.frappe.get_single", return_value=setting),
+            patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat),
+            patch("aios_v1.managers.base_manager.frappe.new_doc", return_value=self.doc),
+            patch("aios_v1.managers.base_manager.frappe.get_list", return_value=[]),
+            patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+            patch("aios_v1.lib.tool_registry._plugin_enabled", return_value=True),
+            patch("aios_v1.lib.tool_registry._plugin_scope_allows", return_value=True),
+            patch("aios_v1.lib.mcp_client.get_mcp_tools_schema_for_worker", return_value=[]),
+        ):
+            list(sales_mgr.handle_stream("Disini ada apa aja?", conversation_id=99, user="Guest"))
+
+        self.assertEqual(len(captured_messages), 1)
+        sys_contents = [m["content"] for m in captured_messages[0] if m.get("role") == "system"]
+        expected_directive = (
+            "[DIREKTIF PERAN AKTIF]: Anda adalah Asisten Layanan Pelanggan untuk tamu/pelanggan. "
+            "Jawablah sebagai Customer Service yang melayani informasi katalog produk, harga jual, "
+            "dan pencatatan pesanan/penawaran baru."
+        )
+        self.assertIn(expected_directive, sys_contents)
+        self.assertFalse(any("AI MANAGER SALES AND DISTRIBUTION" in c for c in sys_contents))
+
+        tool_names = {t["function"]["name"] for t in captured_tools[0]}
+        guest_allowed = {
+            "erpnext_doc_list",
+            "erpnext_doc_get",
+            "erpnext_doctype_schema",
+            "erpnext_action_draft_create",
+            "get_current_time",
+        }
+        self.assertTrue(tool_names.issubset(guest_allowed), f"Tool bocor ke Guest: {tool_names - guest_allowed}")
+        self.assertEqual(tool_names, guest_allowed)
+        for t in captured_tools[0]:
+            fname = t["function"]["name"]
+            if fname in {"erpnext_doc_list", "erpnext_doc_get", "erpnext_doctype_schema"}:
+                desc = t["function"]["description"]
+                self.assertIn("Item", desc)
+                self.assertIn("Item Price", desc)
+                self.assertNotIn("Sales Order", desc)
+                self.assertNotIn("Sales Invoice", desc)
+                self.assertNotIn("Customer", desc)
+
     def test_new_conversation_flag_reaches_ensure_conversation(self):
         def chat(messages, usage=None, tools=None, tool_calls=None):
             usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
