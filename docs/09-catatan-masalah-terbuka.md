@@ -178,18 +178,6 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 
 ---
 
-## C. Ditunda — jangan dikerjakan sebelum ada keputusan
-
-### C1 — Pendaftaran user ke-2 dan seterusnya
-
-**Status: Dikerjakan (2026-11-06).** Pemilik klien (`AIOS Client Owner`) menambah staf ke-2 dst langsung dari Ekasa Desk lewat jendela `Pengaturan` → `Kelola Staf` (`aios_v1.api.desktop.create_client_staff`), dibatasi plafon `AIOS Setting.max_users`, dan menerima tautan undangan `/update-password?key=...` sekali pakai (berlaku 20 menit).
-
-### C2 — `max_users`
-
-**Status: Dikerjakan (2026-11-06).** Field `max_users` (`Int`, `non_negative: 1`) telah ditambahkan ke `AIOS Setting` dan ditegakkan melalui `doc_events["User"]` (`before_insert` & `validate` → `aios_v1.setup.validate_max_users`), `activate_user`, dan `create_client_staff`.
-
----
-
 ## D. Keputusan yang sudah diambil
 
 | Topik | Keputusan |
@@ -230,7 +218,7 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | `signup_leads()` di site developer + tab "Pendaftar" di control plane (A5 + B3) | commit `4b4c034` + `a994143` (2026-10-30) |
 | Tautan undangan `/update-password` di `activate_user` + modal salin di admin (B1) | commit `a994143` (2026-10-30) |
 | Hook `setup_wizard_complete` (`normalize_wizard_user`) di `setup.py` + `hooks.py` (B4) | commit `4b4c034` (2026-10-30) |
-| Kelola Staf, `AIOS Setting.max_users`, dan `AIOS Client Owner Profile` (C1 + C2) | commit `70b54ee` (2026-11-06) |
+| Kelola Staf, `AIOS Setting.max_users`, dan `AIOS Client Owner Profile` (C1 + C2): C1 — pemilik klien (`AIOS Client Owner`) menambah staf ke-2 dst dari Ekasa Desk lewat `Pengaturan` → `Kelola Staf` (`aios_v1.api.desktop.create_client_staff`), dibatasi plafon `AIOS Setting.max_users`, tautan undangan `/update-password?key=...` sekali pakai berlaku 20 menit; C2 — field `max_users` (`Int`, `non_negative: 1`) di `AIOS Setting`, ditegakkan via `doc_events["User"]` (`before_insert` & `validate` → `aios_v1.setup.validate_max_users`), `activate_user`, dan `create_client_staff` | commit `70b54ee` (2026-11-06) |
 | Pembersihan 10 baris `Has Role` yatim di site developer (A6) | perubahan data tanpa commit, terverifikasi (0 orphan) |
 | Proteksi UI tombol Daftar di site client & route guard `/register` → `/lock` (A1.4) | commit `2b26fa3` (2026-11-09) |
 | Kolom usang `aios_token_limit` dihapus dari `tabUser` | commit `d5dbe6b` (2026-11-09) |
