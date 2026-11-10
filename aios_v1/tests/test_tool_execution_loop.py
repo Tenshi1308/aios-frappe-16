@@ -300,6 +300,17 @@ class TestToolExecutionLoop(IntegrationTestCase):
         self.assertIn("Membantu mencatat pesanan pembelian baru dan permintaan penawaran harga", prompt)
         self.assertIn("Perusahaan: _Test Company", prompt)
         self.assertIn("Bidang usaha: _Test Bidang Usaha", prompt)
+        self.assertIn(
+            "5. Tulis katalog sebagai daftar poin, satu produk satu poin dengan format: • Nama produk - Harga.",
+            prompt,
+        )
+        self.assertIn(
+            "6. Sampaikan nama produk, ketersediaan, dan harga persis seperti tertulis di data katalog.",
+            prompt,
+        )
+        self.assertNotIn("|", prompt)
+        for tax_term in ("PPN", "pajak", "Tax"):
+            self.assertNotIn(tax_term, prompt)
         mock_user_get_value.assert_not_called()
 
         for forbidden in (
