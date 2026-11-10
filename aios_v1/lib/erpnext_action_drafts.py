@@ -67,7 +67,13 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
     if action_type != "CREATE" and (not isinstance(reason, str) or not reason.strip()):
         frappe.throw("reason wajib untuk UPDATE_DRAFT dan CANCEL_AND_AMEND.")
 
-    company = str(get_tool_context().get("allowed_company") or "").strip()
+    company = str(
+        get_tool_context().get("allowed_company")
+        or frappe.db.get_single_value("AIOS Setting", "default_company")
+        or frappe.db.get_single_value("Global Defaults", "default_company")
+        or (data.get("company") if isinstance(data, dict) else "")
+        or ""
+    ).strip()
     if not company:
         frappe.throw("Company default belum dikonfigurasi.")
 
@@ -112,9 +118,51 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
     payload = {"doctype": doctype, "data": dict(data), "reason": reason or ""}
     if validated_customer_info:
         payload["customer_info"] = validated_customer_info
+
+    channel_thread = getattr(frappe.local, "aios_channel_thread", None)
+    if channel_thread:
+        chat_id = (
+            getattr(channel_thread, "external_thread_id", None)
+            or (channel_thread.get("external_thread_id") if isinstance(channel_thread, dict) else None)
+        )
+        if chat_id:
+            payload["source_telegram_chat_id"] = str(chat_id)
+
     if action_type == "CREATE":
         draft_data = dict(data)
         draft_data.pop("company", None)
+
+        if doctype == "Sales Order":
+            delivery_date = draft_data.get("delivery_date")
+            if not delivery_date:
+                if is_guest:
+                    return safe_error(
+                        "Tanggal pengiriman (delivery_date) wajib diisi untuk draf Sales Order.",
+                        "DELIVERY_DATE_REQUIRED",
+                    )
+                frappe.throw("Tanggal pengiriman (delivery_date) wajib diisi untuk draf Sales Order.")
+
+            from frappe.utils import getdate
+
+            try:
+                parsed_delivery_date = getdate(delivery_date)
+                if not parsed_delivery_date:
+                    raise ValueError()
+                draft_data["delivery_date"] = str(parsed_delivery_date)
+            except Exception as exc:
+                log_exception("AIOS Parse Delivery Date", exc=exc)
+                if is_guest:
+                    return safe_error(
+                        "Format tanggal pengiriman (delivery_date) tidak valid.",
+                        "INVALID_DELIVERY_DATE",
+                    )
+                frappe.throw("Format tanggal pengiriman (delivery_date) tidak valid.")
+
+            if draft_data.get("items") and isinstance(draft_data["items"], list):
+                for itm in draft_data["items"]:
+                    if isinstance(itm, dict) and not itm.get("delivery_date"):
+                        itm["delivery_date"] = draft_data["delivery_date"]
+
         validate_data_fields(frappe.get_meta(doctype), draft_data)
         if frappe.get_meta(doctype).has_field("company"):
             draft_data["company"] = company

@@ -23,7 +23,7 @@ try:
 except ImportError:
     from frappe.tests.utils import FrappeTestCase as IntegrationTestCase  # type: ignore
 
-from aios_v1.lib.draft_manager import approve_and_execute_draft, create_draft
+from aios_v1.lib.draft_manager import approve_and_execute_draft, create_draft, reject_draft
 from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
 from aios_v1.lib.tool_registry import execute_tool, get_tools_schema_for_worker
 
@@ -215,7 +215,7 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         # Verifikasi Contact PIC
         contacts = frappe.db.sql(
             """
-            SELECT c.name, c.first_name FROM `tabContact` c
+            SELECT c.name, c.first_name, c.full_name FROM `tabContact` c
             JOIN `tabDynamic Link` dl ON dl.parent = c.name
             WHERE dl.link_doctype = 'Customer' AND dl.link_name = %s
             """,
@@ -223,7 +223,7 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
             as_dict=True,
         )
         self.assertTrue(contacts, "Contact harus terhubung ke Company")
-        self.assertTrue(any(pic_name in (c.get("first_name") or "") for c in contacts))
+        self.assertTrue(any(pic_name in (c.get("full_name") or "") for c in contacts))
 
     def test_approve_draft_reuses_existing_customer_by_mobile(self):
         """c. Nomor HP sudah terdaftar pada Customer A -> draf baru dengan nomor HP sama -> sistem memakai Customer A dan tidak membuat Customer baru."""
@@ -322,7 +322,7 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
                 "customer_type": "Individual",
                 "customer_name": common_name,
                 "mobile_no": phone_2,
-                "address": "Jalan Riau No. 20",
+                "address": "Jalan Riau No. 20, Bandung",
             },
         )
 
@@ -383,8 +383,10 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
                     doctype="Sales Order",
                     data={
                         "customer": "_Test",
+                        "company": self.company,
                         "customer_type": "Individual",  # Dilarang di dalam data!
                         "items": [{"item_code": self.item_code, "qty": 1}],
+                        "delivery_date": nowdate(),
                     },
                     reason="Percobaan injeksi field",
                 )
@@ -412,3 +414,259 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
             self.assertEqual(res.get("code"), "GUEST_TOOL_FORBIDDEN")
         finally:
             frappe.set_user(self.USER_EMAIL)
+
+    def test_contact_failure_fails_execution(self):
+        """10.a. Gagal buat Contact menggagalkan eksekusi, draf tetap APPROVED dgn executed False, tanpa Sales Order."""
+        cust_name = "_Test Contact Fail Cust"
+        self.created_customers.append(cust_name)
+        draft = create_draft(
+            task_id="test_task_contact_fail",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "data": self._build_order_data(cust_name),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990001",
+                    "address": "Jalan Percobaan No. 1, Bandung",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        with unittest.mock.patch("erpnext.selling.doctype.customer.customer.make_contact", side_effect=Exception("DB Contact Error")):
+            res = approve_and_execute_draft(draft.name)
+
+        self.assertFalse(res["executed"], "Eksekusi harus dilaporkan gagal")
+        self.assertEqual(res["draft_status"], "APPROVED")
+        self.assertEqual(res.get("code"), "CONTACT_CREATION_FAILED")
+
+        # Pastikan tidak ada Customer maupun Sales Order yang tersimpan (rollback ke savepoint)
+        self.assertFalse(frappe.db.exists("Customer", cust_name))
+        so_list = frappe.db.get_all("Sales Order", filters={"customer": cust_name})
+        self.assertEqual(len(so_list), 0, "Sales Order tidak boleh terbentuk jika kontak gagal")
+
+    def test_delivery_date_from_customer_used(self):
+        """10.b. Tanggal kirim dari customer digunakan pada Sales Order, bukan tanggal hari ini."""
+        from frappe.utils import add_to_date
+        cust_name = "_Test Cust Delivery Date"
+        self.created_customers.append(cust_name)
+        future_date = add_to_date(nowdate(), days=4)
+
+        order_data = self._build_order_data(cust_name)
+        order_data["delivery_date"] = future_date
+        for itm in order_data["items"]:
+            itm["delivery_date"] = future_date
+
+        draft = create_draft(
+            task_id="test_task_delivery_date",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "data": order_data,
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990002",
+                    "address": "Jalan Sukajadi No. 5, Bandung",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        res = approve_and_execute_draft(draft.name)
+        self.assertTrue(res["executed"])
+        so_name = res["name"]
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertEqual(str(so_doc.delivery_date), str(future_date), "Delivery date pada Sales Order harus persis sesuai permintaan customer")
+        self.assertNotEqual(str(so_doc.delivery_date), str(add_to_date(nowdate(), days=10)), "Tidak boleh menggunakan default 10 hari ERPNext")
+
+    def test_draft_without_delivery_date_rejected(self):
+        """10.c. Draf Sales Order tanpa delivery_date ditolak saat pembuatan."""
+        frappe.set_user("Guest")
+        try:
+            res = erpnext_action_draft_create(
+                action_type="CREATE",
+                doctype="Sales Order",
+                data={
+                    "customer": "_Test No Date",
+                    "company": self.company,
+                    "items": [{"item_code": self.item_code, "qty": 1}],
+                    # delivery_date sengaja tidak diisi!
+                },
+                reason="Pemesanan tanpa tanggal kirim",
+                customer_info={
+                    "customer_type": "Individual",
+                    "customer_name": "_Test No Date",
+                    "mobile_no": "081299990003",
+                    "address": "Jalan Dago No. 1, Bandung",
+                },
+            )
+            self.assertIn("error", res)
+            self.assertEqual(res.get("code"), "DELIVERY_DATE_REQUIRED")
+        finally:
+            frappe.set_user(self.USER_EMAIL)
+
+    def test_reject_approved_failed_draft(self):
+        """10.d. Draf berstatus APPROVED yang gagal eksekusi dapat di-reject staf dengan alasan."""
+        cust_name = "_Test Reject Approved Cust"
+        self.created_customers.append(cust_name)
+        draft = create_draft(
+            task_id="test_task_reject_approved",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "data": self._build_order_data(cust_name),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990004",
+                    "address": "Jalan Tanpa Kota",  # Alamat tanpa kota memicu gagal eksekusi
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        # Approve pertama kali gagal karena kota tidak ditemukan
+        res = approve_and_execute_draft(draft.name)
+        self.assertFalse(res["executed"])
+        self.assertEqual(res["draft_status"], "APPROVED")
+
+        # Staf menolak draf yang berstatus APPROVED tersebut
+        rej_res = reject_draft(draft.name, reason="Alamat tidak memuat nama kota yang valid")
+        self.assertEqual(rej_res["status"], "success")
+
+        draft.reload()
+        self.assertEqual(draft.status, "REJECTED")
+        self.assertEqual(draft.rejection_reason, "Alamat tidak memuat nama kota yang valid")
+
+    def test_proactive_notification_sent_to_guest_chat(self):
+        """10.e. Notifikasi proaktif dikirim via Telegram ke chat_id pelanggan saat draf ditolak atau gagal approve."""
+        test_chat_id = "8999777123"
+        draft = create_draft(
+            task_id="test_task_proactive_notif",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "source_telegram_chat_id": test_chat_id,
+                "data": self._build_order_data("_Test Proactive"),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": "_Test Proactive",
+                    "mobile_no": "081299990005",
+                    "address": "Jalan Cihampelas No. 10, Bandung",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        # 1. Uji notifikasi saat draf ditolak staf
+        sent_messages = []
+        with unittest.mock.patch("aios_v1.lib.connector.telegram_client.send_message", side_effect=lambda cid, txt: sent_messages.append((cid, txt)) or True):
+            reject_draft(draft.name, reason="Nomor HP tidak dapat dihubungi")
+
+        self.assertEqual(len(sent_messages), 1, "Pesan Telegram harus terkirim saat reject")
+        self.assertEqual(str(sent_messages[0][0]), test_chat_id)
+        self.assertIn("Nomor HP tidak dapat dihubungi", sent_messages[0][1])
+        self.assertIn("Anda tidak perlu mengulang", sent_messages[0][1])
+
+        # 2. Uji notifikasi saat approve gagal eksekusi
+        draft_fail = create_draft(
+            task_id="test_task_proactive_fail",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "source_telegram_chat_id": test_chat_id,
+                "data": self._build_order_data("_Test Proactive Fail"),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": "_Test Proactive Fail",
+                    "mobile_no": "081299990006",
+                    "address": "Alamat Tanpa Kota",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        sent_fail_messages = []
+        with unittest.mock.patch("aios_v1.lib.connector.telegram_client.send_message", side_effect=lambda cid, txt: sent_fail_messages.append((cid, txt)) or True):
+            approve_and_execute_draft(draft_fail.name)
+
+        self.assertEqual(len(sent_fail_messages), 1, "Pesan Telegram harus terkirim saat approve gagal")
+        self.assertEqual(str(sent_fail_messages[0][0]), test_chat_id)
+        self.assertIn("Kota pada alamat pengiriman tidak ditemukan", sent_fail_messages[0][1])
+
+    def test_contact_name_not_duplicated(self):
+        """10.f. Kontak primer yang dibuat untuk nama lengkap tidak mengalami duplikasi nama (first/middle/last rapi)."""
+        cust_name = "_Test Budi Uji Live"
+        self.created_customers.append(cust_name)
+        draft = create_draft(
+            task_id="test_task_contact_name",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "data": self._build_order_data(cust_name),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990007",
+                    "address": "Jalan Merdeka No. 1, Bandung",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        res = approve_and_execute_draft(draft.name)
+        self.assertTrue(res["executed"])
+
+        # Periksa Contact
+        contact_name = frappe.db.get_value("Customer", cust_name, "customer_primary_contact")
+        self.assertTrue(contact_name, "customer_primary_contact harus terisi")
+        contact_doc = frappe.get_doc("Contact", contact_name)
+
+        self.assertEqual(contact_doc.first_name, "_Test")
+        self.assertEqual(contact_doc.middle_name, "Budi Uji")
+        self.assertEqual(contact_doc.last_name, "Live")
+        self.assertEqual(contact_doc.full_name, "_Test Budi Uji Live", "full_name Contact tidak boleh ganda")
+
+    def test_retry_approved_failed_draft(self):
+        """10.g. Draf berstatus APPROVED yang gagal eksekusi dapat dicoba lagi (retry) dan berhasil setelah penyebab diperbaiki."""
+        cust_name = "_Test Retry Cust"
+        self.created_customers.append(cust_name)
+        draft = create_draft(
+            task_id="test_task_retry",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "data": self._build_order_data(cust_name),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990008",
+                    "address": "Jalan Pasteur No. 10, Bandung",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        # 1. Eksekusi pertama gagal karena simulasi error
+        with unittest.mock.patch("erpnext.selling.doctype.customer.customer.make_contact", side_effect=Exception("Simulated transient error")):
+            res1 = approve_and_execute_draft(draft.name)
+
+        self.assertFalse(res1["executed"])
+        self.assertEqual(res1["draft_status"], "APPROVED")
+
+        # 2. Eksekusi kedua (retry) tanpa error harus berhasil
+        res2 = approve_and_execute_draft(draft.name)
+        self.assertTrue(res2["executed"], "Retry draft APPROVED harus berhasil")
+        self.assertEqual(res2["draft_status"], "EXECUTED")
+        self.assertTrue(frappe.db.exists("Customer", cust_name))
+        self.assertTrue(frappe.db.exists("Sales Order", res2["name"]))

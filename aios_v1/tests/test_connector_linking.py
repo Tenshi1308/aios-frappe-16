@@ -286,7 +286,7 @@ class TestConnectorLinking(IntegrationTestCase):
                 draft_res = erpnext_action_draft_create(
                     action_type="CREATE",
                     doctype="Sales Order",
-                    data={"items": [{"item_code": "ITEM-1", "qty": 2}]},
+                    data={"items": [{"item_code": "ITEM-1", "qty": 2}], "delivery_date": "2026-11-15"},
                     reason="Order dari web chat",
                 )
                 self.assertEqual(draft_res["status"], "PENDING_APPROVAL")

@@ -59,6 +59,17 @@ def create_draft(
     if not isinstance(payload, dict):
         frappe.throw("Payload draft harus berupa object JSON.")
 
+    # Rekam chat_id Telegram dari context thread bila belum ada di payload
+    if "source_telegram_chat_id" not in payload:
+        channel_thread = getattr(frappe.local, "aios_channel_thread", None)
+        if channel_thread:
+            chat_id = (
+                getattr(channel_thread, "external_thread_id", None)
+                or (channel_thread.get("external_thread_id") if isinstance(channel_thread, dict) else None)
+            )
+            if chat_id:
+                payload["source_telegram_chat_id"] = str(chat_id)
+
     try:
         payload_json = json.dumps(payload, default=str)
     except (TypeError, ValueError):
@@ -367,54 +378,81 @@ def _ensure_customer_for_draft(payload: dict, company: str) -> str | None:
     created_cust_name = cust_doc.name
 
     # Buat Contact primer
-    from erpnext.selling.doctype.customer.customer import make_address, make_contact
+    from erpnext.selling.doctype.customer.customer import make_address, make_contact, parse_full_name
 
-    contact_first_name = customer_name if customer_type == "Individual" else (contact_person or customer_name)
     contact_args = frappe._dict({
         "doctype": "Customer",
         "name": created_cust_name,
         "customer_name": customer_name,
         "customer_type": customer_type,
-        "first_name": contact_first_name,
         "mobile_no": mobile_no,
+        "phone": mobile_no,
         "flags": {"ignore_permissions": True},
     })
     if customer_type == "Company":
         contact_args["company_name"] = customer_name
+        if contact_person:
+            first, middle, last = parse_full_name(contact_person)
+            contact_args["first_name"] = first
+            if middle:
+                contact_args["middle_name"] = middle
+            if last:
+                contact_args["last_name"] = last
 
     try:
         contact = make_contact(contact_args, is_primary_contact=1)
+        if customer_type == "Company" and contact_person:
+            first, middle, last = parse_full_name(contact_person)
+            if middle:
+                contact.db_set("middle_name", middle)
+                contact.db_set("full_name", contact_person)
         cust_doc.db_set("customer_primary_contact", contact.name)
         if mobile_no:
             cust_doc.db_set("mobile_no", mobile_no)
     except Exception as exc:
         log_exception("AIOS Make Primary Contact", exc=exc)
+        raise DraftExecutionError("CONTACT_CREATION_FAILED", f"Gagal membuat kontak primer customer: {exc}") from exc
 
-    # Buat Address primer jika ada
-    if address_str:
+    if not cust_doc.customer_primary_contact or not frappe.db.exists("Contact", cust_doc.customer_primary_contact):
+        raise DraftExecutionError("CONTACT_CREATION_FAILED", "Kontak primer customer tidak terisi atau gagal disimpan.")
+
+    # Buat Address primer
+    if not address_str:
+        raise DraftExecutionError("ADDRESS_REQUIRED", "Alamat pengiriman wajib diisi untuk membuat customer baru.")
+
+    city = ""
+    parts = [p.strip() for p in address_str.split(",") if p.strip()]
+    if len(parts) >= 2:
+        city = parts[-1]
+    if not city and comp_city:
         city = comp_city
-        parts = [p.strip() for p in address_str.split(",") if p.strip()]
-        if len(parts) >= 2 and not city:
-            city = parts[-1]
-        if not city:
-            city = comp_country or "Indonesia"
 
-        country = comp_country or "Indonesia"
-        addr_args = frappe._dict({
-            "doctype": "Customer",
-            "name": created_cust_name,
-            "customer_name": customer_name,
-            "address_line1": address_str,
-            "city": city,
-            "country": country,
-            "flags": {"ignore_permissions": True},
-        })
-        try:
-            address = make_address(addr_args, is_primary_address=1, is_shipping_address=1)
-            cust_doc.db_set("customer_primary_address", address.name)
-            cust_doc.db_set("primary_address", address_str)
-        except Exception as exc:
-            log_exception("AIOS Make Primary Address", exc=exc)
+    country = comp_country or "Indonesia"
+    if not city or city.lower() in {country.lower(), "indonesia"}:
+        raise DraftExecutionError(
+            "CITY_REQUIRED",
+            "Kota pada alamat pengiriman tidak ditemukan. Mohon sertakan nama kota pada alamat pengiriman (contoh: Jalan Sukabumi No. 10, Bandung).",
+        )
+
+    addr_args = frappe._dict({
+        "doctype": "Customer",
+        "name": created_cust_name,
+        "customer_name": customer_name,
+        "address_line1": address_str,
+        "city": city,
+        "country": country,
+        "flags": {"ignore_permissions": True},
+    })
+    try:
+        address = make_address(addr_args, is_primary_address=1, is_shipping_address=1)
+        cust_doc.db_set("customer_primary_address", address.name)
+        cust_doc.db_set("primary_address", address_str)
+    except Exception as exc:
+        log_exception("AIOS Make Primary Address", exc=exc)
+        raise DraftExecutionError("ADDRESS_CREATION_FAILED", f"Gagal membuat alamat primer customer: {exc}") from exc
+
+    if not cust_doc.customer_primary_address or not frappe.db.exists("Address", cust_doc.customer_primary_address):
+        raise DraftExecutionError("ADDRESS_CREATION_FAILED", "Alamat primer customer tidak terisi atau gagal disimpan.")
 
     return created_cust_name
 
@@ -426,8 +464,6 @@ def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     target_data = {"doctype": doctype, **business_data}
     if frappe.get_meta(doctype).has_field("company"):
         target_data["company"] = company
-    if doctype == "Sales Order" and not target_data.get("delivery_date"):
-        target_data["delivery_date"] = frappe.utils.nowdate()
     target = frappe.get_doc(target_data)
     target.flags.ignore_permissions = True
     target.insert(ignore_permissions=True)
@@ -512,6 +548,15 @@ def execute_draft(doc) -> dict:
 
 def _notify_rejection(doc, reason: str) -> None:
     """Catat penolakan di percakapan terakhir user agar AI Manager tahu konteksnya."""
+    # Kirim kabar proaktif ke Telegram bila draf berasal dari Telegram
+    guest_msg = (
+        f"Mohon maaf, pengajuan pesanan Anda belum dapat disetujui oleh tim kami.\n"
+        f"Catatan dari tim kami: {reason or 'Perlu penyesuaian data pesanan'}.\n\n"
+        f"Anda tidak perlu mengulang seluruh pesanan Anda. Silakan sampaikan perbaikan data di atas "
+        f"agar kami dapat langsung memperbarui pesanan Anda. Terima kasih! 🙏"
+    )
+    _send_proactive_guest_notification(doc, guest_msg)
+
     try:
         filters = {"user": doc.user}
         if doc.branch:
@@ -546,6 +591,47 @@ def _notify_rejection(doc, reason: str) -> None:
         ).insert(ignore_permissions=True)
     except Exception:
         frappe.log_error(frappe.get_traceback(), "AIOS Draft Notification")
+
+
+def _send_proactive_guest_notification(doc, message: str) -> bool:
+    """Kirim kabar proaktif ke customer Telegram bila draf berasal dari kanal Telegram."""
+    if not doc:
+        return False
+    try:
+        payload = json.loads(doc.payload or "{}") if isinstance(doc.payload, str) else (doc.payload or {})
+    except Exception as exc:
+        log_exception("AIOS Parse Draft Payload For Notification", exc=exc)
+        payload = {}
+
+    chat_id = payload.get("source_telegram_chat_id")
+    if not chat_id:
+        return False
+
+    from aios_v1.lib.connector import telegram_client
+
+    sent = telegram_client.send_message(chat_id, message)
+
+    try:
+        thread_conv = frappe.db.get_value(
+            "AIOS Channel Thread",
+            {"channel": "telegram", "external_thread_id": str(chat_id)},
+            "conversation",
+        )
+        if thread_conv:
+            frappe.get_doc(
+                {
+                    "doctype": "AIOS Message",
+                    "conversation": thread_conv,
+                    "role": "manager",
+                    "worker_key": "manager",
+                    "content": message,
+                }
+            ).insert(ignore_permissions=True)
+            frappe.db.commit()
+    except Exception as exc:
+        log_exception("AIOS Draft Notification Conversation Log", exc=exc)
+
+    return sent
 
 
 def expire_old_drafts():
@@ -662,6 +748,15 @@ def approve_and_execute_draft(draft_id: str) -> dict:
         frappe.db.rollback(save_point="aios_draft_execution")
         frappe.db.commit()
         log_exception("AIOS Draft Execution", exc=exc)
+
+        error_desc = str(exc) if isinstance(exc, DraftExecutionError) else "Kendala teknis pada validasi data pesanan"
+        guest_msg = (
+            f"Halo! Ada sedikit kendala saat kami memproses pesanan Anda: {error_desc}.\n\n"
+            f"Anda tidak perlu mengulang pesanan dari awal. Cukup informasikan perbaikan data tersebut kepada kami di sini "
+            f"agar kami dapat segera melanjutkan proses pesanan Anda. Terima kasih! 🙏"
+        )
+        _send_proactive_guest_notification(doc, guest_msg)
+
         return {
             "status": "APPROVED",
             "draft_status": "APPROVED",
@@ -693,7 +788,7 @@ def reject_draft(draft_id: str, reason: str = "") -> dict:
     """Reject draf hanya untuk pemilik atau Administrator."""
     doc = _lock_draft(draft_id)
     _assert_draft_owner(doc)
-    if doc.status != "PENDING_APPROVAL":
+    if doc.status not in ("PENDING_APPROVAL", "APPROVED"):
         frappe.throw(f"Draft tidak bisa di-reject karena berstatus {doc.status}.")
 
     doc.status = "REJECTED"
