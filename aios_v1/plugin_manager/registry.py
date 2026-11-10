@@ -6,7 +6,6 @@ Sumber: architecture.md §4, referensi-persona.md.
 BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: analisis bisnis (BI), penyusunan laporan, dan tata '
                        'kelola data.',
         'enabled': True,
-        'icon': '🧭',
         'key': 'planning',
         'manager_persona': 'Anda adalah AI Manager bidang Strategic & Operational Planning di AIOS — manajer yang '
                            'mengoordinasikan analisis bisnis, pengembangan laporan, dan stewardship data perusahaan.',
@@ -84,7 +83,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
     {   'description': 'Bidang keuangan: operasional harian keuangan, analisis keuangan, penganggaran, kas & treasury, '
                        'hingga perspektif CFO.',
         'enabled': True,
-        'icon': '💰',
         'key': 'finance',
         'manager_persona': 'Anda adalah AI Manager bidang Finance di AIOS — manajer yang mengoordinasikan staf '
                            'keuangan, analis keuangan, staf anggaran, bendahara, dan CFO.',
@@ -232,7 +230,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
     {   'description': 'Bidang SDM: administrasi karyawan, rekrutmen, payroll, pelatihan, dan strategi pengelolaan '
                        'orang.',
         'enabled': True,
-        'icon': '👥',
         'key': 'hr',
         'manager_persona': 'Anda adalah AI Manager bidang Human Resource di AIOS — manajer yang mengoordinasikan staf '
                            'HR, perekrut, staf payroll, spesialis pelatihan, dan manajer HR.',
@@ -399,7 +396,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                            'relevantEntities': ['TrainingRecord', 'Employee']}]},
     {   'description': 'Bidang logistik: koordinasi pengiriman, penerimaan barang, dan pengelolaan armada.',
         'enabled': True,
-        'icon': '🚚',
         'key': 'logistics',
         'manager_persona': 'Anda adalah AI Manager bidang Logistic Management di AIOS — manajer yang mengoordinasikan '
                            'koordinator logistik, staf pengiriman/penerimaan, dan manajer armada.',
@@ -488,7 +484,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                            'relevantEntities': ['Shipment', 'StockMovement']}]},
     {   'description': 'Bidang pemeliharaan: perencanaan servis, rekayasa keandalan, dan teknisi operasional.',
         'enabled': True,
-        'icon': '🔧',
         'key': 'maintenance',
         'manager_persona': 'Anda adalah AI Manager bidang Maintenance Management di AIOS — manajer yang '
                            'mengoordinasikan perencana pemeliharaan, rekayasawan keandalan, dan teknisi pemeliharaan.',
@@ -568,7 +563,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                            'relevantEntities': ['MaintenanceRecord', 'Equipment']}]},
     {   'description': 'Bidang penjualan: perwakilan penjualan, layanan pelanggan, analis pasar, dan pemasaran.',
         'enabled': True,
-        'icon': '📈',
         'key': 'sales',
         'manager_persona': 'Anda adalah AI Manager bidang Sales and Distribution di AIOS — manajer yang '
                            'mengoordinasikan staf penjualan, layanan pelanggan, analis penjualan, dan spesialis '
@@ -672,7 +666,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                            'relevantEntities': ['SalesOrder', 'Product', 'Customer']}]},
     {   'description': 'Bidang mutu: inspeksi produk, rekayasa kualitas, audit kepatuhan, dan kendali standar.',
         'enabled': True,
-        'icon': '🛡️',
         'key': 'quality',
         'manager_persona': 'Anda adalah AI Manager bidang Quality Management di AIOS — manajer yang mengoordinasikan '
                            'inspektur mutu, rekayasawan kualitas, auditor mutu, dan petugas kendali mutu.',
@@ -768,7 +761,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
     {   'description': 'Bidang material: pengadaan barang, pembelian strategis, dan manajemen persediaan '
                        '(gudang/retail).',
         'enabled': True,
-        'icon': '📦',
         'key': 'material',
         'manager_persona': 'Anda adalah AI Manager bidang Material Management di AIOS — manajer yang mengoordinasikan '
                            'staf pengadaan, petugas pembelian, spesialis pengadaan senior, serta manajer persediaan '
@@ -919,7 +911,6 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
     {   'description': 'Bidang manufaktur: perencanaan kapasitas, penjadwalan lini produksi, dan pengawasan '
                        'operasional pabrik.',
         'enabled': True,
-        'icon': '🏭',
         'key': 'manufacturing',
         'manager_persona': 'Anda adalah AI Manager bidang Manufacturing di AIOS — manajer yang mengoordinasikan '
                            'perencana produksi, penjadwal produksi, dan pengawas produksi.',
