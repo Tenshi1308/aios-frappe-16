@@ -146,7 +146,7 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 
 **Permukaan API** (`/api/connector/*`, wajib sesi): `health`, `threads`, `flags`, `flag/close`, `orders`, `order/review`, `link-token`, `link-status`, `unlink`. Tidak ada endpoint yang menulis ERPNext.
 
-**Non-scope v1:** checkout inline-keyboard, submit/cancel dari chat, auto-create Lead/Customer, media/grup/broadcast/multi-bot, 8 cabang lain, webhook produksi, AI Automation Drive/Sheets, AI Agents Supervisor, kanal WA/IG/Email, dan realtime socket.io di desk.
+**Non-scope v1:** checkout inline-keyboard, submit/cancel dari chat, pembuatan langsung Customer oleh bot di chat (Customer baru dibuat saat approval draf oleh staf), media/grup/broadcast/multi-bot, 8 cabang lain, webhook produksi, AI Automation Drive/Sheets, AI Agents Supervisor, kanal WA/IG/Email, dan realtime socket.io di desk.
 
 **Kedudukan terhadap Flow Utama.** Konektor **di luar** kontrak `docs/00` §1.1 (keputusan owner 2026-11-03): Flow Utama mendefinisikan provisioning client, bukan katalog kemampuan. Konektor dirujuk dari `docs/04` Alur 4 (jawaban agent) dan Alur 5 (draft dari kanal).
 

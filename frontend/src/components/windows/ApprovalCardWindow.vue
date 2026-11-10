@@ -149,6 +149,10 @@ onMounted(load);
         <b>Sebelum</b>
         <pre>{{ prettyJson(payload.before) }}</pre>
       </div>
+      <div v-if="payload?.customer_info" class="ac-json">
+        <b>Data Pelanggan Baru</b>
+        <pre>{{ prettyJson(payload.customer_info) }}</pre>
+      </div>
       <div class="ac-json">
         <b>Data diusulkan</b>
         <pre>{{ prettyJson(payload?.data ?? {}) }}</pre>

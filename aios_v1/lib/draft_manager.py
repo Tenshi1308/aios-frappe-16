@@ -7,6 +7,7 @@
 """
 
 import json
+import re
 
 import frappe
 from frappe.utils import add_to_date, now_datetime
@@ -189,6 +190,235 @@ def _period_is_closed(target, company: str) -> bool:
     return False
 
 
+def normalize_phone_number(raw_phone: str) -> str:
+    """Normalisasi nomor HP: hapus karakter non-digit, samakan awalan +62/62/8 menjadi 08."""
+    if not raw_phone:
+        return ""
+    digits = re.sub(r"\D", "", str(raw_phone))
+    if not digits:
+        return ""
+    if digits.startswith("62") and len(digits) >= 10:
+        digits = "0" + digits[2:]
+    elif digits.startswith("8") and len(digits) >= 9:
+        digits = "0" + digits
+    return digits
+
+
+def _find_customer_by_phone(phone: str) -> str | None:
+    norm = normalize_phone_number(phone)
+    if not norm:
+        return None
+    variants = [norm]
+    if norm.startswith("0") and len(norm) > 1:
+        variants.append("+62" + norm[1:])
+        variants.append("62" + norm[1:])
+
+    # 1. Cek di tabContact Phone & tabContact via Dynamic Link ke Customer
+    contact_names = frappe.db.sql(
+        """
+        SELECT parent FROM `tabContact Phone`
+        WHERE phone IN %(variants)s
+        UNION
+        SELECT name FROM `tabContact`
+        WHERE mobile_no IN %(variants)s OR phone IN %(variants)s
+        """,
+        {"variants": variants},
+        pluck=True,
+    )
+    if contact_names:
+        customer_links = frappe.db.sql(
+            """
+            SELECT link_name FROM `tabDynamic Link`
+            WHERE parenttype = 'Contact'
+              AND parent IN %(contacts)s
+              AND link_doctype = 'Customer'
+            ORDER BY creation ASC
+            LIMIT 1
+            """,
+            {"contacts": contact_names},
+            pluck=True,
+        )
+        if customer_links:
+            return customer_links[0]
+
+    # 2. Cek di tabCustomer langsung bila ada
+    cust = frappe.db.get_value("Customer", {"mobile_no": ["in", variants]}, "name")
+    if cust:
+        return cust
+    return None
+
+
+def _get_company_default_location(company: str) -> tuple[str, str]:
+    """Cari kota dan negara default dari Company di site; fallback negara Indonesia."""
+    country = "Indonesia"
+    city = ""
+    if company and frappe.db.exists("Company", company):
+        comp_country = frappe.db.get_value("Company", company, "country")
+        if comp_country:
+            country = comp_country
+
+        company_addr = frappe.db.sql(
+            """
+            SELECT a.city, a.country
+            FROM `tabAddress` a
+            JOIN `tabDynamic Link` dl ON dl.parent = a.name
+            WHERE dl.link_doctype = 'Company' AND dl.link_name = %s
+            ORDER BY a.is_primary_address DESC, a.creation ASC
+            LIMIT 1
+            """,
+            (company,),
+            as_dict=True,
+        )
+        if company_addr:
+            if company_addr[0].get("city"):
+                city = company_addr[0]["city"]
+            if company_addr[0].get("country"):
+                country = company_addr[0]["country"]
+
+    return city, country
+
+
+def _ensure_customer_for_draft(payload: dict, company: str) -> str | None:
+    """Pastikan Customer ada sebelum Sales Order/Quotation dibuat otomatis dari draf."""
+    info = payload.get("customer_info")
+    data = payload.get("data") or {}
+
+    # Jika customer_info tidak ada di payload, cek apakah data memuat customer placeholder yang belum ada di ERP
+    if not info:
+        target_customer = data.get("customer") or data.get("party_name")
+        if target_customer and not frappe.db.exists("Customer", target_customer):
+            info = {
+                "customer_name": target_customer,
+                "customer_type": "Individual",
+                "mobile_no": data.get("contact_mobile") or "",
+                "address": data.get("address_display") or "",
+                "contact_person": data.get("contact_display") or "",
+            }
+
+    if not info:
+        return data.get("customer") or data.get("party_name")
+
+    customer_name = (info.get("customer_name") or "").strip()
+    customer_type = info.get("customer_type") or "Individual"
+    if customer_type not in {"Individual", "Company"}:
+        customer_type = "Individual"
+    mobile_no = (info.get("mobile_no") or "").strip()
+    address_str = (info.get("address") or "").strip()
+    contact_person = (info.get("contact_person") or "").strip()
+
+    if not customer_name:
+        return data.get("customer") or data.get("party_name")
+
+    # Aturan anti-duplikat: nomor HP diperiksa lebih dulu
+    matched_cust = _find_customer_by_phone(mobile_no) if mobile_no else None
+    if matched_cust:
+        existing_cust = frappe.get_doc("Customer", matched_cust)
+        existing_name = (existing_cust.customer_name or "").strip()
+
+        # Kasus 1: Nomor HP cocok dan nama sama
+        if existing_name.lower() == customer_name.lower():
+            return matched_cust
+
+        # Kasus 2: Nomor HP cocok tapi nama beda
+        if customer_type == "Individual" or existing_cust.customer_type == "Individual":
+            # Untuk perorangan: pakai Customer lama, catat nama baru di contact_display
+            if isinstance(data, dict):
+                data["contact_display"] = customer_name
+            return matched_cust
+        else:
+            # Untuk perusahaan: tambahkan Contact PIC baru ke perusahaan tersebut
+            from erpnext.selling.doctype.customer.customer import make_contact
+
+            contact_args = frappe._dict({
+                "doctype": "Customer",
+                "name": matched_cust,
+                "customer_name": existing_name,
+                "customer_type": "Company",
+                "first_name": contact_person or customer_name,
+                "mobile_no": mobile_no,
+                "flags": {"ignore_permissions": True},
+            })
+            try:
+                make_contact(contact_args, is_primary_contact=0)
+            except Exception as exc:
+                log_exception("AIOS Add Contact PIC to Existing Customer", exc=exc)
+            return matched_cust
+
+    # Kasus 3 & 4: Nomor HP baru (nama baru atau nama sama tapi HP baru)
+    # Buat Customer baru lewat primitif resmi ERPNext
+    cust_group = "Individual" if customer_type == "Individual" else "Commercial"
+    if not frappe.db.exists("Customer Group", cust_group):
+        cust_group = frappe.db.get_single_value("Selling Settings", "customer_group") or "All Customer Groups"
+
+    comp_city, comp_country = _get_company_default_location(company)
+    territory = "Indonesia"
+    if not frappe.db.exists("Territory", territory):
+        territory = frappe.db.get_single_value("Selling Settings", "territory") or "All Territories"
+
+    cust_doc = frappe.get_doc({
+        "doctype": "Customer",
+        "customer_name": customer_name,
+        "customer_type": customer_type,
+        "customer_group": cust_group,
+        "territory": territory,
+    })
+    cust_doc.flags.ignore_permissions = True
+    cust_doc.insert(ignore_permissions=True)
+    created_cust_name = cust_doc.name
+
+    # Buat Contact primer
+    from erpnext.selling.doctype.customer.customer import make_address, make_contact
+
+    contact_first_name = customer_name if customer_type == "Individual" else (contact_person or customer_name)
+    contact_args = frappe._dict({
+        "doctype": "Customer",
+        "name": created_cust_name,
+        "customer_name": customer_name,
+        "customer_type": customer_type,
+        "first_name": contact_first_name,
+        "mobile_no": mobile_no,
+        "flags": {"ignore_permissions": True},
+    })
+    if customer_type == "Company":
+        contact_args["company_name"] = customer_name
+
+    try:
+        contact = make_contact(contact_args, is_primary_contact=1)
+        cust_doc.db_set("customer_primary_contact", contact.name)
+        if mobile_no:
+            cust_doc.db_set("mobile_no", mobile_no)
+    except Exception as exc:
+        log_exception("AIOS Make Primary Contact", exc=exc)
+
+    # Buat Address primer jika ada
+    if address_str:
+        city = comp_city
+        parts = [p.strip() for p in address_str.split(",") if p.strip()]
+        if len(parts) >= 2 and not city:
+            city = parts[-1]
+        if not city:
+            city = comp_country or "Indonesia"
+
+        country = comp_country or "Indonesia"
+        addr_args = frappe._dict({
+            "doctype": "Customer",
+            "name": created_cust_name,
+            "customer_name": customer_name,
+            "address_line1": address_str,
+            "city": city,
+            "country": country,
+            "flags": {"ignore_permissions": True},
+        })
+        try:
+            address = make_address(addr_args, is_primary_address=1, is_shipping_address=1)
+            cust_doc.db_set("customer_primary_address", address.name)
+            cust_doc.db_set("primary_address", address_str)
+        except Exception as exc:
+            log_exception("AIOS Make Primary Address", exc=exc)
+
+    return created_cust_name
+
+
 def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     business_data = dict(data)
     business_data.pop("company", None)
@@ -196,6 +426,8 @@ def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     target_data = {"doctype": doctype, **business_data}
     if frappe.get_meta(doctype).has_field("company"):
         target_data["company"] = company
+    if doctype == "Sales Order" and not target_data.get("delivery_date"):
+        target_data["delivery_date"] = frappe.utils.nowdate()
     target = frappe.get_doc(target_data)
     target.flags.ignore_permissions = True
     target.insert(ignore_permissions=True)
@@ -222,6 +454,12 @@ def execute_draft(doc) -> dict:
         raise DraftExecutionError("DRAFT_INVALID", "Payload draft tidak valid.")
     company = _site_company()
     if doc.type == "CREATE":
+        if doctype in {"Sales Order", "Quotation"}:
+            resolved_customer = _ensure_customer_for_draft(payload, company)
+            if resolved_customer:
+                data["customer"] = resolved_customer
+                if doctype == "Quotation" and frappe.get_meta("Quotation").has_field("party_name"):
+                    data["party_name"] = resolved_customer
         return _create_and_submit(doctype, data, company)
 
     name = payload.get("name")

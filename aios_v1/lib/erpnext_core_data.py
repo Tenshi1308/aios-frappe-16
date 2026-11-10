@@ -68,10 +68,17 @@ _GUEST_DOC_SCHEMA_DESCRIPTION = (
     f"Membaca field yang tersedia pada DocType katalog perusahaan yang diizinkan. "
     f"DocType yang diizinkan: {_GUEST_ALLOWED_DOCTYPE_TEXT}."
 )
+_GUEST_DRAFT_CREATE_DESCRIPTION = (
+    "Membuat Pending Action Draft pesanan pembelian (Sales Order) atau penawaran (Quotation) untuk pelanggan baru atau lama. "
+    "Data pelanggan baru (customer_type, customer_name, contact_person, mobile_no, address) dimasukkan ke parameter 'customer_info', "
+    "bukan ke dalam 'data'. Parameter 'data' hanya berisi field resmi dokumen seperti 'customer', 'items', dll. "
+    "Nilai customer_type harus 'Individual' (perorangan) atau 'Company' (perusahaan/instansi)."
+)
 GUEST_TOOL_DESCRIPTIONS = {
     "erpnext_doc_list": _GUEST_DOC_LIST_DESCRIPTION,
     "erpnext_doc_get": _GUEST_DOC_GET_DESCRIPTION,
     "erpnext_doctype_schema": _GUEST_DOC_SCHEMA_DESCRIPTION,
+    "erpnext_action_draft_create": _GUEST_DRAFT_CREATE_DESCRIPTION,
 }
 
 

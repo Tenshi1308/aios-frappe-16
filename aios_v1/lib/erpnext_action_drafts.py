@@ -1,11 +1,12 @@
 """Create approval drafts without writing an ERPNext business document."""
 
+import json
 import uuid
 
 import frappe
 
 from aios_v1.lib.draft_manager import ALLOWED_DRAFT_DOCTYPES, create_draft, validate_data_fields
-from aios_v1.lib.error_utils import safe_error
+from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 
 
@@ -33,9 +34,18 @@ from aios_v1.lib.tool_registry import ai_tool, get_tool_context
         "name": {"type": "string", "description": "Nama dokumen target untuk UPDATE_DRAFT/CANCEL_AND_AMEND", "required": False},
         "data": {"type": "object", "description": "Nilai dokumen yang diusulkan"},
         "reason": {"type": "string", "description": "Alasan bisnis aksi", "required": False},
+        "customer_info": {
+            "type": "object",
+            "description": (
+                "Data pelanggan baru (hanya untuk CREATE Sales Order atau Quotation). "
+                "Jangan masukkan ke 'data'. Berisi: customer_type ('Individual' atau 'Company'), "
+                "customer_name, contact_person (opsional), mobile_no, address."
+            ),
+            "required": False,
+        },
     },
 )
-def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None):
+def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None, customer_info=None):
     ctx_user = get_tool_context().get("user_id")
     sess_user = getattr(frappe.session, "user", None)
     is_guest = (ctx_user == "Guest" or sess_user == "Guest")
@@ -60,7 +70,48 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
     company = str(get_tool_context().get("allowed_company") or "").strip()
     if not company:
         frappe.throw("Company default belum dikonfigurasi.")
+
+    validated_customer_info = None
+    if customer_info is not None:
+        if isinstance(customer_info, str) and customer_info.strip().startswith("{"):
+            try:
+                customer_info = json.loads(customer_info)
+            except Exception as exc:
+                log_exception("AIOS Parse customer_info JSON", exc=exc)
+        if action_type != "CREATE" or doctype not in {"Sales Order", "Quotation"}:
+            frappe.throw("customer_info hanya diizinkan untuk pembuatan draf (CREATE) Sales Order atau Quotation.")
+        if not isinstance(customer_info, dict):
+            frappe.throw("customer_info harus berupa object.")
+
+        c_type = str(customer_info.get("customer_type") or "").strip()
+        if c_type not in {"Individual", "Company"}:
+            if is_guest:
+                return safe_error("Tipe pelanggan untuk tamu harus 'Individual' atau 'Company'.", "INVALID_CUSTOMER_TYPE")
+            frappe.throw("customer_type harus 'Individual' atau 'Company'.")
+
+        c_name = str(customer_info.get("customer_name") or "").strip()
+        if not c_name:
+            frappe.throw("customer_name wajib ada pada customer_info.")
+
+        c_mobile = str(customer_info.get("mobile_no") or "").strip()
+        if not c_mobile:
+            frappe.throw("mobile_no wajib ada pada customer_info.")
+
+        c_address = str(customer_info.get("address") or "").strip()
+        if not c_address:
+            frappe.throw("address wajib ada pada customer_info.")
+
+        validated_customer_info = {
+            "customer_type": c_type,
+            "customer_name": c_name,
+            "mobile_no": c_mobile,
+            "address": c_address,
+            "contact_person": str(customer_info.get("contact_person") or "").strip(),
+        }
+
     payload = {"doctype": doctype, "data": dict(data), "reason": reason or ""}
+    if validated_customer_info:
+        payload["customer_info"] = validated_customer_info
     if action_type == "CREATE":
         draft_data = dict(data)
         draft_data.pop("company", None)

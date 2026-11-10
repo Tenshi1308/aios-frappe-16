@@ -1,0 +1,414 @@
+"""Pengujian pembuatan Customer baru otomatis saat approval draf pesanan tamu (Fase 1).
+
+7 skenario wajib:
+a. test_approve_draft_creates_new_individual_customer
+b. test_approve_draft_creates_new_company_customer
+c. test_approve_draft_reuses_existing_customer_by_mobile
+d. test_approve_draft_duplicate_name_conflict_handling
+e. test_approve_draft_rollback_on_sales_order_failure
+f. test_guest_draft_rejects_customer_type_inside_data
+g. test_guest_cannot_create_customer_directly
+
+Butuh site + DB: `bench --site aios-v16.localhost run-tests --app aios_v1 --module aios_v1.tests.test_guest_draft_customer_creation`.
+"""
+
+import json
+import unittest
+
+import frappe
+from frappe.utils import nowdate
+
+try:
+    from frappe.tests import IntegrationTestCase
+except ImportError:
+    from frappe.tests.utils import FrappeTestCase as IntegrationTestCase  # type: ignore
+
+from aios_v1.lib.draft_manager import approve_and_execute_draft, create_draft
+from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
+from aios_v1.lib.tool_registry import execute_tool, get_tools_schema_for_worker
+
+
+def _make_test_user(email: str, first_name: str):
+    if frappe.db.exists("User", email):
+        return frappe.get_doc("User", email)
+    user = frappe.get_doc(
+        {
+            "doctype": "User",
+            "email": email,
+            "first_name": first_name,
+            "enabled": 1,
+            "send_welcome_email": 0,
+            "user_type": "Website User",
+            "aios_status": "Active",
+            "roles": [{"role": "AIOS Client"}],
+        }
+    )
+    user.insert(ignore_permissions=True)
+    return user
+
+
+class TestGuestDraftCustomerCreation(IntegrationTestCase):
+    USER_EMAIL = "_test.staff.approver@example.com"
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+
+        _make_test_user(self.USER_EMAIL, "_Test Staff Approver")
+        frappe.set_user(self.USER_EMAIL)
+
+        self.company = (
+            frappe.db.get_single_value("AIOS Setting", "default_company")
+            or frappe.db.get_single_value("Global Defaults", "default_company")
+        )
+
+        price_lists = frappe.get_all("Price List", filters={"selling": 1, "enabled": 1}, pluck="name", limit=1)
+        self.price_list = price_lists[0] if price_lists else "Standard Selling"
+
+        # Item & warehouse
+        non_stock = frappe.get_all("Item", filters={"disabled": 0, "is_stock_item": 0}, pluck="name", limit=1)
+        if non_stock:
+            self.item_code = non_stock[0]
+            self.warehouse = None
+        else:
+            stock_items = frappe.get_all("Item", filters={"disabled": 0}, pluck="name", limit=1)
+            self.item_code = stock_items[0] if stock_items else None
+            warehouses = frappe.get_all("Warehouse", filters={"company": self.company, "is_group": 0}, pluck="name", limit=1)
+            self.warehouse = warehouses[0] if warehouses else None
+
+        self.created_customers = []
+
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for pad in frappe.get_all("Pending Action Draft", filters={"user": self.USER_EMAIL}, pluck="name"):
+            frappe.delete_doc("Pending Action Draft", pad, ignore_permissions=True, force=True, delete_permanently=True)
+
+        for c_name in getattr(self, "created_customers", []):
+            if frappe.db.exists("Customer", c_name):
+                # Hapus sales order terkait
+                for so in frappe.get_all("Sales Order", filters={"customer": c_name}, pluck="name"):
+                    frappe.db.set_value("Sales Order", so, "docstatus", 2)
+                    frappe.delete_doc("Sales Order", so, ignore_permissions=True, force=True)
+                # Hapus contact
+                for c in frappe.get_all("Dynamic Link", filters={"link_doctype": "Customer", "link_name": c_name}, pluck="parent"):
+                    frappe.delete_doc("Contact", c, ignore_permissions=True, force=True)
+                # Hapus address
+                for a in frappe.get_all("Dynamic Link", filters={"link_doctype": "Customer", "link_name": c_name}, pluck="parent"):
+                    frappe.delete_doc("Address", a, ignore_permissions=True, force=True)
+                frappe.delete_doc("Customer", c_name, ignore_permissions=True, force=True)
+
+        self._restore_and_rollback()
+
+    def _build_order_data(self, customer_placeholder: str) -> dict:
+        item = {
+            "item_code": self.item_code,
+            "qty": 1,
+            "rate": 150000,
+            "delivery_date": nowdate(),
+        }
+        if self.warehouse:
+            item["warehouse"] = self.warehouse
+        return {
+            "customer": customer_placeholder,
+            "selling_price_list": self.price_list,
+            "transaction_date": nowdate(),
+            "delivery_date": nowdate(),
+            "items": [item],
+        }
+
+    def _create_guest_draft(self, customer_placeholder: str, customer_info: dict | None = None):
+        data = self._build_order_data(customer_placeholder)
+        payload = {
+            "doctype": "Sales Order",
+            "data": data,
+            "reason": "Pesanan tamu baru dari Telegram",
+        }
+        if customer_info:
+            payload["customer_info"] = customer_info
+
+        draft = create_draft(
+            task_id="TEST-GUEST-SO-001",
+            action_type="CREATE",
+            payload=payload,
+            branch="sales",
+            created_by_agent="sales_manager",
+            user=self.USER_EMAIL,
+        )
+        return draft
+
+    def test_approve_draft_creates_new_individual_customer(self):
+        """a. Draf tamu customer_type Individual disetujui staf -> Customer tipe Individual terbuat, Contact terhubung, Sales Order berhasil disubmit (docstatus 1)."""
+        cust_name = "_Test Perorangan Baru 1"
+        phone = "08129991111"
+        self.created_customers.append(cust_name)
+
+        draft = self._create_guest_draft(
+            customer_placeholder=cust_name,
+            customer_info={
+                "customer_type": "Individual",
+                "customer_name": cust_name,
+                "mobile_no": phone,
+                "address": "Jalan Sukabumi No. 10, Bandung",
+            },
+        )
+
+        result = approve_and_execute_draft(draft.name)
+        self.assertTrue(result.get("executed"), f"Approval harus berhasil dieksekusi: {result.get('message')}")
+        self.assertEqual(result.get("docstatus"), 1)
+
+        # Verifikasi Customer di ERPNext
+        self.assertTrue(frappe.db.exists("Customer", cust_name))
+        cust_doc = frappe.get_doc("Customer", cust_name)
+        self.assertEqual(cust_doc.customer_type, "Individual")
+
+        # Verifikasi Contact terhubung
+        contact_name = frappe.db.sql(
+            """
+            SELECT parent FROM `tabDynamic Link`
+            WHERE link_doctype = 'Customer' AND link_name = %s AND parenttype = 'Contact'
+            """,
+            (cust_name,),
+            pluck=True,
+        )
+        self.assertTrue(contact_name, "Contact harus terhubung ke Customer baru")
+
+        # Verifikasi Sales Order terbuat dan tersubmit
+        so_name = result.get("name") or result.get("document")
+        self.assertTrue(frappe.db.exists("Sales Order", so_name))
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertEqual(so_doc.customer, cust_name)
+        self.assertEqual(so_doc.docstatus, 1)
+
+    def test_approve_draft_creates_new_company_customer(self):
+        """b. Draf tamu customer_type Company dengan nama perusahaan dan nama PIC disetujui -> Customer tipe Company terbuat beserta Contact PIC, Sales Order terhubung."""
+        corp_name = "_Test PT Maju Bersama"
+        pic_name = "Budi Hartono PIC"
+        phone = "08129992222"
+        self.created_customers.append(corp_name)
+
+        draft = self._create_guest_draft(
+            customer_placeholder=corp_name,
+            customer_info={
+                "customer_type": "Company",
+                "customer_name": corp_name,
+                "contact_person": pic_name,
+                "mobile_no": phone,
+                "address": "Kawasan Industri No. 5, Jakarta",
+            },
+        )
+
+        result = approve_and_execute_draft(draft.name)
+        self.assertTrue(result.get("executed"), f"Approval perusahaan harus berhasil: {result.get('message')}")
+
+        # Verifikasi Customer tipe Company
+        self.assertTrue(frappe.db.exists("Customer", corp_name))
+        cust_doc = frappe.get_doc("Customer", corp_name)
+        self.assertEqual(cust_doc.customer_type, "Company")
+
+        # Verifikasi Contact PIC
+        contacts = frappe.db.sql(
+            """
+            SELECT c.name, c.first_name FROM `tabContact` c
+            JOIN `tabDynamic Link` dl ON dl.parent = c.name
+            WHERE dl.link_doctype = 'Customer' AND dl.link_name = %s
+            """,
+            (corp_name,),
+            as_dict=True,
+        )
+        self.assertTrue(contacts, "Contact harus terhubung ke Company")
+        self.assertTrue(any(pic_name in (c.get("first_name") or "") for c in contacts))
+
+    def test_approve_draft_reuses_existing_customer_by_mobile(self):
+        """c. Nomor HP sudah terdaftar pada Customer A -> draf baru dengan nomor HP sama -> sistem memakai Customer A dan tidak membuat Customer baru."""
+        cust_a_name = "_Test Customer Lama A"
+        phone = "08129993333"
+        self.created_customers.append(cust_a_name)
+
+        # Buat Customer A dulu secara manual
+        cust_a = frappe.get_doc(
+            {
+                "doctype": "Customer",
+                "customer_name": cust_a_name,
+                "customer_type": "Individual",
+                "customer_group": "Individual",
+                "territory": "Indonesia",
+            }
+        )
+        cust_a.insert(ignore_permissions=True)
+
+        from erpnext.selling.doctype.customer.customer import make_contact
+        make_contact(
+            frappe._dict(
+                {
+                    "doctype": "Customer",
+                    "name": cust_a.name,
+                    "customer_name": cust_a_name,
+                    "customer_type": "Individual",
+                    "mobile_no": phone,
+                    "flags": {"ignore_permissions": True},
+                }
+            )
+        )
+
+        initial_customer_count = frappe.db.count("Customer", {"customer_name": ["like", f"{cust_a_name}%"]})
+        self.assertEqual(initial_customer_count, 1)
+
+        # Datang pesanan baru dengan nomor HP yang sama tapi nama placeholder sedikit beda
+        draft = self._create_guest_draft(
+            customer_placeholder="_Test Customer Lama A (Alias)",
+            customer_info={
+                "customer_type": "Individual",
+                "customer_name": "_Test Customer Lama A (Alias)",
+                "mobile_no": "+62 812-9993-333",  # variasi format telepon
+                "address": "Jalan Dago No. 12",
+            },
+        )
+
+        result = approve_and_execute_draft(draft.name)
+        self.assertTrue(result.get("executed"))
+
+        # Pastikan tidak ada Customer baru yang dibuat (tetap 1)
+        final_customer_count = frappe.db.count("Customer", {"customer_name": ["like", f"{cust_a_name}%"]})
+        self.assertEqual(final_customer_count, 1, "Tidak boleh membuat Customer baru jika nomor HP sudah ada")
+
+        # Sales Order harus tertaut ke Customer A yang lama
+        so = frappe.get_doc("Sales Order", result.get("name") or result.get("document"))
+        self.assertEqual(so.customer, cust_a.name)
+
+    def test_approve_draft_duplicate_name_conflict_handling(self):
+        """d. Nama sama tapi nomor HP beda -> sistem membuat Customer baru dengan pembeda autoname tanpa bentrok link."""
+        common_name = "_Test Nama Kembar"
+        phone_1 = "08129994441"
+        phone_2 = "08129994442"
+
+        # Buat customer pertama
+        cust_1 = frappe.get_doc(
+            {
+                "doctype": "Customer",
+                "customer_name": common_name,
+                "customer_type": "Individual",
+                "customer_group": "Individual",
+                "territory": "Indonesia",
+            }
+        )
+        cust_1.insert(ignore_permissions=True)
+        self.created_customers.append(cust_1.name)
+
+        from erpnext.selling.doctype.customer.customer import make_contact
+        make_contact(
+            frappe._dict(
+                {
+                    "doctype": "Customer",
+                    "name": cust_1.name,
+                    "customer_name": common_name,
+                    "customer_type": "Individual",
+                    "mobile_no": phone_1,
+                    "flags": {"ignore_permissions": True},
+                }
+            )
+        )
+
+        # Datang pesanan dengan nama sama tapi HP beda
+        draft = self._create_guest_draft(
+            customer_placeholder=common_name,
+            customer_info={
+                "customer_type": "Individual",
+                "customer_name": common_name,
+                "mobile_no": phone_2,
+                "address": "Jalan Riau No. 20",
+            },
+        )
+
+        result = approve_and_execute_draft(draft.name)
+        self.assertTrue(result.get("executed"))
+
+        so = frappe.get_doc("Sales Order", result.get("name") or result.get("document"))
+        # Customer baru harus dibuat dan namanya berbeda (autoname menambahkan pembeda)
+        self.assertNotEqual(so.customer, cust_1.name)
+        self.assertTrue(so.customer.startswith(common_name))
+        self.created_customers.append(so.customer)
+
+    def test_approve_draft_rollback_on_sales_order_failure(self):
+        """e. Simulasikan gagal validasi Sales Order setelah Customer dibuat -> pastikan rollback savepoint membatalkan Customer dan Contact."""
+        fail_cust = "_Test Rollback Customer"
+        phone = "08129995555"
+
+        # Buat payload dengan item invalid yang pasti gagal saat insert Sales Order
+        data = self._build_order_data(fail_cust)
+        data["items"] = [{"item_code": "NON_EXISTENT_ITEM_XYZ", "qty": 1, "rate": 100}]
+        payload = {
+            "doctype": "Sales Order",
+            "data": data,
+            "reason": "Tes rollback",
+            "customer_info": {
+                "customer_type": "Individual",
+                "customer_name": fail_cust,
+                "mobile_no": phone,
+                "address": "Jl. Gagal No. 99",
+            },
+        }
+
+        draft = create_draft(
+            task_id="TEST-ROLLBACK-001",
+            action_type="CREATE",
+            payload=payload,
+            branch="sales",
+            created_by_agent="sales_manager",
+            user=self.USER_EMAIL,
+        )
+
+        result = approve_and_execute_draft(draft.name)
+        self.assertFalse(result.get("executed"), "Eksekusi harus gagal karena item tidak valid")
+
+        # Customer dan Contact harus ter-rollback (tidak tersimpan di DB)
+        self.assertFalse(
+            frappe.db.exists("Customer", fail_cust),
+            "Customer baru harus dibatalkan saat eksekusi Sales Order gagal (zero orphan data)",
+        )
+
+    def test_guest_draft_rejects_customer_type_inside_data(self):
+        """f. customer_type di dalam data ditolak saat draf dibuat, sesuai validate_data_fields."""
+        frappe.set_user("Guest")
+        try:
+            with self.assertRaises(frappe.ValidationError):
+                erpnext_action_draft_create(
+                    action_type="CREATE",
+                    doctype="Sales Order",
+                    data={
+                        "customer": "_Test",
+                        "customer_type": "Individual",  # Dilarang di dalam data!
+                        "items": [{"item_code": self.item_code, "qty": 1}],
+                    },
+                    reason="Percobaan injeksi field",
+                )
+        finally:
+            frappe.set_user(self.USER_EMAIL)
+
+    def test_guest_cannot_create_customer_directly(self):
+        """g. Tamu tidak mendapat tool untuk membuat Customer langsung, pagar guest_allowed tetap hanya 5 tool."""
+        # 1. Pagar skema tool worker untuk guest
+        guest_schemas = get_tools_schema_for_worker("sales", worker_key="sales_manager", user="Guest")
+        guest_tool_names = {s["function"]["name"] for s in guest_schemas}
+        self.assertEqual(
+            guest_tool_names,
+            {"erpnext_doc_list", "erpnext_doc_get", "erpnext_doctype_schema", "erpnext_action_draft_create", "get_current_time"},
+            "Pagar tool tamu harus tepat 5 tool yang diizinkan",
+        )
+
+        # 2. Pagar eksekusi tool tamu
+        frappe.set_user("Guest")
+        try:
+            # Mencoba eksekusi tool di luar 5 tool tersebut
+            res_str = execute_tool("orchestrator_delegate_to_subagent", json.dumps({"target_worker": "finance_manager", "instruction": "Cek"}), context={"user_id": "Guest"})
+            res = json.loads(res_str) if isinstance(res_str, str) else res_str
+            self.assertIn("error", res)
+            self.assertEqual(res.get("code"), "GUEST_TOOL_FORBIDDEN")
+        finally:
+            frappe.set_user(self.USER_EMAIL)
