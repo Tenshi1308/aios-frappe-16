@@ -730,11 +730,22 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertEqual(len(sent_messages), 1, "Pesan Telegram harus dikirim tepat 1 kali saat approve sukses")
         self.assertEqual(str(sent_messages[0][0]), test_chat_id)
         msg_text = sent_messages[0][1]
-        self.assertIn(so_name, msg_text, "Pesan harus memuat nomor Sales Order")
+        self.assertNotIn(so_name, msg_text, "Pesan customer tidak boleh memuat nomor Sales Order")
+        self.assertNotIn("SAL-ORD", msg_text, "Pesan customer tidak boleh memuat nomor internal SO")
+        self.assertNotIn("ACC-PAY", msg_text, "Pesan customer tidak boleh memuat nomor internal Payment Entry")
+        self.assertNotIn("Sales Order", msg_text, "Pesan customer tidak boleh memuat label internal Sales Order")
+        self.assertIn("Pesanan Anda telah disetujui.", msg_text)
         self.assertIn(str(so_doc.delivery_date), msg_text, "Pesan harus memuat tanggal pengiriman")
         self.assertTrue("150.000" in msg_text or "150,000" in msg_text, f"Pesan harus memuat total terformat: {msg_text}")
-        self.assertTrue("Cash" in msg_text or "Tunai" in msg_text, "Pesan harus memuat info pembayaran Cash/Tunai")
+        self.assertIn("Cash (Tunai)", msg_text, "Pesan harus memuat info pembayaran Cash (Tunai)")
+        self.assertIn("ditahan", msg_text, "Pesan harus memuat info pengiriman ditahan bila belum dibayar")
         self.assertFalse(bool(emoji_pattern.search(msg_text)), "Pesan notifikasi approve sukses tidak boleh memuat emoji")
+
+        # Nomor Sales Order tetap tersimpan di result & payload draf untuk staf
+        self.assertEqual(res.get("document"), so_name)
+        draft.reload()
+        saved_result = json.loads(draft.payload or "{}").get("result", {})
+        self.assertEqual(saved_result.get("document"), so_name)
 
     def test_approve_success_notification_idempotent_on_retry(self):
         """Fase 1: Pemanggilan ulang approve_and_execute_draft pada draf yang sudah EXECUTED tidak mengirim notifikasi dua kali."""
@@ -922,9 +933,25 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         so_doc = frappe.get_doc("Sales Order", so_name)
         self.assertEqual(float(so_doc.advance_paid or 0), float(so_doc.grand_total))
 
-        # Notifikasi pembayaran diterima terkirim tepat 1 kali ke customer tanpa emoji
+        # Notifikasi pembayaran diterima terkirim tepat 1 kali ke customer tanpa emoji dan tanpa nomor internal
         self.assertEqual(len(payment_msgs), 1, "Notifikasi pembayaran diterima hanya dikirim 1 kali")
         self.assertEqual(str(payment_msgs[0][0]), test_chat_id)
-        self.assertIn(so_name, payment_msgs[0][1])
-        self.assertIn(pe_name, payment_msgs[0][1])
-        self.assertFalse(bool(emoji_pattern.search(payment_msgs[0][1])), "Notifikasi pembayaran tidak boleh memuat emoji")
+        paid_msg = payment_msgs[0][1]
+        self.assertNotIn(so_name, paid_msg, "Pesan customer tidak boleh memuat nomor Sales Order")
+        self.assertNotIn(pe_name, paid_msg, "Pesan customer tidak boleh memuat nomor Payment Entry")
+        self.assertNotIn("SAL-ORD", paid_msg, "Pesan customer tidak boleh memuat nomor internal SO")
+        self.assertNotIn("ACC-PAY", paid_msg, "Pesan customer tidak boleh memuat nomor internal Payment Entry")
+        self.assertNotIn("Sales Order", paid_msg, "Pesan customer tidak boleh memuat label internal Sales Order")
+        self.assertIn("Pembayaran Cash Anda sebesar", paid_msg)
+        self.assertTrue("150.000" in paid_msg or "150,000" in paid_msg, f"Pesan harus memuat nominal bayar terformat: {paid_msg}")
+        self.assertIn(str(so_doc.delivery_date), paid_msg, "Pesan harus memuat tanggal pengiriman")
+        self.assertIn("Cash", paid_msg)
+        self.assertFalse(bool(emoji_pattern.search(paid_msg)), "Notifikasi pembayaran tidak boleh memuat emoji")
+
+        # Nomor SO dan Payment Entry tetap ada di dict result dan payload draf untuk staf
+        self.assertEqual(pay_res1.get("sales_order"), so_name)
+        self.assertEqual(pay_res1.get("payment_entry"), pe_name)
+        draft.reload()
+        saved_result = json.loads(draft.payload or "{}").get("result", {})
+        self.assertEqual(saved_result.get("document"), so_name)
+        self.assertEqual(saved_result.get("payment_entry"), pe_name)

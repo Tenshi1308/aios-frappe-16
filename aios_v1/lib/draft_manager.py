@@ -797,7 +797,6 @@ def approve_and_execute_draft(draft_id: str) -> dict:
     frappe.db.commit()
 
     if doc.type == "CREATE" and payload.get("doctype") == "Sales Order":
-        so_name = result.get("name") or result.get("document") or ""
         formatted_total = _format_currency_amount(
             result.get("grand_total") or 0,
             result.get("currency") or "IDR",
@@ -808,10 +807,10 @@ def approve_and_execute_draft(draft_id: str) -> dict:
             or "-"
         )
         guest_approve_msg = (
-            f"Halo! Pesanan Anda telah disetujui dan tercatat dengan nomor Sales Order {so_name}.\n"
-            f"Total Pembayaran: {formatted_total}\n"
-            f"Rencana Tanggal Pengiriman: {delivery_date_str}\n"
-            f"Metode Pembayaran: Cash (Tunai)\n\n"
+            f"Halo! Pesanan Anda telah disetujui. "
+            f"Total Pembayaran: {formatted_total}. "
+            f"Rencana Tanggal Pengiriman: {delivery_date_str}. "
+            f"Metode Pembayaran: Cash (Tunai). "
             f"Mohon melakukan pembayaran Cash dan konfirmasi pembayaran terlebih dahulu sebelum pesanan dikirim. "
             f"Apabila sampai tanggal pengiriman pembayaran belum dikonfirmasi, maka pengiriman pesanan akan ditahan. Terima kasih."
         )
@@ -941,8 +940,7 @@ def confirm_draft_cash_payment(draft_id: str) -> dict:
         or "-"
     )
     guest_paid_msg = (
-        f"Halo! Pembayaran Cash Anda sebesar {formatted_paid} untuk Sales Order {so_name} "
-        f"telah kami terima dan tercatat dengan nomor bukti pembayaran {pe.name}.\n"
+        f"Halo! Pembayaran Cash Anda sebesar {formatted_paid} telah kami terima. "
         f"Pesanan Anda siap diproses untuk pengiriman sesuai jadwal pada tanggal {delivery_date_str}. "
         f"Terima kasih."
     )
