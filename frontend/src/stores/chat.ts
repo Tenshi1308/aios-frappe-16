@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import {
   approveDraft,
+  confirmDraftCashPayment,
   fetchConversationMessages,
   fetchConversations,
   fetchMyFiles,
@@ -108,6 +109,10 @@ export const useChatStore = defineStore('chat', {
       const result = await rejectDraft(draftId, reason, session.csrfToken);
       await this.loadPendingDrafts();
       return result;
+    },
+    async confirmDraftCashPayment(draftId: string) {
+      const session = useSessionStore();
+      return await confirmDraftCashPayment(draftId, session.csrfToken);
     },
     async loadConversations(branch: string) {
       this.historyLoading[branch] = true;

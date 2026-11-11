@@ -352,3 +352,17 @@ export async function rejectDraft(
   );
   return raw ?? {};
 }
+
+export async function confirmDraftCashPayment(
+  draftId: string,
+  csrfToken: string,
+): Promise<DraftActionResult> {
+  const raw = unwrapMessage<DraftActionResult>(
+    await apiFetch(`${DRAFT_API}.confirm_draft_cash_payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ draft_id: draftId }),
+    }),
+  );
+  return raw ?? {};
+}

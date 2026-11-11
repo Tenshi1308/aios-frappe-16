@@ -39,7 +39,8 @@ from aios_v1.lib.tool_registry import ai_tool, get_tool_context
             "description": (
                 "Data pelanggan baru (hanya untuk CREATE Sales Order atau Quotation). "
                 "Jangan masukkan ke 'data'. Berisi: customer_type ('Individual' atau 'Company'), "
-                "customer_name, contact_person (opsional), mobile_no, address."
+                "customer_name, contact_person (opsional), mobile_no, address, "
+                "serta payment_method ('Cash', wajib untuk Sales Order)."
             ),
             "required": False,
         },
@@ -162,6 +163,25 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
                 for itm in draft_data["items"]:
                     if isinstance(itm, dict) and not itm.get("delivery_date"):
                         itm["delivery_date"] = draft_data["delivery_date"]
+
+            if validated_customer_info is not None:
+                raw_pm = str((customer_info or {}).get("payment_method") or "").strip()
+                if not raw_pm:
+                    if is_guest:
+                        return safe_error(
+                            "Metode pembayaran (payment_method) wajib diisi 'Cash' pada customer_info untuk draf Sales Order.",
+                            "PAYMENT_METHOD_REQUIRED",
+                        )
+                    frappe.throw("Metode pembayaran (payment_method) wajib diisi 'Cash' pada customer_info untuk draf Sales Order.")
+                if raw_pm.lower() != "cash":
+                    if is_guest:
+                        return safe_error(
+                            "Metode pembayaran saat ini hanya mendukung 'Cash' (Tunai).",
+                            "UNSUPPORTED_PAYMENT_METHOD",
+                        )
+                    frappe.throw("Metode pembayaran saat ini hanya mendukung 'Cash' (Tunai).")
+                validated_customer_info["payment_method"] = "Cash"
+                payload["customer_info"] = validated_customer_info
 
         validate_data_fields(frappe.get_meta(doctype), draft_data)
         if frappe.get_meta(doctype).has_field("company"):

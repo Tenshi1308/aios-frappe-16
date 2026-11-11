@@ -26,6 +26,17 @@ const rejectReason = ref('');
 const confirmingReject = ref(false);
 
 const isPending = computed(() => draft.value?.status === 'PENDING_APPROVAL');
+const isExecutedSalesOrder = computed(
+  () =>
+    draft.value?.status === 'EXECUTED' &&
+    draft.value?.type === 'CREATE' &&
+    payload.value?.doctype === 'Sales Order',
+);
+const paymentEntryName = computed(() => {
+  if (result.value?.payment_entry) return result.value.payment_entry;
+  const resObj = payload.value?.result as Record<string, unknown> | undefined;
+  return typeof resObj?.payment_entry === 'string' ? resObj.payment_entry : '';
+});
 
 function loadErrorText(err: unknown): string {
   return err instanceof Error && err.message.trim() ? err.message : 'Draft tidak ditemukan.';
@@ -128,6 +139,33 @@ async function reject() {
   }
 }
 
+async function confirmPayment() {
+  busy.value = true;
+  try {
+    const res = await chat.confirmDraftCashPayment(props.draftId);
+    const peName = res.payment_entry || '';
+    result.value = {
+      ...res,
+      executed: true,
+      message: res.message || `Pembayaran Cash berhasil dikonfirmasi (${peName}).`,
+    };
+    if (payload.value) {
+      const prevRes =
+        payload.value.result && typeof payload.value.result === 'object'
+          ? (payload.value.result as Record<string, unknown>)
+          : {};
+      payload.value = {
+        ...payload.value,
+        result: { ...prevRes, payment_entry: peName, payment_confirmed: true },
+      };
+    }
+  } catch (err) {
+    result.value = { executed: false, message: loadErrorText(err) };
+  } finally {
+    busy.value = false;
+  }
+}
+
 onMounted(load);
 </script>
 
@@ -195,7 +233,18 @@ onMounted(load);
           {{ busy ? 'Memproses…' : 'Konfirmasi Penolakan' }}
         </button>
       </div>
-      <div v-else class="ac-note">Draft sudah diproses ({{ draft.status }}).</div>
+      <div v-else class="ac-note">
+        <span>Draft sudah diproses ({{ draft.status }}).</span>
+        <span v-if="paymentEntryName"><b>Payment Entry:</b> {{ paymentEntryName }}</span>
+      </div>
+
+      <div v-if="isExecutedSalesOrder && !paymentEntryName" class="ac-actions">
+        <div class="ac-btns">
+          <button class="btn primary" :disabled="busy" @click="confirmPayment">
+            {{ busy ? 'Memproses…' : 'Sudah Bayar (Cash)' }}
+          </button>
+        </div>
+      </div>
     </template>
   </div>
 </template>

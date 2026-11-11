@@ -145,6 +145,10 @@ export interface DraftActionResult {
   document?: string;
   doctype?: string;
   name?: string;
+  payment_entry?: string;
+  sales_order?: string;
+  payment_confirmed?: boolean;
+  already_paid?: boolean;
 }
 
 export interface AttachmentMeta {

@@ -461,15 +461,30 @@ def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     business_data = dict(data)
     business_data.pop("company", None)
     validate_data_fields(frappe.get_meta(doctype), business_data)
+    if doctype == "Sales Order" and not frappe.db.exists("Mode of Payment", "Cash"):
+        raise DraftExecutionError(
+            "MODE_OF_PAYMENT_CASH_MISSING",
+            "Master Mode of Payment 'Cash' belum tersedia di sistem.",
+        )
     target_data = {"doctype": doctype, **business_data}
     if frappe.get_meta(doctype).has_field("company"):
         target_data["company"] = company
     target = frappe.get_doc(target_data)
     target.flags.ignore_permissions = True
     target.insert(ignore_permissions=True)
+    if doctype == "Sales Order":
+        for row in target.get("payment_schedule") or []:
+            row.mode_of_payment = "Cash"
     target.flags.ignore_permissions = True
     target.submit()
-    return {"doctype": doctype, "name": target.name, "docstatus": 1}
+    res = {"doctype": doctype, "name": target.name, "docstatus": 1}
+    if doctype == "Sales Order":
+        grand_total = float(target.get("rounded_total") or target.get("grand_total") or 0)
+        res["grand_total"] = grand_total
+        res["rounded_total"] = float(target.get("rounded_total") or grand_total)
+        res["currency"] = str(target.get("currency") or "IDR")
+        res["delivery_date"] = str(target.get("delivery_date") or "")
+    return res
 
 
 def execute_draft(doc) -> dict:
@@ -780,7 +795,167 @@ def approve_and_execute_draft(draft_id: str) -> dict:
     doc.payload = json.dumps(payload, default=str)
     doc.save(ignore_permissions=True)
     frappe.db.commit()
+
+    if doc.type == "CREATE" and payload.get("doctype") == "Sales Order":
+        so_name = result.get("name") or result.get("document") or ""
+        formatted_total = _format_currency_amount(
+            result.get("grand_total") or 0,
+            result.get("currency") or "IDR",
+        )
+        delivery_date_str = str(
+            result.get("delivery_date")
+            or (payload.get("data") or {}).get("delivery_date")
+            or "-"
+        )
+        guest_approve_msg = (
+            f"Halo! Pesanan Anda telah disetujui dan tercatat dengan nomor Sales Order {so_name}.\n"
+            f"Total Pembayaran: {formatted_total}\n"
+            f"Rencana Tanggal Pengiriman: {delivery_date_str}\n"
+            f"Metode Pembayaran: Cash (Tunai)\n\n"
+            f"Mohon melakukan pembayaran Cash dan konfirmasi pembayaran terlebih dahulu sebelum pesanan dikirim. "
+            f"Apabila sampai tanggal pengiriman pembayaran belum dikonfirmasi, maka pengiriman pesanan akan ditahan. Terima kasih."
+        )
+        _send_proactive_guest_notification(doc, guest_approve_msg)
+
     return result
+
+
+def _format_currency_amount(amount: float | int, currency: str = "IDR") -> str:
+    val = round(float(amount or 0))
+    formatted_num = f"{val:,}".replace(",", ".")
+    prefix = "Rp" if str(currency or "IDR").upper() == "IDR" else str(currency).upper()
+    return f"{prefix} {formatted_num}"
+
+
+@frappe.whitelist()
+def confirm_draft_cash_payment(draft_id: str) -> dict:
+    """Konfirmasi pembayaran Cash oleh staf untuk draf Sales Order yang sudah EXECUTED (Jalan B)."""
+    if frappe.session.user == "Guest":
+        frappe.throw("Tamu tidak diizinkan mengonfirmasi pembayaran.", frappe.PermissionError)
+
+    doc = _lock_draft(draft_id)
+    _assert_draft_owner(doc)
+
+    if doc.status != "EXECUTED":
+        frappe.throw(
+            f"Konfirmasi pembayaran hanya berlaku untuk draf berstatus EXECUTED (status saat ini: {doc.status})."
+        )
+
+    try:
+        payload = json.loads(doc.payload or "{}")
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Confirm Cash Payment Parse Payload", exc=exc)
+        frappe.throw("Payload draf tidak valid.")
+
+    if doc.type != "CREATE" or payload.get("doctype") != "Sales Order":
+        frappe.throw("Konfirmasi pembayaran Cash hanya berlaku untuk draf pembuatan Sales Order.")
+
+    result_obj = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    so_name = result_obj.get("name") or result_obj.get("document")
+    if not so_name or not frappe.db.exists("Sales Order", so_name):
+        frappe.throw("Dokumen Sales Order tidak ditemukan.")
+
+    existing_pe = result_obj.get("payment_entry")
+    if existing_pe and frappe.db.exists("Payment Entry", existing_pe):
+        return {
+            "status": "success",
+            "payment_entry": existing_pe,
+            "sales_order": so_name,
+            "payment_confirmed": True,
+            "already_paid": True,
+            "message": f"Pembayaran Cash untuk {so_name} sudah tercatat pada {existing_pe}.",
+        }
+
+    existing_pe_refs = frappe.get_all(
+        "Payment Entry Reference",
+        filters={"reference_doctype": "Sales Order", "reference_name": so_name, "docstatus": 1},
+        pluck="parent",
+        limit=1,
+    )
+    if existing_pe_refs:
+        pe_name = existing_pe_refs[0]
+        result_obj["payment_entry"] = pe_name
+        result_obj["payment_confirmed"] = True
+        payload["result"] = result_obj
+        doc.payload = json.dumps(payload, default=str)
+        doc.save(ignore_permissions=True)
+        frappe.db.commit()
+        return {
+            "status": "success",
+            "payment_entry": pe_name,
+            "sales_order": so_name,
+            "payment_confirmed": True,
+            "already_paid": True,
+            "message": f"Pembayaran Cash untuk {so_name} sudah tercatat pada {pe_name}.",
+        }
+
+    if not frappe.db.exists("Mode of Payment", "Cash"):
+        frappe.throw("Master Mode of Payment 'Cash' belum tersedia di sistem.")
+
+    from erpnext.accounts.doctype.journal_entry.journal_entry import get_default_bank_cash_account
+    from erpnext.accounts.doctype.payment_entry.payment_entry import get_payment_entry
+    from frappe.utils import nowdate
+
+    company = _site_company()
+    prev_user = frappe.session.user
+    frappe.db.savepoint("aios_confirm_cash_payment")
+    try:
+        frappe.set_user("Administrator")
+        cash_acc_info = get_default_bank_cash_account(
+            company,
+            "Cash",
+            mode_of_payment="Cash",
+            fetch_balance=False,
+        )
+        cash_account = (cash_acc_info or {}).get("account")
+        pe = get_payment_entry("Sales Order", so_name, bank_account=cash_account)
+        pe.payment_type = "Receive"
+        pe.mode_of_payment = "Cash"
+        pe.reference_no = so_name
+        pe.reference_date = nowdate()
+        pe.flags.ignore_permissions = True
+        pe.insert(ignore_permissions=True)
+        pe.flags.ignore_permissions = True
+        pe.submit()
+    except Exception as exc:
+        frappe.db.rollback(save_point="aios_confirm_cash_payment")
+        log_exception("AIOS Confirm Draft Cash Payment", exc=exc)
+        raise
+    finally:
+        frappe.set_user(prev_user)
+
+    result_obj["payment_entry"] = pe.name
+    result_obj["payment_confirmed"] = True
+    payload["result"] = result_obj
+    doc.payload = json.dumps(payload, default=str)
+    doc.save(ignore_permissions=True)
+    frappe.db.commit()
+
+    formatted_paid = _format_currency_amount(
+        pe.paid_amount or result_obj.get("grand_total") or 0,
+        result_obj.get("currency") or "IDR",
+    )
+    delivery_date_str = str(
+        result_obj.get("delivery_date")
+        or (payload.get("data") or {}).get("delivery_date")
+        or "-"
+    )
+    guest_paid_msg = (
+        f"Halo! Pembayaran Cash Anda sebesar {formatted_paid} untuk Sales Order {so_name} "
+        f"telah kami terima dan tercatat dengan nomor bukti pembayaran {pe.name}.\n"
+        f"Pesanan Anda siap diproses untuk pengiriman sesuai jadwal pada tanggal {delivery_date_str}. "
+        f"Terima kasih."
+    )
+    _send_proactive_guest_notification(doc, guest_paid_msg)
+
+    return {
+        "status": "success",
+        "payment_entry": pe.name,
+        "sales_order": so_name,
+        "payment_confirmed": True,
+        "already_paid": False,
+        "message": f"Pembayaran Cash berhasil dikonfirmasi ({pe.name}).",
+    }
 
 
 @frappe.whitelist()

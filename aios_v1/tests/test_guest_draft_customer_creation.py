@@ -92,6 +92,10 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
 
         for c_name in getattr(self, "created_customers", []):
             if frappe.db.exists("Customer", c_name):
+                # Hapus Payment Entry terkait
+                for pe in frappe.get_all("Payment Entry", filters={"party_type": "Customer", "party": c_name}, pluck="name"):
+                    frappe.db.set_value("Payment Entry", pe, "docstatus", 2)
+                    frappe.delete_doc("Payment Entry", pe, ignore_permissions=True, force=True)
                 # Hapus sales order terkait
                 for so in frappe.get_all("Sales Order", filters={"customer": c_name}, pluck="name"):
                     frappe.db.set_value("Sales Order", so, "docstatus", 2)
@@ -678,3 +682,249 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertEqual(res2["draft_status"], "EXECUTED")
         self.assertTrue(frappe.db.exists("Customer", cust_name))
         self.assertTrue(frappe.db.exists("Sales Order", res2["name"]))
+
+    def test_proactive_notification_sent_on_approve_success(self):
+        """Fase 1: Notifikasi proaktif dikirim ke Telegram saat draf Sales Order berhasil di-approve (EXECUTED) dan mode_of_payment Cash terisi."""
+        import re
+        emoji_pattern = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf]")
+        test_chat_id = "8999777201"
+        cust_name = "_Test Approve Success Notif"
+        self.created_customers.append(cust_name)
+
+        order_data = self._build_order_data(cust_name)
+        draft = create_draft(
+            task_id="test_task_approve_success_notif",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "source_telegram_chat_id": test_chat_id,
+                "data": order_data,
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990011",
+                    "address": "Jalan Asia Afrika No. 8, Bandung",
+                    "payment_method": "Cash",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        sent_messages = []
+        with unittest.mock.patch(
+            "aios_v1.lib.connector.telegram_client.send_message",
+            side_effect=lambda cid, txt: sent_messages.append((cid, txt)) or True,
+        ):
+            res = approve_and_execute_draft(draft.name)
+
+        self.assertTrue(res.get("executed"))
+        self.assertEqual(res.get("draft_status"), "EXECUTED")
+        so_name = res.get("name") or res.get("document")
+        self.assertTrue(so_name)
+
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertTrue(so_doc.payment_schedule, "Sales Order harus memiliki payment_schedule")
+        self.assertEqual(so_doc.payment_schedule[0].mode_of_payment, "Cash")
+
+        self.assertEqual(len(sent_messages), 1, "Pesan Telegram harus dikirim tepat 1 kali saat approve sukses")
+        self.assertEqual(str(sent_messages[0][0]), test_chat_id)
+        msg_text = sent_messages[0][1]
+        self.assertIn(so_name, msg_text, "Pesan harus memuat nomor Sales Order")
+        self.assertIn(str(so_doc.delivery_date), msg_text, "Pesan harus memuat tanggal pengiriman")
+        self.assertTrue("150.000" in msg_text or "150,000" in msg_text, f"Pesan harus memuat total terformat: {msg_text}")
+        self.assertTrue("Cash" in msg_text or "Tunai" in msg_text, "Pesan harus memuat info pembayaran Cash/Tunai")
+        self.assertFalse(bool(emoji_pattern.search(msg_text)), "Pesan notifikasi approve sukses tidak boleh memuat emoji")
+
+    def test_approve_success_notification_idempotent_on_retry(self):
+        """Fase 1: Pemanggilan ulang approve_and_execute_draft pada draf yang sudah EXECUTED tidak mengirim notifikasi dua kali."""
+        test_chat_id = "8999777202"
+        cust_name = "_Test Approve Idempotent Notif"
+        self.created_customers.append(cust_name)
+
+        draft = create_draft(
+            task_id="test_task_approve_idempotent_notif",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "source_telegram_chat_id": test_chat_id,
+                "data": self._build_order_data(cust_name),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990012",
+                    "address": "Jalan Braga No. 15, Bandung",
+                    "payment_method": "Cash",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        sent_messages = []
+        with unittest.mock.patch(
+            "aios_v1.lib.connector.telegram_client.send_message",
+            side_effect=lambda cid, txt: sent_messages.append((cid, txt)) or True,
+        ):
+            res1 = approve_and_execute_draft(draft.name)
+            res2 = approve_and_execute_draft(draft.name)
+
+        self.assertTrue(res1.get("executed"))
+        self.assertEqual(res1.get("document"), res2.get("document"))
+        self.assertEqual(len(sent_messages), 1, "Retry pada draf EXECUTED tidak boleh mengirim notifikasi kedua")
+
+    def test_guest_draft_requires_cash_payment_method(self):
+        """Fase 1: Draf Sales Order tamu wajib menyertakan payment_method 'Cash' di customer_info; selain Cash ditolak."""
+        frappe.set_user("Guest")
+        try:
+            # 1. Tanpa payment_method -> PAYMENT_METHOD_REQUIRED
+            res_missing = erpnext_action_draft_create(
+                action_type="CREATE",
+                doctype="Sales Order",
+                data={
+                    "customer": "_Test Payment Method",
+                    "company": self.company,
+                    "items": [{"item_code": self.item_code, "qty": 1}],
+                    "delivery_date": nowdate(),
+                },
+                reason="Tes tanpa metode bayar",
+                customer_info={
+                    "customer_type": "Individual",
+                    "customer_name": "_Test Payment Method",
+                    "mobile_no": "081299990013",
+                    "address": "Jalan Setiabudi No. 10, Bandung",
+                },
+            )
+            self.assertIn("error", res_missing)
+            self.assertEqual(res_missing.get("code"), "PAYMENT_METHOD_REQUIRED")
+
+            # 2. Metode bayar di luar Cash (misal QRIS / Transfer) -> UNSUPPORTED_PAYMENT_METHOD
+            res_qris = erpnext_action_draft_create(
+                action_type="CREATE",
+                doctype="Sales Order",
+                data={
+                    "customer": "_Test Payment Method",
+                    "company": self.company,
+                    "items": [{"item_code": self.item_code, "qty": 1}],
+                    "delivery_date": nowdate(),
+                },
+                reason="Tes metode bayar QRIS",
+                customer_info={
+                    "customer_type": "Individual",
+                    "customer_name": "_Test Payment Method",
+                    "mobile_no": "081299990013",
+                    "address": "Jalan Setiabudi No. 10, Bandung",
+                    "payment_method": "QRIS",
+                },
+            )
+            self.assertIn("error", res_qris)
+            self.assertEqual(res_qris.get("code"), "UNSUPPORTED_PAYMENT_METHOD")
+
+            # 3. Metode bayar Cash -> berhasil disimpan
+            with unittest.mock.patch("aios_v1.lib.connector.notify.get_channel_recipients", return_value=[self.USER_EMAIL]):
+                res_cash = erpnext_action_draft_create(
+                    action_type="CREATE",
+                    doctype="Sales Order",
+                    data={
+                        "customer": "_Test Payment Method",
+                        "company": self.company,
+                        "items": [{"item_code": self.item_code, "qty": 1}],
+                        "delivery_date": nowdate(),
+                    },
+                    reason="Tes metode bayar Cash",
+                    customer_info={
+                        "customer_type": "Individual",
+                        "customer_name": "_Test Payment Method",
+                        "mobile_no": "081299990013",
+                        "address": "Jalan Setiabudi No. 10, Bandung",
+                        "payment_method": "Cash",
+                    },
+                )
+            self.assertEqual(res_cash.get("status"), "PENDING_APPROVAL")
+            saved_payload = json.loads(frappe.db.get_value("Pending Action Draft", res_cash["draft_id"], "payload") or "{}")
+            self.assertEqual(saved_payload.get("customer_info", {}).get("payment_method"), "Cash")
+        finally:
+            frappe.set_user(self.USER_EMAIL)
+
+    def test_confirm_cash_payment_creates_payment_entry_and_updates_so(self):
+        """Fase 1 (Jalan B): Tombol konfirmasi bayar staf membuat Payment Entry (Receive, Cash), update advance_paid SO, kirim notifikasi ke customer, dan idempotent."""
+        import re
+
+        from aios_v1.lib.draft_manager import confirm_draft_cash_payment
+
+        emoji_pattern = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf]")
+
+        test_chat_id = "8999777204"
+        cust_name = "_Test Confirm Cash Payment"
+        self.created_customers.append(cust_name)
+
+        draft = create_draft(
+            task_id="test_task_confirm_cash_payment",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Sales Order",
+                "source_telegram_chat_id": test_chat_id,
+                "data": self._build_order_data(cust_name),
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990014",
+                    "address": "Jalan Buah Batu No. 25, Bandung",
+                    "payment_method": "Cash",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        with unittest.mock.patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True):
+            exec_res = approve_and_execute_draft(draft.name)
+        self.assertTrue(exec_res.get("executed"))
+        so_name = exec_res["name"]
+
+        # 1. Tamu tidak boleh memanggil confirm_draft_cash_payment
+        frappe.set_user("Guest")
+        try:
+            with self.assertRaises(frappe.PermissionError):
+                confirm_draft_cash_payment(draft.name)
+        finally:
+            frappe.set_user(self.USER_EMAIL)
+
+        # 2. Staf pemilik mengonfirmasi pembayaran Cash (klik pertama)
+        payment_msgs = []
+        with unittest.mock.patch(
+            "aios_v1.lib.connector.telegram_client.send_message",
+            side_effect=lambda cid, txt: payment_msgs.append((cid, txt)) or True,
+        ):
+            pay_res1 = confirm_draft_cash_payment(draft.name)
+            # 3. Klik kedua harus idempotent (tidak membuat Payment Entry baru dan tidak kirim notifikasi ganda)
+            pay_res2 = confirm_draft_cash_payment(draft.name)
+
+        self.assertEqual(pay_res1.get("status"), "success")
+        pe_name = pay_res1.get("payment_entry")
+        self.assertTrue(pe_name, "Harus mengembalikan nama Payment Entry")
+        self.assertEqual(pay_res2.get("payment_entry"), pe_name, "Klik kedua harus mengembalikan Payment Entry yang sama")
+
+        pe_doc = frappe.get_doc("Payment Entry", pe_name)
+        self.assertEqual(pe_doc.docstatus, 1)
+        self.assertEqual(pe_doc.payment_type, "Receive")
+        self.assertEqual(pe_doc.mode_of_payment, "Cash")
+
+        # Pastikan hanya ada 1 Payment Entry untuk Sales Order ini
+        pe_refs = frappe.get_all(
+            "Payment Entry Reference",
+            filters={"reference_doctype": "Sales Order", "reference_name": so_name, "docstatus": 1},
+            pluck="parent",
+        )
+        self.assertEqual(len(pe_refs), 1, "Tidak boleh ada Payment Entry ganda")
+
+        # Sales Order advance_paid harus terupdate penuh
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertEqual(float(so_doc.advance_paid or 0), float(so_doc.grand_total))
+
+        # Notifikasi pembayaran diterima terkirim tepat 1 kali ke customer tanpa emoji
+        self.assertEqual(len(payment_msgs), 1, "Notifikasi pembayaran diterima hanya dikirim 1 kali")
+        self.assertEqual(str(payment_msgs[0][0]), test_chat_id)
+        self.assertIn(so_name, payment_msgs[0][1])
+        self.assertIn(pe_name, payment_msgs[0][1])
+        self.assertFalse(bool(emoji_pattern.search(payment_msgs[0][1])), "Notifikasi pembayaran tidak boleh memuat emoji")

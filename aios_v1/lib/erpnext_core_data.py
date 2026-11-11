@@ -70,9 +70,9 @@ _GUEST_DOC_SCHEMA_DESCRIPTION = (
 )
 _GUEST_DRAFT_CREATE_DESCRIPTION = (
     "Membuat Pending Action Draft pesanan pembelian (Sales Order) atau penawaran (Quotation) untuk pelanggan baru atau lama. "
-    "Data pelanggan baru (customer_type, customer_name, contact_person, mobile_no, address) dimasukkan ke parameter 'customer_info', "
+    "Data pelanggan baru (customer_type, customer_name, contact_person, mobile_no, address, payment_method) dimasukkan ke parameter 'customer_info', "
     "bukan ke dalam 'data'. Parameter 'data' hanya berisi field resmi dokumen seperti 'customer', 'items', 'delivery_date' (format YYYY-MM-DD), dll. "
-    "Untuk pesanan Sales Order, tanggal pengiriman ('delivery_date') wajib diisi di dalam 'data'. "
+    "Untuk pesanan Sales Order, tanggal pengiriman ('delivery_date') wajib diisi di dalam 'data', dan 'payment_method' wajib diisi 'Cash' di dalam 'customer_info'. "
     "Nilai customer_type harus 'Individual' (perorangan) atau 'Company' (perusahaan/instansi)."
 )
 GUEST_TOOL_DESCRIPTIONS = {
