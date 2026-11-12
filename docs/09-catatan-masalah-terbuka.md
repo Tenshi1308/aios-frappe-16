@@ -155,13 +155,13 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 
 **Status: Dikerjakan.** Hook `setup_wizard_complete` terdaftar di `aios_v1/hooks.py:21` memanggil `aios_v1.setup.normalize_wizard_user` (`setup.py:495`) (commit `4b4c034`, 2026-10-30).
 
-**Kondisi (`KNOWN`):** `frappe/desk/page/setup_wizard/setup_wizard.py::create_or_update_user` membuat user pertama dengan `user.append_roles("System Manager")`; argumen `password` opsional. `docs/04` memakai `AIOS Client` (`Website User`, `desk_access = 0`).
+**Kondisi (`KNOWN`):** `frappe/desk/page/setup_wizard/setup_wizard.py::create_or_update_user` membuat user pertama dengan `append_roles(*_get_default_roles())` (SEMUA Role di site) + `System Manager`; argumen `password` opsional. `docs/04` memakai `AIOS Client` (`Website User`, `desk_access = 0`). Sejak commit `70b54ee` site memiliki Role `AIOS Channel Receiver` / `AIOS Client Owner` beserta Role Profile-nya, sehingga keduanya ikut menempel SEBELUM hook `setup_wizard_complete` berjalan.
 
-**Dampak:** tanpa normalisasi, client hasil wizard jadi `System Manager` — akses penuh ke Frappe Desk.
+**Dampak:** tanpa normalisasi, client hasil wizard jadi `System Manager` — akses penuh ke Frappe Desk. **Temuan lanjutan (12 Nov 2026, e2e Flow Utama langkah 3 ERROR):** penempelan semua Role itu juga memicu `validate_aios_channel_and_owner_roles` (Keputusan #7) menolak user wizard yang belum `Active` → `setup_complete` gagal, langkah 4–6 e2e `NOT RUN`. Mengedit `normalize_wizard_user` saja tidak cukup karena hook itu tidak pernah tercapai.
 
 **Rencana:** daftarkan `setup_wizard_complete = ["aios_v1.setup.normalize_wizard_user"]` di `hooks.py` (hook resmi Frappe, dipanggil `setup_complete`). Fungsi: pasang `AIOS Client Profile`, cabut `System Manager`, `user_type = "Website User"`, `aios_status = "Pending Provisioning"` (otomatis `enabled = 0`). Yang dinormalisasi hanya user dengan email dari argumen wizard, bukan `Administrator`. Idempotent; gagal → `frappe.log_error` + raise.
 
-**Selesai:** Hook resmi Frappe `setup_wizard_complete` terbukti berjalan normal dan tervalidasi di runtime.
+**Selesai:** Hook resmi Frappe `setup_wizard_complete` terbukti berjalan normal dan tervalidasi di runtime. **Perbaikan langkah 3 (12 Nov 2026, Opsi C):** `aios_v1.setup.strip_wizard_channel_roles` memakai primitif resmi `frappe.flags.in_setup_wizard` (dinyalakan Frappe di `process_setup_stages`) untuk mencabut Role/Role Profile channel dari user BARU wizard sebelum `User.validate`; `normalize_wizard_user` turut mencabutnya sebagai lapis kedua (idempoten). Keputusan #7 **tidak dilonggarkan** untuk jalur non-wizard — role channel tetap dipasang di `activate_user` (langkah 4 Flow Utama) atau menu **Penerima Kanal**. Regresi `test_step_3_wizard_first_user_survives_all_default_roles` menyuntikkan `_get_default_roles()` resmi ke fixture kontrak (gagal di kode lama, hijau sesudah fix); `scripts/e2e_flow_utama.py` menambah assertion bahwa role/profile channel tidak menempel pada user wizard.
 
 ---
 
@@ -189,7 +189,7 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | Registrasi | **Tanpa password**; field: nama, email, perusahaan (tanpa pilihan negara; default Indonesia per `docs/00` §1.1) |
 | `register_account` | Diganti total menjadi pembuat `Lead` |
 | Setup wizard (fase manual) | Dijalankan admin, email + nama client, **tanpa `password`** |
-| User hasil wizard | Hook `setup_wizard_complete` → `AIOS Client Profile`, cabut `System Manager` |
+| User hasil wizard | Hook `setup_wizard_complete` → `AIOS Client Profile` saja, cabut `System Manager`; Role/Role Profile channel dicabut `strip_wizard_channel_roles` (`frappe.flags.in_setup_wizard`) sebelum `User.validate` — Keputusan #7 tetap utuh |
 | Password client | Dibuat client sendiri lewat `/update-password` (tautan dari `activate_user`) |
 | `max_users` | Dikerjakan (2026-11-06): `AIOS Setting.max_users` + validasi aktif `AIOS Client` |
 | `docs/03:51` & `:97` | Tidak dikoreksi — benar |
@@ -218,6 +218,7 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | `signup_leads()` di site developer + tab "Pendaftar" di control plane (A5 + B3) | commit `4b4c034` + `a994143` (2026-10-30) |
 | Tautan undangan `/update-password` di `activate_user` + modal salin di admin (B1) | commit `a994143` (2026-10-30) |
 | Hook `setup_wizard_complete` (`normalize_wizard_user`) di `setup.py` + `hooks.py` (B4) | commit `4b4c034` (2026-10-30) |
+| Perbaikan e2e Flow Utama langkah 3: `strip_wizard_channel_roles` (`frappe.flags.in_setup_wizard`) + regresi kontrak + assertion e2e + sinkron docs (Opsi C, 12 Nov 2026) | commit lokal perbaikan langkah 3 (tanpa push) |
 | Kelola Staf, `AIOS Setting.max_users`, dan `AIOS Client Owner Profile` (C1 + C2): C1 — pemilik klien (`AIOS Client Owner`) menambah staf ke-2 dst dari Ekasa Desk lewat `Pengaturan` → `Kelola Staf` (`aios_v1.api.desktop.create_client_staff`), dibatasi plafon `AIOS Setting.max_users`, tautan undangan `/update-password?key=...` sekali pakai berlaku 20 menit; C2 — field `max_users` (`Int`, `non_negative: 1`) di `AIOS Setting`, ditegakkan via `doc_events["User"]` (`before_insert` & `validate` → `aios_v1.setup.validate_max_users`), `activate_user`, dan `create_client_staff` | commit `70b54ee` (2026-11-06) |
 | Pembersihan 10 baris `Has Role` yatim di site developer (A6) | perubahan data tanpa commit, terverifikasi (0 orphan) |
 | Proteksi UI tombol Daftar di site client & route guard `/register` → `/lock` (A1.4) | commit `2b26fa3` (2026-11-09) |

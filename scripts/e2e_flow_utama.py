@@ -47,7 +47,7 @@ LOGIN_FAILED_STATUS = 401
 STEP_TITLES = {
 	1: "Client registrasi -> Lead di site developer (tanpa password)",
 	2: "Client menunggu (tanpa email, tanpa User)",
-	3: "Admin siapkan site (wizard tanpa password + hook + registry)",
+	3: "Admin siapkan site (wizard tanpa password + hook + role channel dicabut + registry)",
 	4: "Admin aktivasi -> invitation_url",
 	5: "Client buat password sendiri (sekali pakai) + login",
 	6: "Client pakai app (sesi Active)",
@@ -301,6 +301,19 @@ class FlowRunner:
 		self._expect(user.get("user_type") == "Website User", f"user_type={user.get('user_type')!r}")
 		self._expect(user.get("aios_status") == PENDING_STATUS, f"aios_status={user.get('aios_status')!r}")
 		self._expect(user.get("enabled") == 0, "user client harus enabled=0 sebelum aktivasi")
+		# Keputusan #7: Frappe `create_or_update_user` menempelkan SEMUA Role ke user
+		# pertama wizard. Role/Role Profile channel harus sudah dicabut oleh intervensi
+		# `frappe.flags.in_setup_wizard` sebelum `User.validate`, sehingga role itu baru
+		# muncul di langkah 4 (activate_user) / langkah 6 (Penerima Kanal).
+		self._expect(
+			"AIOS Channel Receiver" not in roles and "AIOS Client Owner" not in roles,
+			f"role channel tidak boleh menempel pada user wizard: {roles}",
+		)
+		self._expect(
+			"AIOS Channel Receiver Profile" not in profiles
+			and "AIOS Client Owner Profile" not in profiles,
+			f"role profile channel tidak boleh menempel pada user wizard: {profiles}",
+		)
 
 		self.bench.execute(
 			self.test_site,

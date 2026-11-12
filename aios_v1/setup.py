@@ -307,8 +307,54 @@ CHANNEL_DEPENDENT_ROLES = {"AIOS Channel Receiver", "AIOS Client Owner"}
 CHANNEL_DEPENDENT_PROFILES = {"AIOS Channel Receiver Profile", "AIOS Client Owner Profile"}
 
 
+def strip_wizard_channel_roles(doc) -> bool:
+    """Cabut Role/Role Profile channel dari user yang sedang dibuat setup wizard.
+
+    Frappe `create_or_update_user` (`frappe/desk/page/setup_wizard/setup_wizard.py:338`)
+    menempelkan SEMUA Role ke user PERTAMA wizard lewat `_get_default_roles()`
+    (baris 390-398), termasuk `AIOS Channel Receiver` dan `AIOS Client Owner` yang
+    dibuat `after_install`. Keduanya menempel SEBELUM hook `setup_wizard_complete`
+    sempat berjalan, sehingga `validate_aios_channel_and_owner_roles` (Keputusan #7)
+    menolak user yang belum `Active` dan seluruh wizard gagal.
+
+    Intervensi memakai primitif resmi `frappe.flags.in_setup_wizard` (dinyalakan
+    Frappe di `process_setup_stages` baris 103, dipakai pula di `document.py:524`),
+    dan hanya melepas role channel dari user BARU milik wizard — bukan melonggarkan
+    validasi Keputusan #7 untuk jalur non-wizard. Role channel tetap dipasang di
+    langkah 4 (`control.activate_user`) atau langkah 6 (menu Penerima Kanal).
+    """
+    if not frappe.flags.get("in_setup_wizard") or not doc.is_new():
+        return False
+    if doc.name in ("Administrator", "Guest"):
+        return False
+
+    changed = False
+    channel_roles = [r for r in (doc.get("roles") or []) if r.role in CHANNEL_DEPENDENT_ROLES]
+    if channel_roles:
+        for row in channel_roles:
+            doc.get("roles").remove(row)
+        changed = True
+
+    channel_profiles = [
+        rp
+        for rp in (doc.get("role_profiles") or [])
+        if rp.role_profile in CHANNEL_DEPENDENT_PROFILES
+    ]
+    if channel_profiles:
+        for row in channel_profiles:
+            doc.get("role_profiles").remove(row)
+        changed = True
+
+    return changed
+
+
 def validate_aios_channel_and_owner_roles(doc, method=None):
     """User.validate: Keputusan #7 — Role penerima dan Role pengatur wajib AIOS Client aktif."""
+    # Langkah 3 Flow Utama: Frappe menempelkan semua Role ke user pertama wizard.
+    # Cabut dulu role channel yang bukan hak user Pending Provisioning, agar wizard
+    # tidak gagal; validasi #7 di bawah tetap berlaku penuh untuk jalur non-wizard.
+    strip_wizard_channel_roles(doc)
+
     if doc.name in ("Administrator", "Guest"):
         return
 
@@ -516,6 +562,19 @@ def normalize_wizard_user(args=None):
 
     # Cabut System Manager
     user.roles = [r for r in user.roles if r.role != "System Manager"]
+
+    # Cabut Role/Role Profile channel bila ada (lapis kedua, idempoten). Frappe
+    # `create_or_update_user` menempelkan semua Role ke user pertama wizard; pada
+    # jalur normal sudah dilepas `strip_wizard_channel_roles` saat User.validate,
+    # tetapi hook ini juga harus aman bila dipanggil terpisah (mis. lewat kontrak).
+    # Keputusan #7: role channel baru dipasang di langkah 4/6, bukan saat wizard.
+    user.roles = [r for r in user.roles if r.role not in CHANNEL_DEPENDENT_ROLES]
+    if hasattr(user, "role_profiles"):
+        user.role_profiles = [
+            rp
+            for rp in user.role_profiles
+            if rp.role_profile not in CHANNEL_DEPENDENT_PROFILES
+        ]
 
     # Pasang role AIOS Client
     if not any(r.role == "AIOS Client" for r in user.roles):
