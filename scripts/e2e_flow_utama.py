@@ -163,6 +163,13 @@ class FlowRunner:
 		self.language = _required("E2E_LANGUAGE")
 		self.chart_of_accounts = _required("E2E_CHART_OF_ACCOUNTS")
 		self.email_domain = _required("E2E_EMAIL_DOMAIN")
+		raw_max_users = _required("E2E_MAX_USERS")
+		try:
+			self.max_users = int(raw_max_users)
+		except ValueError as err:
+			raise ValueError(f"E2E_MAX_USERS harus bilangan bulat, dapat {raw_max_users!r}.") from err
+		if self.max_users <= 0:
+			raise ValueError("E2E_MAX_USERS harus > 0 (gate assert_within_max_users menolak nilai <= 0).")
 		self.bench = Bench(self.bench_root, os.environ.get("E2E_DB_ROOT_PASSWORD", "").strip())
 		self.http = Http(self.base_url)
 
@@ -313,6 +320,18 @@ class FlowRunner:
 			"AIOS Channel Receiver Profile" not in profiles
 			and "AIOS Client Owner Profile" not in profiles,
 			f"role profile channel tidak boleh menempel pada user wizard: {profiles}",
+		)
+
+		# docs/04 §6.0 langkah 5: Administrator mengisi `AIOS Setting`. `max_users` wajib sebelum
+		# aktivasi (`activate_user` -> `assert_within_max_users` menolak nilai <= 0). Field lain
+		# (default_company, site_token_limit, persona) tidak dipakai langkah 4-6.
+		self.bench.execute(
+			self.test_site,
+			"frappe.client.set_value",
+			doctype="AIOS Setting",
+			name="AIOS Setting",
+			fieldname="max_users",
+			value=self.max_users,
 		)
 
 		self.bench.execute(
