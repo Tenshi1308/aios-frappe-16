@@ -9,7 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 AUTH = REPO_ROOT / "aios_v1" / "auth.py"
-DISPATCHER = REPO_ROOT / "aios_v1" / "api" / "dispatcher.py"
+API_DIR = REPO_ROOT / "aios_v1" / "api"
 LOGIN = REPO_ROOT / "frontend" / "src" / "views" / "LoginView.vue"
 SESSION_API = REPO_ROOT / "frontend" / "src" / "api" / "session.ts"
 CLIENT_API = REPO_ROOT / "frontend" / "src" / "api" / "client.ts"
@@ -41,10 +41,23 @@ class TestRegisterAccountContract(unittest.TestCase):
 
 
 class TestDispatcherAuthContract(unittest.TestCase):
-    def test_old_login_register_deprecated(self):
-        src = DISPATCHER.read_text(encoding="utf-8")
-        self.assertIn("/api/method/login", src)
-        self.assertIn("/api/method/aios_v1.auth.register_account", src)
+    def test_custom_dispatcher_is_gone(self):
+        # Fase 1 (Tugas 12): dispatcher kustom, lib/auth.py, dan hook
+        # before_request dihapus — auth sepenuhnya cara resmi Frappe.
+        self.assertFalse((API_DIR / "dispatcher.py").exists())
+        self.assertFalse((REPO_ROOT / "aios_v1" / "lib" / "auth.py").exists())
+        hooks = (REPO_ROOT / "aios_v1" / "hooks.py").read_text(encoding="utf-8")
+        # Tidak ada assignment hook `before_request` (komentar penjelasan
+        # penghapusan boleh menyebut kata itu).
+        self.assertNotRegex(hooks, r"(?m)^\s*before_request\s*=")
+        self.assertNotIn("aios_v1.api.dispatcher", hooks)
+
+    def test_login_register_use_official_methods(self):
+        # Rute lama `/api/auth/login|register` (stub 410) sudah dihapus;
+        # frontend memanggil method resmi Frappe.
+        src = SESSION_API.read_text(encoding="utf-8")
+        self.assertIn("'/api/method/login'", src)
+        self.assertIn("'/api/method/aios_v1.auth.register_account'", src)
         self.assertNotIn('doc = frappe.new_doc("AIOS Tenant")', src)
 
 
@@ -72,9 +85,12 @@ class TestFrontendAuthContract(unittest.TestCase):
         self.assertTrue(".message" in src or "'message'" in src)
 
     def test_logout_uses_frappe(self):
+        # Fase 1: logout memakai `/api/method/logout` bawaan Frappe, bukan
+        # lagi rute dispatcher kustom `/api/auth/logout`.
         src = SESSION_API.read_text(encoding="utf-8")
         self.assertIn("logout", src)
-        self.assertTrue("'/api/auth/logout'" in src or '"/api/auth/logout"' in src)
+        self.assertIn("'/api/method/logout'", src)
+        self.assertNotIn("'/api/auth/logout'", src)
 
     def test_home_has_no_legacy_gate(self):
         src = ROUTER.read_text(encoding="utf-8")

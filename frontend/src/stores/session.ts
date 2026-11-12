@@ -153,7 +153,7 @@ export const useSessionStore = defineStore('session', {
         // Wajib membawa CSRF: tanpa ini Frappe menolak POST ber-sesi (403
         // "Invalid Request") sebelum sampai dispatcher, dan sesi server
         // tidak pernah benar-benar dihapus.
-        await apiFetch('/api/auth/logout', {
+        await apiFetch('/api/method/logout', {
           method: 'POST',
           headers: { 'X-Frappe-CSRF-Token': this.csrfToken },
         });

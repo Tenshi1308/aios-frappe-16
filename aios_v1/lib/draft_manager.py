@@ -897,6 +897,18 @@ def confirm_draft_cash_payment(draft_id: str) -> dict:
 
     company = _site_company()
     prev_user = frappe.session.user
+    # E1 (disetujui Ten 11 Nov 2026): `frappe.set_user` menimpa
+    # `local.session.sid` dengan username dan mengosongkan `local.session.data`
+    # (frappe/__init__.py:386-392). Karena `local.session` adalah objek yang
+    # sama dengan `session_obj.data` (frappe/auth.py:239), kerusakan itu ikut
+    # dipersist `Session.update` ke Redis setelah response (frappe/app.py:471-472,
+    # frappe/sessions.py:445) -> request berikutnya tidak me-resume sesi staf.
+    # Simpan & pulihkan state sesi di finally, sempit hanya di sekitar blok
+    # elevasi hak. Tidak mengubah logika bisnis payment.
+    session = frappe.local.session
+    saved_session = session.copy()
+    saved_session["data"] = session.data.copy()
+    form_dict = frappe.local.form_dict
     frappe.db.savepoint("aios_confirm_cash_payment")
     try:
         frappe.set_user("Administrator")
@@ -921,7 +933,17 @@ def confirm_draft_cash_payment(draft_id: str) -> dict:
         log_exception("AIOS Confirm Draft Cash Payment", exc=exc)
         raise
     finally:
+        # Pulihkan seluruh state sesi yang ditimpa `set_user` (user, sid,
+        # data/form_dict/cache), bukan sekadar username. `session` adalah
+        # objek yang sama dengan `session_obj.data`, jadi pemulihan ini juga
+        # yang dipersist `Session.update` setelah response.
         frappe.set_user(prev_user)
+        session.update(saved_session)
+        frappe.local.session = session
+        frappe.local.form_dict = form_dict
+        frappe.local.cache = {}
+        frappe.local.role_permissions = {}
+        frappe.local.user_perms = None
 
     result_obj["payment_entry"] = pe.name
     result_obj["payment_confirmed"] = True

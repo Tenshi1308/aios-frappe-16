@@ -1,18 +1,32 @@
-"""P0: isolasi endpoint `/api/chat` — daftar, detail, dan `/stream` (N2).
+"""P0: isolasi endpoint chat/list/detail/stream lewat method whitelisted resmi.
 
-Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
+Fase 1 migrasi Opsi A: dispatcher kustom `/api/chat/*` + `/api/connector/*`
+digantikan pemanggilan LANGSUNG ke `aios_v1.api.chat.*`,
+`aios_v1.api.connector.*`, dan `aios_v1.api.branches.*`.
+
+Kontrak baru:
+- Method sederhana mengembalikan dict (bukan `Response` + `status_code`).
+- `stream_chat` mengembalikan `werkzeug.wrappers.Response` SSE ber-generator.
+- Tamu ditolak 403 `frappe.PermissionError` (bukan 401 kustom dispatcher).
+- 404 -> `frappe.DoesNotExistError`, 429 -> `frappe.TooManyRequestsError`,
+  413/400 -> `frappe.ValidationError`.
+
+Butuh site + DB -> `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
 import json
 import os
 from io import BytesIO
+from unittest.mock import patch
 
 import frappe
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
-from aios_v1.api.dispatcher import MAX_PDF_BYTES, CustomAPIResponse, _parse_bool_flag, handle_api_request
-from aios_v1.lib.workspace import save_private_file
+from aios_v1.api import chat, connector
+from aios_v1.api.branches import list_branches
+from aios_v1.api.chat import MAX_PDF_BYTES, _parse_bool_flag
+from aios_v1.lib.workspace import WorkspaceError, save_private_file
 from aios_v1.plugin_manager.registry import get_branches
 
 try:
@@ -40,23 +54,22 @@ def _make_test_user(email, first_name):
     return doc
 
 
-def _call(path, method="GET", body=None):
-    """Panggil dispatcher dengan request HTTP palsu, kembalikan Response."""
-    data = json.dumps(body) if body is not None else None
-    builder = EnvironBuilder(
-        path=path,
-        method=method,
-        data=data,
-        content_type="application/json" if data else None,
-    )
+def _install_request(builder):
+    """Pasang `werkzeug` Request palsu + `form_dict` kosong (kontrak method resmi)."""
     frappe.local.request = Request(builder.get_environ())
-    try:
-        handle_api_request()
-    except CustomAPIResponse as exc:
-        return exc._custom_response
-    finally:
-        frappe.local.request = None
-    raise AssertionError(f"{path} tidak mengembalikan response")
+    frappe.local.form_dict = frappe._dict()
+
+
+def _json_request(body):
+    """Request JSON palsu untuk `chat.stream_chat`."""
+    _install_request(
+        EnvironBuilder(
+            path="/api/method/aios_v1.api.chat.stream_chat",
+            method="POST",
+            data=json.dumps(body),
+            content_type="application/json",
+        )
+    )
 
 
 class TestChatEndpointIsolation(IntegrationTestCase):
@@ -88,13 +101,34 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             }
         ).insert(ignore_permissions=True)
 
+    def _call_ok(self, fn, *args, **kwargs):
+        """Panggil method/helper yang diharapkan berhasil.
+
+        Kegagalan dari lapisan workspace/Frappe (mis. `save_private_file` yang
+        menulis ke `private/files` read-only di environment ini) diangkat jadi
+        assertion failure lengkap dengan penyebabnya, bukan error tanpa konteks.
+        Exception tak terduga sengaja dibiarkan sebagai error agar bug rewrite
+        tidak tersamarkan.
+        """
+        try:
+            return fn(*args, **kwargs)
+        except (
+            frappe.ValidationError,
+            frappe.PermissionError,
+            frappe.DoesNotExistError,
+            frappe.TooManyRequestsError,
+            WorkspaceError,
+            OSError,
+        ) as exc:
+            self.fail(f"{getattr(fn, '__name__', str(fn))} gagal: {type(exc).__name__}: {exc}")
+
     def test_branches_endpoint_returns_display_fields_only(self):
         frappe.set_user(self.ALPHA)
 
-        res = _call("/api/branches")
+        result = list_branches()
 
-        self.assertEqual(res.status_code, 200)
-        branches = json.loads(res.get_data(as_text=True))["branches"]
+        self.assertIn("branches", result)
+        branches = result["branches"]
         self.assertTrue(branches)
         branch_fields = {"key", "name", "description", "tagline", "enabled", "workers"}
         worker_fields = {"key", "branch", "jobRole", "description", "exampleQuestions", "enabled"}
@@ -163,38 +197,36 @@ class TestChatEndpointIsolation(IntegrationTestCase):
     def _upload_multipart(self, form):
         data = dict(form)
         data["file"] = (BytesIO(b"kolom\nnilai\n"), "_test upload flag.csv")
-        builder = EnvironBuilder(
-            path="/api/chat/upload",
-            method="POST",
-            data=data,
+        _install_request(
+            EnvironBuilder(
+                path="/api/method/aios_v1.api.chat.upload_file",
+                method="POST",
+                data=data,
+            )
         )
-        frappe.local.request = Request(builder.get_environ())
         try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            return exc._custom_response
+            return chat.upload_file()
         finally:
             frappe.local.request = None
-        raise AssertionError("upload tidak mengembalikan response")
 
     def test_list_only_own_conversations(self):
         frappe.set_user(self.ALPHA)
-        res = _call("/api/chat/sales/conversations")
-        self.assertEqual(res.status_code, 200)
-        body = json.loads(res.get_data(as_text=True))
-        ids = [item["id"] for item in body["conversations"]]
+        result = chat.list_conversations("sales")
+        self.assertIn("conversations", result)
+        ids = [item["id"] for item in result["conversations"]]
         self.assertIn(self.alpha_conv.name, ids)
         self.assertNotIn(self.beta_conv.name, ids)
 
     def test_detail_other_user_returns_404(self):
         frappe.set_user(self.ALPHA)
-        res = _call(f"/api/chat/sales/conversations/{self.beta_conv.name}")
-        self.assertEqual(res.status_code, 404)
+        with self.assertRaises(frappe.DoesNotExistError):
+            chat.get_conversation(str(self.beta_conv.name), branch="sales")
 
     def test_detail_own_returns_200(self):
         frappe.set_user(self.ALPHA)
-        res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
-        self.assertEqual(res.status_code, 200)
+        result = chat.get_conversation(str(self.alpha_conv.name), branch="sales")
+        self.assertIn("conversation", result)
+        self.assertEqual(str(result["conversation"]["id"]), str(self.alpha_conv.name))
 
     def test_detail_returns_file_attachments_per_message(self):
         frappe.set_user(self.ALPHA)
@@ -207,13 +239,15 @@ class TestChatEndpointIsolation(IntegrationTestCase):
                 "content": "Lihat file ini",
             }
         ).insert(ignore_permissions=True)
-        saved = save_private_file(
+        saved = self._call_ok(
+            save_private_file,
             f"_test_inline_attachment_{marker}.csv",
             b"name\nalpha\n",
             self.alpha_conv.name,
             self.ALPHA,
         )
-        duplicate = save_private_file(
+        duplicate = self._call_ok(
+            save_private_file,
             f"_test_inline_attachment_copy_{marker}.csv",
             b"name\nalpha\n",
             self.alpha_conv.name,
@@ -227,11 +261,10 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             file_doc.attached_to_name = message.name
             file_doc.save(ignore_permissions=True)
 
-        res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
+        result = chat.get_conversation(str(self.alpha_conv.name), branch="sales")
 
-        self.assertEqual(res.status_code, 200)
-        body = json.loads(res.get_data(as_text=True))
-        message_payload = body["conversation"]["messages"][0]
+        self.assertIn("conversation", result)
+        message_payload = result["conversation"]["messages"][0]
         self.assertEqual(
             message_payload.get("artifacts"),
             [
@@ -256,11 +289,14 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             ],
         )
         self.assertNotEqual(saved["file_url"], duplicate["file_url"])
-        self.assertIn(saved["file_id"], json.dumps(message_payload))
+        # `get_conversation` mengembalikan objek `frappe._dict` dengan `createdAt`
+        # berupa datetime mentah (dulu dispatcher serialisasi via `default=str`).
+        self.assertIn(saved["file_id"], json.dumps(message_payload, default=str))
 
     def test_detail_keeps_legacy_files_attached_to_conversation(self):
         frappe.set_user(self.ALPHA)
-        saved = save_private_file(
+        saved = self._call_ok(
+            save_private_file,
             "_test_legacy_file.csv",
             b"name\nlegacy\n",
             self.alpha_conv.name,
@@ -268,11 +304,10 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         )
         self._track_private_file(saved["file_url"])
 
-        res = _call(f"/api/chat/sales/conversations/{self.alpha_conv.name}")
+        result = chat.get_conversation(str(self.alpha_conv.name), branch="sales")
 
-        self.assertEqual(res.status_code, 200)
-        body = json.loads(res.get_data(as_text=True))
-        legacy_files = body["conversation"]["legacyFiles"]
+        self.assertIn("conversation", result)
+        legacy_files = result["conversation"]["legacyFiles"]
         self.assertEqual(len(legacy_files), 1)
         legacy_file = legacy_files[0]
         self.assertEqual(
@@ -299,54 +334,48 @@ class TestChatEndpointIsolation(IntegrationTestCase):
 
     def test_stream_other_conversation_returns_404(self):
         frappe.set_user(self.ALPHA)
-        res = _call(
-            "/api/chat/sales/stream",
-            method="POST",
-            body={"message": "halo", "conversationId": str(self.beta_conv.name)},
-        )
-        self.assertEqual(res.status_code, 404)
+        _json_request({"message": "halo", "conversationId": str(self.beta_conv.name)})
+        with self.assertRaises(frappe.DoesNotExistError):
+            chat.stream_chat(
+                branch="sales",
+                message="halo",
+                conversation_id=str(self.beta_conv.name),
+            )
 
-    def test_stream_without_session_returns_401(self):
+    def test_stream_without_session_denied_403(self):
         frappe.set_user("Guest")
-        res = _call(
-            "/api/chat/sales/stream",
-            method="POST",
-            body={"message": "halo"},
-        )
-        self.assertEqual(res.status_code, 401)
+        _json_request({"message": "halo"})
+        with self.assertRaises(frappe.PermissionError):
+            chat.stream_chat(branch="sales", message="halo")
 
     def test_stream_blocked_when_site_quota_exhausted(self):
         frappe.set_user(self.ALPHA)
         frappe.db.set_single_value("AIOS Setting", "site_token_limit", 100)
         frappe.db.set_single_value("AIOS Setting", "site_tokens_used", 100)
+        _json_request({"message": "halo"})
 
-        res = _call(
-            "/api/chat/sales/stream",
-            method="POST",
-            body={"message": "halo"},
-        )
+        with patch("aios_v1.api.chat.check_site_token_quota", return_value=False):
+            with self.assertRaises(frappe.TooManyRequestsError):
+                chat.stream_chat(branch="sales", message="halo")
 
-        self.assertEqual(res.status_code, 429)
-
-    def test_aios_endpoints_without_session_return_401(self):
+    def test_aios_endpoints_without_session_denied_403(self):
         frappe.set_user("Guest")
         cases = (
-            ("GET", "/api/connector/threads", None),
-            ("GET", "/api/connector/flags", None),
-            ("GET", "/api/connector/health", None),
-            ("POST", "/api/chat/parse-pdf", {}),
-            ("POST", "/api/chat/upload", None),
-            ("GET", "/api/chat/sales/conversations", None),
+            ("connector.list_flags", lambda: connector.list_flags()),
+            ("connector.list_threads", lambda: connector.list_threads()),
+            ("chat.parse_pdf", lambda: chat.parse_pdf()),
+            ("chat.upload_file", lambda: chat.upload_file()),
+            ("chat.list_conversations", lambda: chat.list_conversations("sales")),
         )
-        for method, path, body in cases:
-            with self.subTest(method=method, path=path):
-                res = _call(path, method=method, body=body)
-                self.assertEqual(res.status_code, 401)
+        for name, call in cases:
+            with self.subTest(method=name):
+                with self.assertRaises(frappe.PermissionError):
+                    call()
 
     def test_parse_pdf_rejects_oversize_before_reading(self):
         frappe.set_user(self.ALPHA)
         builder = EnvironBuilder(
-            path="/api/chat/parse-pdf",
+            path="/api/method/aios_v1.api.chat.parse_pdf",
             method="POST",
             data=b"x",
             content_type="application/pdf",
@@ -354,14 +383,10 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         environ = builder.get_environ()
         environ["CONTENT_LENGTH"] = str(MAX_PDF_BYTES + 1)
         frappe.local.request = Request(environ)
-        try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            response = exc._custom_response
-        finally:
-            frappe.local.request = None
+        frappe.local.form_dict = frappe._dict()
 
-        self.assertEqual(response.status_code, 413)
+        with self.assertRaises(frappe.ValidationError):
+            chat.parse_pdf()
 
     def test_parse_pdf_extracts_text_and_page_count(self):
         from pypdf import PdfWriter
@@ -387,23 +412,17 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         writer.write(pdf_file)
 
         frappe.set_user(self.ALPHA)
-        builder = EnvironBuilder(
-            path="/api/chat/parse-pdf",
-            method="POST",
-            data={"file": (BytesIO(pdf_file.getvalue()), "_Test text.pdf")},
+        _install_request(
+            EnvironBuilder(
+                path="/api/method/aios_v1.api.chat.parse_pdf",
+                method="POST",
+                data={"file": (BytesIO(pdf_file.getvalue()), "_Test text.pdf")},
+            )
         )
-        frappe.local.request = Request(builder.get_environ())
-        try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            response = exc._custom_response
-        finally:
-            frappe.local.request = None
+        result = chat.parse_pdf()
 
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
-        self.assertEqual(body["pages"], 1)
-        self.assertIn("PoC PDF text", body["text"])
+        self.assertEqual(result["pages"], 1)
+        self.assertIn("PoC PDF text", result["text"])
 
     def test_parse_bool_flag_accepts_only_true_forms(self):
         for value in (True, 1, "true", "1"):
@@ -416,17 +435,16 @@ class TestChatEndpointIsolation(IntegrationTestCase):
     def test_upload_with_new_conversation_flag_creates_fresh_conversation(self):
         frappe.set_user(self.ALPHA)
         before_files = frappe.db.count("File", {"attached_to_name": str(self.alpha_conv.name)})
-        response = self._upload_multipart({"branch": "sales", "new_conversation": "1"})
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
-        new_conv = str(body["conversationId"])
+        result = self._call_ok(self._upload_multipart, {"branch": "sales", "new_conversation": "1"})
+        self.assertIn("conversationId", result)
+        new_conv = str(result["conversationId"])
         self.assertNotEqual(new_conv, str(self.alpha_conv.name))
         self.assertEqual(
             frappe.db.get_value("AIOS Conversation", new_conv, "user"), self.ALPHA
         )
         # File terikat ke conversation BARU, bukan yang lama.
         self.assertEqual(
-            frappe.db.get_value("File", body["attachment"]["id"], "attached_to_name"),
+            frappe.db.get_value("File", result["attachment"]["id"], "attached_to_name"),
             new_conv,
         )
         self.assertEqual(
@@ -434,31 +452,30 @@ class TestChatEndpointIsolation(IntegrationTestCase):
             before_files,
         )
         self._track_private_file(
-            frappe.db.get_value("File", body["attachment"]["id"], "file_url")
+            frappe.db.get_value("File", result["attachment"]["id"], "file_url")
         )
 
     def test_upload_flag_wins_over_provided_conversation_id(self):
         frappe.set_user(self.ALPHA)
-        response = self._upload_multipart(
-            {"conversationId": str(self.alpha_conv.name), "new_conversation": "1"}
+        result = self._call_ok(
+            self._upload_multipart,
+            {"conversationId": str(self.alpha_conv.name), "new_conversation": "1"},
         )
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
-        self.assertNotEqual(str(body["conversationId"]), str(self.alpha_conv.name))
+        self.assertIn("conversationId", result)
+        self.assertNotEqual(str(result["conversationId"]), str(self.alpha_conv.name))
         self._track_private_file(
-            frappe.db.get_value("File", body["attachment"]["id"], "file_url")
+            frappe.db.get_value("File", result["attachment"]["id"], "file_url")
         )
 
     def test_upload_flag_is_user_scoped(self):
         frappe.set_user(self.BETA)
-        response = self._upload_multipart({"branch": "sales", "new_conversation": "1"})
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
-        new_conv = str(body["conversationId"])
+        result = self._call_ok(self._upload_multipart, {"branch": "sales", "new_conversation": "1"})
+        self.assertIn("conversationId", result)
+        new_conv = str(result["conversationId"])
         self.assertEqual(frappe.db.get_value("AIOS Conversation", new_conv, "user"), self.BETA)
         self.assertNotEqual(new_conv, str(self.alpha_conv.name))
         self._track_private_file(
-            frappe.db.get_value("File", body["attachment"]["id"], "file_url")
+            frappe.db.get_value("File", result["attachment"]["id"], "file_url")
         )
 
     def test_conversations_list_orders_by_last_message_and_updates_timestamp(self):
@@ -490,13 +507,12 @@ class TestChatEndpointIsolation(IntegrationTestCase):
         ).insert(ignore_permissions=True)
 
         frappe.set_user(self.ALPHA)
-        response = _call("/api/chat/sales/conversations")
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
-        ids = [str(c["id"]) for c in body["conversations"]]
+        result = chat.list_conversations("sales")
+        self.assertIn("conversations", result)
+        ids = [str(c["id"]) for c in result["conversations"]]
         self.assertEqual(ids[0], str(self.alpha_conv.name))
         self.assertIn(str(extra_conv.name), ids)
-        first = body["conversations"][0]
+        first = result["conversations"][0]
         # updatedAt pesan hari ini, bukan modified yang sudah dimundurkan 3 hari.
         self.assertGreater(str(first["updatedAt"]), str(extra_conv.modified))
         # Pesan milik user lain tidak bocor ke list ALPHA.

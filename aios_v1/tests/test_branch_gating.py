@@ -30,21 +30,19 @@ class TestBranchGating(IntegrationTestCase):
         with self.assertRaises(frappe.ValidationError):
             get_manager("hr")
 
-    def test_disabled_chat_stream_route_returns_branch_disabled(self):
-        from aios_v1.api import dispatcher
+    def test_disabled_chat_stream_method_returns_branch_disabled(self):
+        """Fase 1: method whitelisted `stream_chat` menolak cabang nonaktif.
 
-        previous_request = frappe.request
-        frappe.request = type("Request", (), {
-            "path": "/api/chat/hr/stream", "method": "POST", "headers": {},
-        })()
-        try:
-            with patch.object(dispatcher, "require_session", return_value={"user": "Administrator"}), \
-                 patch.object(dispatcher, "_current_request", return_value=None):
-                with self.assertRaises(dispatcher.CustomAPIResponse) as raised:
-                    dispatcher._handle_api_request()
-            self.assertIn("BRANCH_DISABLED", raised.exception.get_response().get_data(as_text=True))
-        finally:
-            frappe.request = previous_request
+        Dulu diuji lewat dispatcher kustom `/api/chat/hr/stream`; kini
+        langsung memanggil `aios_v1.api.chat.stream_chat`.
+        """
+        from aios_v1.api import chat
+
+        with patch.object(chat, "check_site_token_quota", return_value=True):
+            with self.assertRaises(frappe.DoesNotExistError) as raised:
+                chat.stream_chat(branch="hr", message="halo")
+
+        self.assertIn("Cabang ini belum tersedia", str(raised.exception))
 
 
 class TestConnectorGating(IntegrationTestCase):

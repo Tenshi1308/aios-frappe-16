@@ -13,6 +13,9 @@ import type {
   TraceEvent,
 } from '../types';
 
+/** Prefix method whitelisted resmi Frappe (Fase 1 migrasi Opsi A). */
+const CHAT_API = '/api/method/aios_v1.api.chat';
+
 /** Cermin batas backend (MAX_WORKSPACE_BYTES) untuk umpan balik cepat di klien;
  *  sumber kebenaran tetap divalidasi server. */
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
@@ -55,7 +58,9 @@ interface RawFileEntry {
 }
 
 export async function fetchConversations(branch: string): Promise<ConversationItem[]> {
-  const raw = unwrapMessage<RawConversationList>(await apiFetch(`/api/chat/${encodeURIComponent(branch)}/conversations`));
+  const raw = unwrapMessage<RawConversationList>(
+    await apiFetch(`${CHAT_API}.list_conversations?branch=${encodeURIComponent(branch)}`),
+  );
   const list = raw?.conversations ?? [];
   return list
     .filter((c) => (typeof c.id === 'string' && !!c.id) || typeof c.id === 'number')
@@ -122,7 +127,10 @@ export async function fetchConversationMessages(
   conversationId: string,
 ): Promise<{ messages: ChatMessage[]; legacyFiles: FileEntry[]; context?: ContextUsageStats }> {
   const raw = unwrapMessage<RawConversationDetail>(
-    await apiFetch(`/api/chat/${encodeURIComponent(branch)}/conversations/${encodeURIComponent(conversationId)}`),
+    await apiFetch(
+      `${CHAT_API}.get_conversation?conversation_id=${encodeURIComponent(conversationId)}`
+      + `&branch=${encodeURIComponent(branch)}`,
+    ),
   );
   const list = raw?.conversation?.messages ?? [];
   const messages = list
@@ -168,7 +176,7 @@ export async function uploadAttachment(
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/chat/upload');
+    xhr.open('POST', `${CHAT_API}.upload_file`);
     xhr.setRequestHeader('X-Frappe-CSRF-Token', csrfToken);
     xhr.responseType = 'text';
     xhr.upload.onprogress = (ev) => {
@@ -182,8 +190,11 @@ export async function uploadAttachment(
       } catch {
         data = null;
       }
-      if (xhr.status >= 200 && xhr.status < 300 && data && typeof data === 'object') {
-        const body = data as { conversationId?: unknown; attachment?: Record<string, unknown> };
+      // Frappe membungkus hasil method dalam `{"message": ...}`; XHR raw
+      // tidak lewat apiFetch, jadi unwrap di sini.
+      const payload = unwrapMessage<{ conversationId?: unknown; attachment?: Record<string, unknown> }>(data);
+      if (xhr.status >= 200 && xhr.status < 300 && payload && typeof payload === 'object') {
+        const body = payload;
         const attachment = body.attachment ?? {};
         if (typeof body.conversationId === 'undefined' || typeof attachment.id !== 'string') {
           reject(new ApiError('Respons unggahan tidak dikenal.'));
@@ -212,7 +223,7 @@ export async function uploadAttachment(
   });
 }
 
-/** Konsumsi SSE dari POST /api/chat/<branch>/stream via fetch ReadableStream. */
+/** Konsumsi SSE dari POST /api/method/aios_v1.api.chat.stream_chat via fetch ReadableStream. */
 export async function streamChat(
   branch: string,
   payload: {
@@ -227,11 +238,13 @@ export async function streamChat(
 ): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`/api/chat/${encodeURIComponent(branch)}/stream`, {
+    res = await fetch(`${CHAT_API}.stream_chat`, {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
-      body: JSON.stringify(payload),
+      // `branch` ikut di body: `frappe.app.make_form_dict` untuk body JSON
+      // tidak menggabungkan query string (frappe/app.py:363-382).
+      body: JSON.stringify({ ...payload, branch }),
     });
   } catch {
     throw new ApiError('Tidak dapat menghubungi server. Periksa koneksi.');

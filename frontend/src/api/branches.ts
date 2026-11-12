@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { apiFetch, unwrapMessage } from './client';
 import type { Branch, BranchWorker } from '../types';
 
 interface RawBranch {
@@ -29,7 +29,9 @@ function mapWorkers(raw: unknown): BranchWorker[] {
 
 /** Hanya field aman yang diambil; `manager_persona` dan `icon` (emoji) sengaja tidak dipetakan. */
 export async function fetchBranches(): Promise<Branch[]> {
-  const raw = (await apiFetch('/api/branches')) as { branches?: unknown };
+  const raw = unwrapMessage<{ branches?: unknown }>(
+    await apiFetch('/api/method/aios_v1.api.branches.list_branches'),
+  );
   if (!raw || !Array.isArray(raw.branches)) return [];
   return raw.branches
     .filter((b): b is RawBranch => !!b && typeof b === 'object')

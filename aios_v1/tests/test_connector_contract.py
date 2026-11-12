@@ -12,7 +12,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LIB = REPO_ROOT / "aios_v1" / "lib"
 CONNECTOR = LIB / "connector"
-DISPATCHER = REPO_ROOT / "aios_v1" / "api" / "dispatcher.py"
 
 TOKEN_RE = re.compile(r"bot\d{6,}:[A-Za-z0-9_-]{20,}")
 # ERPNext write paths that must never appear on the channel path.
@@ -37,13 +36,19 @@ class TestConnectorRemovedLegacy(unittest.TestCase):
         self.assertTrue((doctype_dir / "aios_telegram_setting").exists())
 
     def test_chatbot_route_block_is_gone(self):
-        src = DISPATCHER.read_text(encoding="utf-8")
+        # Fase 1: cek modul chat resmi (bukan lagi teks dispatcher).
+        src = (REPO_ROOT / "aios_v1" / "api" / "chat.py").read_text(encoding="utf-8")
         self.assertNotIn("api/chatbot", src)
         self.assertNotIn("TELEGRAM_DISABLED", src)
+        self.assertNotIn("Test koneksi sukses", src)  # stub mock SSE harus hilang
 
-    def test_connector_route_prefix_registered(self):
-        src = DISPATCHER.read_text(encoding="utf-8")
-        self.assertIn('"api/connector"', src)
+    def test_connector_whitelisted_module_registered(self):
+        # Fase 1: rute kustom `/api/connector/*` digantikan method resmi
+        # `@frappe.whitelist()` di `aios_v1.api.connector.*`.
+        src = (REPO_ROOT / "aios_v1" / "api" / "connector.py").read_text(encoding="utf-8")
+        self.assertIn("@frappe.whitelist(methods=", src)
+        self.assertIn("def list_flags(", src)
+        self.assertIn("def list_orders(", src)
 
 
 class TestConnectorNoErpWrite(unittest.TestCase):

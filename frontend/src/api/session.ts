@@ -51,7 +51,10 @@ export async function login(usr: string, pwd: string): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
-  await apiFetch('/api/auth/logout', { method: 'POST' });
+  // Bawaan Frappe (frappe/handler.py::logout). CSRF dikirim oleh pemanggil
+  // di stores/session.ts; method bawaan ini memang allow_guest, itu keputusan
+  // Frappe, bukan method AIOS.
+  await apiFetch('/api/method/logout', { method: 'POST' });
 }
 
 export type RegistrationStatus = 'PENDING_PROVISIONING';

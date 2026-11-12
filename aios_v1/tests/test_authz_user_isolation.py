@@ -33,7 +33,7 @@ def _make_test_user(email, first_name):
 
 
 class TestUserIsolation(IntegrationTestCase):
-    """Alpha akses resource Beta → 403/404; tanpa sesi → 401."""
+    """Alpha akses resource Beta → 403/404; tanpa sesi → 403 (PermissionError)."""
 
     ALPHA = "_test.user.alpha@example.com"
     BETA = "_test.user.beta@example.com"
@@ -177,10 +177,10 @@ class TestUserIsolation(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             approve_draft(draft_name)
 
-    def test_no_cookie_returns_401(self):
-        from aios_v1.api.dispatcher import CustomAPIResponse, require_session
+    def test_guest_session_raises_permission_error(self):
+        """Kontrak baru: method whitelisted menolak Guest via frappe.PermissionError (403)."""
+        from aios_v1.api import connector
 
         frappe.set_user("Guest")
-        with self.assertRaises(CustomAPIResponse) as caught:
-            require_session()
-        self.assertEqual(caught.exception._custom_response.status_code, 401)
+        with self.assertRaises(frappe.PermissionError):
+            connector.list_flags()

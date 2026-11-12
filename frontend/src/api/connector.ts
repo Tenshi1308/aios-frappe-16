@@ -1,4 +1,7 @@
-import { ApiError, apiFetch } from './client';
+import { ApiError, apiFetch, unwrapMessage } from './client';
+
+/** Prefix method whitelisted resmi Frappe (Fase 1 migrasi Opsi A). */
+const CONNECTOR_API = '/api/method/aios_v1.api.connector';
 
 /** Channel connector surface (docs/02 §2.4). Read-only threads + flag review. */
 
@@ -45,10 +48,6 @@ export interface ChannelOrderNotification {
   read: number;
 }
 
-interface RawThreads {
-  threads?: ChannelThread[];
-}
-
 export interface FlagListResponse {
   flags: ChannelFlag[];
   total: number;
@@ -76,13 +75,17 @@ interface RawOrders {
 }
 
 export async function fetchThreads(): Promise<ChannelThread[]> {
-  const data = await apiFetch('/api/connector/threads');
-  return (data as RawThreads)?.threads ?? [];
+  const data = unwrapMessage<ChannelThread[]>(
+    await apiFetch(`${CONNECTOR_API}.list_threads`),
+  );
+  return Array.isArray(data) ? data : [];
 }
 
 export async function fetchFlags(status?: 'Open' | 'Closed'): Promise<FlagListResponse> {
   const query = status ? `?status=${encodeURIComponent(status)}` : '';
-  const data = (await apiFetch(`/api/connector/flags${query}`)) as RawFlags;
+  const data = unwrapMessage<RawFlags>(
+    await apiFetch(`${CONNECTOR_API}.list_flags${query}`),
+  );
   const flags = data?.flags ?? [];
   const total = typeof data?.total === 'number' ? data.total : (flags.length || 0);
   return {
@@ -97,7 +100,9 @@ export async function fetchOrderNotifications(
 ): Promise<OrderListResponse> {
   const unreadParam = unreadOnly ? 'unread=1' : 'unread=0';
   const query = `?${unreadParam}&page=${encodeURIComponent(page)}`;
-  const data = (await apiFetch(`/api/connector/orders${query}`)) as RawOrders;
+  const data = unwrapMessage<RawOrders>(
+    await apiFetch(`${CONNECTOR_API}.list_orders${query}`),
+  );
   const orders = data?.orders ?? [];
   const total = typeof data?.total === 'number' ? data.total : (orders.length || 0);
   const total_pages = typeof data?.total_pages === 'number' ? data.total_pages : (Math.ceil(total / 20) || 1);
@@ -118,15 +123,17 @@ export async function reviewOrderNotification(
   csrfToken: string,
 ): Promise<{ success: boolean }> {
   if (!notificationId) throw new ApiError('Notifikasi wajib dipilih.');
-  const data = await apiFetch('/api/connector/order/review', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Frappe-CSRF-Token': csrfToken,
-    },
-    body: JSON.stringify({ notification_id: notificationId }),
-  });
-  return (data as { success: boolean }) ?? { success: false };
+  const data = unwrapMessage<{ success: boolean }>(
+    await apiFetch(`${CONNECTOR_API}.review_order`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ notification_id: notificationId }),
+    }),
+  );
+  return data ?? { success: false };
 }
 
 export async function closeFlag(
@@ -135,15 +142,17 @@ export async function closeFlag(
   csrfToken: string,
 ): Promise<{ status: string }> {
   if (!flag) throw new ApiError('Flag wajib dipilih.');
-  const data = await apiFetch('/api/connector/flag/close', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Frappe-CSRF-Token': csrfToken,
-    },
-    body: JSON.stringify({ flag, note }),
-  });
-  const status = (data as { status?: unknown })?.status;
+  const data = unwrapMessage<{ status?: unknown }>(
+    await apiFetch(`${CONNECTOR_API}.close_flag`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ flag, note }),
+    }),
+  );
+  const status = data?.status;
   return { status: typeof status === 'string' ? status : 'Closed' };
 }
 
@@ -156,30 +165,36 @@ export interface TelegramLinkStatus {
 }
 
 export async function fetchTelegramStatus(): Promise<TelegramLinkStatus> {
-  const data = await apiFetch('/api/connector/link-status');
-  return (data as TelegramLinkStatus) ?? { linked: false };
+  const data = unwrapMessage<TelegramLinkStatus>(
+    await apiFetch(`${CONNECTOR_API}.get_link_status`),
+  );
+  return data ?? { linked: false };
 }
 
 export async function createTelegramLinkToken(csrfToken: string): Promise<{ deep_link: string; expires_in_seconds: number }> {
-  const data = await apiFetch('/api/connector/link-token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Frappe-CSRF-Token': csrfToken,
-    },
-    body: JSON.stringify({}),
-  });
-  return data as { deep_link: string; expires_in_seconds: number };
+  const data = unwrapMessage<{ deep_link: string; expires_in_seconds: number }>(
+    await apiFetch(`${CONNECTOR_API}.create_link_token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({}),
+    }),
+  );
+  return data ?? { deep_link: '', expires_in_seconds: 0 };
 }
 
 export async function unlinkTelegramAccount(csrfToken: string): Promise<{ success: boolean }> {
-  const data = await apiFetch('/api/connector/unlink', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Frappe-CSRF-Token': csrfToken,
-    },
-    body: JSON.stringify({}),
-  });
-  return data as { success: boolean };
+  const data = unwrapMessage<{ success: boolean }>(
+    await apiFetch(`${CONNECTOR_API}.unlink_telegram`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({}),
+    }),
+  );
+  return data ?? { success: false };
 }

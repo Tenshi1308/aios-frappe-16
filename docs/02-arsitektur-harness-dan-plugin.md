@@ -2,6 +2,10 @@
 
 Dokumen ini menjelaskan bagaimana AIOS V1 mengadopsi arsitektur *AI Harness* modern (seperti OpenCode, Claude Code, dan Antigravity) yang disesuaikan khusus untuk pengguna bisnis di atas ERPNext dengan isolasi **`1 Client = 1 Site`**.
 
+> **Konvensi API (Fase 1, 12 Nov 2026, keputusan Ten):** Seluruh rute kustom AIOS kini memakai `@frappe.whitelist()` resmi di `/api/method/aios_v1.api.<module>.<method>`; dispatcher kustom (`api/dispatcher.py`), `lib/auth.py`, hook `before_request`, serta cookie `aios_session` dan CORS manual dihapus. Sesi (`sid`), CSRF (`X-Frappe-CSRF-Token` pada POST), dan penolakan tamu ditangani Frappe: **Guest ditolak 403** (`frappe.PermissionError` lewat `is_whitelisted`), bukan 401 dari dispatcher lama. Logout memakai `/api/method/logout` bawaan. Enam rute legacy dihapus tanpa pengganti: `api/auth/me`, `api/auth/login`, `api/auth/register`, `api/payment/status`, `api/payment/checkout`, `api/connector/health`. CORS lintas-origin produksi memakai `allow_cors` resmi di `site_config` — saat ini hanya origin DEV (`http://localhost:5173`, `http://aios-client1.localhost:5173`), belum ada domain frontend produksi.
+>
+> **Ringkasan modul rute:** `aios_v1.api.branches.list_branches`; `aios_v1.api.monitoring.usage_summary | usage_by_company | usage_by_branch` (gate `_is_admin` = Administrator + role `AIOS Admin`; **System Manager tidak lagi diizinkan**); `aios_v1.api.chat.parse_pdf | upload_file | list_conversations | get_conversation | stream_chat`; `aios_v1.api.connector.*` (lihat §2.4). Monitoring lama `/api/monitoring/usage*` dan gerbang `DEVELOPER`/System Manager sudah tidak berlaku.
+
 ---
 
 ## 1. Manajemen Multi-Provider & Per-Agent Model Routing (Berbasis UI, Zero Hardcode)
@@ -62,7 +66,7 @@ Agen AIOS dijalankan di dalam **kotak tertutup**: ia hanya bisa melakukan apa ya
 | Aturan (mengikat) | Status penegakan sekarang |
 |---|---|
 | Agen **tidak punya shell/terminal** — tidak ada `subprocess`, `os.system`, `eval`, atau `exec` di lapisan tool | **Ditegakkan** (`aios_v1/lib/tool_registry.py`; direktori `aios_v1/lib/tools/` dihapus di `#13`) |
-| Agen **tidak boleh membaca/menulis file server** di luar DocType `File` Frappe (private, terkait ke `AIOS Conversation`) | **Ditegakkan** — upload chat (`/api/chat/upload`), workspace `workspace_create_file`, dan `document_extract` hanya memakai Private `File` milik session user yang terkait ke percakapan miliknya. File baru ditautkan ke `AIOS Message` dan percakapan diturunkan dari `AIOS Message.conversation`; file lama yang masih langsung terikat ke `AIOS Conversation` tetap dibaca (H5 fase 1 + revisi 46); `has_permission` tidak diandalkan sendirian karena `Administrator` bypass |
+| Agen **tidak boleh membaca/menulis file server** di luar DocType `File` Frappe (private, terkait ke `AIOS Conversation`) | **Ditegakkan** — upload chat (`/api/method/aios_v1.api.chat.upload_file`), workspace `workspace_create_file`, dan `document_extract` hanya memakai Private `File` milik session user yang terkait ke percakapan miliknya. File baru ditautkan ke `AIOS Message` dan percakapan diturunkan dari `AIOS Message.conversation`; file lama yang masih langsung terikat ke `AIOS Conversation` tetap dibaca (H5 fase 1 + revisi 46); `has_permission` tidak diandalkan sendirian karena `Administrator` bypass |
 | Agen **tidak punya akses jaringan bebas**; hanya plugin terdaftar, dengan guard anti-SSRF | `web_fetch` memvalidasi dan mem-pin koneksi ke IP publik, memeriksa ulang setiap redirect, dan membatasi ukuran/waktu/jenis konten. Client MCP memvalidasi endpoint serta DNS sebelum panggilan SDK, tetapi SDK melakukan resolusi koneksinya sendiri; pinning koneksi MCP belum terbukti |
 | Agen **tidak bisa memalsukan identitas/company** — `user_id`, `allowed_company` disembunyikan dari LLM dan diisi dari sesi | **Ditegakkan** (`_HIDDEN_TOOL_PARAMS` + `execute_tool`) |
 | Client hanya melihat data ERP **company aktif** di layer permission Frappe, bukan hanya di layer tool | **Ditegakkan** — hook `erp_company_query_conditions`/`erp_company_has_permission` untuk `ERP_CLIENT_DOCTYPES` (company dari `AIOS Setting.default_company`, fallback `Global Defaults`; fail-closed tanpa company; `Company` di-scope via `name`; DocType tanpa field `company` tidak di-scope) + guard `query_report.run` (`report_guard.py`) yang memaksa company aktif; Administrator/AIOS Admin bypass |
@@ -119,7 +123,7 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 
 1. **Sinyal keras deterministik** (`aios_v1/lib/connector/rules.py`): permintaan transfer ke rekening pribadi, diskon di luar ambang (`discount_threshold_percent`), frasa terlarang dari config, dan nada yang melanggar SOP. **Tanpa LLM.**
 2. **LLM hanya menjelaskan.** `explain.py` menerima sinyal yang sudah diputuskan + potongan transkrip **teredaksi** dan menulis 1–2 kalimat netral untuk reviewer. Model tidak pernah diminta memutuskan fraud, dan outputnya tidak pernah menjadi putusan. Kegagalan LLM tidak menghapus flag.
-3. **Flag ditutup manusia.** `POST /api/connector/flag/close` hanya untuk penerima aktif (`get_channel_recipients()`) atau `doc.owner`; `closed_by`/`closed_at` diisi sistem. Tidak ada jalur otomatis yang membuka atau menutup flag.
+3. **Flag ditutup manusia.** `POST /api/method/aios_v1.api.connector.close_flag` hanya untuk penerima aktif (`get_channel_recipients()`) atau `doc.owner`; `closed_by`/`closed_at` diisi sistem. Tidak ada jalur otomatis yang membuka atau menutup flag.
 4. **PII**: transkrip disimpan mentah (bukti audit), payload ke model diredaksi (`redact.py`: rekening, telepon, email).
 
 **Audit ringan (deterministik, `audit.py`):** response time rata-rata + jumlah di atas target, chat yang masih menunggu jawaban, dan checklist SOP. Checklist adalah **aturan milik konektor** (`connector_config_json.sop_checklist`), bukan skill markdown agent — skill sales belum aktif karena tool yang dirujuk belum terdaftar, jadi kepatuhan SOP agent tidak boleh diklaim dari sini.
@@ -129,7 +133,7 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 - **Dua jenis item:**
   1. **Flag Percakapan:** Pelanggaran aturan SOP/fraud (`AIOS Conversation Flag`).
   2. **Draf Pesanan Baru:** Saat customer tamu membuat draf `Sales Order` atau `Quotation` (`Pending Action Draft`), memuat nama customer/chat yang sah, penegasan status catatan pembeli, dan waktu pembuatan. Draf pesanan dari Telegram secara otomatis merekam `source_telegram_chat_id` di payload. Bila draf kemudian ditolak atau gagal dieksekusi saat di-approve oleh staf, sistem mengirimkan notifikasi proaktif ke Telegram pemesan yang mengabarkan status penolakan atau meminta perbaikan data yang kurang secara spesifik tanpa emoji.
-- **Bell Taskbar & Jendela Peringatan:** Dot bell menghitung gabungan total flag `Open` riil dari server (`GET /api/connector/flags?status=Open`) dan total pesanan belum dibaca (dibatasi `99+` bila > 99). Jendela `Peringatan Kanal` (`ChannelFlagsWindow.vue`) menampilkan kedua daftar (hingga 50 flag `Open` terbaru dan antrean pesanan) dengan tata letak pinned footer: kepala window terkunci di atas (menampilkan total flag `Open` riil dan total pesanan belum dibaca riil dari server), daftar pesanan dan flag dapat di-scroll mandiri, dan bar pagination draf pesanan 20 per halaman (tombol ikon ‹ › dan keterangan halaman X / Y) menempel di bawah window tanpa scroll; tombol "Buka Draf" (`approval:<draft_id>`), serta "Tandai sudah ditinjau" yang menyegarkan antrean dan langsung menurunkan dot.
+- **Bell Taskbar & Jendela Peringatan:** Dot bell menghitung gabungan total flag `Open` riil dari server (`GET /api/method/aios_v1.api.connector.list_flags?status=Open`) dan total pesanan belum dibaca (dibatasi `99+` bila > 99). Jendela `Peringatan Kanal` (`ChannelFlagsWindow.vue`) menampilkan kedua daftar (hingga 50 flag `Open` terbaru dan antrean pesanan) dengan tata letak pinned footer: kepala window terkunci di atas (menampilkan total flag `Open` riil dan total pesanan belum dibaca riil dari server), daftar pesanan dan flag dapat di-scroll mandiri, dan bar pagination draf pesanan 20 per halaman (tombol ikon ‹ › dan keterangan halaman X / Y) menempel di bawah window tanpa scroll; tombol "Buka Draf" (`approval:<draft_id>`), serta "Tandai sudah ditinjau" yang menyegarkan antrean dan langsung menurunkan dot.
 
 | Target | Angka | Catatan |
 |---|---|---|
@@ -144,7 +148,20 @@ Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan siste
 
 **Webhook di luar scope v1:** butuh HTTPS + sertifikat valid (CN persis) + port 443/80/88/8443 tanpa redirect, sementara bench lokal tidak punya URL publik. <https://core.telegram.org/bots/faq>
 
-**Permukaan API** (`/api/connector/*`, wajib sesi): `health`, `threads`, `flags`, `flag/close`, `orders`, `order/review`, `link-token`, `link-status`, `unlink`. Tidak ada endpoint yang menulis ERPNext.
+**Permukaan API** (Fase 1 — `@frappe.whitelist()` resmi di `/api/method/aios_v1.api.connector.*`, wajib sesi, **Guest → 403**, POST wajib `X-Frappe-CSRF-Token`):
+
+| Method | HTTP | Kegunaan |
+|---|---|---|
+| `list_threads` | GET | daftar thread kanal |
+| `list_flags` | GET | daftar flag (`status=Open`/`Closed`) untuk bell taskbar |
+| `close_flag` | POST | tutup flag oleh penerima aktif / owner |
+| `list_orders` | GET | antrean draf pesanan (pagination) |
+| `review_order` | POST | tandai pesanan sudah ditinjau |
+| `create_link_token` | POST | token tautan akun Telegram |
+| `get_link_status` | GET | status tautan akun Telegram |
+| `unlink_telegram` | POST | lepas tautan akun Telegram |
+
+Rute lama `/api/connector/*` (dulu dispatcher kustom) dan `/api/connector/health` sudah dihapus tanpa pengganti. Tidak ada endpoint yang menulis ERPNext.
 
 **Non-scope v1:** checkout inline-keyboard, submit/cancel dari chat, pembuatan langsung Customer oleh bot di chat (Customer baru dibuat saat approval draf oleh staf), media/grup/broadcast/multi-bot, 8 cabang lain, webhook produksi, AI Automation Drive/Sheets, AI Agents Supervisor, kanal WA/IG/Email, dan realtime socket.io di desk.
 
@@ -172,7 +189,7 @@ Kontrak trace: `trace_delegate_start` memuat `from`, `to`, `instruction`; `trace
 
 **Yang tidak boleh ditampilkan:** *system prompt* internal AIOS (instruksi dasar, ETHOS, guard). Trace menampilkan **tugas, tool, dan hasil** — bukan resep produk. Panggilan tool kontrol UI `open_module` (khusus Orchestrator/AI Manager) juga dikecualikan dari `trace_subagent_tool` dan tidak masuk ke daftar langkah trace di UI karena ia menghasilkan event kontrol UI `open_module` tersendiri (§3.3).
 
-Route `GET /api/branches` juga menerapkan proyeksi server-side sebelum data mencapai browser. Payload publik hanya memuat `key`, `name`, `description`, `tagline`, `enabled` pada cabang serta `key`, `branch`, `jobRole`, `description`, `exampleQuestions`, `enabled` pada worker. `manager_persona` dan materi prompt internal worker tetap tersedia pada registry server untuk prompt builder, tetapi tidak pernah dikirim ke client.
+Route `GET /api/method/aios_v1.api.branches.list_branches` juga menerapkan proyeksi server-side sebelum data mencapai browser. Payload publik hanya memuat `key`, `name`, `description`, `tagline`, `enabled` pada cabang serta `key`, `branch`, `jobRole`, `description`, `exampleQuestions`, `enabled` pada worker. `manager_persona` dan materi prompt internal worker tetap tersedia pada registry server untuk prompt builder, tetapi tidak pernah dikirim ke client.
 
 ### 3.2. Approval Card dan Artefak File
 
@@ -186,6 +203,8 @@ Jenis artefak yang direncanakan: Approval Card (kontrak approval Alur 5; event b
 
 Semua event dikirim sebagai satu baris `data: <json>\n\n` pada response
 `text/event-stream`. Setiap payload wajib punya field `type`.
+
+**Endpoint SSE (Fase 1):** `POST /api/method/aios_v1.api.chat.stream_chat` (`@frappe.whitelist`, wajib sesi, **Guest → 403**, header `X-Frappe-CSRF-Token`). Method mengembalikan `werkzeug.wrappers.Response` ber-generator lewat *Response passthrough* resmi Frappe (`frappe/handler.py`, `frappe/api/__init__.py`), dengan header `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, `X-Accel-Buffering: no`; generator melakukan commit sendiri. Rute lama `POST /api/chat/<branch>/stream` sudah dihapus.
 
 **Event dasar yang dipakai sekarang** (`aios_v1/managers/base_manager.py`):
 

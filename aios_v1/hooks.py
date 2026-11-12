@@ -336,4 +336,7 @@ require_type_annotated_api_methods = True
 
 
 
-before_request = ['aios_v1.api.dispatcher.handle_api_request']
+# Fase 1 (12 Nov 2026): hook `before_request` kustom DIHAPUS. Seluruh rute
+# API kini memakai `@frappe.whitelist()` resmi di `/api/method/...`, sehingga
+# penanganan sesi (`sid` + CSRF), routing, dan permission sepenuhnya oleh
+# framework Frappe. Tidak ada dispatcher kustom lagi.

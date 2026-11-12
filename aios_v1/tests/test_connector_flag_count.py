@@ -11,12 +11,13 @@ e. Other user calling ?status=Open receives flags=[] and total=0
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qs
 
 import frappe
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
 
-from aios_v1.api.dispatcher import CustomAPIResponse, handle_api_request
+from aios_v1.api import connector
 from aios_v1.lib.connector import dispatch, views
 
 try:
@@ -145,42 +146,33 @@ class TestConnectorFlagCount(IntegrationTestCase):
         return names
 
     def _call_flags_api(self, user: str, query_string: str = "") -> dict:
-        builder = EnvironBuilder(
-            path="api/connector/flags",
-            method="GET",
-            query_string=query_string,
-        )
-        frappe.local.request = Request(builder.get_environ())
+        params = parse_qs(query_string)
+        status = params.get("status", [None])[0]
         frappe.set_user(user)
         try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            data = exc._custom_response.get_data(as_text=True)
-            return json.loads(data)
+            return connector.list_flags(status=status)
         finally:
-            frappe.local.request = None
             frappe.set_user("Administrator")
-        raise AssertionError("api/connector/flags tidak mengembalikan response")
 
     def _call_close_flag_api(self, user: str, flag_id: int | str, note: str = "") -> dict:
+        # Whitelisted `close_flag(flag: str)` divalidasi tipe oleh Frappe; nama
+        # flag autonumeric (int) harus dikirim sebagai string.
+        flag_id = str(flag_id)
         payload = json.dumps({"flag": flag_id, "note": note})
         builder = EnvironBuilder(
-            path="api/connector/flag/close",
+            path="/api/method/aios_v1.api.connector.close_flag",
             method="POST",
             data=payload,
             content_type="application/json",
         )
         frappe.local.request = Request(builder.get_environ())
+        frappe.local.form_dict = frappe._dict()
         frappe.set_user(user)
         try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            data = exc._custom_response.get_data(as_text=True)
-            return json.loads(data)
+            return connector.close_flag(flag=flag_id, note=note)
         finally:
             frappe.local.request = None
             frappe.set_user("Administrator")
-        raise AssertionError("api/connector/flag/close tidak mengembalikan response")
 
     # =========================================================================
     # a. Filter status=Open, status=Closed, dan tanpa query

@@ -3,14 +3,11 @@
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
-import json
 from urllib.parse import quote
 
 import frappe
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
-from aios_v1.api.dispatcher import CustomAPIResponse, handle_api_request
+from aios_v1.api import monitoring
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -99,21 +96,13 @@ class TestMonitoringScope(IntegrationTestCase):
         self._restore_and_rollback()
         super().tearDown()
 
-    def _get(self, path):
-        builder = EnvironBuilder(path=path, method="GET")
-        frappe.local.request = Request(builder.get_environ())
-        try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            return exc._custom_response
-        finally:
-            frappe.local.request = None
-        raise AssertionError(f"{path} tidak mengembalikan response")
+    def _require_admin(self):
+        """Gate monitoring resmi: Administrator (bukan System Manager/DEVELOPER)."""
+        frappe.set_user("Administrator")
 
     def test_usage_counts_tokens_by_user(self):
-        response = self._get("/api/monitoring/usage")
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
+        self._require_admin()
+        body = monitoring.usage_summary()
         row = next(
             company for company in body["companies"] if company["id"] == self.EMAIL
         )
@@ -123,9 +112,8 @@ class TestMonitoringScope(IntegrationTestCase):
         self.assertEqual(row["costIdr"], 2)
 
     def test_drilldown_counts_branch_by_user(self):
-        response = self._get(f"/api/monitoring/usage/{quote(self.EMAIL, safe='')}")
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
+        self._require_admin()
+        body = monitoring.usage_by_company(quote(self.EMAIL, safe=""))
         branch = next(
             item for item in body["branches"] if item["branch"] == "sales"
         )
@@ -134,11 +122,8 @@ class TestMonitoringScope(IntegrationTestCase):
         self.assertEqual(branch["calls"], 2)
 
     def test_drilldown_counts_worker_by_agent(self):
-        response = self._get(
-            f"/api/monitoring/usage/{quote(self.EMAIL, safe='')}/sales"
-        )
-        self.assertEqual(response.status_code, 200)
-        body = json.loads(response.get_data(as_text=True))
+        self._require_admin()
+        body = monitoring.usage_by_branch(quote(self.EMAIL, safe=""), "sales")
         workers = {item["workerKey"]: item for item in body["workers"]}
         self.assertEqual(workers["manager"]["inputTokens"], 10)
         self.assertEqual(workers["worker"]["outputTokens"], 1)

@@ -10,15 +10,12 @@ e. Permission isolation and employee draft exclusion
 
 from __future__ import annotations
 
-import json
-import math
 import uuid
+from urllib.parse import parse_qs
 
 import frappe
-from werkzeug.test import EnvironBuilder
-from werkzeug.wrappers import Request
 
-from aios_v1.api.dispatcher import CustomAPIResponse, handle_api_request
+from aios_v1.api import connector
 from aios_v1.lib.connector import notify, views
 from aios_v1.lib.draft_manager import create_draft
 from aios_v1.lib.workspace import WorkspaceError
@@ -134,22 +131,14 @@ class TestConnectorOrdersPagination(IntegrationTestCase):
         return draft_names
 
     def _call_orders_api(self, user: str, query_string: str = "") -> dict:
-        builder = EnvironBuilder(
-            path="api/connector/orders",
-            method="GET",
-            query_string=query_string,
-        )
-        frappe.local.request = Request(builder.get_environ())
+        params = parse_qs(query_string)
+        page = params.get("page", ["1"])[0]
+        unread = params.get("unread", [None])[0]
         frappe.set_user(user)
         try:
-            handle_api_request()
-        except CustomAPIResponse as exc:
-            data = exc._custom_response.get_data(as_text=True)
-            return json.loads(data)
+            return connector.list_orders(page=page, unread=unread)
         finally:
-            frappe.local.request = None
             frappe.set_user("Administrator")
-        raise AssertionError("api/connector/orders tidak mengembalikan response")
 
     # =========================================================================
     # a. Halaman 1 dan 2
@@ -293,16 +282,23 @@ class TestConnectorOrdersPagination(IntegrationTestCase):
         # Employee draft creation (is_guest = False) must NOT create Notification Log
         from unittest.mock import patch
 
+        from frappe.utils import add_to_date, nowdate
+
         from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
 
         before_count = views.count_orders(self.owner, unread_only=True)
         with patch("aios_v1.lib.erpnext_action_drafts.get_tool_context", return_value={"user_id": self.owner, "allowed_company": "Windu Utama PT", "branch": "sales", "worker_key": "sales"}):
             with patch("aios_v1.lib.erpnext_action_drafts.validate_data_fields"):
                 frappe.set_user(self.owner)
+                # `delivery_date` wajib untuk draf Sales Order non-guest
+                # (erpnext_action_drafts.py:138-144); data uji harus lengkap.
                 res = erpnext_action_draft_create(
                     action_type="CREATE",
                     doctype="Sales Order",
-                    data={"customer": "Internal Customer"},
+                    data={
+                        "customer": "Internal Customer",
+                        "delivery_date": str(add_to_date(nowdate(), days=7)),
+                    },
                     reason="Employee internal order",
                 )
                 self.assertEqual(res["status"], "PENDING_APPROVAL")

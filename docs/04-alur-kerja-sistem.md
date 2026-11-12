@@ -110,14 +110,14 @@ sequenceDiagram
         FrappeAuth-->>UI: Tolak Login (401/403 AuthenticationError — Tidak Ada Sesi Terbentuk)
     else enabled == 1 dan aios_status == "Active"
         FrappeAuth-->>UI: Set Cookie sid (HttpOnly, SameSite=Lax)
-        UI->>CtxAPI: GET /api/method/aios_v1...get_session_context
+        UI->>CtxAPI: GET /api/method/aios_v1.setup.get_session_context
         CtxAPI->>CtxAPI: Panggil frappe.sessions.get_csrf_token()
         CtxAPI->>CtxAPI: Baca Role (AIOS Admin vs AIOS Client), User Quota, & Default Company Site
         CtxAPI-->>UI: Return { user, roles, aios_persona, token_limit, tokens_used, company, csrf_token }
         alt Role == AIOS Admin (site developer saja)
             UI-->>User: Render Developer Control Plane (Registry Site, Undangan, Kuota, Monitoring)
         else Role == AIOS Client
-            UI-->>User: Render Ekasa Desk (desktop OS: taskbar, panel agent, jendela modul)
+            UI-->>User: Render Ekasa Desk (Flow Utama langkah 6 — desktop OS: taskbar, panel agent, jendela modul)
         end
     end
 ```
@@ -132,7 +132,16 @@ sequenceDiagram
    - Jika pengguna memiliki role `AIOS Admin` (hanya ada di *site developer*), aplikasi mengarahkan ke **Developer Control Plane**.
    - Jika pengguna memiliki role `AIOS Client`, aplikasi mengarahkan ke **Ekasa Desk** — desktop OS dengan panel agent dan jendela modul (`docs/08`).
    - Role `AIOS Control` **tidak pernah login sebagai manusia**; ia hanya dipakai endpoint Control API dengan token layanan.
-5. **Penegakan CSRF:** Seluruh request tulis (`POST`/`PUT`/`DELETE`) berikutnya dari frontend wajib menyertakan header `X-Frappe-CSRF-Token`.
+5. **Penegakan CSRF:** Seluruh request tulis (`POST`/`PUT`/`DELETE`) berikutnya dari frontend wajib menyertakan header `X-Frappe-CSRF-Token`. CSRF divalidasi resmi oleh Frappe (`frappe/auth.py::validate_csrf_token`); token dibootstrap lewat `get_session_context` (`frappe.sessions.get_csrf_token()`).
+
+> **Kontrak API seluruh rute (Fase 1, 12 Nov 2026, keputusan Ten — memetakan Flow Utama langkah 6 "Client memakai app" / Ekasa Desk):** Tidak hanya login — **seluruh rute API kustom AIOS** kini memakai `@frappe.whitelist()` resmi di `/api/method/aios_v1.api.<module>.<method>`, sehingga sesi (`sid`), routing, dan permission sepenuhnya oleh framework. Dispatcher kustom (`api/dispatcher.py`), `lib/auth.py`, hook `before_request` (`hooks.py`), cookie `aios_session`, `cookie_to_set/clear`, dan `add_cors_headers` manual **dihapus**.
+> - **Guest → 403** (`frappe.PermissionError` lewat `is_whitelisted`), bukan 401 dari dispatcher lama. Semua POST wajib `X-Frappe-CSRF-Token`.
+> - **Logout** memakai `/api/method/logout` bawaan Frappe, bukan `/api/auth/logout`.
+> - **Enam rute legacy dihapus tanpa pengganti:** `api/auth/me`, `api/auth/login`, `api/auth/register`, `api/payment/status`, `api/payment/checkout`, `api/connector/health`.
+> - **Peta rute baru:** `aios_v1.api.branches.list_branches` (→ `/api/branches`); `aios_v1.api.monitoring.usage_summary | usage_by_company | usage_by_branch` (→ `/api/monitoring/usage*`); `aios_v1.api.chat.parse_pdf | upload_file | list_conversations | get_conversation | stream_chat` (→ `/api/chat/*`, termasuk SSE `/api/chat/<branch>/stream` → `stream_chat`); `aios_v1.api.connector.list_threads | list_flags | close_flag | list_orders | review_order | create_link_token | get_link_status | unlink_telegram` (→ `/api/connector/*`). URL lama `/api/branches`, `/api/monitoring/*`, `/api/chat/*`, `/api/connector/*` tidak ada lagi.
+> - **SSE** `stream_chat` mengembalikan `werkzeug.wrappers.Response` ber-generator lewat *Response passthrough* resmi Frappe, dengan header `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, `X-Accel-Buffering: no`; generator commit sendiri.
+> - **Monitoring gate** memakai `_is_admin` (`aios_v1/permissions.py`) = Administrator + role `AIOS Admin`; **System Manager tidak lagi diizinkan** (pengetatan).
+> - **CORS** manual dihapus; lintas-origin produksi memakai `allow_cors` resmi di `site_config` (saat ini hanya origin DEV `http://localhost:5173` & `http://aios-client1.localhost:5173`; domain produksi belum ada — `bench set-config` dijalankan Ten di environment writable).
 
 ---
 
@@ -151,7 +160,7 @@ sequenceDiagram
     participant ERP as ERPNext Database & Query Reports
 
     Client->>UI: Kirim instruksi kerja di Cabang Sales / Finance
-    UI->>Orch: POST /stream (SSE + Header X-Frappe-CSRF-Token)
+    UI->>Orch: POST /api/method/aios_v1.api.chat.stream_chat (SSE + Header X-Frappe-CSRF-Token)
     Orch->>Orch: Verifikasi kepemilikan Conversation (conv.user == session.user), Cek Site Token Quota, baca satu model AIOS Setting
     
     opt Delegasi ke Sub-Agent di Divisi yang Sama (MAX_DELEGATION_DEPTH = 2)
@@ -190,7 +199,7 @@ sequenceDiagram
 ```
 
 ### Rincian Langkah Alur 4:
-1. **Verifikasi Awal Request (`/stream`):** Saat klien mengirim pesan, sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model. Request dapat menyertakan `new_conversation=true` untuk memulai sesi baru: server membuat `AIOS Conversation` baru atas nama user dan mengabaikan `conversation_id` lama. Tanpa flag, `conversation_id` yang ada dipakai; bila tidak ada, server memakai percakapan terakhir branch atau membuat baru. **PoC memakai satu model dari `AIOS Setting`** (`base_url`, `model_name`, `temperature`); `AIOS Agent Model Route` adalah target H1 yang ditunda (`docs/00` §2.3) dan belum dipakai.
+1. **Verifikasi Awal Request (`stream_chat`):** Saat klien mengirim pesan lewat `POST /api/method/aios_v1.api.chat.stream_chat` (SSE; `@frappe.whitelist`, wajib sesi — **Guest → 403** — dan header `X-Frappe-CSRF-Token`), sistem memverifikasi kepemilikan `AIOS Conversation` terhadap `frappe.session.user` aktif, memastikan `User.aios_status == "Active"`, memeriksa sisa kuota token site (`AIOS Setting.site_tokens_used < site_token_limit`; `0` = tanpa plafon), dan mengambil konfigurasi model. Request dapat menyertakan `new_conversation=true` untuk memulai sesi baru: server membuat `AIOS Conversation` baru atas nama user dan mengabaikan `conversation_id` lama. Tanpa flag, `conversation_id` yang ada dipakai; bila tidak ada, server memakai percakapan terakhir branch atau membuat baru. **PoC memakai satu model dari `AIOS Setting`** (`base_url`, `model_name`, `temperature`); `AIOS Agent Model Route` adalah target H1 yang ditunda (`docs/00` §2.3) dan belum dipakai.
 2. **Perakitan Prompt Berlapis & Skema Plugin:** Sistem merakit System Prompt (`AIOS_ETHOS` + Identitas/SOP peran + `AIOS Setting.company_context_persona` + `User.aios_persona` + `User.aios_persona_context` — di mana `company_context_persona` dapat dikelola oleh client lewat jendela Pengaturan → Personalisasi di Ekasa Desk) dan hanya menyertakan skema tool yang diizinkan untuk peran tersebut (di mana `orchestrator_delegate_to_subagent` hanya diberikan ke Orchestrator agar Sub-Agent tidak dapat mendelegasikan ulang tanpa batas). **DocType `AIOS Plugin` baru dibuat di H2** (`docs/06`); `#8` belum memakainya. Pada `#8` skema tool diambil dari registry plugin bawaan (`aios_v1/lib/tool_registry.py`).
 3. **Delegasi Sub-Agent Nyata & 5 Event Kanonik *Live Agent Trace*:**
    - PoC memakai satu model dari `AIOS Setting`; routing model per-agent melalui `AIOS Agent Model Route` adalah target H1 yang ditunda. H4 mengirim empat event trace delegasi dan `trace_cross_branch` lewat SSE backend. UI Live Agent Trace dikerjakan di #12 (`docs/08` §3).

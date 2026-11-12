@@ -2,7 +2,7 @@
 
 > **Status dokumen:** *catatan kerja* — bukan spesifikasi normatif, bukan roadmap, bukan kontrak scope PoC.
 > Isinya temuan yang **sudah dikonfirmasi** lewat pembacaan kode/docs/runtime, beserta keputusan yang sudah diambil.
-> Dokumen ini **telah disinkronkan** dengan implementasi kode dan runtime saat ini (2026-11-09).
+> Dokumen ini **telah disinkronkan** dengan implementasi kode dan runtime saat ini (2026-11-09; diperbarui 2026-11-12 dengan catatan Fase 1 — lihat §E.1).
 
 > **Aturan induk: Frappe resmi menang.** Bila isi dokumen ini, `docs/`, atau `AGENTS.md` berbeda dengan perilaku/dokumentasi resmi Frappe/ERPNext (docs.frappe.io, source `apps/frappe`, `apps/erpnext`), yang resmi menang. Jangan menebak: cari primitif resmi dulu. Lihat `AGENTS.md` §2 dan `docs/00` §6.
 
@@ -224,6 +224,21 @@ Masih ada user utuh `route-b@example.test` di `aios-4a1-check.localhost`.
 | Kolom usang `aios_token_limit` dihapus dari `tabUser` | commit `d5dbe6b` (2026-11-09) |
 | Perbaikan `test_tool_registry` (konteks eksplisit pada invalid args) | commit `4ff8cc8` (2026-11-09) |
 | Perbaikan silent except di `api/dispatcher.py` (`?page=`) tanpa log spam | commit `3b39d94` (2026-11-09) |
+| **Fase 1 — migrasi API ke `@frappe.whitelist()` resmi** (lihat §E.1) | 1 commit lokal (lihat laporan Fase 1), 12 Nov 2026 |
+
+#### E.1 — Fase 1 selesai (12 Nov 2026, keputusan Ten)
+
+Memetakan **Flow Utama langkah 6** (`docs/00` §1.1: "Client memakai app" / Ekasa Desk). Catatan ringkas; detail normatif ada di `docs/02`, `docs/04` Alur 3, `docs/08` §10.
+
+- **Dihapus:** `aios_v1/api/dispatcher.py`, `aios_v1/lib/auth.py`, hook `before_request` (`hooks.py`), cookie `aios_session` + `cookie_to_set/clear`, CORS manual (`add_cors_headers`).
+- **17 method** whitelisted di `/api/method/aios_v1.api.<module>.<method>`: `branches.list_branches`; `monitoring.usage_summary|usage_by_company|usage_by_branch`; `chat.parse_pdf|upload_file|list_conversations|get_conversation|stream_chat`; `connector.list_threads|list_flags|close_flag|list_orders|review_order|create_link_token|get_link_status|unlink_telegram`.
+- **6 rute dihapus tanpa pengganti:** `api/auth/me`, `api/auth/login`, `api/auth/register`, `api/payment/status`, `api/payment/checkout`, `api/connector/health`. Logout = `/api/method/logout` bawaan (bukan `/api/auth/logout`).
+- **Kontrak tamu berubah:** 401 (dispatcher) → **403** (`frappe.PermissionError` lewat `is_whitelisted`); POST wajib `X-Frappe-CSRF-Token` (`frappe/auth.py::validate_csrf_token`).
+- **E1:** `frappe.set_user("Administrator")` di `confirm_draft_cash_payment` dibungkus save/restore `frappe.local.session` (sid + data + `form_dict`) agar sesi login tidak rusak.
+- **SSE-1:** `stream_chat` mengembalikan `werkzeug.wrappers.Response` ber-generator lewat *Response passthrough* resmi Frappe, header `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, `X-Accel-Buffering: no`; generator commit sendiri. Menggantikan `/api/chat/<branch>/stream`.
+- **Monitoring:** gate `_is_admin` (`aios_v1/permissions.py`) = Administrator + role `AIOS Admin`; **System Manager tidak lagi diizinkan** (pengetatan).
+- **CORS:** manual dihapus; produksi memakai `allow_cors` resmi di `site_config`. **Masih TERBUKA:** saat ini hanya origin DEV (`http://localhost:5173`, `http://aios-client1.localhost:5173`); **belum ada domain frontend produksi** dan `bench set-config` dijalankan Ten di environment writable. Domain produksi menyusul keputusan Ten — jangan mengarang domain.
+- **Bukti:** 1 commit lokal (lihat laporan Fase 1); tidak ada hash yang dicantumkan di sini.
 
 ---
 
@@ -249,3 +264,4 @@ Saat dokumen ini dibuat (diperbarui 2026-11-09):
 6. **C1 + C2** — Kelola Staf, `AIOS Setting.max_users`, `AIOS Client Owner Profile` — **Selesai (2026-11-06, commit `70b54ee`)**.
 7. **Uji end-to-end manual** mengikuti `docs/00` §1.1 / `docs/04` §6.0 di site uji baru (`aios-client1.localhost`).
 8. **Ditunda:** A4 (`contact_email` di `AIOS Managed Site`).
+9. **Masih TERBUKA (keputusan Ten):** domain frontend produksi untuk `allow_cors` di `site_config` — Fase 1 baru memasang origin DEV; `bench set-config` dijalankan Ten di environment writable (lihat §E.1).
