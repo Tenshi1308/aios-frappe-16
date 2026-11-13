@@ -15,7 +15,12 @@ except ImportError:
 
 from aios_v1.lib.connector import dispatch, linking, notify, telegram_client
 from aios_v1.lib.draft_manager import approve_and_execute_draft, create_draft
-from aios_v1.lib.tool_registry import GUEST_ALLOWED_TOOLS, execute_tool, get_tools_schema_for_worker
+from aios_v1.lib.tool_registry import (
+    DRAFT_TOOLS,
+    GUEST_ALLOWED_TOOLS,
+    execute_tool,
+    get_tools_schema_for_worker,
+)
 
 SETTING = "AIOS Telegram Setting"
 THREAD = "AIOS Channel Thread"
@@ -120,6 +125,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
 
         self.created_customers: list[str] = []
         self.created_drafts: list[str] = []
+        self.created_conversations: list[str] = []
         self._cache_keys_to_clear: list[str] = []
         self._cleanup_threads()
 
@@ -139,6 +145,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
             cache.delete_value(key)
         frappe.db.commit = self._orig_commit
         frappe.db.rollback()
+        frappe.clear_document_cache("AIOS Setting", "AIOS Setting")
 
     def tearDown(self):
         frappe.set_user("Administrator")
@@ -148,9 +155,16 @@ class TestConnectorDraftActions(IntegrationTestCase):
                 for act in ("approve", "reject", "confirm_cash_payment"):
                     cache.delete_value(f"aios_tg_confirm:{usr}:{act}:{draft_id}")
         self._cleanup_threads()
+        for conv_id in getattr(self, "created_conversations", []):
+            for msg_name in frappe.get_all("AIOS Message", filters={"conversation": str(conv_id)}, pluck="name"):
+                frappe.delete_doc("AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("AIOS Conversation", str(conv_id)):
+                frappe.delete_doc("AIOS Conversation", str(conv_id), ignore_permissions=True, force=True, delete_permanently=True)
         for cid in (CHAT_RECEIVER, CHAT_OWNER, CHAT_STAFF, CHAT_CUSTOMER):
             dispatch.clear_rate_limit(cid)
         for email in (RECEIVER, OWNER, STAFF):
+            for usage_name in frappe.get_all("AIOS Token Usage", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("AIOS Token Usage", usage_name, ignore_permissions=True, force=True, delete_permanently=True)
             for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
                 frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
             if frappe.db.exists("Notification Settings", email):
@@ -259,45 +273,66 @@ class TestConnectorDraftActions(IntegrationTestCase):
                 delattr(frappe.local, "aios_channel")
         self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
 
-    def test_non_telegram_excludes_draft_tools_and_telegram_blocks_other_tools(self):
-        # Non-Telegram (Ekasa Desk web chat) tidak mengekspos TELEGRAM_DRAFT_TOOLS
+    def test_ekasa_desk_exposes_draft_tools_and_telegram_keeps_scope(self):
+        from aios_v1.plugin_manager.registry import get_branch
+        from aios_v1.setup import ensure_builtin_plugins
+
+        ensure_builtin_plugins()
+        subagent_key = get_branch("sales")["workers"][0]["key"]
+
+        # Ekasa Desk (aios_channel tidak diset): manager sales non-Guest melihat DRAFT_TOOLS dan open_module; subagent & Guest tidak
         if hasattr(frappe.local, "aios_channel"):
             delattr(frappe.local, "aios_channel")
-        web_tools = {
+        web_manager_tools = {
             s["function"]["name"]
             for s in get_tools_schema_for_worker("sales", "manager", user=self.receiver)
         }
-        for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
-            self.assertNotIn(tool_name, web_tools)
+        self.assertTrue(DRAFT_TOOLS.issubset(web_manager_tools))
+        self.assertIn("open_module", web_manager_tools)
 
-        # Pada Telegram: manager non-Guest melihat 5 guest tool + 3 tool draf; subagent tidak
+        web_subagent_tools = {
+            s["function"]["name"]
+            for s in get_tools_schema_for_worker("sales", subagent_key, user=self.receiver)
+        }
+        self.assertTrue(web_subagent_tools.isdisjoint(DRAFT_TOOLS))
+
+        web_guest_tools = {
+            s["function"]["name"]
+            for s in get_tools_schema_for_worker("sales", "manager", user="Guest")
+        }
+        self.assertEqual(web_guest_tools, set(GUEST_ALLOWED_TOOLS))
+        self.assertTrue(web_guest_tools.isdisjoint(DRAFT_TOOLS))
+
+        # Pada Telegram: manager non-Guest melihat 5 guest tool + 3 tool draf, tetap blokir open_module & laporan; subagent tidak melihat DRAFT_TOOLS
         frappe.local.aios_channel = "telegram"
         try:
-            from aios_v1.plugin_manager.registry import get_branch
-
             tg_manager_tools = {
                 s["function"]["name"]
                 for s in get_tools_schema_for_worker("sales", "manager", user=self.receiver)
             }
-            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
-                self.assertIn(tool_name, tg_manager_tools)
+            self.assertTrue(DRAFT_TOOLS.issubset(tg_manager_tools))
+            self.assertNotIn("open_module", tg_manager_tools)
             self.assertNotIn("erpnext_report_run", tg_manager_tools)
 
-            subagent_key = get_branch("sales")["workers"][0]["key"]
             tg_subagent_tools = {
                 s["function"]["name"]
                 for s in get_tools_schema_for_worker("sales", subagent_key, user=self.receiver)
             }
-            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
-                self.assertNotIn(tool_name, tg_subagent_tools)
+            self.assertTrue(tg_subagent_tools.isdisjoint(DRAFT_TOOLS))
 
             frappe.set_user(self.receiver)
-            denied_report = execute_tool(
-                "erpnext_report_run",
-                "{}",
-                context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
-            )
-            self.assertIn("TOOL_FORBIDDEN_ON_TELEGRAM", denied_report)
+            for blocked_tool, raw_args in (
+                ("open_module", json.dumps({"module": "sales_invoice"})),
+                ("erpnext_report_run", "{}"),
+            ):
+                denied = json.loads(
+                    execute_tool(
+                        blocked_tool,
+                        raw_args,
+                        context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+                self.assertEqual(denied.get("code"), "TOOL_FORBIDDEN_ON_TELEGRAM")
         finally:
             if hasattr(frappe.local, "aios_channel"):
                 delattr(frappe.local, "aios_channel")
@@ -978,21 +1013,629 @@ class TestConnectorDraftActions(IntegrationTestCase):
             if hasattr(frappe.local, "aios_channel"):
                 delattr(frappe.local, "aios_channel")
 
-    def test_sales_manager_telegram_system_prompt_directive_preserves_guest_persona(self):
+    def test_sales_manager_draft_protocol_prompt_parity_preserves_guest_and_scope(self):
         from aios_v1.managers.base_manager import BaseManager
         from aios_v1.plugin_manager.registry import get_branch
 
-        mgr = BaseManager(get_branch("sales"))
-        frappe.local.aios_channel = "telegram"
+        sales_mgr = BaseManager(get_branch("sales"))
+        finance_mgr = BaseManager(get_branch("finance"))
+        sales_subagent = sales_mgr.branch["workers"][0]
+
+        protocol_elements = [
+            "approve_draft",
+            "reject_draft",
+            "confirm_cash_payment",
+            "confirmed=true",
+            "WAJIB panggil tool terlebih dahulu",
+            "Sales Order",
+            "Payment Entry",
+        ]
+        old_header_token = " ".join(["PROTOKOL", "AKSI", "DRAF", "TELEGRAM"])
+
         try:
-            emp_prompt = mgr.build_system_prompt(worker_def=None, user=self.receiver)
-            guest_prompt = mgr.build_system_prompt(worker_def=None, user="Guest")
+            # 1. Telegram dan Ekasa Desk (aios_channel unset)
+            for channel in ("telegram", None):
+                if channel:
+                    frappe.local.aios_channel = channel
+                elif hasattr(frappe.local, "aios_channel"):
+                    delattr(frappe.local, "aios_channel")
+
+                emp_prompt = sales_mgr.build_system_prompt(worker_def=None, user=self.receiver)
+                guest_prompt = sales_mgr.build_system_prompt(worker_def=None, user="Guest")
+
+                # Karyawan berwenang mendapatkan header kanal-netral dan 4 langkah protokol
+                self.assertIn("PROTOKOL AKSI DRAF (KARYAWAN BERWENANG):", emp_prompt)
+                self.assertNotIn(old_header_token, emp_prompt)
+                for line in emp_prompt.splitlines():
+                    if "PROTOKOL AKSI DRAF" in line:
+                        self.assertNotIn("TELEGRAM", line)
+
+                for elem in protocol_elements:
+                    self.assertIn(elem, emp_prompt)
+
+                # 2. Guest persona tetap terlindungi di kedua kanal
+                self.assertNotIn("approve_draft", guest_prompt)
+                self.assertNotIn("reject_draft", guest_prompt)
+                self.assertNotIn("confirm_cash_payment", guest_prompt)
+                self.assertNotIn("PROTOKOL AKSI DRAF", guest_prompt)
+
+            # 3. Ekasa Desk: finance manager dan sales sub-agent tidak memuat protokol aksi draf
+            if hasattr(frappe.local, "aios_channel"):
+                delattr(frappe.local, "aios_channel")
+
+            finance_prompt = finance_mgr.build_system_prompt(worker_def=None, user=self.receiver)
+            subagent_prompt = sales_mgr.build_system_prompt(worker_def=sales_subagent, user=self.receiver)
+
+            self.assertNotIn("PROTOKOL AKSI DRAF", finance_prompt)
+            self.assertNotIn("PROTOKOL AKSI DRAF", subagent_prompt)
         finally:
             if hasattr(frappe.local, "aios_channel"):
                 delattr(frappe.local, "aios_channel")
 
-        self.assertIn("approve_draft", emp_prompt)
-        self.assertIn("confirm_cash_payment", emp_prompt)
-        self.assertIn("konfirmasi", emp_prompt.lower())
-        self.assertNotIn("approve_draft", guest_prompt)
-        self.assertNotIn("confirm_cash_payment", guest_prompt)
+    def _clear_channel_context(self) -> None:
+        if hasattr(frappe.local, "aios_channel"):
+            delattr(frappe.local, "aios_channel")
+        if hasattr(frappe.local, "aios_channel_thread"):
+            delattr(frappe.local, "aios_channel_thread")
+        self.assertIsNone(getattr(frappe.local, "aios_channel", None))
+
+    def _create_ekasa_conversation(self, user: str, branch: str = "sales") -> int:
+        conv = frappe.get_doc(
+            {
+                "doctype": "AIOS Conversation",
+                "user": user,
+                "branch": branch,
+                "title": f"Ekasa Desk {branch}",
+            }
+        ).insert(ignore_permissions=True)
+        self.created_conversations.append(str(conv.name))
+        return int(conv.name)
+
+    def _run_ekasa_stream(
+        self,
+        user_message: str,
+        conversation_id: int,
+        user: str,
+        llm_side_effect,
+        sent_messages: list[tuple[str, str]] | None = None,
+        branch: str = "sales",
+    ) -> tuple[list[dict], str]:
+        from aios_v1.managers.base_manager import BaseManager
+        from aios_v1.plugin_manager.registry import get_branch
+        from aios_v1.setup import ensure_builtin_plugins
+
+        ensure_builtin_plugins()
+        self._clear_channel_context()
+        prev_user = frappe.session.user
+        frappe.set_user(user)
+        send_patch = (
+            patch.object(
+                telegram_client,
+                "send_message",
+                side_effect=lambda cid, txt: sent_messages.append((str(cid), txt)) or True,
+            )
+            if sent_messages is not None
+            else patch.object(telegram_client, "send_message", return_value=True)
+        )
+        try:
+            with patch("aios_v1.managers.base_manager.chat_stream", side_effect=llm_side_effect), send_patch:
+                raw_chunks = list(
+                    BaseManager(get_branch(branch)).handle_stream(
+                        user_message=user_message,
+                        conversation_id=conversation_id,
+                        user=user,
+                    )
+                )
+        finally:
+            frappe.set_user(prev_user)
+            self._clear_channel_context()
+
+        events: list[dict] = []
+        for chunk in raw_chunks:
+            for line in (chunk or "").splitlines():
+                stripped = line.strip()
+                if stripped.startswith("data:"):
+                    events.append(json.loads(stripped[5:].strip()))
+        reply = "".join(evt.get("text") or "" for evt in events if evt.get("type") == "delta")
+        return events, reply
+
+    def _assert_ekasa_sales_protocol_and_tools(self, system_prompt: str, tool_names: set[str]) -> None:
+        self.assertTrue(DRAFT_TOOLS.issubset(tool_names))
+        self.assertIn("open_module", tool_names)
+        self.assertIn("PROTOKOL AKSI DRAF (KARYAWAN BERWENANG):", system_prompt)
+        for step in (
+            "1. Untuk menyetujui draf (`approve_draft`)",
+            "2. Tampilkan ringkasan persis sesuai data tool",
+            "3. Jika karyawan menjawab tidak/batal",
+            "4. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi",
+        ):
+            self.assertIn(step, system_prompt)
+
+    def _make_tool_turn_llm(
+        self,
+        tool_name: str,
+        args_fn,
+        result_out: dict,
+        reply_fn,
+        inspect_round1=None,
+    ):
+        def fake_llm(messages, usage=None, tools=None, tool_calls=None):
+            if messages[-1]["role"] != "tool":
+                if inspect_round1:
+                    inspect_round1(messages, tools)
+                tool_calls.append(
+                    {
+                        "id": f"ekasa_{tool_name}",
+                        "function": {"name": tool_name, "arguments": json.dumps(args_fn())},
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            result_out.update(json.loads(messages[-1]["content"]))
+            yield reply_fn(result_out)
+
+        return fake_llm
+
+    def test_ekasa_desk_approve_draft_two_turns_with_natural_reply_sets_audit_and_notifies_customer(self):
+        cust_name = "_Test Ekasa Approve Two Turns"
+        draft = self._create_guest_order_draft(cust_name, qty=2)
+        conv_id = self._create_ekasa_conversation(self.receiver, "sales")
+        sent_messages: list[tuple[str, str]] = []
+        turn1_res: dict = {}
+        turn2_res: dict = {}
+        seen_turn1: dict = {}
+
+        def inspect_t1(messages, tools):
+            seen_turn1["system_prompt"] = messages[0]["content"]
+            seen_turn1["tool_names"] = {t["function"]["name"] for t in (tools or [])}
+
+        def inspect_t2(messages, _tools):
+            self.assertTrue(
+                any(m.get("role") == "assistant" and draft.name in (m.get("content") or "") for m in messages)
+            )
+
+        def _t1_reply(res: dict) -> str:
+            s = res["summary"]
+            item_desc = ", ".join(f"{it['item_name']} x{it['qty']}" for it in s["items"])
+            return (
+                f"Konfirmasi setujui draf {s['draft_id']} untuk {s['customer']}, "
+                f"item: {item_desc}, total {s['formatted_total']}. Balas ya atau tidak."
+            )
+
+        events1, reply1 = self._run_ekasa_stream(
+            f"setujui draf {draft.name}",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft.name},
+                turn1_res,
+                _t1_reply,
+                inspect_round1=inspect_t1,
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self._assert_ekasa_sales_protocol_and_tools(seen_turn1["system_prompt"], seen_turn1["tool_names"])
+        self.assertTrue(any(e.get("type") == "meta" and e.get("conversationId") == conv_id for e in events1))
+        self.assertTrue(any(e.get("type") == "done" for e in events1))
+        self.assertEqual(turn1_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertTrue(turn1_res.get("confirmation_token"))
+        cache_key = f"aios_tg_confirm:{self.receiver}:approve:{draft.name}"
+        self.assertIsNotNone(frappe.cache().get_value(cache_key))
+        self.assertEqual(turn1_res["summary"]["customer"], cust_name)
+        self.assertTrue(turn1_res["summary"]["formatted_total"])
+        self.assertIn(self.item_name, json.dumps(turn1_res["summary"]["items"]))
+        self.assertIn(cust_name, reply1)
+        self.assertIn(draft.name, reply1)
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+        self.assertEqual(sent_messages, [])
+
+        events2, reply2 = self._run_ekasa_stream(
+            "ya lanjutkan, proses sekarang",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {
+                    "draft_id": draft.name,
+                    "confirmed": True,
+                    "confirmation_token": turn1_res["confirmation_token"],
+                },
+                turn2_res,
+                lambda res: f"Draf {draft.name} berhasil disetujui. Nomor Sales Order: {res['sales_order']} (status: {res['draft_status']}).",
+                inspect_round1=inspect_t2,
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertTrue(any(e.get("type") == "done" for e in events2))
+        self.assertTrue(turn2_res.get("executed"))
+        so_name = turn2_res.get("sales_order")
+        self.assertTrue(so_name and frappe.db.exists("Sales Order", so_name))
+        self.assertIsNone(frappe.cache().get_value(cache_key))
+
+        msgs = frappe.get_all(
+            "AIOS Message",
+            filters={"conversation": str(conv_id)},
+            fields=["role", "content"],
+            order_by="name asc",
+        )
+        self.assertEqual([m["role"] for m in msgs], ["user", "manager", "user", "manager"])
+
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        draft_doc = frappe.get_doc("Pending Action Draft", draft.name)
+        self.assertEqual(so_doc.docstatus, 1)
+        self.assertEqual(so_doc.owner, self.receiver)
+        self.assertEqual(so_doc.modified_by, self.receiver)
+        self.assertEqual(draft_doc.status, "EXECUTED")
+        self.assertEqual(draft_doc.modified_by, self.receiver)
+        self.assertIn(so_name, reply2)
+
+        customer_msgs = [txt for cid, txt in sent_messages if cid == CHAT_CUSTOMER]
+        self.assertEqual(len(customer_msgs), 1)
+        self.assertIn("disetujui", customer_msgs[0].lower())
+        for internal_ref in (so_name, draft.name, "SO-", "DRF-"):
+            self.assertNotIn(internal_ref, customer_msgs[0])
+        self.assertEqual([txt for cid, txt in sent_messages if cid == CHAT_RECEIVER], [])
+
+        # Sub-kasus: konfirmasi natural dalam AIOS Conversation yang sama (LLM kirim confirmed=True tanpa token setelah giliran baru)
+        draft2 = self._create_guest_order_draft("_Test Ekasa Approve Natural Sub", qty=1)
+        sub_t1: dict = {}
+        sub_t2: dict = {}
+        self._run_ekasa_stream(
+            f"setujui draf {draft2.name}",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft2.name},
+                sub_t1,
+                lambda res: f"Konfirmasi {draft2.name} ({res['summary']['customer']}).",
+            ),
+        )
+        self.assertEqual(sub_t1.get("status"), "CONFIRMATION_REQUIRED")
+
+        self._run_ekasa_stream(
+            "oke lanjut eksekusi sekarang",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft2.name, "confirmed": True},
+                sub_t2,
+                lambda res: f"Sales Order {res.get('sales_order')} selesai.",
+            ),
+        )
+        self.assertTrue(sub_t2.get("executed"))
+        sub_so_name = sub_t2.get("sales_order")
+        self.assertTrue(sub_so_name and frappe.db.exists("Sales Order", sub_so_name))
+        sub_so_doc = frappe.get_doc("Sales Order", sub_so_name)
+        self.assertEqual(sub_so_doc.owner, self.receiver)
+        self.assertEqual(sub_so_doc.modified_by, self.receiver)
+        self.assertIsNone(frappe.cache().get_value(f"aios_tg_confirm:{self.receiver}:approve:{draft2.name}"))
+
+    def test_ekasa_desk_confirm_cash_payment_two_turns_sets_payment_entry_audit_and_notifies_customer(self):
+        cust_name = "_Test Ekasa Cash Pay Two Turns"
+        draft = self._create_guest_order_draft(cust_name, qty=1)
+        frappe.set_user(self.receiver)
+        try:
+            with patch.object(telegram_client, "send_message", return_value=True):
+                exec_res = approve_and_execute_draft(draft.name)
+        finally:
+            frappe.set_user("Administrator")
+        so_name = exec_res["name"]
+
+        conv_id = self._create_ekasa_conversation(self.receiver, "sales")
+        sent_messages: list[tuple[str, str]] = []
+        turn1_res: dict = {}
+        turn2_res: dict = {}
+
+        _, reply1 = self._run_ekasa_stream(
+            f"sudah bayar cash draf {draft.name}",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "confirm_cash_payment",
+                lambda: {"draft_id": draft.name},
+                turn1_res,
+                lambda res: (
+                    f"Konfirmasi bayar Cash draf {res['summary']['draft_id']} ({res['summary']['sales_order']}) "
+                    f"untuk {res['summary']['customer']} total {res['summary']['formatted_total']}. Ya/tidak?"
+                ),
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertEqual(turn1_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertEqual(turn1_res["summary"]["sales_order"], so_name)
+        self.assertEqual(turn1_res["summary"]["customer"], cust_name)
+        self.assertIn(so_name, reply1)
+        self.assertEqual(
+            frappe.get_all("Payment Entry Reference", filters={"reference_name": so_name, "docstatus": 1}),
+            [],
+        )
+        self.assertEqual(sent_messages, [])
+
+        _, reply2 = self._run_ekasa_stream(
+            "uang cash sudah diterima, konfirmasi",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "confirm_cash_payment",
+                lambda: {
+                    "draft_id": draft.name,
+                    "confirmed": True,
+                    "confirmation_token": turn1_res["confirmation_token"],
+                },
+                turn2_res,
+                lambda res: f"Pembayaran Cash tercatat: {res['payment_entry']} untuk {res['sales_order']} (status: lunas).",
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertTrue(turn2_res.get("payment_confirmed"))
+        pe_name = turn2_res.get("payment_entry")
+        self.assertTrue(pe_name and frappe.db.exists("Payment Entry", pe_name))
+        self.assertIsNone(frappe.cache().get_value(f"aios_tg_confirm:{self.receiver}:confirm_cash_payment:{draft.name}"))
+
+        pe_doc = frappe.get_doc("Payment Entry", pe_name)
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        draft_doc = frappe.get_doc("Pending Action Draft", draft.name)
+        self.assertEqual(pe_doc.docstatus, 1)
+        self.assertEqual(pe_doc.mode_of_payment, "Cash")
+        self.assertGreater(float(pe_doc.paid_amount or 0), 0)
+        self.assertEqual(float(so_doc.advance_paid or 0), float(pe_doc.paid_amount))
+        self.assertEqual(pe_doc.owner, self.receiver)
+        self.assertEqual(pe_doc.modified_by, self.receiver)
+        self.assertEqual(so_doc.owner, self.receiver)
+        self.assertEqual(so_doc.modified_by, self.receiver)
+        self.assertEqual(draft_doc.modified_by, self.receiver)
+        self.assertIn(pe_name, reply2)
+        self.assertIn(so_name, reply2)
+
+        customer_msgs = [txt for cid, txt in sent_messages if cid == CHAT_CUSTOMER]
+        self.assertEqual(len(customer_msgs), 1)
+        self.assertIn("pembayaran cash anda sebesar", customer_msgs[0].lower())
+        for internal_ref in (pe_name, so_name, draft.name, "PE-", "SO-", "DRF-"):
+            self.assertNotIn(internal_ref, customer_msgs[0])
+        self.assertEqual([txt for cid, txt in sent_messages if cid == CHAT_RECEIVER], [])
+
+    def test_ekasa_desk_reject_draft_two_turns_sets_modified_by_and_notifies_customer(self):
+        cust_name = "_Test Ekasa Reject Two Turns"
+        draft = self._create_guest_order_draft(cust_name, qty=1)
+        conv_id = self._create_ekasa_conversation(self.receiver, "sales")
+        sent_messages: list[tuple[str, str]] = []
+        turn1_res: dict = {}
+        turn2_res: dict = {}
+
+        _, reply1 = self._run_ekasa_stream(
+            f"tolak draf {draft.name} karena stok kosong",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "reject_draft",
+                lambda: {"draft_id": draft.name, "reason": "Stok kosong"},
+                turn1_res,
+                lambda res: f"Konfirmasi tolak draf {draft.name} ({res['summary']['customer']}) alasan Stok kosong. Ya/tidak?",
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertEqual(turn1_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertEqual(turn1_res["summary"]["reason"], "Stok kosong")
+        self.assertIn(cust_name, reply1)
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+        self.assertEqual(sent_messages, [])
+
+        _, reply2 = self._run_ekasa_stream(
+            "ya tolak karena stok kosong",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "reject_draft",
+                lambda: {
+                    "draft_id": draft.name,
+                    "confirmed": True,
+                    "confirmation_token": turn1_res["confirmation_token"],
+                },
+                turn2_res,
+                lambda res: f"Draf {draft.name} telah ditolak (status: {res['draft_status']}).",
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertEqual(turn2_res.get("draft_status"), "REJECTED")
+        self.assertIsNone(frappe.cache().get_value(f"aios_tg_confirm:{self.receiver}:reject:{draft.name}"))
+        draft_doc = frappe.get_doc("Pending Action Draft", draft.name)
+        self.assertEqual(draft_doc.status, "REJECTED")
+        self.assertEqual(draft_doc.rejection_reason, "Stok kosong")
+        self.assertEqual(draft_doc.modified_by, self.receiver)
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+        self.assertIn("REJECTED", reply2)
+        self.assertIn(draft.name, reply2)
+
+        customer_msgs = [txt for cid, txt in sent_messages if cid == CHAT_CUSTOMER]
+        self.assertEqual(len(customer_msgs), 1)
+        self.assertIn("Stok kosong", customer_msgs[0])
+        self.assertIn("belum dapat disetujui", customer_msgs[0].lower())
+        for internal_ref in (draft.name, "DRF-", "SO-"):
+            self.assertNotIn(internal_ref, customer_msgs[0])
+        self.assertEqual([txt for cid, txt in sent_messages if cid == CHAT_RECEIVER], [])
+
+    def test_ekasa_desk_guards_same_turn_bypass_decline_and_unauthorized_staff(self):
+        cust_name = "_Test Ekasa Guard Cust"
+        draft = self._create_guest_order_draft(cust_name, qty=1)
+        conv_id = self._create_ekasa_conversation(self.receiver, "sales")
+        sent_messages: list[tuple[str, str]] = []
+        round_results: list[dict] = []
+        turn_state = {"calls": 0}
+
+        # 1. Bypass se-turn (confirmed=True pada giliran yang sama meski membawa token) ditolak CONFIRMATION_PENDING_USER_REPLY
+        def same_turn_bypass_llm(messages, usage=None, tools=None, tool_calls=None):
+            turn_state["calls"] += 1
+            if turn_state["calls"] == 1:
+                tool_calls.append(
+                    {
+                        "id": "ek_bypass_1",
+                        "function": {"name": "approve_draft", "arguments": json.dumps({"draft_id": draft.name})},
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            if turn_state["calls"] == 2:
+                tool_res = json.loads(messages[-1]["content"])
+                round_results.append(tool_res)
+                tok = tool_res.get("confirmation_token", "")
+                tool_calls.append(
+                    {
+                        "id": "ek_bypass_2",
+                        "function": {
+                            "name": "approve_draft",
+                            "arguments": json.dumps(
+                                {"draft_id": draft.name, "confirmed": True, "confirmation_token": tok}
+                            ),
+                        },
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            round_results.append(json.loads(messages[-1]["content"]))
+            yield f"Mohon konfirmasi setujui {draft.name} (ya/tidak)."
+
+        self._run_ekasa_stream(
+            f"setujui draf {draft.name}",
+            conv_id,
+            self.receiver,
+            same_turn_bypass_llm,
+            sent_messages=sent_messages,
+        )
+
+        self.assertEqual(round_results[0].get("status"), "CONFIRMATION_REQUIRED")
+        self.assertEqual(round_results[1].get("code"), "CONFIRMATION_PENDING_USER_REPLY")
+        self.assertEqual(round_results[1].get("status"), "CONFIRMATION_PENDING_USER_REPLY")
+        self.assertFalse(round_results[1].get("executed"))
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+        self.assertEqual(sent_messages, [])
+
+        # 2. Token salah pada giliran berikutnya juga ditolak dan tidak mengeksekusi draf
+        wrong_tok_res: dict = {}
+        self._run_ekasa_stream(
+            "ya teruskan",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft.name, "confirmed": True, "confirmation_token": "invalid-token"},
+                wrong_tok_res,
+                lambda _res: f"Token tidak cocok, konfirmasi ulang {draft.name}.",
+            ),
+            sent_messages=sent_messages,
+        )
+        self.assertEqual(wrong_tok_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertFalse(wrong_tok_res.get("executed"))
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+
+        # 3. Pertanyaan netral & penolakan tidak mengeksekusi draf
+        def neutral_llm(messages, usage=None, tools=None, tool_calls=None):
+            yield f"Ongkir sesuai tarif ekspedisi. Apakah draf {draft.name} tetap ingin disetujui?"
+
+        def decline_llm(messages, usage=None, tools=None, tool_calls=None):
+            yield f"Baik, draf {draft.name} ditunda dan tidak diproses."
+
+        self._run_ekasa_stream(
+            "Ongkir ke Surabaya kira-kira berapa?",
+            conv_id,
+            self.receiver,
+            neutral_llm,
+            sent_messages=sent_messages,
+        )
+        self._run_ekasa_stream(
+            "tidak jadi dulu, batalkan saja prosesnya",
+            conv_id,
+            self.receiver,
+            decline_llm,
+            sent_messages=sent_messages,
+        )
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+        self.assertEqual(sent_messages, [])
+
+        # 4. Staf non-berwenang di Ekasa Desk ditolak NOT_AUTHORIZED pada draf kanal & non-kanal
+        non_channel_draft = create_draft(
+            task_id=f"TEST-EKASA-NONCH-{frappe.generate_hash(length=6)}",
+            action_type="CREATE",
+            payload={
+                "doctype": "Sales Order",
+                "data": {
+                    "customer": cust_name,
+                    "company": self.company,
+                    "selling_price_list": self.price_list,
+                    "transaction_date": nowdate(),
+                    "delivery_date": nowdate(),
+                    "items": [
+                        {
+                            "item_code": self.item_code,
+                            "qty": 1,
+                            "rate": self.item_rate,
+                            "delivery_date": nowdate(),
+                        }
+                    ],
+                },
+            },
+            branch="sales",
+            created_by_agent="manager",
+            user=self.receiver,
+        )
+        self.created_drafts.append(non_channel_draft.name)
+
+        self._clear_channel_context()
+        frappe.set_user(self.staff)
+        try:
+            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+                staff_res = json.loads(
+                    execute_tool(
+                        tool_name,
+                        json.dumps({"draft_id": draft.name}),
+                        context={"user": self.staff, "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+                self.assertEqual(staff_res.get("code"), "NOT_AUTHORIZED")
+
+            non_ch_res = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": non_channel_draft.name}),
+                    context={"user": self.staff, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(non_ch_res.get("code"), "NOT_AUTHORIZED")
+
+            # 5. Tamu (Guest) di Ekasa Desk ditolak GUEST_TOOL_FORBIDDEN dan tidak melihat DRAFT_TOOLS
+            frappe.set_user("Guest")
+            guest_tools = {
+                s["function"]["name"]
+                for s in get_tools_schema_for_worker("sales", "manager", user="Guest")
+            }
+            self.assertTrue(guest_tools.isdisjoint(DRAFT_TOOLS))
+            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+                guest_res = json.loads(
+                    execute_tool(
+                        tool_name,
+                        json.dumps({"draft_id": draft.name, "confirmed": True}),
+                        context={"user": "Guest", "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+                self.assertEqual(guest_res.get("code"), "GUEST_TOOL_FORBIDDEN")
+        finally:
+            frappe.set_user("Administrator")
+
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", non_channel_draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
