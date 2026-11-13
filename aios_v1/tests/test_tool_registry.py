@@ -126,7 +126,7 @@ class TestToolRegistryDraftParity(IntegrationTestCase):
     def test_draft_tools_constant_uses_channel_neutral_name(self):
         self.assertEqual(
             DRAFT_TOOLS,
-            frozenset({"approve_draft", "reject_draft", "confirm_cash_payment"}),
+            frozenset({"list_pending_drafts", "approve_draft", "reject_draft", "confirm_cash_payment"}),
         )
         self.assertEqual(
             [k for k in vars(tool_registry) if "DRAFT_TOOLS" in k],
@@ -209,8 +209,23 @@ class TestToolRegistryDraftParity(IntegrationTestCase):
             }
             self.assertLessEqual(tg_tools, set(GUEST_ALLOWED_TOOLS | DRAFT_TOOLS))
             self.assertTrue(DRAFT_TOOLS.issubset(tg_tools))
+            self.assertIn("list_pending_drafts", tg_tools)
             self.assertNotIn("open_module", tg_tools)
             self.assertNotIn("erpnext_report_run", tg_tools)
+
+            guest_tg_tools = {
+                s["function"]["name"]
+                for s in get_tools_schema_for_worker("sales", "manager", user="Guest")
+            }
+            self.assertNotIn("list_pending_drafts", guest_tg_tools)
+
+            raw_guest_list = execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": "Guest", "branch": "sales", "worker_key": "manager"},
+            )
+            res_guest_list = json.loads(raw_guest_list)
+            self.assertEqual(res_guest_list.get("code"), "GUEST_TOOL_FORBIDDEN")
 
             raw = execute_tool(
                 "open_module",

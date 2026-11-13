@@ -17,6 +17,7 @@ GUEST_ALLOWED_TOOLS = frozenset({
     "get_current_time",
 })
 DRAFT_TOOLS = frozenset({
+    "list_pending_drafts",
     "approve_draft",
     "reject_draft",
     "confirm_cash_payment",

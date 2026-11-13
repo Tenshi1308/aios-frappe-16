@@ -6,7 +6,7 @@ import json
 import uuid
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import get_datetime, now_datetime
 
 from aios_v1.lib.draft_manager import (
     ALLOWED_DRAFT_DOCTYPES,
@@ -22,6 +22,7 @@ from aios_v1.lib.draft_manager import (
 from aios_v1.lib.draft_manager import (
     reject_draft as reject_draft_doc,
 )
+from aios_v1.lib.erpnext_core_data import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 
@@ -296,13 +297,14 @@ def _is_newer_message(latest_name: str | None, issued_name: str | None) -> bool:
     return s_latest > s_issued
 
 
-def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, object | None, dict | None, dict | None]:
-    """Validate linked user, Ekasa Desk authority, and return (user, draft_doc, payload, err)."""
+def _resolve_authorized_draft_caller(action: str = "", draft_id: str = "") -> tuple[str | None, dict | None]:
+    """Validate linked user, active AIOS Client authority; return (user, err)."""
     user = get_tool_context().get("user_id") or getattr(getattr(frappe, "session", None), "user", None)
     clean_id = str(draft_id or "").strip()
+    ctx_suffix = f"; draft={clean_id}" if clean_id else ""
     if not user or user == "Guest":
-        log_exception("AIOS Draft Tool Guest Denied", context=f"action={action}; draft={clean_id}")
-        return None, None, None, safe_error(
+        log_exception("AIOS Draft Tool Guest Denied", context=f"action={action}{ctx_suffix}")
+        return None, safe_error(
             "Maaf, hanya karyawan yang tertaut dan berwenang yang dapat memproses draf ini.",
             "GUEST_TOOL_FORBIDDEN",
         )
@@ -317,10 +319,25 @@ def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, o
             or "AIOS Client" not in roles
         ):
             log_exception("AIOS Draft Tool Inactive Denied", context=f"user={user}; action={action}")
-            return None, None, None, safe_error(
+            return None, safe_error(
                 "Maaf, akun Anda sedang tidak aktif atau tidak memiliki akses AIOS Client.",
                 "NOT_AUTHORIZED",
             )
+
+    return user, None
+
+
+def _is_channel_draft_record(draft_name: str, payload: dict) -> bool:
+    """Return True if draft is originated from channel or alerted via notification."""
+    return _is_channel_draft(draft_name) or bool(payload.get("source_telegram_chat_id"))
+
+
+def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, object | None, dict | None, dict | None]:
+    """Validate linked user, Ekasa Desk authority, and return (user, draft_doc, payload, err)."""
+    clean_id = str(draft_id or "").strip()
+    user, auth_err = _resolve_authorized_draft_caller(action=action, draft_id=clean_id)
+    if auth_err:
+        return None, None, None, auth_err
 
     if not clean_id:
         return None, None, None, safe_error("Nomor draf (draft_id) wajib disebutkan.", "DRAFT_ID_REQUIRED")
@@ -337,7 +354,7 @@ def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, o
         log_exception("AIOS Draft Tool Parse Payload", exc=exc, context=f"draft={clean_id}")
         return None, None, None, safe_error("Data draf tidak valid.", "INVALID_DRAFT_PAYLOAD")
 
-    is_channel = _is_channel_draft(doc.name) or bool(payload.get("source_telegram_chat_id"))
+    is_channel = _is_channel_draft_record(doc.name, payload)
     if user != "Administrator":
         if is_channel:
             from aios_v1.lib.connector.notify import get_channel_recipients
@@ -806,6 +823,134 @@ def _execute_confirm_cash_payment(doc, _payload: dict, _reason: str) -> dict:
             f"Pembayaran Cash berhasil dikonfirmasi. Payment Entry {pe_name} untuk Sales Order {so_name} "
             f"(status: lunas)."
         ),
+    }
+
+
+@ai_tool(
+    name="list_pending_drafts",
+    description=(
+        "Melihat daftar Pending Action Draft yang menunggu persetujuan (status PENDING_APPROVAL). "
+        "Mengembalikan ringkasan tiap draf (nomor draf, doctype, customer, currency, total, "
+        "formatted_total, items, type, branch, status, creation, expires_at, expired). "
+        "Gunakan tool ini untuk mengetahui draf mana saja yang perlu disetujui atau ditolak."
+    ),
+    branch="sales",
+    roles=["manager", "sales_manager", "ai_manager"],
+    plugin_key="erpnext-action-drafts",
+    parameters={
+        "limit": {
+            "type": "integer",
+            "description": "Jumlah maksimal draf yang diambil (opsional, default 20, maksimal 100).",
+            "required": False,
+        }
+    },
+)
+def list_pending_drafts(limit: int | None = None) -> dict:
+    """List pending action drafts visible to the authorized caller."""
+    if limit is None:
+        resolved_limit = DEFAULT_LIST_LIMIT
+    elif isinstance(limit, bool):
+        return safe_error("Parameter limit harus berupa integer positif (minimal 1).", "INVALID_LIMIT")
+    else:
+        try:
+            if isinstance(limit, float) and not limit.is_integer():
+                return safe_error("Parameter limit harus berupa integer positif (minimal 1).", "INVALID_LIMIT")
+            parsed_limit = int(limit)
+            if parsed_limit < 1:
+                return safe_error("Parameter limit harus berupa integer positif (minimal 1).", "INVALID_LIMIT")
+        except (TypeError, ValueError) as exc:
+            log_exception("list_pending_drafts.invalid_limit", exc=exc, context=f"limit={limit!r}")
+            return safe_error("Parameter limit harus berupa integer positif (minimal 1).", "INVALID_LIMIT")
+        resolved_limit = min(parsed_limit, MAX_LIST_LIMIT)
+
+    user, auth_err = _resolve_authorized_draft_caller(action="list_pending_drafts")
+    if auth_err:
+        return auth_err
+
+    limit_start = 0
+    batch_size = max(resolved_limit * 2, 50)
+    visible_drafts = []
+    channel_recipients: set[str] | None = None
+    now_dt = now_datetime()
+
+    while len(visible_drafts) < resolved_limit + 1:
+        rows = frappe.get_all(
+            "Pending Action Draft",
+            filters={"status": "PENDING_APPROVAL"},
+            fields=["name", "user", "type", "branch", "status", "payload", "creation", "expires_at"],
+            order_by="creation desc, name desc",
+            limit_start=limit_start,
+            limit=batch_size,
+        )
+        if not rows:
+            break
+
+        limit_start += len(rows)
+
+        for row in rows:
+            payload = {}
+            if row.payload:
+                try:
+                    parsed = json.loads(row.payload)
+                    if isinstance(parsed, dict):
+                        payload = parsed
+                    else:
+                        raise ValueError("Payload draf bukan JSON object.")
+                except (TypeError, ValueError) as exc:
+                    log_exception("list_pending_drafts.invalid_payload", exc=exc, context=f"draft={row.name}")
+                    payload = {}
+
+            if user != "Administrator":
+                is_ch = _is_channel_draft_record(row.name, payload)
+                if is_ch:
+                    if channel_recipients is None:
+                        from aios_v1.lib.connector.notify import get_channel_recipients
+
+                        channel_recipients = set(get_channel_recipients())
+                    if user not in channel_recipients:
+                        continue
+                else:
+                    if row.user != user:
+                        continue
+                    if not frappe.has_permission("Pending Action Draft", ptype="read", doc=row.name, user=user):
+                        continue
+
+            summary = _build_draft_summary(row, payload, action="approve")
+
+            expires_dt = get_datetime(row.expires_at) if row.expires_at else None
+            expired = bool(expires_dt and expires_dt < now_dt)
+
+            summary.update({
+                "type": str(row.type or payload.get("doctype") or "Sales Order"),
+                "branch": str(row.branch or "sales"),
+                "status": str(row.status or "PENDING_APPROVAL"),
+                "creation": str(row.creation or ""),
+                "expires_at": str(row.expires_at or ""),
+                "expired": expired,
+            })
+            visible_drafts.append(summary)
+            if len(visible_drafts) >= resolved_limit + 1:
+                break
+
+    has_more = len(visible_drafts) > resolved_limit
+    drafts_page = visible_drafts[:resolved_limit]
+    count = len(drafts_page)
+
+    if count == 0:
+        message = "Tidak ada draf yang menunggu persetujuan (status PENDING_APPROVAL)."
+    elif count == 1:
+        message = "Ditemukan 1 draf yang menunggu persetujuan."
+    else:
+        more_suffix = " (masih ada draf lainnya, tentukan limit lebih besar bila perlu)" if has_more else ""
+        message = f"Ditemukan {count} draf yang menunggu persetujuan{more_suffix}."
+
+    return {
+        "status": "ok",
+        "drafts": drafts_page,
+        "count": count,
+        "limit": resolved_limit,
+        "has_more": has_more,
+        "message": message,
     }
 
 

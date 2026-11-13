@@ -275,7 +275,13 @@ class BaseManager:
                 "4. Jika karyawan menjawab tidak/batal atau belum menyetujui, jangan eksekusi dan beri tahu bahwa "
                 "draf tidak diproses.\n"
                 "5. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi (`Sales Order` / `Payment Entry`) "
-                "beserta status terbarunya kepada karyawan."
+                "beserta status terbarunya kepada karyawan.\n"
+                "6. Jika karyawan menanyakan draf apa yang sedang pending, draf terbaru yang belum disetujui, "
+                "atau daftar draf yang menunggu persetujuan (dalam kalimat bebas apa pun), WAJIB panggil tool "
+                "`list_pending_drafts` terlebih dahulu. JANGAN menyimpulkan atau menebak dari data `Sales Order` "
+                "(status Draft/lainnya) dan JANGAN pernah menjawab belum ada draf baru tanpa memanggil `list_pending_drafts`. "
+                "Sajikan daftar hasil tool (nomor draf, customer, total, item, tanggal dibuat, kedaluwarsa, serta "
+                "tandai jelas bila `expired=true` karena draf kedaluwarsa tidak lagi dapat diproses)."
             )
 
         prompt = "\n\n".join(parts)

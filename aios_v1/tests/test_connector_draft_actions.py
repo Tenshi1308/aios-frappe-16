@@ -6,7 +6,7 @@ import json
 from unittest.mock import patch
 
 import frappe
-from frappe.utils import nowdate
+from frappe.utils import add_to_date, now_datetime, nowdate
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -15,6 +15,7 @@ except ImportError:
 
 from aios_v1.lib.connector import dispatch, linking, notify, telegram_client
 from aios_v1.lib.draft_manager import approve_and_execute_draft, create_draft
+from aios_v1.lib.erpnext_core_data import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
 from aios_v1.lib.tool_registry import (
     DRAFT_TOOLS,
     GUEST_ALLOWED_TOOLS,
@@ -259,7 +260,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
                 for s in get_tools_schema_for_worker("sales", "manager", user="Guest")
             }
             self.assertEqual(guest_tools, set(GUEST_ALLOWED_TOOLS))
-            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+            for tool_name in ("list_pending_drafts", "approve_draft", "reject_draft", "confirm_cash_payment"):
                 self.assertNotIn(tool_name, guest_tools)
                 raw = execute_tool(
                     tool_name,
@@ -288,6 +289,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
             for s in get_tools_schema_for_worker("sales", "manager", user=self.receiver)
         }
         self.assertTrue(DRAFT_TOOLS.issubset(web_manager_tools))
+        self.assertIn("list_pending_drafts", web_manager_tools)
         self.assertIn("open_module", web_manager_tools)
 
         web_subagent_tools = {
@@ -303,7 +305,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
         self.assertEqual(web_guest_tools, set(GUEST_ALLOWED_TOOLS))
         self.assertTrue(web_guest_tools.isdisjoint(DRAFT_TOOLS))
 
-        # Pada Telegram: manager non-Guest melihat 5 guest tool + 3 tool draf, tetap blokir open_module & laporan; subagent tidak melihat DRAFT_TOOLS
+        # Pada Telegram: manager non-Guest melihat 5 guest tool + 4 tool draf, tetap blokir open_module & laporan; subagent tidak melihat DRAFT_TOOLS
         frappe.local.aios_channel = "telegram"
         try:
             tg_manager_tools = {
@@ -311,6 +313,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
                 for s in get_tools_schema_for_worker("sales", "manager", user=self.receiver)
             }
             self.assertTrue(DRAFT_TOOLS.issubset(tg_manager_tools))
+            self.assertIn("list_pending_drafts", tg_manager_tools)
             self.assertNotIn("open_module", tg_manager_tools)
             self.assertNotIn("erpnext_report_run", tg_manager_tools)
 
@@ -1025,6 +1028,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
             "approve_draft",
             "reject_draft",
             "confirm_cash_payment",
+            "list_pending_drafts",
             "confirmed=true",
             "WAJIB panggil tool terlebih dahulu",
             "Sales Order",
@@ -1033,6 +1037,16 @@ class TestConnectorDraftActions(IntegrationTestCase):
             "TANPA `confirmation_token`",
             "JANGAN mengarang token atau memanggil ulang tanpa `confirmed=true`",
             "kalimat bebas",
+            "1. Untuk menyetujui draf (`approve_draft`)",
+            "2. Tampilkan ringkasan persis sesuai data tool",
+            "3. Jika pada pesan berikutnya karyawan menjawab ya/setuju/konfirmasi",
+            "4. Jika karyawan menjawab tidak/batal",
+            "5. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi",
+            "6. Jika karyawan menanyakan draf apa yang sedang pending",
+            "WAJIB panggil tool `list_pending_drafts` terlebih dahulu",
+            "JANGAN menyimpulkan atau menebak dari data `Sales Order`",
+            "JANGAN pernah menjawab belum ada draf baru tanpa memanggil `list_pending_drafts`",
+            "expired=true",
         ]
         old_header_token = " ".join(["PROTOKOL", "AKSI", "DRAF", "TELEGRAM"])
 
@@ -1061,6 +1075,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
                 self.assertNotIn("approve_draft", guest_prompt)
                 self.assertNotIn("reject_draft", guest_prompt)
                 self.assertNotIn("confirm_cash_payment", guest_prompt)
+                self.assertNotIn("list_pending_drafts", guest_prompt)
                 self.assertNotIn("PROTOKOL AKSI DRAF", guest_prompt)
 
             # 3. Ekasa Desk: finance manager dan sales sub-agent tidak memuat protokol aksi draf
@@ -1071,7 +1086,9 @@ class TestConnectorDraftActions(IntegrationTestCase):
             subagent_prompt = sales_mgr.build_system_prompt(worker_def=sales_subagent, user=self.receiver)
 
             self.assertNotIn("PROTOKOL AKSI DRAF", finance_prompt)
+            self.assertNotIn("list_pending_drafts", finance_prompt)
             self.assertNotIn("PROTOKOL AKSI DRAF", subagent_prompt)
+            self.assertNotIn("list_pending_drafts", subagent_prompt)
         finally:
             if hasattr(frappe.local, "aios_channel"):
                 delattr(frappe.local, "aios_channel")
@@ -1153,8 +1170,12 @@ class TestConnectorDraftActions(IntegrationTestCase):
             "3. Jika pada pesan berikutnya karyawan menjawab ya/setuju/konfirmasi",
             "4. Jika karyawan menjawab tidak/batal",
             "5. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi",
+            "6. Jika karyawan menanyakan draf apa yang sedang pending",
         ):
             self.assertIn(step, system_prompt)
+        self.assertIn("`list_pending_drafts`", system_prompt)
+        self.assertIn("JANGAN menyimpulkan atau menebak dari data `Sales Order`", system_prompt)
+        self.assertIn("expired=true", system_prompt)
 
     def _make_tool_turn_llm(
         self,
@@ -1552,6 +1573,112 @@ class TestConnectorDraftActions(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Pending Action Draft", draft_no_conv.name, "status"), "PENDING_APPROVAL")
         self.assertFalse(frappe.get_all("Sales Order", filters={"customer": "_Test Guard No Conv"}))
 
+    def test_ekasa_desk_list_pending_drafts_then_two_step_approve_workflow(self):
+        cust_name = "_Test Ekasa List Then Approve"
+        draft = self._create_guest_order_draft(cust_name, qty=2)
+        conv_id = self._create_ekasa_conversation(self.receiver, "sales")
+        sent_messages: list[tuple[str, str]] = []
+        turn1_list_res: dict = {}
+        turn2_approve_res: dict = {}
+        turn3_exec_res: dict = {}
+        seen_turn1: dict = {}
+
+        def inspect_t1(messages, tools):
+            seen_turn1["system_prompt"] = messages[0]["content"]
+            seen_turn1["tool_names"] = {t["function"]["name"] for t in (tools or [])}
+
+        def _t1_reply(res: dict) -> str:
+            d_list = ", ".join(f"{d['draft_id']} ({d['customer']})" for d in res.get("drafts", []))
+            return f"Draf pending saat ini: {d_list}. Balas dengan draf yang ingin disetujui."
+
+        # Turn 1: Karyawan meminta daftar draf pending -> AI memanggil list_pending_drafts
+        events1, reply1 = self._run_ekasa_stream(
+            "ada draf apa saja yang pending?",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "list_pending_drafts",
+                lambda: {},
+                turn1_list_res,
+                _t1_reply,
+                inspect_round1=inspect_t1,
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self._assert_ekasa_sales_protocol_and_tools(seen_turn1["system_prompt"], seen_turn1["tool_names"])
+        self.assertTrue(any(e.get("type") == "done" for e in events1))
+        self.assertEqual(turn1_list_res.get("status"), "ok")
+        self.assertGreaterEqual(turn1_list_res.get("count", 0), 1)
+        found_draft = next((d for d in turn1_list_res.get("drafts", []) if d["draft_id"] == draft.name), None)
+        self.assertIsNotNone(found_draft)
+        self.assertEqual(found_draft["customer"], cust_name)
+        self.assertFalse(found_draft["expired"])
+        self.assertIn(draft.name, reply1)
+        # Verifikasi bahwa data Sales Order belum dibuat dan status draf masih PENDING_APPROVAL
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+
+        # Turn 2: Karyawan memilih draf untuk disetujui -> AI panggil approve_draft tanpa confirmed=True (tantangan konfirmasi)
+        def _t2_reply(res: dict) -> str:
+            s = res["summary"]
+            return f"Konfirmasi setujui draf {s['draft_id']} untuk {s['customer']} total {s['formatted_total']}. Balas ya atau tidak."
+
+        events2, reply2 = self._run_ekasa_stream(
+            f"setujui draf {draft.name}",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft.name},
+                turn2_approve_res,
+                _t2_reply,
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertTrue(any(e.get("type") == "done" for e in events2))
+        self.assertEqual(turn2_approve_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertTrue(turn2_approve_res.get("confirmation_token"))
+        cache_key = f"aios_tg_confirm:{self.receiver}:approve:{draft.name}"
+        self.assertIsNotNone(frappe.cache().get_value(cache_key))
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+        self.assertIn(draft.name, reply2)
+
+        # Turn 3: Karyawan konfirmasi "ya" -> AI panggil approve_draft dengan confirmed=True
+        events3, reply3 = self._run_ekasa_stream(
+            "ya setuju, lanjutkan",
+            conv_id,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {
+                    "draft_id": draft.name,
+                    "confirmed": True,
+                    "confirmation_token": turn2_approve_res["confirmation_token"],
+                },
+                turn3_exec_res,
+                lambda res: f"Draf {draft.name} berhasil disetujui. Nomor Sales Order: {res['sales_order']}.",
+            ),
+            sent_messages=sent_messages,
+        )
+
+        self.assertTrue(any(e.get("type") == "done" for e in events3))
+        self.assertTrue(turn3_exec_res.get("executed"))
+        so_name = turn3_exec_res.get("sales_order")
+        self.assertTrue(so_name and frappe.db.exists("Sales Order", so_name))
+        self.assertIsNone(frappe.cache().get_value(cache_key))
+
+        draft_doc = frappe.get_doc("Pending Action Draft", draft.name)
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertEqual(draft_doc.status, "EXECUTED")
+        self.assertEqual(draft_doc.modified_by, self.receiver)
+        self.assertEqual(so_doc.docstatus, 1)
+        self.assertEqual(so_doc.owner, self.receiver)
+        self.assertEqual(so_doc.modified_by, self.receiver)
+        self.assertIn(so_name, reply3)
+
     def test_ekasa_desk_confirm_cash_payment_two_turns_sets_payment_entry_audit_and_notifies_customer(self):
         cust_name = "_Test Ekasa Cash Pay Two Turns"
         draft = self._create_guest_order_draft(cust_name, qty=1)
@@ -1859,7 +1986,7 @@ class TestConnectorDraftActions(IntegrationTestCase):
                 for s in get_tools_schema_for_worker("sales", "manager", user="Guest")
             }
             self.assertTrue(guest_tools.isdisjoint(DRAFT_TOOLS))
-            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+            for tool_name in ("list_pending_drafts", "approve_draft", "reject_draft", "confirm_cash_payment"):
                 guest_res = json.loads(
                     execute_tool(
                         tool_name,
@@ -1874,3 +2001,396 @@ class TestConnectorDraftActions(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
         self.assertEqual(frappe.db.get_value("Pending Action Draft", non_channel_draft.name, "status"), "PENDING_APPROVAL")
         self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
+
+
+class TestListPendingDrafts(TestConnectorDraftActions):
+    def _create_custom_draft(
+        self,
+        customer_name: str,
+        user: str | None = None,
+        status: str = "PENDING_APPROVAL",
+        expires_at=None,
+        is_channel: bool = True,
+        raw_payload: str | None = None,
+    ):
+        self.created_customers.append(customer_name)
+        if raw_payload is not None:
+            payload_str = raw_payload
+        else:
+            payload = {
+                "doctype": "Sales Order",
+                "data": {
+                    "customer": customer_name,
+                    "company": self.company,
+                    "selling_price_list": self.price_list,
+                    "transaction_date": nowdate(),
+                    "delivery_date": nowdate(),
+                    "items": [
+                        {
+                            "item_code": self.item_code,
+                            "qty": 2,
+                            "rate": self.item_rate,
+                            "delivery_date": nowdate(),
+                        }
+                    ],
+                },
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": customer_name,
+                    "payment_method": "Cash",
+                },
+                "reason": "Draft test",
+            }
+            if is_channel:
+                payload["source_telegram_chat_id"] = CHAT_CUSTOMER
+            payload_str = json.dumps(payload)
+
+        exp_val = add_to_date(now_datetime(), hours=24) if expires_at is None else (None if expires_at == "NONE" else expires_at)
+        draft = frappe.get_doc(
+            {
+                "doctype": "Pending Action Draft",
+                "task_id": f"TEST-LIST-{frappe.generate_hash(length=8)}",
+                "action_type": "CREATE",
+                "type": "Sales Order",
+                "branch": "sales",
+                "created_by_agent": "manager",
+                "user": user or self.receiver,
+                "status": status,
+                "payload": payload_str,
+                "expires_at": exp_val,
+            }
+        )
+        draft.flags.ignore_mandatory = True
+        draft.insert(ignore_permissions=True)
+        self.created_drafts.append(draft.name)
+        if is_channel:
+            nlog = frappe.get_doc(
+                {
+                    "doctype": "Notification Log",
+                    "subject": f"AIOS Channel Alert: {draft.name}",
+                    "type": "AIOS Channel Alert",
+                    "document_type": "Pending Action Draft",
+                    "document_name": draft.name,
+                    "for_user": self.receiver,
+                }
+            )
+            nlog.insert(ignore_permissions=True)
+        return draft
+
+    def test_list_returns_only_pending_approval_ordered_with_summary(self):
+        d_pending1 = self._create_custom_draft("Cust Pending 1", status="PENDING_APPROVAL", is_channel=True)
+        d_pending2 = self._create_custom_draft("Cust Pending 2", status="PENDING_APPROVAL", is_channel=True)
+        d_approved = self._create_custom_draft("Cust Approved", status="APPROVED", is_channel=True)
+        d_executed = self._create_custom_draft("Cust Executed", status="EXECUTED", is_channel=True)
+        d_rejected = self._create_custom_draft("Cust Rejected", status="REJECTED", is_channel=True)
+        d_expired = self._create_custom_draft("Cust Expired", status="EXPIRED", is_channel=True)
+
+        raw = execute_tool(
+            "list_pending_drafts",
+            "{}",
+            context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+        )
+        res = json.loads(raw)
+        self.assertEqual(res.get("status"), "ok")
+        drafts = res.get("drafts", [])
+        draft_ids = [d["draft_id"] for d in drafts]
+
+        self.assertIn(d_pending1.name, draft_ids)
+        self.assertIn(d_pending2.name, draft_ids)
+        self.assertNotIn(d_approved.name, draft_ids)
+        self.assertNotIn(d_executed.name, draft_ids)
+        self.assertNotIn(d_rejected.name, draft_ids)
+        self.assertNotIn(d_expired.name, draft_ids)
+
+        idx1 = draft_ids.index(d_pending1.name)
+        idx2 = draft_ids.index(d_pending2.name)
+        self.assertLess(idx2, idx1)
+
+        item = next(d for d in drafts if d["draft_id"] == d_pending2.name)
+        required_keys = {
+            "draft_id", "doctype", "customer", "currency", "total", "formatted_total",
+            "items", "type", "branch", "status", "creation", "expires_at", "expired"
+        }
+        self.assertTrue(required_keys.issubset(set(item.keys())), f"Missing keys: {required_keys - set(item.keys())}")
+        self.assertEqual(item["status"], "PENDING_APPROVAL")
+        self.assertEqual(item["customer"], "Cust Pending 2")
+        self.assertEqual(item["doctype"], "Sales Order")
+        self.assertEqual(item["branch"], "sales")
+        self.assertIsInstance(item["items"], list)
+        self.assertIsInstance(item["expired"], bool)
+
+    def test_limit_handling_defaults_caps_and_rejects_invalid(self):
+        res_default = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_default.get("status"), "ok")
+        self.assertEqual(res_default.get("limit"), DEFAULT_LIST_LIMIT)
+
+        res_none = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": None}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_none.get("status"), "ok")
+        self.assertEqual(res_none.get("limit"), DEFAULT_LIST_LIMIT)
+
+        res_custom = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": 2}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_custom.get("status"), "ok")
+        self.assertEqual(res_custom.get("limit"), 2)
+
+        res_capped = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": 150}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_capped.get("status"), "ok")
+        self.assertEqual(res_capped.get("limit"), MAX_LIST_LIMIT)
+
+        for invalid_val in (0, -1, True, False, "abc", [10], {"limit": 10}):
+            res_invalid = json.loads(
+                execute_tool(
+                    "list_pending_drafts",
+                    json.dumps({"limit": invalid_val}),
+                    context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertFalse(res_invalid.get("success", True), f"limit={invalid_val!r} should fail")
+            self.assertTrue(res_invalid.get("error"), f"limit={invalid_val!r} should have error message")
+            self.assertEqual(res_invalid.get("code"), "INVALID_LIMIT", f"limit={invalid_val!r} should be INVALID_LIMIT")
+
+    def test_cross_user_visibility_no_starvation_and_has_more_accurate(self):
+        init_res = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": 100}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        base_count = init_res.get("count", 0)
+
+        d_c1 = self._create_custom_draft("Cust Starv C1", user=self.receiver, is_channel=True)
+        self._create_custom_draft("Cust Starv S1", user=self.staff, is_channel=False)
+        d_c2 = self._create_custom_draft("Cust Starv C2", user=self.receiver, is_channel=True)
+        self._create_custom_draft("Cust Starv S2", user=self.staff, is_channel=False)
+        d_c3 = self._create_custom_draft("Cust Starv C3", user=self.receiver, is_channel=True)
+
+        res_lim2 = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": 2}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_lim2.get("status"), "ok")
+        self.assertEqual(len(res_lim2.get("drafts", [])), 2)
+        rec_ids2 = [d["draft_id"] for d in res_lim2.get("drafts", [])]
+        self.assertEqual(rec_ids2, [d_c3.name, d_c2.name])
+        self.assertTrue(res_lim2.get("has_more"))
+
+        total_expected = 3 + base_count
+        res_all = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": total_expected}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_all.get("status"), "ok")
+        self.assertEqual(len(res_all.get("drafts", [])), total_expected)
+        rec_ids_all = [d["draft_id"] for d in res_all.get("drafts", [])]
+        self.assertEqual(rec_ids_all[:3], [d_c3.name, d_c2.name, d_c1.name])
+        self.assertFalse(res_all.get("has_more"))
+
+    def test_expired_flag_reflects_expires_at_relative_to_now(self):
+        past_dt = add_to_date(now_datetime(), hours=-2)
+        future_dt = add_to_date(now_datetime(), hours=2)
+
+        d_past = self._create_custom_draft("Cust Exp Past", expires_at=past_dt, is_channel=True)
+        d_future = self._create_custom_draft("Cust Exp Future", expires_at=future_dt, is_channel=True)
+        d_none = self._create_custom_draft("Cust Exp None", expires_at="NONE", is_channel=True)
+
+        raw = execute_tool(
+            "list_pending_drafts",
+            "{}",
+            context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+        )
+        res = json.loads(raw)
+        self.assertEqual(res.get("status"), "ok")
+        drafts_by_id = {d["draft_id"]: d for d in res.get("drafts", [])}
+
+        self.assertIn(d_past.name, drafts_by_id)
+        self.assertTrue(drafts_by_id[d_past.name]["expired"])
+
+        self.assertIn(d_future.name, drafts_by_id)
+        self.assertFalse(drafts_by_id[d_future.name]["expired"])
+
+        self.assertIn(d_none.name, drafts_by_id)
+        self.assertFalse(drafts_by_id[d_none.name]["expired"])
+        self.assertEqual(drafts_by_id[d_none.name]["expires_at"], "")
+
+    def test_empty_list_returns_clean_response(self):
+        res = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.staff, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res.get("status"), "ok")
+        self.assertEqual(res.get("drafts"), [])
+        self.assertEqual(res.get("count"), 0)
+        self.assertFalse(res.get("has_more"))
+        self.assertTrue(res.get("message"))
+        self.assertIn("tidak ada", res.get("message").lower())
+
+    def test_authorization_and_visibility_scenarios(self):
+        res_guest = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": "Guest", "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_guest.get("code"), "GUEST_TOOL_FORBIDDEN")
+
+        res_unauth = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": "_unknown_user@example.com", "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_unauth.get("code"), "NOT_AUTHORIZED")
+
+        disabled_email = "_test.tg.draft.disabled@example.com"
+        _ensure_user(disabled_email, "_Test Disabled User")
+        frappe.db.set_value("User", disabled_email, "enabled", 0)
+        try:
+            res_disabled = json.loads(
+                execute_tool(
+                    "list_pending_drafts",
+                    "{}",
+                    context={"user_id": disabled_email, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(res_disabled.get("code"), "NOT_AUTHORIZED")
+        finally:
+            if frappe.db.exists("User", disabled_email):
+                frappe.delete_doc("User", disabled_email, ignore_permissions=True, force=True, delete_permanently=True)
+
+        no_client_email = "_test.tg.draft.noclient@example.com"
+        _ensure_user(no_client_email, "_Test No Client User")
+        frappe.db.delete("Has Role", {"parent": no_client_email, "parenttype": "User", "role": "AIOS Client"})
+        frappe.clear_cache(user=no_client_email)
+        try:
+            res_no_client = json.loads(
+                execute_tool(
+                    "list_pending_drafts",
+                    "{}",
+                    context={"user_id": no_client_email, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(res_no_client.get("code"), "NOT_AUTHORIZED")
+        finally:
+            if frappe.db.exists("User", no_client_email):
+                frappe.delete_doc("User", no_client_email, ignore_permissions=True, force=True, delete_permanently=True)
+
+        d_ch = self._create_custom_draft("Cust Owner Chan", user=self.owner, is_channel=True)
+        res_receiver = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        receiver_ids = [d["draft_id"] for d in res_receiver.get("drafts", [])]
+        self.assertIn(d_ch.name, receiver_ids)
+
+        res_staff = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.staff, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        staff_ids = [d["draft_id"] for d in res_staff.get("drafts", [])]
+        self.assertNotIn(d_ch.name, staff_ids)
+
+        d_staff = self._create_custom_draft("Cust Staff NonChan", user=self.staff, is_channel=False)
+        res_staff_own = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.staff, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        staff_own_ids = [d["draft_id"] for d in res_staff_own.get("drafts", [])]
+        self.assertIn(d_staff.name, staff_own_ids)
+
+        res_rec_staff = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        rec_ids = [d["draft_id"] for d in res_rec_staff.get("drafts", [])]
+        self.assertNotIn(d_staff.name, rec_ids)
+
+        frappe.db.delete("Has Role", {"parent": self.receiver, "parenttype": "User", "role": "AIOS Channel Receiver"})
+        frappe.clear_cache(user=self.receiver)
+
+        res_owner = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.owner, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        owner_ids = [d["draft_id"] for d in res_owner.get("drafts", [])]
+        self.assertIn(d_ch.name, owner_ids)
+
+        res_ex_receiver = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                "{}",
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        ex_rec_ids = [d["draft_id"] for d in res_ex_receiver.get("drafts", [])]
+        self.assertNotIn(d_ch.name, ex_rec_ids)
+
+    def test_corrupt_payload_handled_safely_and_logged(self):
+        d_corrupt = self._create_custom_draft("Cust Corrupt", raw_payload="not a valid json{", is_channel=True)
+        d_valid = self._create_custom_draft("Cust Valid", is_channel=True)
+
+        with patch("aios_v1.lib.erpnext_action_drafts.log_exception") as mock_log:
+            res = json.loads(
+                execute_tool(
+                    "list_pending_drafts",
+                    "{}",
+                    context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+        self.assertEqual(res.get("status"), "ok")
+        drafts = res.get("drafts", [])
+        draft_ids = [d["draft_id"] for d in drafts]
+        self.assertIn(d_valid.name, draft_ids)
+        self.assertIn(d_corrupt.name, draft_ids)
+        corrupt_item = next(d for d in drafts if d["draft_id"] == d_corrupt.name)
+        self.assertEqual(corrupt_item["draft_id"], d_corrupt.name)
+        self.assertTrue(mock_log.called)
