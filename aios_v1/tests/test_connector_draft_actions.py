@@ -1029,6 +1029,10 @@ class TestConnectorDraftActions(IntegrationTestCase):
             "WAJIB panggil tool terlebih dahulu",
             "Sales Order",
             "Payment Entry",
+            "memanggil tool yang sama LAGI dengan `confirmed=true`",
+            "TANPA `confirmation_token`",
+            "JANGAN mengarang token atau memanggil ulang tanpa `confirmed=true`",
+            "kalimat bebas",
         ]
         old_header_token = " ".join(["PROTOKOL", "AKSI", "DRAF", "TELEGRAM"])
 
@@ -1146,8 +1150,9 @@ class TestConnectorDraftActions(IntegrationTestCase):
         for step in (
             "1. Untuk menyetujui draf (`approve_draft`)",
             "2. Tampilkan ringkasan persis sesuai data tool",
-            "3. Jika karyawan menjawab tidak/batal",
-            "4. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi",
+            "3. Jika pada pesan berikutnya karyawan menjawab ya/setuju/konfirmasi",
+            "4. Jika karyawan menjawab tidak/batal",
+            "5. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi",
         ):
             self.assertIn(step, system_prompt)
 
@@ -1316,6 +1321,236 @@ class TestConnectorDraftActions(IntegrationTestCase):
         self.assertEqual(sub_so_doc.owner, self.receiver)
         self.assertEqual(sub_so_doc.modified_by, self.receiver)
         self.assertIsNone(frappe.cache().get_value(f"aios_tg_confirm:{self.receiver}:approve:{draft2.name}"))
+
+    def test_ekasa_desk_two_turns_without_token_executes_all_draft_actions_without_loop(self):
+        # 1. approve_draft: 2 turns without confirmation_token in Turn 2
+        cust_approve = "_Test Ekasa NoTok Approve"
+        draft_approve = self._create_guest_order_draft(cust_approve, qty=2)
+        conv_approve = self._create_ekasa_conversation(self.receiver, "sales")
+        t1_approve_res: dict = {}
+        t2_approve_res: dict = {}
+        inspected_t2_approve: list[bool] = []
+
+        self._run_ekasa_stream(
+            f"setujui draf {draft_approve.name}",
+            conv_approve,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft_approve.name},
+                t1_approve_res,
+                lambda res: f"Konfirmasi {res['summary']['draft_id']} ({res['summary']['customer']}). Ya/tidak?",
+            ),
+        )
+        self.assertEqual(t1_approve_res.get("status"), "CONFIRMATION_REQUIRED")
+        tok_approve = t1_approve_res.get("confirmation_token")
+        self.assertTrue(tok_approve)
+
+        def inspect_approve_t2(messages, _tools):
+            self.assertTrue(all(m.get("role") != "tool" for m in messages))
+            self.assertNotIn(tok_approve, json.dumps(messages))
+            inspected_t2_approve.append(True)
+
+        self._run_ekasa_stream(
+            "Ya",
+            conv_approve,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft_approve.name, "confirmed": True},
+                t2_approve_res,
+                lambda res: f"Sales Order {res.get('sales_order')} selesai.",
+                inspect_round1=inspect_approve_t2,
+            ),
+        )
+        self.assertTrue(inspected_t2_approve)
+        self.assertNotEqual(t2_approve_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertNotEqual(t2_approve_res.get("status"), "CONFIRMATION_PENDING_USER_REPLY")
+        self.assertTrue(t2_approve_res.get("executed"))
+        so_name = t2_approve_res.get("sales_order")
+        self.assertTrue(so_name and frappe.db.exists("Sales Order", so_name))
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertEqual(so_doc.docstatus, 1)
+        self.assertEqual(so_doc.owner, self.receiver)
+        self.assertEqual(so_doc.modified_by, self.receiver)
+
+        # 2. reject_draft: 2 turns without confirmation_token and without repeating reason in Turn 2
+        cust_reject = "_Test Ekasa NoTok Reject"
+        draft_reject = self._create_guest_order_draft(cust_reject, qty=1)
+        conv_reject = self._create_ekasa_conversation(self.receiver, "sales")
+        t1_reject_res: dict = {}
+        t2_reject_res: dict = {}
+        inspected_t2_reject: list[bool] = []
+
+        self._run_ekasa_stream(
+            f"tolak draf {draft_reject.name} karena stok kosong",
+            conv_reject,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "reject_draft",
+                lambda: {"draft_id": draft_reject.name, "reason": "Stok kosong"},
+                t1_reject_res,
+                lambda res: f"Konfirmasi tolak draf {draft_reject.name} alasan {res['summary']['reason']}. Ya/tidak?",
+            ),
+        )
+        self.assertEqual(t1_reject_res.get("status"), "CONFIRMATION_REQUIRED")
+        tok_reject = t1_reject_res.get("confirmation_token")
+        self.assertTrue(tok_reject)
+        self.assertEqual(t1_reject_res["summary"]["reason"], "Stok kosong")
+
+        def inspect_reject_t2(messages, _tools):
+            self.assertTrue(all(m.get("role") != "tool" for m in messages))
+            self.assertNotIn(tok_reject, json.dumps(messages))
+            inspected_t2_reject.append(True)
+
+        self._run_ekasa_stream(
+            "oke sip lanjutkan",
+            conv_reject,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "reject_draft",
+                lambda: {"draft_id": draft_reject.name, "confirmed": True},
+                t2_reject_res,
+                lambda res: f"Draf {draft_reject.name} ditolak (status: {res.get('draft_status')}).",
+                inspect_round1=inspect_reject_t2,
+            ),
+        )
+        self.assertTrue(inspected_t2_reject)
+        self.assertNotEqual(t2_reject_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertNotEqual(t2_reject_res.get("status"), "CONFIRMATION_PENDING_USER_REPLY")
+        self.assertEqual(t2_reject_res.get("draft_status"), "REJECTED")
+        draft_doc_rej = frappe.get_doc("Pending Action Draft", draft_reject.name)
+        self.assertEqual(draft_doc_rej.status, "REJECTED")
+        self.assertEqual(draft_doc_rej.rejection_reason, "Stok kosong")
+        self.assertEqual(draft_doc_rej.modified_by, self.receiver)
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_reject}))
+
+        # 3. confirm_cash_payment: 2 turns without confirmation_token in Turn 2
+        cust_cash = "_Test Ekasa NoTok Cash"
+        draft_cash = self._create_guest_order_draft(cust_cash, qty=1)
+        frappe.set_user(self.receiver)
+        try:
+            with patch.object(telegram_client, "send_message", return_value=True):
+                exec_res = approve_and_execute_draft(draft_cash.name)
+        finally:
+            frappe.set_user("Administrator")
+        cash_so_name = exec_res["name"]
+        self.assertTrue(cash_so_name and frappe.db.exists("Sales Order", cash_so_name))
+
+        conv_cash = self._create_ekasa_conversation(self.receiver, "sales")
+        t1_cash_res: dict = {}
+        t2_cash_res: dict = {}
+        inspected_t2_cash: list[bool] = []
+
+        self._run_ekasa_stream(
+            f"konfirmasi bayar cash draf {draft_cash.name}",
+            conv_cash,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "confirm_cash_payment",
+                lambda: {"draft_id": draft_cash.name},
+                t1_cash_res,
+                lambda res: f"Konfirmasi bayar Cash {res['summary']['draft_id']}. Ya/tidak?",
+            ),
+        )
+        self.assertEqual(t1_cash_res.get("status"), "CONFIRMATION_REQUIRED")
+        tok_cash = t1_cash_res.get("confirmation_token")
+        self.assertTrue(tok_cash)
+
+        def inspect_cash_t2(messages, _tools):
+            self.assertTrue(all(m.get("role") != "tool" for m in messages))
+            self.assertNotIn(tok_cash, json.dumps(messages))
+            inspected_t2_cash.append(True)
+
+        self._run_ekasa_stream(
+            "gas konfirmasi cash",
+            conv_cash,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "confirm_cash_payment",
+                lambda: {"draft_id": draft_cash.name, "confirmed": True},
+                t2_cash_res,
+                lambda res: f"Payment Entry {res.get('payment_entry')} selesai.",
+                inspect_round1=inspect_cash_t2,
+            ),
+        )
+        self.assertTrue(inspected_t2_cash)
+        self.assertNotEqual(t2_cash_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertNotEqual(t2_cash_res.get("status"), "CONFIRMATION_PENDING_USER_REPLY")
+        self.assertTrue(t2_cash_res.get("payment_confirmed"))
+        pe_name = t2_cash_res.get("payment_entry")
+        self.assertTrue(pe_name and frappe.db.exists("Payment Entry", pe_name))
+        pe_doc = frappe.get_doc("Payment Entry", pe_name)
+        self.assertEqual(pe_doc.docstatus, 1)
+        self.assertEqual(pe_doc.owner, self.receiver)
+        self.assertEqual(pe_doc.modified_by, self.receiver)
+        pe_refs = frappe.get_all(
+            "Payment Entry Reference",
+            filters={"parent": pe_name, "reference_name": cash_so_name, "docstatus": 1},
+        )
+        self.assertEqual(len(pe_refs), 1)
+
+        # 4. Guard verification:
+        # a. Token salah/buatan ("token-ngarang") pada Turn 2 dalam AIOS Conversation yang sama ditolak
+        draft_fake = self._create_guest_order_draft("_Test Ekasa Fake Tok Guard", qty=1)
+        conv_guard = self._create_ekasa_conversation(self.receiver, "sales")
+        t1_fake: dict = {}
+        t2_fake: dict = {}
+
+        self._run_ekasa_stream(
+            f"setujui draf {draft_fake.name}",
+            conv_guard,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft_fake.name},
+                t1_fake,
+                lambda res: f"Konfirmasi {res['summary']['draft_id']}. Ya/tidak?",
+            ),
+        )
+        self.assertEqual(t1_fake.get("status"), "CONFIRMATION_REQUIRED")
+
+        self._run_ekasa_stream(
+            "ya",
+            conv_guard,
+            self.receiver,
+            self._make_tool_turn_llm(
+                "approve_draft",
+                lambda: {"draft_id": draft_fake.name, "confirmed": True, "confirmation_token": "token-ngarang"},
+                t2_fake,
+                lambda _res: "Token salah.",
+            ),
+        )
+        self.assertEqual(t2_fake.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertFalse(t2_fake.get("executed"))
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft_fake.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": "_Test Ekasa Fake Tok Guard"}))
+
+        # b. Di luar AIOS Conversation (tanpa conversation_id), confirmed=True tanpa token tetap ditolak CONFIRMATION_REQUIRED
+        draft_no_conv = self._create_guest_order_draft("_Test Guard No Conv", qty=1)
+        frappe.set_user(self.receiver)
+        try:
+            issued = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_no_conv.name}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(issued.get("status"), "CONFIRMATION_REQUIRED")
+            no_conv_res = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_no_conv.name, "confirmed": True}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+        finally:
+            frappe.set_user("Administrator")
+        self.assertEqual(no_conv_res.get("status"), "CONFIRMATION_REQUIRED")
+        self.assertFalse(no_conv_res.get("executed"))
+        self.assertEqual(frappe.db.get_value("Pending Action Draft", draft_no_conv.name, "status"), "PENDING_APPROVAL")
+        self.assertFalse(frappe.get_all("Sales Order", filters={"customer": "_Test Guard No Conv"}))
 
     def test_ekasa_desk_confirm_cash_payment_two_turns_sets_payment_entry_audit_and_notifies_customer(self):
         cust_name = "_Test Ekasa Cash Pay Two Turns"

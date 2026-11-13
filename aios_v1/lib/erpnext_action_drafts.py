@@ -812,9 +812,15 @@ def _execute_confirm_cash_payment(doc, _payload: dict, _reason: str) -> dict:
 @ai_tool(
     name="approve_draft",
     description=(
-        "Menyetujui Pending Action Draft menjadi Sales Order atas nama karyawan Telegram yang tertaut "
-        "dan berwenang. Wajib dipanggil dengan confirmed=false terlebih dahulu untuk mengambil ringkasan draf "
-        "(nomor, customer, total, item) dan meminta konfirmasi dari karyawan sebelum memanggil confirmed=true."
+        "Menyetujui Pending Action Draft menjadi Sales Order atas nama karyawan yang berwenang. "
+        "Alur 2 langkah: Langkah 1, panggil dengan confirmed=false terlebih dahulu untuk mengambil "
+        "ringkasan draf (nomor, customer, total, item) dan meminta konfirmasi karyawan. "
+        "Langkah 2, setelah karyawan menjawab ya/setuju pada pesan berikutnya, panggil tool ini lagi "
+        "dengan confirmed=true untuk mengeksekusi persetujuan (jangan memanggil ulang confirmed=false "
+        "setelah ringkasan ditampilkan dan karyawan sudah mengonfirmasi). "
+        "Parameter confirmation_token bersifat opsional bila konfirmasi diberikan di dalam percakapan "
+        "chat (AIOS Conversation) yang sama (panggil confirmed=true tanpa confirmation_token bila token "
+        "tidak tersedia), dan wajib hanya bila eksekusi dilakukan di luar percakapan tanpa riwayat."
     ),
     branch="sales",
     roles=["manager", "sales_manager", "ai_manager"],
@@ -823,12 +829,21 @@ def _execute_confirm_cash_payment(doc, _payload: dict, _reason: str) -> dict:
         "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
         "confirmed": {
             "type": "boolean",
-            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan menyetujui konfirmasi tersebut.",
+            "description": (
+                "Isi false pada langkah 1 untuk mengambil ringkasan konfirmasi awal; isi true pada "
+                "langkah 2 untuk mengeksekusi setelah karyawan menjawab setuju pada pesan berikutnya "
+                "(jangan mengulang false setelah karyawan mengonfirmasi)."
+            ),
             "required": False,
         },
         "confirmation_token": {
             "type": "string",
-            "description": "Token konfirmasi dari pemanggilan langkah pertama bila tersedia.",
+            "description": (
+                "Token tantangan dari hasil pemanggilan langkah 1 bila masih tersedia (wajib hanya "
+                "bila eksekusi di luar percakapan tanpa riwayat). Jika tidak tersedia saat percakapan "
+                "berlanjut ke pesan berikutnya, panggil confirmed=true tanpa confirmation_token — "
+                "jangan mengambil ringkasan ulang untuk mendapatkan token baru dan jangan mengarang nilai token."
+            ),
             "required": False,
         },
     },
@@ -848,9 +863,15 @@ def approve_draft(draft_id: str, confirmed: bool = False, confirmation_token: st
 @ai_tool(
     name="reject_draft",
     description=(
-        "Menolak/membatalkan Pending Action Draft atas nama karyawan Telegram yang tertaut dan berwenang. "
-        "Wajib dipanggil dengan confirmed=false terlebih dahulu untuk menampilkan ringkasan draf dan "
-        "meminta konfirmasi dari karyawan sebelum mengeksekusi penolakan."
+        "Menolak/membatalkan Pending Action Draft atas nama karyawan yang berwenang. "
+        "Alur 2 langkah: Langkah 1, panggil dengan confirmed=false terlebih dahulu untuk menampilkan "
+        "ringkasan draf dan meminta konfirmasi dari karyawan. "
+        "Langkah 2, setelah karyawan menjawab ya/setuju pada pesan berikutnya, panggil tool ini lagi "
+        "dengan confirmed=true untuk mengeksekusi penolakan (jangan memanggil ulang confirmed=false "
+        "setelah ringkasan ditampilkan dan karyawan sudah mengonfirmasi). "
+        "Parameter confirmation_token bersifat opsional bila konfirmasi diberikan di dalam percakapan "
+        "chat (AIOS Conversation) yang sama (panggil confirmed=true tanpa confirmation_token bila token "
+        "tidak tersedia), dan wajib hanya bila eksekusi dilakukan di luar percakapan tanpa riwayat."
     ),
     branch="sales",
     roles=["manager", "sales_manager", "ai_manager"],
@@ -860,12 +881,21 @@ def approve_draft(draft_id: str, confirmed: bool = False, confirmation_token: st
         "reason": {"type": "string", "description": "Alasan penolakan atau pembatalan draf", "required": False},
         "confirmed": {
             "type": "boolean",
-            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan mengonfirmasi penolakan tersebut.",
+            "description": (
+                "Isi false pada langkah 1 untuk mengambil ringkasan konfirmasi awal; isi true pada "
+                "langkah 2 untuk mengeksekusi setelah karyawan mengonfirmasi penolakan tersebut "
+                "(jangan mengulang false setelah karyawan mengonfirmasi)."
+            ),
             "required": False,
         },
         "confirmation_token": {
             "type": "string",
-            "description": "Token konfirmasi dari pemanggilan langkah pertama bila tersedia.",
+            "description": (
+                "Token tantangan dari hasil pemanggilan langkah 1 bila masih tersedia (wajib hanya "
+                "bila eksekusi di luar percakapan tanpa riwayat). Jika tidak tersedia saat percakapan "
+                "berlanjut ke pesan berikutnya, panggil confirmed=true tanpa confirmation_token — "
+                "jangan mengambil ringkasan ulang untuk mendapatkan token baru dan jangan mengarang nilai token."
+            ),
             "required": False,
         },
     },
@@ -888,8 +918,15 @@ def reject_draft(
     name="confirm_cash_payment",
     description=(
         "Mengonfirmasi pembayaran Cash (membuat & submit Payment Entry Cash) untuk draf Sales Order berstatus EXECUTED "
-        "atas nama karyawan Telegram yang tertaut dan berwenang. Wajib dipanggil dengan confirmed=false terlebih dahulu "
-        "untuk menampilkan ringkasan (draf, SO, customer, total, item) dan menunggu konfirmasi karyawan."
+        "atas nama karyawan yang berwenang. "
+        "Alur 2 langkah: Langkah 1, panggil dengan confirmed=false terlebih dahulu untuk menampilkan ringkasan "
+        "(draf, SO, customer, total, item) dan menunggu konfirmasi karyawan. "
+        "Langkah 2, setelah karyawan menjawab ya/setuju pada pesan berikutnya, panggil tool ini lagi "
+        "dengan confirmed=true untuk mengeksekusi konfirmasi pembayaran Cash (jangan memanggil ulang "
+        "confirmed=false setelah ringkasan ditampilkan dan karyawan sudah mengonfirmasi). "
+        "Parameter confirmation_token bersifat opsional bila konfirmasi diberikan di dalam percakapan "
+        "chat (AIOS Conversation) yang sama (panggil confirmed=true tanpa confirmation_token bila token "
+        "tidak tersedia), dan wajib hanya bila eksekusi dilakukan di luar percakapan tanpa riwayat."
     ),
     branch="sales",
     roles=["manager", "sales_manager", "ai_manager"],
@@ -898,12 +935,21 @@ def reject_draft(
         "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
         "confirmed": {
             "type": "boolean",
-            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan mengonfirmasi pembayaran tersebut.",
+            "description": (
+                "Isi false pada langkah 1 untuk mengambil ringkasan konfirmasi awal; isi true pada "
+                "langkah 2 untuk mengeksekusi setelah karyawan mengonfirmasi pembayaran Cash tersebut "
+                "(jangan mengulang false setelah karyawan mengonfirmasi)."
+            ),
             "required": False,
         },
         "confirmation_token": {
             "type": "string",
-            "description": "Token konfirmasi dari pemanggilan langkah pertama bila tersedia.",
+            "description": (
+                "Token tantangan dari hasil pemanggilan langkah 1 bila masih tersedia (wajib hanya "
+                "bila eksekusi di luar percakapan tanpa riwayat). Jika tidak tersedia saat percakapan "
+                "berlanjut ke pesan berikutnya, panggil confirmed=true tanpa confirmation_token — "
+                "jangan mengambil ringkasan ulang untuk mendapatkan token baru dan jangan mengarang nilai token."
+            ),
             "required": False,
         },
     },

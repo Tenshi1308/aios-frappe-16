@@ -216,7 +216,7 @@ class BaseManager:
             f"- Jawablah murni dari perspektif manajer umum yang bertugas memimpin cabang ini."
         ]
 
-    def build_system_prompt(self, worker_def, user: str = None) -> str:
+    def build_system_prompt(self, worker_def, user: str | None = None) -> str:
         eff_user = user or getattr(frappe.session, "user", None)
         setting = frappe.get_single("AIOS Setting")
         persona_context = (setting.get("company_context_persona") or "").strip()
@@ -260,13 +260,21 @@ class BaseManager:
             parts.append(
                 "PROTOKOL AKSI DRAF (KARYAWAN BERWENANG):\n"
                 "1. Untuk menyetujui draf (`approve_draft`), menolak draf (`reject_draft`), atau "
-                "mengonfirmasi pembayaran Cash (`confirm_cash_payment`), WAJIB panggil tool terlebih dahulu "
-                "tanpa `confirmed=true` untuk mengambil ringkasan draf aktual.\n"
+                "mengonfirmasi pembayaran Cash (`confirm_cash_payment`), pada permintaan awal (saat ringkasan "
+                "belum ditampilkan) WAJIB panggil tool terlebih dahulu tanpa `confirmed=true` untuk mengambil "
+                "ringkasan draf aktual.\n"
                 "2. Tampilkan ringkasan persis sesuai data tool (nomor draf, customer, total, daftar item) "
                 "dan minta karyawan menjawab ya atau tidak. Jangan pernah mengeksekusi (`confirmed=true`) "
                 "sebelum karyawan memberi konfirmasi eksplisit pada pesan berikutnya.\n"
-                "3. Jika karyawan menjawab tidak/batal, jangan eksekusi dan beri tahu bahwa draf tidak diproses.\n"
-                "4. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi (`Sales Order` / `Payment Entry`) "
+                "3. Jika pada pesan berikutnya karyawan menjawab ya/setuju/konfirmasi (dalam kalimat bebas apa pun) "
+                "setelah ringkasan draf ditampilkan pada pesan asisten sebelumnya, SEGERA eksekusi dengan "
+                "memanggil tool yang sama LAGI dengan `confirmed=true`. Sertakan `confirmation_token` bila masih "
+                "tersedia; jika `confirmation_token` tidak tersedia di riwayat percakapan, panggil dengan `confirmed=true` "
+                "TANPA `confirmation_token` (server memverifikasi otomatis dari tantangan aktif dan riwayat percakapan) "
+                "dan JANGAN mengarang token atau memanggil ulang tanpa `confirmed=true`.\n"
+                "4. Jika karyawan menjawab tidak/batal atau belum menyetujui, jangan eksekusi dan beri tahu bahwa "
+                "draf tidak diproses.\n"
+                "5. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi (`Sales Order` / `Payment Entry`) "
                 "beserta status terbarunya kepada karyawan."
             )
 
@@ -386,8 +394,8 @@ class BaseManager:
         if result_holder is not None:
             result_holder.append(result)
 
-    def handle_stream(self, user_message: str, worker_key: str = None, conversation_id: int = None,
-                      user: str = None, attachments: list | None = None, new_conversation: bool = False):
+    def handle_stream(self, user_message: str, worker_key: str | None = None, conversation_id: int | None = None,
+                      user: str | None = None, attachments: list | None = None, new_conversation: bool = False):
         user = user or frappe.session.user
         # 0. Flush initial buffer untuk bypass proxy/nginx buffering
         yield f": {' ' * 1024}\n\n"

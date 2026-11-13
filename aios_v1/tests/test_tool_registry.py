@@ -24,11 +24,11 @@ from aios_v1.setup import ensure_builtin_plugins
 CONTEXT = {"user": "_test.tool.registry@example.com", "allowed_company": "_Test Company"}
 
 class TestToolRegistry(unittest.TestCase):
-    
+
     def test_schema_generation(self):
         schemas = get_all_tools_schema()
         self.assertTrue(len(schemas) > 0)
-        
+
         # Check if dummy tool is in schema
         dummy_schema = next((s for s in schemas if s["function"]["name"] == "get_current_time"), None)
         self.assertIsNotNone(dummy_schema)
@@ -39,7 +39,7 @@ class TestToolRegistry(unittest.TestCase):
         args = json.dumps({"timezone": "UTC"})
         result_json = execute_tool("get_current_time", args, context=CONTEXT)
         result = json.loads(result_json)
-        
+
         self.assertIn("current_time", result)
         self.assertEqual(result["timezone"], "UTC")
 
@@ -222,3 +222,89 @@ class TestToolRegistryDraftParity(IntegrationTestCase):
         finally:
             if hasattr(frappe.local, "aios_channel"):
                 delattr(frappe.local, "aios_channel")
+
+    def test_draft_tool_schemas_clarify_two_step_and_optional_in_conversation_token(self):
+        for channel in (None, "telegram"):
+            if channel is None:
+                if hasattr(frappe.local, "aios_channel"):
+                    delattr(frappe.local, "aios_channel")
+            else:
+                frappe.local.aios_channel = channel
+
+            try:
+                schemas = get_tools_schema_for_worker("sales", "manager", user=self.emp)
+                tools_by_name = {s["function"]["name"]: s["function"] for s in schemas}
+
+                for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+                    self.assertIn(tool_name, tools_by_name)
+                    func = tools_by_name[tool_name]
+                    desc = func.get("description", "")
+
+                    # 1. Channel-neutral: no "karyawan Telegram" or "Telegram"
+                    self.assertNotIn("karyawan Telegram", desc)
+                    self.assertNotIn("Telegram", desc)
+
+                    # Explicit 2-step flow: confirmed=false (step 1) and confirmed=true (step 2)
+                    self.assertIn("confirmed=false", desc)
+                    self.assertIn("confirmed=true", desc)
+                    self.assertTrue(
+                        "langkah 1" in desc.lower() or "langkah pertama" in desc.lower(),
+                        f"{tool_name} description missing step 1 reference",
+                    )
+                    self.assertTrue(
+                        "langkah 2" in desc.lower() or "langkah kedua" in desc.lower(),
+                        f"{tool_name} description missing step 2 reference",
+                    )
+                    self.assertTrue(
+                        "jangan memanggil ulang" in desc.lower() or "jangan mengulang" in desc.lower(),
+                        f"{tool_name} description missing prohibition of repeating confirmed=false",
+                    )
+
+                    # confirmation_token is optional inside conversation, required only outside
+                    self.assertTrue(
+                        "opsional" in desc.lower() and "luar percakapan" in desc.lower(),
+                        f"{tool_name} description missing optional in-conversation / required outside",
+                    )
+
+                    # 2. Parameters properties
+                    props = func.get("parameters", {}).get("properties", {})
+                    self.assertIn("confirmed", props)
+                    self.assertIn("confirmation_token", props)
+
+                    conf_desc = props["confirmed"].get("description", "")
+                    self.assertIn("false", conf_desc.lower())
+                    self.assertIn("true", conf_desc.lower())
+                    self.assertTrue(
+                        "langkah 1" in conf_desc.lower() and "langkah 2" in conf_desc.lower(),
+                        f"{tool_name} confirmed param missing step 1/2",
+                    )
+                    self.assertTrue(
+                        "jangan mengulang" in conf_desc.lower(),
+                        f"{tool_name} confirmed param missing prohibition to repeat false",
+                    )
+
+                    token_desc = props["confirmation_token"].get("description", "")
+                    self.assertTrue(
+                        "langkah 1" in token_desc.lower() or "langkah pertama" in token_desc.lower(),
+                        f"{tool_name} confirmation_token param missing step 1 reference",
+                    )
+                    self.assertIn("confirmed=true", token_desc)
+                    self.assertTrue(
+                        "jangan mengambil ringkasan ulang" in token_desc.lower(),
+                        f"{tool_name} confirmation_token param missing prohibition against re-fetching summary",
+                    )
+                    self.assertTrue(
+                        "jangan mengarang" in token_desc.lower(),
+                        f"{tool_name} confirmation_token param missing prohibition against making up token",
+                    )
+
+                # 3. Guest on both channels receives strictly set(GUEST_ALLOWED_TOOLS)
+                guest_tools = {
+                    s["function"]["name"]
+                    for s in get_tools_schema_for_worker("sales", "manager", user="Guest")
+                }
+                self.assertEqual(guest_tools, set(GUEST_ALLOWED_TOOLS))
+                self.assertTrue(guest_tools.isdisjoint(DRAFT_TOOLS))
+            finally:
+                if hasattr(frappe.local, "aios_channel"):
+                    delattr(frappe.local, "aios_channel")
