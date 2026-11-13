@@ -3,7 +3,6 @@
 import hashlib
 import hmac
 import json
-import re
 import uuid
 
 import frappe
@@ -251,57 +250,6 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
 
 _CONFIRM_TTL_SECONDS = 300
 _CONFIRM_CACHE_PREFIX = "aios_tg_confirm"
-_NEGATIVE_FIRST_TOKENS = frozenset({
-    "tidak",
-    "tdk",
-    "ga",
-    "gak",
-    "ngga",
-    "nggak",
-    "engga",
-    "enggak",
-    "jangan",
-    "no",
-    "nope",
-    "cancel",
-})
-_NEGATIVE_EXACT = frozenset({"batal", "batalkan"})
-_NEGATIVE_PHRASES = (
-    "tidak jadi",
-    "gak jadi",
-    "nggak jadi",
-    "tidak setuju",
-    "jangan proses",
-    "jangan disetujui",
-)
-_AFFIRMATIVE_TOKENS = frozenset({
-    "ya",
-    "iya",
-    "y",
-    "yes",
-    "ok",
-    "oke",
-    "okay",
-    "setuju",
-    "setujui",
-    "approve",
-    "acc",
-    "lanjut",
-    "lanjutkan",
-    "proses",
-    "konfirmasi",
-    "benar",
-    "betul",
-    "yap",
-    "yup",
-    "siap",
-    "boleh",
-    "gas",
-    "deal",
-    "silakan",
-    "silahkan",
-    "bayar",
-})
 _ACTION_LABELS = {
     "approve": "menyetujui draf menjadi Sales Order",
     "reject": "menolak/membatalkan draf",
@@ -321,47 +269,31 @@ def _parse_bool_flag(value) -> bool:
     return bool(value)
 
 
-def _latest_conversation_user_msg(conversation_id: str | None) -> tuple[str | None, str]:
+def _latest_conversation_user_msg(conversation_id: str | None) -> str | None:
     if not conversation_id:
-        return None, ""
+        return None
     rows = frappe.get_all(
         "AIOS Message",
         filters={"conversation": str(conversation_id), "role": "user"},
-        fields=["name", "content"],
+        fields=["name"],
         order_by="name desc",
         limit=1,
     )
     if not rows:
-        return None, ""
-    return str(rows[0]["name"]), str(rows[0].get("content") or "")
+        return None
+    return str(rows[0]["name"])
 
 
 def _is_newer_message(latest_name: str | None, issued_name: str | None) -> bool:
-    if not latest_name or not issued_name or str(latest_name) == str(issued_name):
+    if not latest_name or not issued_name:
         return False
-    try:
-        return int(latest_name) > int(issued_name)
-    except (TypeError, ValueError):
-        return str(latest_name) > str(issued_name)
-
-
-def _classify_reply_intent(text: str, action: str) -> str:
-    cleaned = re.sub(r"[^\w\s]", " ", (text or "").lower()).strip()
-    tokens = cleaned.split()
-    if not tokens:
-        return "neutral"
-    if (
-        cleaned in _NEGATIVE_EXACT
-        or tokens[0] in _NEGATIVE_FIRST_TOKENS
-        or (action != "reject" and tokens[0] in _NEGATIVE_EXACT)
-        or any(phrase in cleaned for phrase in _NEGATIVE_PHRASES)
-    ):
-        return "negative"
-    if any(tok in _AFFIRMATIVE_TOKENS for tok in tokens):
-        return "affirmative"
-    if action == "reject" and "tolak" in tokens:
-        return "affirmative"
-    return "neutral"
+    s_latest = str(latest_name)
+    s_issued = str(issued_name)
+    if s_latest == s_issued:
+        return False
+    if s_latest.isdigit() and s_issued.isdigit():
+        return int(s_latest) > int(s_issued)
+    return s_latest > s_issued
 
 
 def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, object | None, dict | None, dict | None]:
@@ -716,7 +648,7 @@ def _verify_or_issue_confirmation(
     """Enforce 2-step confirmation across user turns; return (halt_response_or_None, stored_reason)."""
     cache_key = _confirm_cache_key(user, action, draft_id)
     conversation_id = get_tool_context().get("conversation_id")
-    latest_msg_name, latest_msg_content = _latest_conversation_user_msg(conversation_id)
+    latest_msg_name = _latest_conversation_user_msg(conversation_id)
     confirmed_flag = _parse_bool_flag(confirmed)
     tok = str(confirmation_token or "").strip()
 
@@ -726,7 +658,12 @@ def _verify_or_issue_confirmation(
         ), reason
 
     challenge = _load_challenge(cache_key)
-    if not challenge or challenge.get("action") != action or challenge.get("draft_id") != draft_id:
+    if (
+        not challenge
+        or challenge.get("user") != user
+        or challenge.get("action") != action
+        or challenge.get("draft_id") != draft_id
+    ):
         return _issue_confirmation(
             cache_key, user, action, draft_id, summary, conversation_id, latest_msg_name, reason=reason
         ), reason
@@ -743,7 +680,7 @@ def _verify_or_issue_confirmation(
     )
     if in_same_conversation:
         issued_msg = challenge.get("issued_user_msg") or ""
-        if issued_msg and not _is_newer_message(latest_msg_name, issued_msg):
+        if not issued_msg or not _is_newer_message(latest_msg_name, issued_msg):
             return {
                 "status": "CONFIRMATION_PENDING_USER_REPLY",
                 "code": "CONFIRMATION_PENDING_USER_REPLY",
@@ -753,27 +690,10 @@ def _verify_or_issue_confirmation(
                 "draft_id": draft_id,
                 "summary": summary,
                 "message": (
-                    "Tampilkan ringkasan draf ini ke karyawan dan tunggu balasan konfirmasi ya/tidak "
+                    "Tampilkan ringkasan draf ini ke karyawan dan tunggu balasan konfirmasi "
                     "pada pesan berikutnya sebelum mengeksekusi."
                 ),
             }, reason
-
-        intent = _classify_reply_intent(latest_msg_content, action)
-        if intent == "negative":
-            frappe.cache().delete_value(cache_key)
-            return {
-                "status": "CANCELLED",
-                "code": "CONFIRMATION_DECLINED",
-                "executed": False,
-                "action": action,
-                "draft_id": draft_id,
-                "message": f"Baik, aksi pada draf {draft_id} dibatalkan dan tidak dieksekusi.",
-            }, reason
-        if intent != "affirmative":
-            preserved_reason = str(reason or challenge.get("reason") or "").strip()
-            return _issue_confirmation(
-                cache_key, user, action, draft_id, summary, conversation_id, latest_msg_name, reason=preserved_reason
-            ), preserved_reason
     elif not tok:
         # Di luar konteks AIOS Conversation, token tantangan wajib dicocokkan persis.
         return _issue_confirmation(
@@ -894,7 +814,7 @@ def _execute_confirm_cash_payment(doc, _payload: dict, _reason: str) -> dict:
     description=(
         "Menyetujui Pending Action Draft menjadi Sales Order atas nama karyawan Telegram yang tertaut "
         "dan berwenang. Wajib dipanggil dengan confirmed=false terlebih dahulu untuk mengambil ringkasan draf "
-        "(nomor, customer, total, item) dan meminta jawaban ya/tidak dari karyawan sebelum memanggil confirmed=true."
+        "(nomor, customer, total, item) dan meminta konfirmasi dari karyawan sebelum memanggil confirmed=true."
     ),
     branch="sales",
     roles=["manager", "sales_manager", "ai_manager"],
@@ -903,7 +823,7 @@ def _execute_confirm_cash_payment(doc, _payload: dict, _reason: str) -> dict:
         "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
         "confirmed": {
             "type": "boolean",
-            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan menjawab ya.",
+            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan menyetujui konfirmasi tersebut.",
             "required": False,
         },
         "confirmation_token": {
@@ -930,7 +850,7 @@ def approve_draft(draft_id: str, confirmed: bool = False, confirmation_token: st
     description=(
         "Menolak/membatalkan Pending Action Draft atas nama karyawan Telegram yang tertaut dan berwenang. "
         "Wajib dipanggil dengan confirmed=false terlebih dahulu untuk menampilkan ringkasan draf dan "
-        "meminta jawaban ya/tidak dari karyawan sebelum mengeksekusi penolakan."
+        "meminta konfirmasi dari karyawan sebelum mengeksekusi penolakan."
     ),
     branch="sales",
     roles=["manager", "sales_manager", "ai_manager"],
@@ -940,7 +860,7 @@ def approve_draft(draft_id: str, confirmed: bool = False, confirmation_token: st
         "reason": {"type": "string", "description": "Alasan penolakan atau pembatalan draf", "required": False},
         "confirmed": {
             "type": "boolean",
-            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan menjawab ya.",
+            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan mengonfirmasi penolakan tersebut.",
             "required": False,
         },
         "confirmation_token": {
@@ -969,7 +889,7 @@ def reject_draft(
     description=(
         "Mengonfirmasi pembayaran Cash (membuat & submit Payment Entry Cash) untuk draf Sales Order berstatus EXECUTED "
         "atas nama karyawan Telegram yang tertaut dan berwenang. Wajib dipanggil dengan confirmed=false terlebih dahulu "
-        "untuk menampilkan ringkasan (draf, SO, customer, total, item) dan menunggu jawaban ya/tidak."
+        "untuk menampilkan ringkasan (draf, SO, customer, total, item) dan menunggu konfirmasi karyawan."
     ),
     branch="sales",
     roles=["manager", "sales_manager", "ai_manager"],
@@ -978,7 +898,7 @@ def reject_draft(
         "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
         "confirmed": {
             "type": "boolean",
-            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan menjawab ya.",
+            "description": "Isi false saat meminta ringkasan konfirmasi awal; isi true hanya setelah karyawan mengonfirmasi pembayaran tersebut.",
             "required": False,
         },
         "confirmation_token": {

@@ -441,74 +441,33 @@ class TestConnectorDraftActions(IntegrationTestCase):
             self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
             self.assertFalse(frappe.get_all("Sales Order", filters={"customer": "_Test TG Confirm Guard Cust"}))
 
-            # 2b. Pertanyaan klarifikasi/netral meskipun disertai token valid tidak boleh mengeksekusi
-            neutral_results: list[dict] = []
-            neutral_step = {"calls": 0}
-            first_tok = round_results[0].get("confirmation_token", "")
+            # 2b. Pertanyaan klarifikasi netral: LLM menjawab pertanyaan tanpa memanggil confirmed=True -> tidak dieksekusi
+            neutral_tool_calls: list[str] = []
 
             def neutral_llm(messages, usage=None, tools=None, tool_calls=None):
-                neutral_step["calls"] += 1
-                if neutral_step["calls"] == 1:
-                    tool_calls.append(
-                        {
-                            "id": "c2b",
-                            "function": {
-                                "name": "approve_draft",
-                                "arguments": json.dumps(
-                                    {
-                                        "draft_id": draft.name,
-                                        "confirmed": True,
-                                        "confirmation_token": first_tok,
-                                    }
-                                ),
-                            },
-                        }
-                    )
-                    if False:
-                        yield ""
-                    return
-                neutral_results.append(json.loads(messages[-1]["content"]))
-                yield f"Ongkir sesuai tarif normal. Konfirmasi ulang: setujui {draft.name} (ya/tidak)?"
+                neutral_tool_calls.append("no-tool")
+                yield f"Ongkir sesuai tarif normal. Apakah jadi setujui {draft.name}?"
 
             with patch("aios_v1.managers.base_manager.chat_stream", side_effect=neutral_llm), \
                  patch.object(telegram_client, "send_chat_action", return_value=True), \
                  patch.object(telegram_client, "send_message", side_effect=lambda cid, txt: sent_messages.append((str(cid), txt)) or True):
-                dispatch.process_update(self._update(CHAT_RECEIVER, "Ongkir ke Jakarta berapa?", update_id=11))
+                r_neutral = dispatch.process_update(self._update(CHAT_RECEIVER, "Ongkir ke Jakarta berapa?", update_id=11))
 
-            self.assertEqual(neutral_results[0].get("status"), "CONFIRMATION_REQUIRED")
-            self.assertFalse(neutral_results[0].get("executed"))
+            self.assertTrue(r_neutral["success"])
+            self.assertEqual(len(neutral_tool_calls), 1)
             self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
             self.assertFalse(frappe.get_all("Sales Order", filters={"customer": "_Test TG Confirm Guard Cust"}))
 
-            # 3. Karyawan membalas "tidak, batalkan" -> token dihapus, tidak dieksekusi
-            decline_results: list[dict] = []
-            decline_step = {"calls": 0}
-
+            # 3. Karyawan menolak: LLM tidak memanggil confirmed=True -> tidak ada eksekusi, draf tetap pending
             def decline_llm(messages, usage=None, tools=None, tool_calls=None):
-                decline_step["calls"] += 1
-                if decline_step["calls"] == 1:
-                    tool_calls.append(
-                        {
-                            "id": "c3",
-                            "function": {
-                                "name": "approve_draft",
-                                "arguments": json.dumps({"draft_id": draft.name, "confirmed": True}),
-                            },
-                        }
-                    )
-                    if False:
-                        yield ""
-                    return
-                decline_results.append(json.loads(messages[-1]["content"]))
-                yield f"Baik, draf {draft.name} dibatalkan konfirmasinya dan tidak dieksekusi."
+                yield f"Baik, draf {draft.name} belum diproses dan tetap menunggu peninjauan."
 
             with patch("aios_v1.managers.base_manager.chat_stream", side_effect=decline_llm), \
                  patch.object(telegram_client, "send_chat_action", return_value=True), \
                  patch.object(telegram_client, "send_message", side_effect=lambda cid, txt: sent_messages.append((str(cid), txt)) or True):
-                dispatch.process_update(self._update(CHAT_RECEIVER, "tidak, batalkan", update_id=12))
+                r_decline = dispatch.process_update(self._update(CHAT_RECEIVER, "tidak jadi bos, tahan dulu", update_id=12))
 
-            self.assertEqual(decline_results[0].get("code"), "CONFIRMATION_DECLINED")
-            self.assertFalse(decline_results[0].get("executed"))
+            self.assertTrue(r_decline["success"])
             self.assertEqual(frappe.db.get_value("Pending Action Draft", draft.name, "status"), "PENDING_APPROVAL")
             self.assertFalse(frappe.get_all("Sales Order", filters={"customer": "_Test TG Confirm Guard Cust"}))
         finally:
@@ -775,17 +734,249 @@ class TestConnectorDraftActions(IntegrationTestCase):
         self.assertEqual(len(employee_msgs), 1)
         self.assertIn("REJECTED", employee_msgs[0])
 
-    def test_reply_intent_classification_variants_and_negation(self):
-        from aios_v1.lib.erpnext_action_drafts import _classify_reply_intent
+    def test_freeform_and_multilingual_confirmation_executes_and_token_guards_hold(self):
+        # 1. Konfirmasi kalimat bebas bahasa Inggris (di luar daftar kata lama) mengeksekusi saat token + pesan baru valid
+        cust_name = "_Test TG Freeform Confirm"
+        draft = self._create_guest_order_draft(cust_name, qty=1)
+        sent_messages: list[tuple[str, str]] = []
+        turn1_res: dict = {}
+        turn2_res: dict = {}
 
-        for phrase in ("approve", "setujui", "boleh", "gas", "deal", "silakan", "silahkan", "ya, approve draf ini"):
-            self.assertEqual(_classify_reply_intent(phrase, "approve"), "affirmative", phrase)
+        def free_turn1_llm(messages, usage=None, tools=None, tool_calls=None):
+            if messages[-1]["role"] != "tool":
+                tool_calls.append(
+                    {
+                        "id": "ff1",
+                        "function": {"name": "approve_draft", "arguments": json.dumps({"draft_id": draft.name})},
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            turn1_res.update(json.loads(messages[-1]["content"]))
+            yield f"Ringkasan draf {draft.name} sudah tampil. Silakan konfirmasi."
 
-        self.assertEqual(_classify_reply_intent("tolak", "reject"), "affirmative")
-        self.assertEqual(_classify_reply_intent("tolak draf ini", "reject"), "affirmative")
-        self.assertEqual(_classify_reply_intent("jangan tolak", "reject"), "negative")
-        self.assertEqual(_classify_reply_intent("tolak", "approve"), "neutral")
-        self.assertEqual(_classify_reply_intent("Ongkir ke Jakarta berapa?", "approve"), "neutral")
+        def free_turn2_llm(messages, usage=None, tools=None, tool_calls=None):
+            if messages[-1]["role"] != "tool":
+                tool_calls.append(
+                    {
+                        "id": "ff2",
+                        "function": {
+                            "name": "approve_draft",
+                            "arguments": json.dumps(
+                                {
+                                    "draft_id": draft.name,
+                                    "confirmed": True,
+                                    "confirmation_token": turn1_res.get("confirmation_token", ""),
+                                }
+                            ),
+                        },
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            turn2_res.update(json.loads(messages[-1]["content"]))
+            yield f"Selesai: {turn2_res.get('sales_order')}"
+
+        with patch("aios_v1.managers.base_manager.chat_stream", side_effect=free_turn1_llm), \
+             patch.object(telegram_client, "send_chat_action", return_value=True), \
+             patch.object(telegram_client, "send_message", side_effect=lambda cid, txt: sent_messages.append((str(cid), txt)) or True):
+            r1 = dispatch.process_update(self._update(CHAT_RECEIVER, f"tolong approve {draft.name}", update_id=50))
+
+        self.assertTrue(r1["success"])
+        self.assertEqual(turn1_res.get("status"), "CONFIRMATION_REQUIRED")
+
+        with patch("aios_v1.managers.base_manager.chat_stream", side_effect=free_turn2_llm), \
+             patch.object(telegram_client, "send_chat_action", return_value=True), \
+             patch.object(telegram_client, "send_message", side_effect=lambda cid, txt: sent_messages.append((str(cid), txt)) or True):
+            r2 = dispatch.process_update(
+                self._update(CHAT_RECEIVER, "Please go ahead and process it now", update_id=51)
+            )
+
+        self.assertTrue(r2["success"])
+        self.assertTrue(turn2_res.get("executed"))
+        so_name = turn2_res.get("sales_order")
+        self.assertTrue(so_name and frappe.db.exists("Sales Order", so_name))
+        so_doc = frappe.get_doc("Sales Order", so_name)
+        self.assertEqual(so_doc.owner, self.receiver)
+        self.assertEqual(so_doc.modified_by, self.receiver)
+
+        # 2. Kalimat bebas non-keyword bahasa daerah untuk confirm_cash_payment (juga tanpa token dalam AIOS Conversation)
+        cash_turn1: dict = {}
+        cash_turn2: dict = {}
+
+        def cash_free_1(messages, usage=None, tools=None, tool_calls=None):
+            if messages[-1]["role"] != "tool":
+                tool_calls.append(
+                    {
+                        "id": "cf1",
+                        "function": {"name": "confirm_cash_payment", "arguments": json.dumps({"draft_id": draft.name})},
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            cash_turn1.update(json.loads(messages[-1]["content"]))
+            yield f"Konfirmasi cash {draft.name}."
+
+        def cash_free_2(messages, usage=None, tools=None, tool_calls=None):
+            if messages[-1]["role"] != "tool":
+                tool_calls.append(
+                    {
+                        "id": "cf2",
+                        "function": {
+                            "name": "confirm_cash_payment",
+                            "arguments": json.dumps({"draft_id": draft.name, "confirmed": True}),
+                        },
+                    }
+                )
+                if False:
+                    yield ""
+                return
+            cash_turn2.update(json.loads(messages[-1]["content"]))
+            yield f"Cash masuk: {cash_turn2.get('payment_entry')}"
+
+        with patch("aios_v1.managers.base_manager.chat_stream", side_effect=cash_free_1), \
+             patch.object(telegram_client, "send_chat_action", return_value=True), \
+             patch.object(telegram_client, "send_message", return_value=True):
+            dispatch.process_update(self._update(CHAT_RECEIVER, f"catat cash {draft.name}", update_id=52))
+        self.assertEqual(cash_turn1.get("status"), "CONFIRMATION_REQUIRED")
+
+        with patch("aios_v1.managers.base_manager.chat_stream", side_effect=cash_free_2), \
+             patch.object(telegram_client, "send_chat_action", return_value=True), \
+             patch.object(telegram_client, "send_message", return_value=True):
+            dispatch.process_update(self._update(CHAT_RECEIVER, "mangga sikat ayeuna", update_id=53))
+        self.assertTrue(cash_turn2.get("payment_confirmed"))
+        pe_doc = frappe.get_doc("Payment Entry", cash_turn2["payment_entry"])
+        self.assertEqual(pe_doc.owner, self.receiver)
+
+        # 3. Guard token: di luar AIOS Conversation wajib token; salah token, salah aksi/draf, expired TTL, dan replay ditolak
+        draft_guard = self._create_guest_order_draft("_Test TG Token Guard", qty=1)
+        draft_other = self._create_guest_order_draft("_Test TG Token Guard Other", qty=1)
+        frappe.local.aios_channel = "telegram"
+        try:
+            frappe.set_user(self.receiver)
+            issued = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_guard.name}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(issued.get("status"), "CONFIRMATION_REQUIRED")
+            valid_tok = issued["confirmation_token"]
+
+            # Token dari draft_guard dipakai untuk draft_other ditolak
+            wrong_draft = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_other.name, "confirmed": True, "confirmation_token": valid_tok}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(wrong_draft.get("status"), "CONFIRMATION_REQUIRED")
+            self.assertFalse(wrong_draft.get("executed"))
+
+            # Tanpa token di luar AIOS Conversation ditolak
+            no_tok = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_guard.name, "confirmed": True}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(no_tok.get("status"), "CONFIRMATION_REQUIRED")
+            self.assertFalse(no_tok.get("executed"))
+
+            # Token salah ditolak
+            wrong_tok = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_guard.name, "confirmed": True, "confirmation_token": "wrong-token"}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(wrong_tok.get("status"), "CONFIRMATION_REQUIRED")
+            self.assertFalse(wrong_tok.get("executed"))
+
+            # Token valid diterbitkan ulang saat langkah validasi gagal di atas; uji salah aksi & salah draf + expired TTL
+            latest_tok = wrong_tok["confirmation_token"]
+            wrong_action = json.loads(
+                execute_tool(
+                    "reject_draft",
+                    json.dumps({"draft_id": draft_guard.name, "confirmed": True, "confirmation_token": latest_tok}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(wrong_action.get("status"), "CONFIRMATION_REQUIRED")
+            self.assertFalse(wrong_action.get("executed"))
+
+            # Simulasi tantangan kedaluwarsa (TTL 300 detik habis / dihapus dari cache)
+            frappe.cache().delete_value(f"aios_tg_confirm:{self.receiver}:approve:{draft_guard.name}")
+            expired = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_guard.name, "confirmed": True, "confirmation_token": latest_tok}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(expired.get("status"), "CONFIRMATION_REQUIRED")
+            self.assertFalse(expired.get("executed"))
+            self.assertEqual(frappe.db.get_value("Pending Action Draft", draft_guard.name, "status"), "PENDING_APPROVAL")
+
+            # Eksekusi sukses sekali dengan token aktif terbaru, lalu replay token yang sama ditolak
+            fresh_tok = expired["confirmation_token"]
+            with patch.object(telegram_client, "send_message", return_value=True):
+                ok_res = json.loads(
+                    execute_tool(
+                        "approve_draft",
+                        json.dumps({"draft_id": draft_guard.name, "confirmed": True, "confirmation_token": fresh_tok}),
+                        context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+            self.assertTrue(ok_res.get("executed"))
+            so_guard_name = ok_res.get("sales_order")
+            self.assertTrue(so_guard_name and frappe.db.exists("Sales Order", so_guard_name))
+            so_before_replay = frappe.db.count("Sales Order")
+            self.assertIsNone(frappe.cache().get_value(f"aios_tg_confirm:{self.receiver}:approve:{draft_guard.name}"))
+            replay_res = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_guard.name, "confirmed": True, "confirmation_token": fresh_tok}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertTrue(replay_res.get("already_executed"))
+            self.assertEqual(replay_res.get("sales_order"), so_guard_name)
+            self.assertEqual(frappe.db.count("Sales Order"), so_before_replay)
+
+            # Conversation tanpa baris user AIOS Message (issued_user_msg kosong) tidak boleh mengeksekusi confirmed=True
+            no_msg_ctx = {
+                "user": self.receiver,
+                "branch": "sales",
+                "worker_key": "manager",
+                "conversation_id": "CONV-NO-USER-MSG",
+            }
+            empty_conv_req = json.loads(
+                execute_tool("approve_draft", json.dumps({"draft_id": draft_other.name}), context=no_msg_ctx)
+            )
+            self.assertEqual(empty_conv_req.get("status"), "CONFIRMATION_REQUIRED")
+            empty_conv_exec = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": draft_other.name, "confirmed": True}),
+                    context=no_msg_ctx,
+                )
+            )
+            self.assertEqual(empty_conv_exec.get("code"), "CONFIRMATION_PENDING_USER_REPLY")
+            self.assertFalse(empty_conv_exec.get("executed"))
+            self.assertEqual(
+                frappe.db.get_value("Pending Action Draft", draft_other.name, "status"), "PENDING_APPROVAL"
+            )
+        finally:
+            if hasattr(frappe.local, "aios_channel"):
+                delattr(frappe.local, "aios_channel")
 
     def test_sales_manager_telegram_system_prompt_directive_preserves_guest_persona(self):
         from aios_v1.managers.base_manager import BaseManager
