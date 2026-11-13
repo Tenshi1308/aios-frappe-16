@@ -920,6 +920,8 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertEqual(pe_doc.docstatus, 1)
         self.assertEqual(pe_doc.payment_type, "Receive")
         self.assertEqual(pe_doc.mode_of_payment, "Cash")
+        self.assertEqual(pe_doc.owner, self.USER_EMAIL)
+        self.assertEqual(pe_doc.modified_by, self.USER_EMAIL)
 
         # Pastikan hanya ada 1 Payment Entry untuk Sales Order ini
         pe_refs = frappe.get_all(
@@ -929,9 +931,11 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         )
         self.assertEqual(len(pe_refs), 1, "Tidak boleh ada Payment Entry ganda")
 
-        # Sales Order advance_paid harus terupdate penuh
+        # Sales Order advance_paid harus terupdate penuh dan audit atribusi staf
         so_doc = frappe.get_doc("Sales Order", so_name)
         self.assertEqual(float(so_doc.advance_paid or 0), float(so_doc.grand_total))
+        self.assertEqual(so_doc.owner, self.USER_EMAIL)
+        self.assertEqual(so_doc.modified_by, self.USER_EMAIL)
 
         # Notifikasi pembayaran diterima terkirim tepat 1 kali ke customer tanpa emoji dan tanpa nomor internal
         self.assertEqual(len(payment_msgs), 1, "Notifikasi pembayaran diterima hanya dikirim 1 kali")

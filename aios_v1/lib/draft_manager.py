@@ -907,23 +907,38 @@ def confirm_draft_cash_payment(draft_id: str) -> dict:
     # elevasi hak. Tidak mengubah logika bisnis payment.
     session = frappe.local.session
     saved_session = session.copy()
-    saved_session["data"] = session.data.copy()
+    saved_session["data"] = (
+        session.data.copy() if isinstance(getattr(session, "data", None), dict) else frappe._dict()
+    )
     form_dict = frappe.local.form_dict
     frappe.db.savepoint("aios_confirm_cash_payment")
     try:
-        frappe.set_user("Administrator")
-        cash_acc_info = get_default_bank_cash_account(
-            company,
-            "Cash",
-            mode_of_payment="Cash",
-            fetch_balance=False,
-        )
-        cash_account = (cash_acc_info or {}).get("account")
-        pe = get_payment_entry("Sales Order", so_name, bank_account=cash_account)
-        pe.payment_type = "Receive"
-        pe.mode_of_payment = "Cash"
-        pe.reference_no = so_name
-        pe.reference_date = nowdate()
+        try:
+            frappe.set_user("Administrator")
+            cash_acc_info = get_default_bank_cash_account(
+                company,
+                "Cash",
+                mode_of_payment="Cash",
+                fetch_balance=False,
+            )
+            cash_account = (cash_acc_info or {}).get("account")
+            pe = get_payment_entry("Sales Order", so_name, bank_account=cash_account)
+            pe.payment_type = "Receive"
+            pe.mode_of_payment = "Cash"
+            pe.reference_no = so_name
+            pe.reference_date = nowdate()
+        finally:
+            # Pulihkan seluruh state sesi yang ditimpa `set_user` (user, sid,
+            # data/form_dict/cache) sebelum `insert()` & `submit()` agar `owner`
+            # dan `modified_by` tercatat sebagai karyawan pelaksana, bukan Administrator.
+            frappe.set_user(prev_user)
+            session.update(saved_session)
+            frappe.local.session = session
+            frappe.local.form_dict = form_dict
+            frappe.local.cache = {}
+            frappe.local.role_permissions = {}
+            frappe.local.user_perms = None
+
         pe.flags.ignore_permissions = True
         pe.insert(ignore_permissions=True)
         pe.flags.ignore_permissions = True
@@ -932,18 +947,6 @@ def confirm_draft_cash_payment(draft_id: str) -> dict:
         frappe.db.rollback(save_point="aios_confirm_cash_payment")
         log_exception("AIOS Confirm Draft Cash Payment", exc=exc)
         raise
-    finally:
-        # Pulihkan seluruh state sesi yang ditimpa `set_user` (user, sid,
-        # data/form_dict/cache), bukan sekadar username. `session` adalah
-        # objek yang sama dengan `session_obj.data`, jadi pemulihan ini juga
-        # yang dipersist `Session.update` setelah response.
-        frappe.set_user(prev_user)
-        session.update(saved_session)
-        frappe.local.session = session
-        frappe.local.form_dict = form_dict
-        frappe.local.cache = {}
-        frappe.local.role_permissions = {}
-        frappe.local.user_perms = None
 
     result_obj["payment_entry"] = pe.name
     result_obj["payment_confirmed"] = True

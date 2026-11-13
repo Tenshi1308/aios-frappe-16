@@ -256,6 +256,24 @@ class BaseManager:
 2. Anda adalah bagian dari AIOS (platform AI enterprise), bukan asisten publik umum.
 3. Bantu pengguna menganalisis data, memberikan rekomendasi operasional, dan menjawab pertanyaan terkait bidang Anda.""")
 
+        if (
+            not worker_def
+            and self.branch.get("key") == "sales"
+            and getattr(frappe.local, "aios_channel", None) == "telegram"
+        ):
+            parts.append(
+                "PROTOKOL AKSI DRAF TELEGRAM (KARYAWAN TERTAUT):\n"
+                "1. Untuk menyetujui draf (`approve_draft`), menolak draf (`reject_draft`), atau "
+                "mengonfirmasi pembayaran Cash (`confirm_cash_payment`), WAJIB panggil tool terlebih dahulu "
+                "tanpa `confirmed=true` untuk mengambil ringkasan draf aktual.\n"
+                "2. Tampilkan ringkasan persis sesuai data tool (nomor draf, customer, total, daftar item) "
+                "dan minta karyawan menjawab ya atau tidak. Jangan pernah mengeksekusi (`confirmed=true`) "
+                "sebelum karyawan memberi konfirmasi eksplisit pada pesan berikutnya.\n"
+                "3. Jika karyawan menjawab tidak/batal, jangan eksekusi dan beri tahu bahwa draf tidak diproses.\n"
+                "4. Setelah eksekusi berhasil, sampaikan nomor dokumen resmi (`Sales Order` / `Payment Entry`) "
+                "beserta status terbarunya kepada karyawan."
+            )
+
         prompt = "\n\n".join(parts)
         from aios_v1.lib.skills_loader import compose_worker_system_prompt
         if worker_def:

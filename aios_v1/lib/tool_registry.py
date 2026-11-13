@@ -16,6 +16,11 @@ GUEST_ALLOWED_TOOLS = frozenset({
     "erpnext_action_draft_create",
     "get_current_time",
 })
+TELEGRAM_DRAFT_TOOLS = frozenset({
+    "approve_draft",
+    "reject_draft",
+    "confirm_cash_payment",
+})
 MAX_DELEGATION_DEPTH = 2
 
 
@@ -277,6 +282,8 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: 
     worker_lower = worker_key.lower() if worker_key else "manager"
     eff_user = user if user is not None else getattr(getattr(frappe, "session", None), "user", None)
     is_guest = (eff_user == "Guest")
+    is_telegram = getattr(frappe.local, "aios_channel", None) == "telegram"
+    telegram_allowed = GUEST_ALLOWED_TOOLS | TELEGRAM_DRAFT_TOOLS
     guest_descriptions = {}
     if is_guest:
         from aios_v1.lib.erpnext_core_data import GUEST_TOOL_DESCRIPTIONS
@@ -286,6 +293,10 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: 
         if t_data.get("dormant"):
             continue
         if is_guest and t_name not in GUEST_ALLOWED_TOOLS:
+            continue
+        if is_telegram and not is_guest and t_name not in telegram_allowed:
+            continue
+        if not is_telegram and t_name in TELEGRAM_DRAFT_TOOLS:
             continue
         allowed_branches = [
             item for item in requested_branches if _worker_access(t_data, item, worker_lower)
@@ -309,7 +320,7 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: 
                     }
                 }
             })
-    if not is_guest:
+    if not is_guest and not is_telegram:
         from aios_v1.lib.mcp_client import get_mcp_tools_schema_for_worker
 
         for requested_branch in requested_branches:
@@ -368,12 +379,15 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         ctx = _build_tool_context(context)
 
         eff_user = ctx.get("user_id") or getattr(frappe.session, "user", None)
-        guest_allowed = {"erpnext_doc_list", "erpnext_doc_get", "erpnext_doctype_schema", "erpnext_action_draft_create", "get_current_time"}
-        if eff_user == "Guest" and name not in guest_allowed:
+        if eff_user == "Guest" and name not in GUEST_ALLOWED_TOOLS:
             return _log_tool_denial("GUEST_TOOL_FORBIDDEN", name)
 
-        if getattr(frappe.local, "aios_channel", None) == "telegram" and name not in guest_allowed:
-            return _log_tool_denial("TOOL_FORBIDDEN_ON_TELEGRAM", name)
+        if getattr(frappe.local, "aios_channel", None) == "telegram":
+            telegram_allowed = (
+                GUEST_ALLOWED_TOOLS if eff_user == "Guest" else (GUEST_ALLOWED_TOOLS | TELEGRAM_DRAFT_TOOLS)
+            )
+            if name not in telegram_allowed:
+                return _log_tool_denial("TOOL_FORBIDDEN_ON_TELEGRAM", name)
 
         if name == "orchestrator_delegate_to_subagent":
             depth = (context or {}).get("delegation_depth", 0)
