@@ -477,6 +477,137 @@ class TestConnectorNotification(ConnectorTestBase):
     def test_notification_type_exists_after_migrate(self):
         self.assertTrue(frappe.db.exists("Notification Type", notify.NOTIFICATION_TYPE))
 
+    def test_linked_receiver_gets_telegram_push_on_flag_and_unlinked_is_skipped(self):
+        """Linked active receiver gets concise Telegram push on flag; unlinked & guest chat are skipped."""
+        self.assertTrue(notify.ensure_notification_type())
+        receiver2 = _ensure_user(SECOND_RECEIVER, "Second Receiver", extra_roles=["AIOS Channel Receiver"])
+        guest_thread = self._make_thread()
+        flag_name = frappe.get_all(FLAG, filters={"thread": guest_thread}, pluck="name")[0]
+        flag_doc = frappe.get_doc(FLAG, flag_name)
+
+        # Link self.owner to a separate employee Telegram thread; leave receiver2 unlinked.
+        emp_conv = frappe.get_doc(
+            {"doctype": "AIOS Conversation", "user": self.owner, "branch": "sales"}
+        ).insert(ignore_permissions=True)
+        emp_thread = frappe.get_doc(
+            {
+                "doctype": "AIOS Channel Thread",
+                "channel": "telegram",
+                "external_thread_id": CHAT_ID_B,
+                "conversation": emp_conv.name,
+                "linked_user": self.owner,
+                "linked_at": frappe.utils.now_datetime(),
+                "status": "Open",
+            }
+        ).insert(ignore_permissions=True)
+        try:
+            with patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True) as mock_send:
+                self.assertTrue(notify.notify_flag(flag_doc))
+
+            # Bell/email Notification Log still created for both active receivers.
+            flag_users = frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="for_user")
+            self.assertEqual(sorted(flag_users), sorted([self.owner, receiver2]))
+
+            # Telegram push only sent to linked employee chat_id (never guest CHAT_ID or unlinked receiver2).
+            mock_send.assert_called_once()
+            sent_chat_id, sent_text = mock_send.call_args.args
+            self.assertEqual(str(sent_chat_id), CHAT_ID_B)
+            self.assertNotEqual(str(sent_chat_id), CHAT_ID)
+            self.assertIn("Flag", sent_text)
+            self.assertIn(flag_doc.label, sent_text)
+            self.assertIn("Peringatan Kanal", sent_text)
+        finally:
+            for n in frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+            frappe.delete_doc(THREAD, emp_thread.name, ignore_permissions=True, force=True)
+            frappe.delete_doc("AIOS Conversation", emp_conv.name, ignore_permissions=True, force=True)
+
+    def test_telegram_failure_on_flag_logs_and_keeps_bell_notification(self):
+        """Telegram send failure or exception logs error and never blocks Notification Log or return True."""
+        self.assertTrue(notify.ensure_notification_type())
+        guest_thread = self._make_thread()
+        flag_name = frappe.get_all(FLAG, filters={"thread": guest_thread}, pluck="name")[0]
+        flag_doc = frappe.get_doc(FLAG, flag_name)
+
+        emp_conv = frappe.get_doc(
+            {"doctype": "AIOS Conversation", "user": self.owner, "branch": "sales"}
+        ).insert(ignore_permissions=True)
+        emp_thread = frappe.get_doc(
+            {
+                "doctype": "AIOS Channel Thread",
+                "channel": "telegram",
+                "external_thread_id": CHAT_ID_B,
+                "conversation": emp_conv.name,
+                "linked_user": self.owner,
+                "linked_at": frappe.utils.now_datetime(),
+                "status": "Open",
+            }
+        ).insert(ignore_permissions=True)
+        try:
+            with patch("aios_v1.lib.connector.telegram_client.send_message", return_value=False) as mock_send, \
+                 patch.object(notify, "log_exception") as mock_log:
+                self.assertTrue(notify.notify_flag(flag_doc))
+            mock_send.assert_called_once()
+            mock_log.assert_called()
+            flag_users = frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="for_user")
+            self.assertEqual(flag_users, [self.owner])
+
+            for n in frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+
+            with patch("aios_v1.lib.connector.telegram_client.send_message", side_effect=RuntimeError("tg down")), \
+                 patch.object(notify, "log_exception") as mock_log:
+                self.assertTrue(notify.notify_flag(flag_doc))
+            mock_log.assert_called()
+            flag_users = frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="for_user")
+            self.assertEqual(flag_users, [self.owner])
+        finally:
+            for n in frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+            frappe.delete_doc(THREAD, emp_thread.name, ignore_permissions=True, force=True)
+            frappe.delete_doc("AIOS Conversation", emp_conv.name, ignore_permissions=True, force=True)
+
+    def test_fallback_client_owner_linked_gets_telegram_and_empty_excerpt_safe(self):
+        """Fallback AIOS Client Owner linked to Telegram gets flag push; empty excerpt prints cleanly."""
+        self.assertTrue(notify.ensure_notification_type())
+        frappe.db.delete(
+            "Has Role",
+            {"parenttype": "User", "role": ("in", ["AIOS Channel Receiver", "AIOS Client Owner"])},
+        )
+        owner_only = _ensure_user(OWNER, "Connector Owner", extra_roles=["AIOS Client Owner"])
+        guest_thread = self._make_thread()
+        flag_name = frappe.get_all(FLAG, filters={"thread": guest_thread}, pluck="name")[0]
+        flag_doc = frappe.get_doc(FLAG, flag_name)
+        flag_doc.excerpt = None
+
+        emp_conv = frappe.get_doc(
+            {"doctype": "AIOS Conversation", "user": owner_only, "branch": "sales"}
+        ).insert(ignore_permissions=True)
+        emp_thread = frappe.get_doc(
+            {
+                "doctype": "AIOS Channel Thread",
+                "channel": "telegram",
+                "external_thread_id": CHAT_ID_B,
+                "conversation": emp_conv.name,
+                "linked_user": owner_only,
+                "linked_at": frappe.utils.now_datetime(),
+                "status": "Open",
+            }
+        ).insert(ignore_permissions=True)
+        try:
+            with patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True) as mock_send:
+                self.assertTrue(notify.notify_flag(flag_doc))
+            mock_send.assert_called_once()
+            sent_chat_id, sent_text = mock_send.call_args.args
+            self.assertEqual(str(sent_chat_id), CHAT_ID_B)
+            self.assertNotIn("None", sent_text)
+            self.assertIn("Peringatan Kanal", sent_text)
+        finally:
+            for n in frappe.get_all("Notification Log", filters={"document_name": flag_name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True)
+            frappe.delete_doc(THREAD, emp_thread.name, ignore_permissions=True, force=True)
+            frappe.delete_doc("AIOS Conversation", emp_conv.name, ignore_permissions=True, force=True)
+
 
 class TestConnectorOffset(ConnectorTestBase):
     def test_offset_is_persisted_durably(self):

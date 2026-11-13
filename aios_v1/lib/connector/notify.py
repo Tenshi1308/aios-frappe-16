@@ -15,6 +15,7 @@ import json
 
 import frappe
 
+from aios_v1.lib.connector import linking, telegram_client
 from aios_v1.lib.error_utils import log_exception
 
 # A dedicated type keeps channel alerts separable from Desk mentions and lets
@@ -93,8 +94,82 @@ def get_channel_recipients() -> list[str]:
     return _query_active_clients_with_role(OWNER_ROLE)
 
 
+def _get_linked_telegram_targets(recipients: list[str]) -> list[tuple[str, str]]:
+    """Filter channel recipients to non-system users with an active Telegram link."""
+    targets: list[tuple[str, str]] = []
+    seen_users: set[str] = set()
+    seen_chats: set[str] = set()
+
+    for user in recipients:
+        if not user or user in ("Guest", "Administrator") or user in seen_users:
+            continue
+        seen_users.add(user)
+        try:
+            status = linking.get_link_status(user)
+        except Exception as exc:
+            log_exception("AIOS Connector Employee Link Lookup", exc=exc, context=f"user={user}")
+            continue
+        if not status or not status.get("linked"):
+            continue
+        chat_id = str(status.get("external_thread_id") or "").strip()
+        if not chat_id or chat_id in seen_chats:
+            continue
+        seen_chats.add(chat_id)
+        targets.append((user, chat_id))
+    return targets
+
+
+def _format_flag_telegram_message(flag) -> str:
+    """Format concise plain-text Telegram alert for a conversation flag."""
+    label = (
+        getattr(flag, "label", None) or getattr(flag, "rule_key", None) or "Percakapan perlu dicek"
+    ).strip()
+    severity = (getattr(flag, "severity", None) or "").strip()
+    excerpt = (getattr(flag, "excerpt", None) or "").strip()
+    if len(excerpt) > 160:
+        excerpt = excerpt[:157].rstrip() + "..."
+
+    lines = [f"Flag Percakapan Baru: {label}"]
+    if severity:
+        lines.append(f"Tingkat: {severity}")
+    if excerpt:
+        lines.append(f"Ringkasan: {excerpt}")
+    lines.append("Silakan buka Peringatan Kanal di Ekasa Desk untuk meninjau.")
+    return "\n".join(lines)
+
+
+def _format_order_draft_telegram_message(draft, target_doctype: str, customer_label: str) -> str:
+    """Format concise plain-text Telegram alert for a new order draft."""
+    draft_ref = (getattr(draft, "name", None) or "-").strip()
+    lines = [
+        f"Draf Pesanan Baru ({target_doctype})",
+        f"No. Draf: {draft_ref}",
+        f"Pemesan: {customer_label}",
+        "Silakan buka Peringatan Kanal di Ekasa Desk untuk meninjau.",
+    ]
+    return "\n".join(lines)
+
+
+def _send_telegram_to_linked_employees(recipients: list[str], message: str) -> None:
+    """Best-effort Telegram push to linked channel recipients; never raises."""
+    for user, chat_id in _get_linked_telegram_targets(recipients):
+        try:
+            sent = telegram_client.send_message(chat_id, message)
+            if not sent:
+                log_exception(
+                    "AIOS Connector Employee Telegram Notify",
+                    context=f"gagal kirim ke user={user}; chat_id={chat_id}",
+                )
+        except Exception as exc:
+            log_exception(
+                "AIOS Connector Employee Telegram Notify",
+                exc=exc,
+                context=f"user={user}; chat_id={chat_id}",
+            )
+
+
 def notify_flag(flag) -> bool:
-    """Send in-app notifications to channel recipients. Never raises."""
+    """Send in-app notifications (plus Telegram push to linked staff). Never raises."""
     try:
         from frappe.desk.doctype.notification_log.notification_log import (
             enqueue_create_notification,
@@ -123,6 +198,7 @@ def notify_flag(flag) -> bool:
             },
             dedupe_on=["document_name"],
         )
+        _send_telegram_to_linked_employees(recipients, _format_flag_telegram_message(flag))
         return True
     except Exception as exc:
         log_exception("AIOS Connector Notification", exc=exc, context=f"flag={flag.name}")
@@ -130,7 +206,7 @@ def notify_flag(flag) -> bool:
 
 
 def notify_order_draft(draft, thread: dict | None = None) -> bool:
-    """Send in-app notifications to channel recipients for an order draft. Never raises."""
+    """Send in-app notifications (plus Telegram push to linked staff) for an order draft. Never raises."""
     try:
         from frappe.desk.doctype.notification_log.notification_log import (
             enqueue_create_notification,
@@ -183,6 +259,10 @@ def notify_order_draft(draft, thread: dict | None = None) -> bool:
                 "link": f"/desk#Form/Pending Action Draft/{draft.name}",
             },
             dedupe_on=["document_name"],
+        )
+        _send_telegram_to_linked_employees(
+            recipients,
+            _format_order_draft_telegram_message(draft, target_doctype, customer_label),
         )
         return True
     except Exception as exc:

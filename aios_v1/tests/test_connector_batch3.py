@@ -271,6 +271,138 @@ class ConnectorBatch3Test(IntegrationTestCase):
         self.assertIn(f"Chat ID {CHAT_B}", logs[0]["subject"])
         self.assertIn("Quotation", logs[0]["subject"])
 
+    def test_linked_employee_gets_telegram_push_on_order_draft_and_guest_excluded(self):
+        """Linked active receiver gets Telegram push with DRF number on order draft; guest chat never gets it."""
+        payload = {
+            "doctype": "Sales Order",
+            "data": {"items": [{"item_code": "GENSET-01", "qty": 1, "rate": 5000000}]},
+        }
+        draft = create_draft(
+            task_id="AIOS-TEST-DRAFT-TG-1",
+            action_type="CREATE",
+            payload=payload,
+            branch="sales",
+            user=self.owner,
+        )
+        guest_conv = frappe.get_doc(
+            {"doctype": "AIOS Conversation", "user": "Guest", "branch": "sales"}
+        ).insert(ignore_permissions=True)
+        guest_thread_doc = frappe.get_doc(
+            {
+                "doctype": "AIOS Channel Thread",
+                "channel": "telegram",
+                "external_thread_id": CHAT_A,
+                "conversation": guest_conv.name,
+                "linked_user": None,
+                "display_name": "Siti Rahma",
+                "username": "sitir",
+                "status": "Open",
+            }
+        ).insert(ignore_permissions=True)
+
+        emp_conv = frappe.get_doc(
+            {"doctype": "AIOS Conversation", "user": self.owner, "branch": "sales"}
+        ).insert(ignore_permissions=True)
+        emp_thread_doc = frappe.get_doc(
+            {
+                "doctype": "AIOS Channel Thread",
+                "channel": "telegram",
+                "external_thread_id": CHAT_B,
+                "conversation": emp_conv.name,
+                "linked_user": self.owner,
+                "linked_at": frappe.utils.now_datetime(),
+                "status": "Open",
+            }
+        ).insert(ignore_permissions=True)
+        try:
+            with patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True) as mock_send:
+                success = notify.notify_order_draft(draft, thread=guest_thread_doc.as_dict())
+            self.assertTrue(success)
+
+            logs = frappe.get_all(
+                "Notification Log",
+                filters={"for_user": self.owner, "document_name": draft.name},
+                pluck="name",
+            )
+            self.assertEqual(len(logs), 1)
+
+            mock_send.assert_called_once()
+            sent_chat_id, sent_text = mock_send.call_args.args
+            self.assertEqual(str(sent_chat_id), CHAT_B)
+            self.assertNotEqual(str(sent_chat_id), CHAT_A)
+            self.assertIn("Draf Pesanan", sent_text)
+            self.assertIn(draft.name, sent_text)
+            self.assertIn("Peringatan Kanal", sent_text)
+        finally:
+            for n in frappe.get_all("Notification Log", filters={"document_name": draft.name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True, delete_permanently=True)
+            frappe.delete_doc("Pending Action Draft", draft.name, ignore_permissions=True, force=True, delete_permanently=True)
+            for td, cv in ((guest_thread_doc.name, guest_conv.name), (emp_thread_doc.name, emp_conv.name)):
+                frappe.delete_doc(THREAD, td, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", cv, ignore_permissions=True, force=True, delete_permanently=True)
+
+    def test_unlinked_employee_and_telegram_error_on_order_draft(self):
+        """Unlinked receiver is skipped; Telegram error logs and keeps bell/email; Guest is never targeted."""
+        payload = {"doctype": "Sales Order", "data": {}}
+        draft = create_draft(
+            task_id="AIOS-TEST-DRAFT-TG-2",
+            action_type="CREATE",
+            payload=payload,
+            branch="sales",
+            user=self.owner,
+        )
+        try:
+            # 1. Unlinked employee: no Telegram message sent, bell Notification Log still created.
+            with patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True) as mock_send:
+                self.assertTrue(
+                    notify.notify_order_draft(draft, thread={"display_name": "Budi", "external_thread_id": CHAT_A})
+                )
+            mock_send.assert_not_called()
+            self.assertEqual(
+                len(frappe.get_all("Notification Log", filters={"for_user": self.owner, "document_name": draft.name})),
+                1,
+            )
+
+            for n in frappe.get_all("Notification Log", filters={"document_name": draft.name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True, delete_permanently=True)
+
+            # 2. Linked employee with failing send_message + injected Guest in recipients:
+            emp_conv = frappe.get_doc(
+                {"doctype": "AIOS Conversation", "user": self.owner, "branch": "sales"}
+            ).insert(ignore_permissions=True)
+            emp_thread = frappe.get_doc(
+                {
+                    "doctype": "AIOS Channel Thread",
+                    "channel": "telegram",
+                    "external_thread_id": CHAT_B,
+                    "conversation": emp_conv.name,
+                    "linked_user": self.owner,
+                    "linked_at": frappe.utils.now_datetime(),
+                    "status": "Open",
+                }
+            ).insert(ignore_permissions=True)
+            try:
+                with patch.object(notify, "get_channel_recipients", return_value=["Guest", self.owner]), \
+                     patch("aios_v1.lib.connector.telegram_client.send_message", side_effect=RuntimeError("network error")) as mock_send, \
+                     patch.object(notify, "log_exception") as mock_log:
+                    self.assertTrue(
+                        notify.notify_order_draft(draft, thread={"display_name": "Budi", "external_thread_id": CHAT_A})
+                    )
+                mock_send.assert_called_once()
+                self.assertEqual(str(mock_send.call_args.args[0]), CHAT_B)
+                mock_log.assert_called()
+                self.assertEqual(
+                    len(frappe.get_all("Notification Log", filters={"for_user": self.owner, "document_name": draft.name})),
+                    1,
+                )
+            finally:
+                frappe.delete_doc(THREAD, emp_thread.name, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", emp_conv.name, ignore_permissions=True, force=True, delete_permanently=True)
+        finally:
+            for n in frappe.get_all("Notification Log", filters={"document_name": draft.name}, pluck="name"):
+                frappe.delete_doc("Notification Log", n, ignore_permissions=True, force=True, delete_permanently=True)
+            frappe.delete_doc("Pending Action Draft", draft.name, ignore_permissions=True, force=True, delete_permanently=True)
+
     # =========================================================================
     # 3. Views API: list_orders and review_order
     # =========================================================================
