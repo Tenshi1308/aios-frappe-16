@@ -148,3 +148,41 @@ class TestApprovalCardContract(unittest.TestCase):
             "Payment Entry:",
         ):
             self.assertIn(expected, template)
+
+    def test_item_table_alignment_contract(self) -> None:
+        source = _read_approval_card()
+        template = _extract_block(source, "template")
+        style = _extract_block(source, "style")
+
+        container_marker = "@container (width < 400px)"
+        self.assertIn(container_marker, style)
+        desktop_css, narrow_css = style.split(container_marker, 1)
+
+        def _rule_body(css: str, selector_pattern: str) -> str:
+            match = re.search(rf"{selector_pattern}\s*\{{([^}}]*)\}}", css, re.DOTALL)
+            self.assertIsNotNone(match, f"Missing CSS rule for {selector_pattern}")
+            assert match is not None
+            return match.group(1)
+
+        # Desktop: all <th> centered; <td> centered except Nama Item (left); Total value follows .num (center)
+        self.assertIn("text-align: center", _rule_body(desktop_css, r"\.ac-table thead th"))
+        self.assertIn(
+            "text-align: center",
+            _rule_body(desktop_css, r"\.ac-table tbody td,\s*\.ac-table tfoot td"),
+        )
+        self.assertIn("text-align: center", _rule_body(desktop_css, r"\.ac-table \.num"))
+        self.assertIn("text-align: left", _rule_body(desktop_css, r"\.ac-table td\.item-name"))
+
+        # Narrow container (< 400px): .num must NOT reset text-align back to left; labels stay left-aligned
+        narrow_num_rule = _rule_body(narrow_css, r"\.ac-table \.num")
+        self.assertNotIn("text-align:", narrow_num_rule)
+        narrow_label_rule = _rule_body(
+            narrow_css,
+            r"\.ac-table tbody td\[data-label\]::before,\s*\.ac-table tfoot td\[data-label\]::before",
+        )
+        self.assertIn("text-align: left", narrow_label_rule)
+
+        # Template keeps td.item-name only on Nama Item data cell and .num on Total value cell
+        self.assertIn('<td class="item-name" data-label="Nama Item">', template)
+        self.assertNotIn('<th scope="col" class="item-name"', template)
+        self.assertIn('<td class="num total-value" data-label="Total">', template)

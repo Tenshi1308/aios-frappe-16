@@ -790,13 +790,14 @@ onUnmounted(() => {
   color: var(--muted);
   font-size: var(--fs-11);
   font-weight: var(--fw-600);
-  text-align: left;
+  text-align: center;
   white-space: nowrap;
 }
 .ac-table tbody td,
 .ac-table tfoot td {
   padding: var(--space-6) var(--space-8);
   border-bottom: 1px solid var(--line);
+  text-align: center;
   vertical-align: top;
 }
 .ac-table tbody tr:last-child td {
@@ -812,7 +813,7 @@ onUnmounted(() => {
   font-weight: var(--fw-600);
 }
 .ac-table .num {
-  text-align: right;
+  text-align: center;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -822,6 +823,7 @@ onUnmounted(() => {
 }
 .ac-table td.item-name {
   min-width: 160px;
+  text-align: left;
 }
 .ac-table .total-label {
   text-align: right;
@@ -861,12 +863,12 @@ onUnmounted(() => {
     color: var(--muted);
     font-size: var(--fs-11);
     font-weight: var(--fw-600);
+    text-align: left;
   }
   .ac-table tfoot .total-label {
     display: none;
   }
   .ac-table .num {
-    text-align: left;
     white-space: normal;
   }
   .ac-table td.item-name {
