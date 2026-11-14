@@ -15,6 +15,7 @@ set explicitly and restored in `finally`.
 from __future__ import annotations
 
 import json
+import re
 import time
 
 import frappe
@@ -41,6 +42,139 @@ RATE_LIMIT_MSG = "Maaf, Anda telah mencapai batas pengiriman pesan sementara. Mo
 RATE_LIMIT_MINUTE = 15
 RATE_LIMIT_HOUR = 60
 RATE_LIMIT_DAY = 200
+TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+
+
+def _strip_inline_markdown(line: str) -> str:
+    """Convert inline markdown syntax in one line to readable plain text."""
+    line = re.sub(r"\[([^\[\]]+)\]\(([^()\s]+)\)", r"\1 (\2)", line)
+    line = re.sub(r"`([^`]+)`", r"\1", line)
+    line = line.replace("`", "")
+    line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)
+    line = re.sub(r"__(.+?)__", r"\1", line)
+    line = line.replace("**", "")
+    line = re.sub(r"(?<!\w)\*([^\s*](?:[^*\n]*?[^\s*])?)\*(?!\w)", r"\1", line)
+    line = re.sub(
+        r"(?<![A-Za-z0-9])_([^\s_](?:[^_\n]*?[^\s_])?)_(?![A-Za-z0-9])",
+        r"\1",
+        line,
+    )
+    return line
+
+
+def format_telegram_plain_text(text: str) -> str:
+    """Convert AI markdown output into clean plain text for Telegram without dropping content."""
+    if not text:
+        return ""
+
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    output_lines: list[str] = []
+
+    for raw_line in normalized.split("\n"):
+        if re.match(r"^\s*```.*$", raw_line):
+            continue
+
+        stripped = raw_line.strip()
+        if stripped.startswith("|") and stripped.endswith("|") and len(stripped) > 1:
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if all(not c or re.match(r"^:?-{2,}:?$", c) for c in cells):
+                continue
+            cleaned_cells = [c for c in (_strip_inline_markdown(c).strip() for c in cells) if c]
+            if cleaned_cells:
+                output_lines.append(f"- {' — '.join(cleaned_cells)}")
+            continue
+
+        line = re.sub(r"^\s*#{1,6}\s+", "", raw_line)
+        line = re.sub(r"^(\s*)\*\s+", r"\1- ", line)
+        output_lines.append(_strip_inline_markdown(line).rstrip())
+
+    result = re.sub(r"\n{3,}", "\n\n", "\n".join(output_lines))
+    return result.strip()
+
+
+def _pack_units(units: list[str], sep: str, max_length: int) -> list[str]:
+    """Pack text units with separator without exceeding `max_length`."""
+    chunks: list[str] = []
+    current = ""
+    for unit in units:
+        if not unit:
+            continue
+        if len(unit) > max_length:
+            if current:
+                chunks.append(current)
+                current = ""
+            for i in range(0, len(unit), max_length):
+                chunks.append(unit[i : i + max_length])
+            continue
+        candidate = unit if not current else f"{current}{sep}{unit}"
+        if len(candidate) <= max_length:
+            current = candidate
+        else:
+            chunks.append(current)
+            current = unit
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _split_long_line(line: str, max_length: int) -> list[str]:
+    """Split a single line longer than `max_length` at sentence then word boundaries."""
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", line) if s]
+    expanded_units: list[str] = []
+    for sentence in sentences:
+        if len(sentence) <= max_length:
+            expanded_units.append(sentence)
+        else:
+            expanded_units.extend(w for w in sentence.split(" ") if w)
+    return _pack_units(expanded_units, " ", max_length)
+
+
+def _split_long_block(block: str, max_length: int) -> list[str]:
+    """Split a block longer than `max_length` along line boundaries before falling back to sentences."""
+    chunks: list[str] = []
+    current_lines: list[str] = []
+    current_len = 0
+
+    for line in block.split("\n"):
+        if len(line) > max_length:
+            if current_lines:
+                chunks.append("\n".join(current_lines))
+                current_lines = []
+                current_len = 0
+            chunks.extend(_split_long_line(line, max_length))
+            continue
+
+        if not current_lines:
+            current_lines = [line]
+            current_len = len(line)
+        elif current_len + 1 + len(line) <= max_length:
+            current_lines.append(line)
+            current_len += 1 + len(line)
+        else:
+            chunks.append("\n".join(current_lines))
+            current_lines = [line]
+            current_len = len(line)
+
+    if current_lines:
+        chunks.append("\n".join(current_lines))
+    return chunks
+
+
+def split_telegram_bubbles(text: str, max_length: int = TELEGRAM_MAX_MESSAGE_LENGTH) -> list[str]:
+    """Split formatted Telegram text into ordered message bubbles per logical block."""
+    if max_length < 1:
+        raise ValueError("max_length must be positive")
+    if not text or not text.strip():
+        return []
+
+    blocks = [b.strip() for b in re.split(r"\n\s*\n+", text.strip()) if b.strip()]
+    bubbles: list[str] = []
+    for block in blocks:
+        if len(block) <= max_length:
+            bubbles.append(block)
+        else:
+            bubbles.extend(_split_long_block(block, max_length))
+    return bubbles
 
 
 def check_and_increment_rate_limit(chat_id: str | int) -> tuple[bool, str | None]:
@@ -383,7 +517,9 @@ def process_message(update: dict) -> dict:
             doc.insert(ignore_permissions=True)
             frappe.db.commit()
 
-        telegram_client.send_message(chat_id, reply)
+        plain_reply = format_telegram_plain_text(reply)
+        for bubble in split_telegram_bubbles(plain_reply):
+            telegram_client.send_message(chat_id, bubble)
 
         message_name = _ensure_inbound_recorded(conversation, text)
         flags = _raise_flags(thread, text, message_name)

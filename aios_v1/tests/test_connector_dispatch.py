@@ -28,6 +28,29 @@ OTHER = "_test.connector.other@example.com"
 CHAT_ID = "99001122"
 CHAT_ID_B = "99003344"
 
+DRF_00080_MARKDOWN_REPLY = (
+    "Baik, Kak Tenshi! Terima kasih atas konfirmasinya. 😊 Sebentar, saya cek dulu tanggalnya untuk memastikan jadwal pengiriman yang tepat.\n\n"
+    "Baik, Kak Tenshi! Terima kasih atas konfirmasinya. 😊 Saya buatkan **draf pesanan**-nya sekarang ya.\n\n"
+    "Baik, Kak Tenshi! Terima kasih atas konfirmasinya. 😊 Draf pesanan Anda sudah saya buatkan ya.\n\n"
+    "## ✅ Draf Pesanan Berhasil Dibuat\n\n"
+    "| Item | Qty | Harga Satuan | Subtotal |\n"
+    "|---|---|---|---|\n"
+    "| Kabel Jaringan Cat6 UTP 100 Meter (CBL-CAT6-100) | 1 pcs | Rp 850.000 | **Rp 850.000** |\n\n"
+    "💰 **Total: Rp 850.000** (belum termasuk pajak/PPN)\n\n"
+    "### 📋 Data Pelanggan (Perorangan)\n"
+    "- **Nama:** Tenshi\n"
+    "- **No. HP:** 08123456789\n"
+    "- **Alamat:** Jalan Sukabumi No. 50, **Bandung**\n"
+    "- **Tanggal Pengiriman:** **15 November 2026**\n\n"
+    "### 💳 Metode Pembayaran\n"
+    "- **Cash (Tunai)** — pembayaran dikonfirmasi terlebih dahulu sebelum pesanan dikirim\n\n"
+    "### 📌 Status\n"
+    "- **Nomor Referensi:** DRF-2026-11-00080\n"
+    "- **Status:** Menunggu persetujuan tim kami untuk diproses lebih lanjut\n\n"
+    "Tim kami akan segera menghubungi Kak Tenshi di **08123456789** untuk konfirmasi dan langkah selanjutnya (termasuk pembayaran & pengiriman).\n\n"
+    "Apakah ada lagi yang bisa saya bantu? 😊"
+)
+
 
 def _ensure_user(email: str, name: str, extra_roles: list[str] | None = None) -> str:
     roles = [{"role": "AIOS Client"}]
@@ -275,6 +298,145 @@ class TestConnectorDispatch(ConnectorTestBase):
         )
         self.assertTrue(any("halo" in (c or "") for c in contents))
         self.assertTrue(any(dispatch.BUSY_REPLY in (c or "") for c in contents))
+
+    def test_markdown_reply_converted_to_plain_text_preserving_all_content(self):
+        plain = dispatch.format_telegram_plain_text(DRF_00080_MARKDOWN_REPLY)
+
+        for marker in ("##", "###", "**", "|---|", "`"):
+            self.assertNotIn(marker, plain)
+
+        for expected_text in (
+            "✅ Draf Pesanan Berhasil Dibuat",
+            "- Item — Qty — Harga Satuan — Subtotal",
+            "- Kabel Jaringan Cat6 UTP 100 Meter (CBL-CAT6-100) — 1 pcs — Rp 850.000 — Rp 850.000",
+            "💰 Total: Rp 850.000 (belum termasuk pajak/PPN)",
+            "📋 Data Pelanggan (Perorangan)",
+            "- Nama: Tenshi",
+            "- No. HP: 08123456789",
+            "- Alamat: Jalan Sukabumi No. 50, Bandung",
+            "- Tanggal Pengiriman: 15 November 2026",
+            "💳 Metode Pembayaran",
+            "- Cash (Tunai) — pembayaran dikonfirmasi terlebih dahulu sebelum pesanan dikirim",
+            "📌 Status",
+            "- Nomor Referensi: DRF-2026-11-00080",
+            "- Status: Menunggu persetujuan tim kami untuk diproses lebih lanjut",
+            "Tim kami akan segera menghubungi Kak Tenshi di 08123456789",
+            "Apakah ada lagi yang bisa saya bantu? 😊",
+        ):
+            self.assertIn(expected_text, plain)
+
+        extra_md = (
+            "Lihat [Panduan](https://example.com/panduan) untuk `DRF-2026-11-00080` "
+            "(*penting* dan _catatan_), bukan _Test_Identifier atau confirm_cash_payment."
+        )
+        plain_extra = dispatch.format_telegram_plain_text(extra_md)
+        self.assertEqual(
+            plain_extra,
+            "Lihat Panduan (https://example.com/panduan) untuk DRF-2026-11-00080 "
+            "(penting dan catatan), bukan _Test_Identifier atau confirm_cash_payment.",
+        )
+
+    def test_markdown_reply_split_into_ordered_bubbles_and_respects_max_length(self):
+        plain = dispatch.format_telegram_plain_text(DRF_00080_MARKDOWN_REPLY)
+        bubbles = dispatch.split_telegram_bubbles(plain)
+
+        self.assertEqual(len(bubbles), 11)
+        self.assertEqual("\n\n".join(bubbles), plain)
+        self.assertEqual(bubbles[3], "✅ Draf Pesanan Berhasil Dibuat")
+        self.assertEqual(
+            bubbles[4],
+            "- Item — Qty — Harga Satuan — Subtotal\n"
+            "- Kabel Jaringan Cat6 UTP 100 Meter (CBL-CAT6-100) — 1 pcs — Rp 850.000 — Rp 850.000",
+        )
+        self.assertTrue(bubbles[6].startswith("📋 Data Pelanggan (Perorangan)\n"))
+        self.assertIn("- Tanggal Pengiriman: 15 November 2026", bubbles[6])
+        self.assertTrue(bubbles[8].startswith("📌 Status\n"))
+        self.assertEqual(bubbles[-1], "Apakah ada lagi yang bisa saya bantu? 😊")
+
+        # Bagian > 4096 karakter dipecah aman pada batas baris/kalimat tanpa melebihi batas Telegram
+        long_bullets = "\n".join(
+            f"- Item {idx:03d}: Kabel Jaringan Cat6 UTP Outdoor Berkualitas Tinggi 100m"
+            for idx in range(1, 90)
+        )
+        long_paragraph = " ".join(
+            f"Kalimat konfirmasi ke-{idx:03d} memastikan seluruh detail pesanan pelanggan tercatat lengkap."
+            for idx in range(1, 70)
+        )
+        long_text = f"{long_bullets}\n\n{long_paragraph}"
+        self.assertGreater(len(long_bullets), dispatch.TELEGRAM_MAX_MESSAGE_LENGTH)
+        self.assertGreater(len(long_paragraph), dispatch.TELEGRAM_MAX_MESSAGE_LENGTH)
+
+        long_bubbles = dispatch.split_telegram_bubbles(long_text)
+        self.assertGreater(len(long_bubbles), 2)
+        for bubble in long_bubbles:
+            self.assertLessEqual(len(bubble), dispatch.TELEGRAM_MAX_MESSAGE_LENGTH)
+        # Tidak memotong di tengah satu poin daftar maupun di tengah kalimat panjang
+        bullet_bubbles = [b for b in long_bubbles if b.startswith("- Item ")]
+        self.assertGreaterEqual(len(bullet_bubbles), 2)
+        self.assertEqual("\n".join(bullet_bubbles), long_bullets)
+        sentence_bubbles = [b for b in long_bubbles if b.startswith("Kalimat konfirmasi ke-")]
+        self.assertGreaterEqual(len(sentence_bubbles), 2)
+        self.assertEqual(" ".join(sentence_bubbles), long_paragraph)
+
+    def test_plain_text_and_single_part_reply_unchanged_and_single_bubble(self):
+        plain_reply = (
+            "Stok Kabel Jaringan Cat6 UTP 100 Meter tersedia 25 pcs (Rp 850.000). "
+            "Silakan konfirmasi detail pesanan Anda."
+        )
+        self.assertEqual(dispatch.format_telegram_plain_text(plain_reply), plain_reply)
+
+        sent: list[tuple[str, str]] = []
+        with patch.object(
+            telegram_client,
+            "send_message",
+            side_effect=lambda cid, txt: sent.append((str(cid), txt)) or True,
+        ), patch.object(telegram_client, "send_chat_action", return_value=True), patch.object(
+            dispatch, "_collect_reply", return_value=plain_reply
+        ):
+            res = dispatch.process_update(self._update("Cek stok kabel Cat6"))
+
+        self.assertTrue(res["success"])
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sent[0][1], plain_reply)
+
+    def test_process_update_sends_plain_bubbles_to_telegram_while_aios_message_keeps_raw_markdown(self):
+        sent: list[tuple[str, str]] = []
+
+        def markdown_llm(messages, usage=None, tools=None, tool_calls=None):
+            yield DRF_00080_MARKDOWN_REPLY
+
+        with patch("aios_v1.managers.base_manager.chat_stream", side_effect=markdown_llm), patch.object(
+            telegram_client, "send_chat_action", return_value=True
+        ), patch.object(
+            telegram_client,
+            "send_message",
+            side_effect=lambda cid, txt: sent.append((str(cid), txt)) or True,
+        ):
+            res = dispatch.process_update(self._update("Ya, tolong buatkan draf pesanan saya"))
+
+        self.assertTrue(res["success"])
+        expected_plain = dispatch.format_telegram_plain_text(DRF_00080_MARKDOWN_REPLY)
+        expected_bubbles = dispatch.split_telegram_bubbles(expected_plain)
+        self.assertEqual(len(sent), len(expected_bubbles))
+        self.assertEqual(len(sent), 11)
+        self.assertEqual([txt for _, txt in sent], expected_bubbles)
+        for _, txt in sent:
+            for marker in ("##", "###", "**", "|---|", "`"):
+                self.assertNotIn(marker, txt)
+
+        # AIOS Message yang tersimpan di DB (dipakai Ekasa Desk) tetap markdown asli
+        saved_manager_msgs = frappe.get_all(
+            "AIOS Message",
+            filters={"conversation": res["conversation"], "role": "manager"},
+            fields=["content"],
+            order_by="creation asc",
+        )
+        self.assertEqual(len(saved_manager_msgs), 1)
+        stored_content = saved_manager_msgs[0]["content"]
+        self.assertEqual(stored_content, DRF_00080_MARKDOWN_REPLY)
+        self.assertIn("## ✅ Draf Pesanan Berhasil Dibuat", stored_content)
+        self.assertIn("| Item | Qty | Harga Satuan | Subtotal |", stored_content)
+        self.assertIn("**Rp 850.000**", stored_content)
 
 
 class TestConnectorFlags(ConnectorTestBase):

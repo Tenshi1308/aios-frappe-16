@@ -94,7 +94,7 @@ Keputusan tersebut khusus server MCP ERPNext. Client MCP Streamable HTTP fase H2
 
 ## 2.4. Kanal Eksternal — Konektor Telegram (Sales and Distribution)
 
-Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan sistem paralel. Pesan masuk dari Telegram diproses oleh manager cabang `sales` yang sama dengan yang dipakai Ekasa Desk (`get_manager("sales").handle_stream`), sehingga izin, `company` site, akuntansi token, dan gerbang approval berlaku identik. **Modul konektor (`aios_v1/lib/connector/`) tidak menulis langsung ke ERPNext;** untuk tamu (`Guest`) tidak ada jalur eksekusi tulis, sedangkan karyawan tertaut berwenang dapat memproses draf melalui tool AI Manager dengan konfirmasi wajib 2 langkah.
+Konektor adalah **adapter tipis di atas jalur chat yang sudah ada**, bukan sistem paralel. Pesan masuk dari Telegram diproses oleh manager cabang `sales` yang sama dengan yang dipakai Ekasa Desk (`get_manager("sales").handle_stream`), sehingga izin, `company` site, akuntansi token, dan gerbang approval berlaku identik. Balasan asisten tetap disimpan sebagai markdown asli di `AIOS Message` (untuk dirender di Ekasa Desk), sedangkan khusus pengiriman ke Telegram (`aios_v1/lib/connector/dispatch.py`) balasan diubah menjadi teks polos (judul tanpa `#`, tabel markdown menjadi daftar poin `—`, tanpa penanda `**`/`*`/`_` mentah maupun `parse_mode` Telegram) dan dipecah per blok logis menjadi beberapa bubble `send_message` terpisah (maks. 4096 karakter per pesan). **Modul konektor (`aios_v1/lib/connector/`) tidak menulis langsung ke ERPNext;** untuk tamu (`Guest`) tidak ada jalur eksekusi tulis, sedangkan karyawan tertaut berwenang dapat memproses draf melalui tool AI Manager dengan konfirmasi wajib 2 langkah.
 
 **Batas yang mengikat:**
 
