@@ -2002,6 +2002,122 @@ class TestConnectorDraftActions(IntegrationTestCase):
         self.assertEqual(frappe.db.get_value("Pending Action Draft", non_channel_draft.name, "status"), "PENDING_APPROVAL")
         self.assertFalse(frappe.get_all("Sales Order", filters={"customer": cust_name}))
 
+    def test_so_to_draft_resolution_for_cash_payment_approve_not_found_and_auth(self):
+        cust_name = "_Test SO Resolve Cash Pay"
+        draft = self._create_guest_order_draft(cust_name, qty=1)
+        frappe.set_user(self.receiver)
+        try:
+            with patch.object(telegram_client, "send_message", return_value=True):
+                exec_res = approve_and_execute_draft(draft.name)
+        finally:
+            frappe.set_user("Administrator")
+        so_name = exec_res["name"]
+
+        try:
+            # (a) confirm_cash_payment dengan nomor SO menyelesaikan pembayaran 2 langkah draf yang benar
+            frappe.set_user(self.receiver)
+            step1 = json.loads(
+                execute_tool(
+                    "confirm_cash_payment",
+                    json.dumps({"draft_id": so_name}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(step1.get("status"), "CONFIRMATION_REQUIRED")
+            self.assertEqual(step1.get("draft_id"), draft.name)
+            self.assertEqual(step1["summary"]["sales_order"], so_name)
+
+            with patch.object(telegram_client, "send_message", return_value=True):
+                step2 = json.loads(
+                    execute_tool(
+                        "confirm_cash_payment",
+                        json.dumps(
+                            {
+                                "draft_id": so_name,
+                                "confirmed": True,
+                                "confirmation_token": step1["confirmation_token"],
+                            }
+                        ),
+                        context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+            self.assertEqual(step2.get("status"), "success")
+            self.assertTrue(step2.get("payment_confirmed"))
+            self.assertEqual(step2.get("draft_id"), draft.name)
+            self.assertEqual(step2.get("sales_order"), so_name)
+            pe_name = step2.get("payment_entry")
+            self.assertTrue(pe_name and frappe.db.exists("Payment Entry", pe_name))
+
+            # (b) approve_draft dengan nomor SO yang sudah dieksekusi mengembalikan sudah EXECUTED + nomor SO
+            already_res = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": so_name}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(already_res.get("status"), "success")
+            self.assertEqual(already_res.get("draft_id"), draft.name)
+            self.assertEqual(already_res.get("draft_status"), "EXECUTED")
+            self.assertTrue(already_res.get("already_executed"))
+            self.assertEqual(already_res.get("sales_order"), so_name)
+            self.assertIn("EXECUTED", already_res.get("message", ""))
+            self.assertIn(so_name, already_res.get("message", ""))
+
+            # (c1) Nomor SO yang tidak ada mengembalikan DRAFT_NOT_FOUND
+            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+                missing_res = json.loads(
+                    execute_tool(
+                        tool_name,
+                        json.dumps({"draft_id": "SAL-ORD-2099-99999"}),
+                        context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+                self.assertEqual(missing_res.get("code"), "DRAFT_NOT_FOUND")
+
+            # (d) Wewenang tetap ditegakkan pada draf hasil resolusi
+            frappe.set_user(self.staff)
+            for tool_name in ("approve_draft", "reject_draft", "confirm_cash_payment"):
+                unauth_res = json.loads(
+                    execute_tool(
+                        tool_name,
+                        json.dumps({"draft_id": so_name}),
+                        context={"user": self.staff, "branch": "sales", "worker_key": "manager"},
+                    )
+                )
+                self.assertEqual(unauth_res.get("code"), "NOT_AUTHORIZED")
+
+            # (c2) Jika >1 draf EXECUTED merujuk nomor SO yang sama (ambigu), kembalikan DRAFT_NOT_FOUND
+            frappe.set_user("Administrator")
+            dup_draft = frappe.get_doc(
+                {
+                    "doctype": "Pending Action Draft",
+                    "task_id": f"TEST-SO-DUP-{frappe.generate_hash(length=6)}",
+                    "action_type": "CREATE",
+                    "type": "CREATE",
+                    "branch": "sales",
+                    "created_by_agent": "manager",
+                    "user": self.receiver,
+                    "status": "EXECUTED",
+                    "payload": json.dumps({"doctype": "Sales Order", "result": {"name": so_name, "document": so_name}}),
+                }
+            )
+            dup_draft.flags.ignore_mandatory = True
+            dup_draft.insert(ignore_permissions=True)
+            self.created_drafts.append(dup_draft.name)
+
+            frappe.set_user(self.receiver)
+            ambig_res = json.loads(
+                execute_tool(
+                    "approve_draft",
+                    json.dumps({"draft_id": so_name}),
+                    context={"user": self.receiver, "branch": "sales", "worker_key": "manager"},
+                )
+            )
+            self.assertEqual(ambig_res.get("code"), "DRAFT_NOT_FOUND")
+        finally:
+            frappe.set_user("Administrator")
+
 
 class TestListPendingDrafts(TestConnectorDraftActions):
     def _create_custom_draft(
@@ -2394,3 +2510,35 @@ class TestListPendingDrafts(TestConnectorDraftActions):
         corrupt_item = next(d for d in drafts if d["draft_id"] == d_corrupt.name)
         self.assertEqual(corrupt_item["draft_id"], d_corrupt.name)
         self.assertTrue(mock_log.called)
+
+    def test_limit_one_includes_has_more_suffix_when_more_drafts_exist(self):
+        self._create_custom_draft("Cust Lim1 A", user=self.receiver, is_channel=True)
+        self._create_custom_draft("Cust Lim1 B", user=self.receiver, is_channel=True)
+
+        res_more = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": 1}),
+                context={"user_id": self.receiver, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_more.get("status"), "ok")
+        self.assertEqual(res_more.get("count"), 1)
+        self.assertTrue(res_more.get("has_more"))
+        self.assertEqual(
+            res_more.get("message"),
+            "Ditemukan 1 draf yang menunggu persetujuan (masih ada draf lainnya, tentukan limit lebih besar bila perlu).",
+        )
+
+        self._create_custom_draft("Cust Lim1 Single Staff", user=self.staff, is_channel=False)
+        res_exact = json.loads(
+            execute_tool(
+                "list_pending_drafts",
+                json.dumps({"limit": 1}),
+                context={"user_id": self.staff, "branch": "sales", "worker_key": "manager"},
+            )
+        )
+        self.assertEqual(res_exact.get("status"), "ok")
+        self.assertEqual(res_exact.get("count"), 1)
+        self.assertFalse(res_exact.get("has_more"))
+        self.assertEqual(res_exact.get("message"), "Ditemukan 1 draf yang menunggu persetujuan.")

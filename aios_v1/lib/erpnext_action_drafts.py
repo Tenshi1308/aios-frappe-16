@@ -332,6 +332,29 @@ def _is_channel_draft_record(draft_name: str, payload: dict) -> bool:
     return _is_channel_draft(draft_name) or bool(payload.get("source_telegram_chat_id"))
 
 
+def _resolve_executed_draft_by_result_doc(clean_id: str) -> str | None:
+    """Resolve an executed draft name from a Sales Order/document number in payload.result."""
+    rows = frappe.get_all(
+        "Pending Action Draft",
+        filters={"status": "EXECUTED", "payload": ["like", f"%{clean_id}%"]},
+        fields=["name", "payload"],
+        limit_page_length=0,
+    )
+    matched_names: list[str] = []
+    for row in rows:
+        try:
+            parsed = json.loads(row.payload or "{}")
+        except (TypeError, ValueError) as exc:
+            log_exception("AIOS Draft Tool Parse Candidate Payload", exc=exc, context=f"draft={row.name}")
+            continue
+        result_obj = parsed.get("result") if isinstance(parsed, dict) and isinstance(parsed.get("result"), dict) else {}
+        if result_obj.get("name") == clean_id or result_obj.get("document") == clean_id:
+            matched_names.append(row.name)
+    if len(matched_names) == 1:
+        return matched_names[0]
+    return None
+
+
 def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, object | None, dict | None, dict | None]:
     """Validate linked user, Ekasa Desk authority, and return (user, draft_doc, payload, err)."""
     clean_id = str(draft_id or "").strip()
@@ -342,16 +365,21 @@ def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, o
     if not clean_id:
         return None, None, None, safe_error("Nomor draf (draft_id) wajib disebutkan.", "DRAFT_ID_REQUIRED")
 
-    if not frappe.db.exists("Pending Action Draft", clean_id):
+    resolved_id = (
+        clean_id
+        if frappe.db.exists("Pending Action Draft", clean_id)
+        else _resolve_executed_draft_by_result_doc(clean_id)
+    )
+    if not resolved_id:
         return None, None, None, safe_error(f"Draf {clean_id} tidak ditemukan.", "DRAFT_NOT_FOUND")
 
-    doc = frappe.get_doc("Pending Action Draft", clean_id)
+    doc = frappe.get_doc("Pending Action Draft", resolved_id)
     try:
         payload = json.loads(doc.payload or "{}")
         if not isinstance(payload, dict):
             raise ValueError("Payload draf bukan JSON object.")
     except (TypeError, ValueError) as exc:
-        log_exception("AIOS Draft Tool Parse Payload", exc=exc, context=f"draft={clean_id}")
+        log_exception("AIOS Draft Tool Parse Payload", exc=exc, context=f"draft={doc.name}")
         return None, None, None, safe_error("Data draf tidak valid.", "INVALID_DRAFT_PAYLOAD")
 
     is_channel = _is_channel_draft_record(doc.name, payload)
@@ -362,7 +390,7 @@ def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, o
             if user not in set(get_channel_recipients()):
                 log_exception(
                     "AIOS Draft Tool Unauthorized",
-                    context=f"user={user}; draft={clean_id}; action={action}; channel=1",
+                    context=f"user={user}; draft={doc.name}; action={action}; channel=1",
                 )
                 return None, None, None, safe_error(
                     "Maaf, Anda tidak memiliki wewenang untuk memproses draf ini. "
@@ -373,7 +401,7 @@ def _require_authorized_draft(draft_id: str, action: str) -> tuple[str | None, o
         elif doc.user != user or not frappe.has_permission("Pending Action Draft", ptype="write", doc=doc):
             log_exception(
                 "AIOS Draft Tool Unauthorized",
-                context=f"user={user}; draft={clean_id}; action={action}; owner={doc.user}",
+                context=f"user={user}; draft={doc.name}; action={action}; owner={doc.user}",
             )
             return None, None, None, safe_error(
                 "Maaf, Anda tidak memiliki wewenang untuk memproses draf ini.",
@@ -938,8 +966,6 @@ def list_pending_drafts(limit: int | None = None) -> dict:
 
     if count == 0:
         message = "Tidak ada draf yang menunggu persetujuan (status PENDING_APPROVAL)."
-    elif count == 1:
-        message = "Ditemukan 1 draf yang menunggu persetujuan."
     else:
         more_suffix = " (masih ada draf lainnya, tentukan limit lebih besar bila perlu)" if has_more else ""
         message = f"Ditemukan {count} draf yang menunggu persetujuan{more_suffix}."
@@ -958,6 +984,7 @@ def list_pending_drafts(limit: int | None = None) -> dict:
     name="approve_draft",
     description=(
         "Menyetujui Pending Action Draft menjadi Sales Order atas nama karyawan yang berwenang. "
+        "Karyawan dapat menyebutkan nomor Pending Action Draft (DRF-...) maupun nomor Sales Order (SAL-ORD-...). "
         "Alur 2 langkah: Langkah 1, panggil dengan confirmed=false terlebih dahulu untuk mengambil "
         "ringkasan draf (nomor, customer, total, item) dan meminta konfirmasi karyawan. "
         "Langkah 2, setelah karyawan menjawab ya/setuju pada pesan berikutnya, panggil tool ini lagi "
@@ -971,7 +998,10 @@ def list_pending_drafts(limit: int | None = None) -> dict:
     roles=["manager", "sales_manager", "ai_manager"],
     plugin_key="erpnext-action-drafts",
     parameters={
-        "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
+        "draft_id": {
+            "type": "string",
+            "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001) atau nomor Sales Order (contoh: SAL-ORD-2026-00001)",
+        },
         "confirmed": {
             "type": "boolean",
             "description": (
@@ -1009,6 +1039,7 @@ def approve_draft(draft_id: str, confirmed: bool = False, confirmation_token: st
     name="reject_draft",
     description=(
         "Menolak/membatalkan Pending Action Draft atas nama karyawan yang berwenang. "
+        "Karyawan dapat menyebutkan nomor Pending Action Draft (DRF-...) maupun nomor Sales Order (SAL-ORD-...). "
         "Alur 2 langkah: Langkah 1, panggil dengan confirmed=false terlebih dahulu untuk menampilkan "
         "ringkasan draf dan meminta konfirmasi dari karyawan. "
         "Langkah 2, setelah karyawan menjawab ya/setuju pada pesan berikutnya, panggil tool ini lagi "
@@ -1022,7 +1053,10 @@ def approve_draft(draft_id: str, confirmed: bool = False, confirmation_token: st
     roles=["manager", "sales_manager", "ai_manager"],
     plugin_key="erpnext-action-drafts",
     parameters={
-        "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
+        "draft_id": {
+            "type": "string",
+            "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001) atau nomor Sales Order (contoh: SAL-ORD-2026-00001)",
+        },
         "reason": {"type": "string", "description": "Alasan penolakan atau pembatalan draf", "required": False},
         "confirmed": {
             "type": "boolean",
@@ -1063,7 +1097,8 @@ def reject_draft(
     name="confirm_cash_payment",
     description=(
         "Mengonfirmasi pembayaran Cash (membuat & submit Payment Entry Cash) untuk draf Sales Order berstatus EXECUTED "
-        "atas nama karyawan yang berwenang. "
+        "atas nama karyawan yang berwenang. Karyawan dapat menyebutkan nomor Pending Action Draft (DRF-...) maupun "
+        "nomor Sales Order (SAL-ORD-...). "
         "Alur 2 langkah: Langkah 1, panggil dengan confirmed=false terlebih dahulu untuk menampilkan ringkasan "
         "(draf, SO, customer, total, item) dan menunggu konfirmasi karyawan. "
         "Langkah 2, setelah karyawan menjawab ya/setuju pada pesan berikutnya, panggil tool ini lagi "
@@ -1077,7 +1112,10 @@ def reject_draft(
     roles=["manager", "sales_manager", "ai_manager"],
     plugin_key="erpnext-action-drafts",
     parameters={
-        "draft_id": {"type": "string", "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001)"},
+        "draft_id": {
+            "type": "string",
+            "description": "Nomor Pending Action Draft (contoh: DRF-2026-11-00001) atau nomor Sales Order (contoh: SAL-ORD-2026-00001)",
+        },
         "confirmed": {
             "type": "boolean",
             "description": (
