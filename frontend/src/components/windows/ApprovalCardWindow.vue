@@ -211,6 +211,17 @@ const paymentEntryName = computed(() => {
   const resObj = payload.value?.result as Record<string, unknown> | undefined;
   return typeof resObj?.payment_entry === 'string' ? resObj.payment_entry : '';
 });
+const executedDocumentName = computed(() => {
+  if (!isExecutedSalesOrder.value) return '';
+  const resObj = payload.value?.result as Record<string, unknown> | undefined;
+  const fromPayload = cleanText(resObj?.name) || cleanText(resObj?.document);
+  if (fromPayload) return fromPayload;
+  return (
+    cleanText(result.value?.name) ||
+    cleanText(result.value?.document) ||
+    cleanText(result.value?.sales_order)
+  );
+});
 
 const customerFields = computed<LabeledField[]>(() => {
   const raw = payload.value?.customer_info;
@@ -543,10 +554,12 @@ onUnmounted(() => {
     <div v-else-if="error" class="ac-note">{{ error }}</div>
     <template v-else-if="draft">
       <div class="ac-meta">
+        <span><b>Nomor Draf:</b> {{ draft.name || props.draftId }}</span>
         <span><b>Aksi:</b> {{ draft.type }}</span>
         <span><b>Doctype:</b> {{ payload?.doctype ?? '—' }}</span>
         <span v-if="draft.branch"><b>Cabang:</b> {{ draft.branch }}</span>
         <span><b>Status:</b> {{ draft.status }}</span>
+        <span v-if="executedDocumentName"><b>Nomor Sales Order:</b> {{ executedDocumentName }}</span>
         <span v-if="draft.created_by_agent"><b>Dibuat oleh:</b> {{ draft.created_by_agent }}</span>
         <span><b>Kedaluwarsa:</b> {{ formatDateTime(draft.expires_at) }}</span>
         <span v-if="isExpired" class="ac-expired-badge">Kedaluwarsa</span>
@@ -675,6 +688,7 @@ onUnmounted(() => {
       </div>
       <div v-else class="ac-note">
         <span>Draft sudah diproses ({{ draft.status }}).</span>
+        <span v-if="executedDocumentName"><b>Nomor Sales Order:</b> {{ executedDocumentName }}</span>
         <span v-if="paymentEntryName"><b>Payment Entry:</b> {{ paymentEntryName }}</span>
       </div>
 

@@ -137,7 +137,17 @@ class TestApprovalCardContract(unittest.TestCase):
         self.assertGreater(pos_processed_text, pos_processed)
 
     def test_active_pending_and_executed_cash_payment_preserved(self) -> None:
-        template = _extract_block(_read_approval_card(), "template")
+        source = _read_approval_card()
+        script = _extract_block(source, "script")
+        template = _extract_block(source, "template")
+
+        self.assertIn("const executedDocumentName = computed(", script)
+        self.assertIn("isExecutedSalesOrder.value", script)
+        self.assertIn("resObj?.name", script)
+        self.assertIn("resObj?.document", script)
+        self.assertIn("<b>Nomor Draf:</b>", template)
+        so_span = '<span v-if="executedDocumentName"><b>Nomor Sales Order:</b> {{ executedDocumentName }}</span>'
+        self.assertEqual(template.count(so_span), 2)
 
         for expected in (
             "Tolak",
