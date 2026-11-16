@@ -41,19 +41,27 @@ class TestCrossBranchSalesFinance(unittest.TestCase):
     def test_sales_handler_reads_customer_and_company_scoped_orders(self):
         customer = frappe._dict({"name": "_Test Customer", "disabled": 0})
         orders = [frappe._dict({"name": "_Test SO", "status": "To Deliver"})]
+        quotations = [frappe._dict({"name": "_Test QTN", "status": "Open"})]
         with (
             patch("aios_v1.lib.branch_handlers.get_tool_context", return_value={"allowed_company": "_Test Company"}),
             patch("aios_v1.lib.branch_handlers.frappe.get_doc", return_value=customer) as get_doc,
-            patch("aios_v1.lib.branch_handlers.frappe.get_list", return_value=orders) as get_list,
+            patch("aios_v1.lib.branch_handlers.frappe.get_list", side_effect=[orders, quotations]) as get_list,
         ):
             result = sales_consultation(
                 user_id=self.user, task_id="_Test Task", from_branch="finance",
                 message_type="consultation", payload={"customer": "_Test Customer"},
             )
         self.assertEqual(result["sales_orders"][0]["name"], "_Test SO")
+        self.assertEqual(result["quotations"][0]["name"], "_Test QTN")
         get_doc.assert_called_once_with("Customer", "_Test Customer", check_permission="read")
-        self.assertEqual(get_list.call_args.kwargs["filters"], {
+        self.assertEqual(get_list.call_count, 2)
+        self.assertEqual(get_list.call_args_list[0].args[0], "Sales Order")
+        self.assertEqual(get_list.call_args_list[0].kwargs["filters"], {
             "customer": "_Test Customer", "company": "_Test Company",
+        })
+        self.assertEqual(get_list.call_args_list[1].args[0], "Quotation")
+        self.assertEqual(get_list.call_args_list[1].kwargs["filters"], {
+            "quotation_to": "Customer", "party_name": "_Test Customer", "company": "_Test Company",
         })
 
     def test_router_rejects_action_request(self):

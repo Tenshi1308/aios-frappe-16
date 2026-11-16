@@ -47,6 +47,7 @@ MANAGED_SITE_ADMIN_PERMS = {
 # DocType ERPNext target untuk plugin baca/laporan. `AIOS Client` hanya
 # read + report; tulis tetap lewat Pending Action Draft.
 ERP_CLIENT_DOCTYPES = (
+	"Quotation",
 	"Sales Order",
 	"Sales Invoice",
 	"Purchase Invoice",

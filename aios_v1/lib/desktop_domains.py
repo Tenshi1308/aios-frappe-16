@@ -12,7 +12,7 @@ _DOMAINS = (
         "icon": "tag",
         "color_token": "domain-sales",
         "status": "active",
-        "modules": ("sales_invoice", "sales_order", "customer", "item"),
+        "modules": ("sales_invoice", "sales_order", "quotation", "customer", "item"),
         "cards": (
             {
                 "key": "revenue_month",

@@ -193,6 +193,7 @@ class TestDesktopModules(IntegrationTestCase):
             {
                 "sales_invoice",
                 "sales_order",
+                "quotation",
                 "purchase_invoice",
                 "payment_entry",
                 "customer",
@@ -204,7 +205,7 @@ class TestDesktopModules(IntegrationTestCase):
         self.assertTrue(all(module["doctype"] in ERP_CLIENT_DOCTYPES for module in modules))
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Sales"},
-            {"sales_invoice", "sales_order", "customer", "item"},
+            {"sales_invoice", "sales_order", "quotation", "customer", "item"},
         )
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Finance"},
@@ -530,11 +531,96 @@ class TestDesktopModules(IntegrationTestCase):
             {card["field"] for card in payment["cards"] if card["aggregate"] == "sum"},
             {"base_paid_amount", "base_received_amount"},
         )
-        for key in ("sales_invoice", "sales_order", "purchase_invoice"):
+        for key in ("sales_invoice", "sales_order", "quotation", "purchase_invoice"):
             module = get_module_definition(key)
             amount = next(card for card in module["cards"] if card["aggregate"] == "sum")
             self.assertEqual(amount["field"], "base_grand_total")
             self.assertEqual(amount["filters"]["docstatus"], 1)
+
+    def test_quotation_list_and_search_return_submitted_company_scoped_rows(self):
+        rows = [
+            {
+                "name": "SAL-QTN-2026-00003",
+                "transaction_date": "2026-11-16",
+                "customer_name": "Tenshi",
+                "party_name": "Tenshi",
+                "status": "Open",
+                "base_grand_total": 1887000.0,
+                "company": self.company,
+                "docstatus": 1,
+            },
+            {
+                "name": "SAL-QTN-2026-99999",
+                "transaction_date": "2026-11-16",
+                "customer_name": "Tenshi",
+                "party_name": "Tenshi",
+                "status": "Draft",
+                "base_grand_total": 500000.0,
+                "company": self.company,
+                "docstatus": 0,
+            },
+            {
+                "name": "SAL-QTN-OTHER-00001",
+                "transaction_date": "2026-11-16",
+                "customer_name": "Tenshi",
+                "party_name": "Tenshi",
+                "status": "Open",
+                "base_grand_total": 999999.0,
+                "company": "_Test Other Company",
+                "docstatus": 1,
+            },
+        ]
+        list_calls = []
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            list_calls.append((doctype, fields, filters, kwargs))
+            if doctype != "Quotation":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [
+                r
+                for r in rows
+                if r["company"] == filters.get("company") and r["docstatus"] == filters.get("docstatus")
+            ]
+            if "customer_name" in filters and isinstance(filters["customer_name"], list):
+                needle = filters["customer_name"][1].strip("%").casefold()
+                selected = [r for r in selected if needle in r["customer_name"].casefold()]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            listed = frappe.call(
+                desktop_api.list,
+                module="quotation",
+                doctype="Quotation",
+                filters={"party": "Tenshi"},
+            )
+            searched_num = frappe.call(desktop_api.search, q="SAL-QTN-2026-00003")
+            searched_party = frappe.call(desktop_api.search, q="Tenshi")
+
+        self.assertEqual([r["name"] for r in listed["rows"]], ["SAL-QTN-2026-00003"])
+        self.assertEqual(listed["rows"][0]["base_grand_total"], 1887000.0)
+        self.assertEqual(
+            {c["key"]: c["value"] for c in listed["cards"]},
+            {"count": 1, "total": 1887000.0},
+        )
+        q_row_call = next(
+            c for c in list_calls if c[0] == "Quotation" and c[1] and not isinstance(c[1][0], dict)
+        )
+        self.assertEqual(q_row_call[2]["customer_name"], ["like", "%Tenshi%"])
+        self.assertEqual(
+            [item["name"] for item in searched_num["results"] if item["type"] == "document"],
+            ["SAL-QTN-2026-00003"],
+        )
+        self.assertEqual(
+            [item["name"] for item in searched_party["results"] if item["type"] == "document"],
+            ["SAL-QTN-2026-00003"],
+        )
 
     def test_search_is_company_scoped_and_returns_module_and_document_results(self):
         rows = [

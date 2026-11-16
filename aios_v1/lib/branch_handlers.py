@@ -47,7 +47,7 @@ def finance_consultation(*, user_id: str, task_id: str, from_branch: str,
 
 def sales_consultation(*, user_id: str, task_id: str, from_branch: str,
                        message_type: str, payload: dict) -> dict:
-    """Return customer and recent Sales Order status without writing ERPNext."""
+    """Return customer, recent Sales Order, and Quotation status without writing ERPNext."""
     if message_type != "consultation":
         frappe.throw("Sales hanya menerima consultation read-only.")
     customer = _customer(payload)
@@ -59,9 +59,17 @@ def sales_consultation(*, user_id: str, task_id: str, from_branch: str,
         order_by="modified desc",
         limit_page_length=10,
     )
+    quotations = frappe.get_list(
+        "Quotation",
+        filters={"quotation_to": "Customer", "party_name": customer.name, "company": company},
+        fields=["name", "status", "docstatus", "transaction_date", "valid_till", "grand_total"],
+        order_by="modified desc",
+        limit_page_length=10,
+    )
     return {
         "customer": customer.name,
         "company": company,
         "customer_status": (customer.get("disabled", 0) and "disabled") or "active",
         "sales_orders": [dict(order) for order in orders],
+        "quotations": [dict(quotation) for quotation in quotations],
     }

@@ -591,7 +591,7 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                                              'Status pesanan aktif: yang belum dikirim, yang terlambat, yang perlu '
                                              'di-follow up.',
                                              'Kontak & keluhan: pelanggan yang sering muncul (dari data yang ada).'],
-                           'relevantEntities': ['Customer', 'SalesOrder', 'Shipment']},
+                           'relevantEntities': ['Customer', 'SalesOrder', 'Quotation', 'Shipment']},
                        {   'answerStructure': [   'ringkasan 1 kalimat: peluang pemasaran berdasarkan data',
                                                   'data kunci (segmen, produk, pola) dengan konteks periode',
                                                   'rekomendasi kampanye / aksi pemasaran (berbasis data, bukan '
@@ -616,7 +616,7 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                                              'tertentu.',
                                              'Peluang promosi: produk dengan potensi naik (cross-sell, up-sell) '
                                              'berbasis pola data.'],
-                           'relevantEntities': ['Customer', 'SalesOrder', 'Product']},
+                           'relevantEntities': ['Customer', 'SalesOrder', 'Quotation', 'Product']},
                        {   'answerStructure': [   'headline insight 1 kalimat',
                                                   'angka kunci dengan delta periode',
                                                   'interpretasi: apa yang menjelaskan polanya',
@@ -639,7 +639,7 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                            'priorities': [   'Tren multi-periode: minimal 2 periode pembanding untuk konteks.',
                                              'Segmentasi: per produk, per pelanggan, per kota, per periode.',
                                              'Konsentrasi: top-N yang menyumbang porsi besar (risiko + peluang).'],
-                           'relevantEntities': ['SalesOrder', 'Product', 'Customer']},
+                           'relevantEntities': ['SalesOrder', 'Quotation', 'Product', 'Customer']},
                        {   'answerStructure': [   'ringkasan 1 kalimat: kondisi performa penjualan',
                                                   'data kunci (produk, pelanggan, transaksi) dengan konteks periode',
                                                   'peluang tindak lanjut (produk unggulan, pelanggan yang perlu '
@@ -663,7 +663,7 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                                              'Pelanggan potensial: yang memiliki volume pembelian tinggi atau tumbuh.',
                                              'Aktivitas penjualan terbaru: transaksi minggu/bulan ini sebagai sinyal '
                                              'momentum.'],
-                           'relevantEntities': ['SalesOrder', 'Product', 'Customer']}]},
+                           'relevantEntities': ['SalesOrder', 'Quotation', 'Product', 'Customer']}]},
     {   'description': 'Bidang mutu: inspeksi produk, rekayasa kualitas, audit kepatuhan, dan kendali standar.',
         'enabled': True,
         'key': 'quality',
