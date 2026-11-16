@@ -128,3 +128,19 @@ def send_chat_action(chat_id, action: str = "typing") -> bool:
     except ConnectorError as exc:
         log_exception("AIOS Connector Action", context=f"sendChatAction; code={exc.code}")
         return False
+
+
+def set_my_commands(chat_id, commands: list[dict[str, str]]) -> bool:
+    """Set scoped slash commands for one chat; best-effort so callers never fail."""
+    try:
+        _api(
+            "setMyCommands",
+            {
+                "commands": commands,
+                "scope": {"type": "chat", "chat_id": chat_id},
+            },
+        )
+        return True
+    except ConnectorError as exc:
+        log_exception("AIOS Connector Commands", context=f"setMyCommands; code={exc.code}; {exc.message}")
+        return False

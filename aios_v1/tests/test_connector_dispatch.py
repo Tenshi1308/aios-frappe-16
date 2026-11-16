@@ -460,7 +460,9 @@ class TestConnectorDispatch(ConnectorTestBase):
         try:
             with patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_llm), patch.object(
                 telegram_client, "send_chat_action", return_value=True
-            ), patch.object(telegram_client, "send_message", return_value=True):
+            ), patch.object(telegram_client, "send_message", return_value=True), patch.object(
+                telegram_client, "set_my_commands", return_value=True
+            ):
                 res1 = dispatch.process_update(self._update("Harga lama Rp 850.000 belum termasuk pajak/PPN", 20))
                 self.assertTrue(res1["success"])
                 conv1 = str(res1["conversation"])
@@ -507,6 +509,56 @@ class TestConnectorDispatch(ConnectorTestBase):
                     frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
                 if frappe.db.exists("AIOS Conversation", cid):
                     frappe.delete_doc("AIOS Conversation", cid, ignore_permissions=True, force=True, delete_permanently=True)
+
+    def test_start_and_clear_sync_commands_for_guest_and_linked_employee(self):
+        """/start dan /clear menyinkronkan 2 perintah untuk tamu dan 3 perintah untuk karyawan tertaut."""
+        from aios_v1.lib.connector import linking
+
+        with (
+            patch.object(telegram_client, "send_message", return_value=True),
+            patch.object(telegram_client, "set_my_commands", return_value=True) as mock_cmds,
+        ):
+            res_start_guest = dispatch.process_update(self._update("/start", 51))
+            self.assertTrue(res_start_guest["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.GUEST_COMMANDS)
+
+            mock_cmds.reset_mock()
+            res_clear_guest = dispatch.process_update(self._update("/clear", 52))
+            self.assertTrue(res_clear_guest["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.GUEST_COMMANDS)
+
+            linking.link_thread_to_user(CHAT_ID, self.owner, res_start_guest["thread"])
+
+            mock_cmds.reset_mock()
+            res_start_emp = dispatch.process_update(self._update("/start", 53))
+            self.assertTrue(res_start_emp["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.EMPLOYEE_COMMANDS)
+
+            mock_cmds.reset_mock()
+            res_clear_emp = dispatch.process_update(self._update("/clear", 54))
+            self.assertTrue(res_clear_emp["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.EMPLOYEE_COMMANDS)
+
+    def test_set_my_commands_failure_does_not_block_start_or_clear(self):
+        """Kegagalan set_my_commands pada /start atau /clear tidak memblokir rotasi conversation atau send_message."""
+        with (
+            patch.object(telegram_client, "send_message", return_value=True) as mock_send,
+            patch.object(telegram_client, "set_my_commands", return_value=False),
+        ):
+            res_start = dispatch.process_update(self._update("/start", 61))
+        self.assertTrue(res_start["success"])
+        conv1 = str(res_start["conversation"])
+        mock_send.assert_called_once()
+
+        with (
+            patch.object(telegram_client, "send_message", return_value=True) as mock_send,
+            patch.object(telegram_client, "set_my_commands", side_effect=RuntimeError("network error")),
+            patch("aios_v1.lib.error_utils.frappe.log_error"),
+        ):
+            res_clear = dispatch.process_update(self._update("/clear", 62))
+        self.assertTrue(res_clear["success"])
+        self.assertNotEqual(str(res_clear["conversation"]), conv1)
+        mock_send.assert_called_once()
 
 
 class TestConnectorFlags(ConnectorTestBase):

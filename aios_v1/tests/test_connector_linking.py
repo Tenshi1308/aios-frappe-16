@@ -107,6 +107,8 @@ class TestConnectorLinking(IntegrationTestCase):
     def _cleanup(self):
         linking.clear_attempts(CHAT_ID)
         linking.clear_attempts(OTHER_CHAT_ID)
+        dispatch.clear_rate_limit(CHAT_ID)
+        dispatch.clear_rate_limit(OTHER_CHAT_ID)
         for chat in (CHAT_ID, OTHER_CHAT_ID):
             threads = frappe.get_all(THREAD, filters={"external_thread_id": chat}, pluck="name")
             for t in threads:
@@ -346,7 +348,10 @@ class TestConnectorLinking(IntegrationTestCase):
         self.assertEqual(doc.linked_user, self.employee)
 
         # Jalankan /unlink via dispatch
-        with patch.object(telegram_client, "send_message", return_value=True):
+        with (
+            patch.object(telegram_client, "send_message", return_value=True),
+            patch.object(telegram_client, "set_my_commands", return_value=True),
+        ):
             res = dispatch.process_update(
                 {
                     "update_id": 1,
@@ -425,6 +430,7 @@ class TestConnectorLinking(IntegrationTestCase):
         with (
             patch.object(telegram_client, "send_message", return_value=True),
             patch.object(telegram_client, "send_chat_action", return_value=True),
+            patch.object(telegram_client, "set_my_commands", return_value=True),
             patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat),
             patch("aios_v1.managers.base_manager.record_token_usage_batch"),
         ):
@@ -626,6 +632,7 @@ class TestConnectorLinking(IntegrationTestCase):
             with (
                 patch.object(telegram_client, "send_message", return_value=True),
                 patch.object(telegram_client, "send_chat_action", return_value=True),
+                patch.object(telegram_client, "set_my_commands", return_value=True),
                 patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat),
                 patch("aios_v1.managers.base_manager.record_token_usage_batch"),
             ):
@@ -694,6 +701,145 @@ class TestConnectorLinking(IntegrationTestCase):
                     frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
                 if frappe.db.exists(CONV, cid):
                     frappe.delete_doc(CONV, cid, ignore_permissions=True, force=True, delete_permanently=True)
+
+    def test_link_and_unlink_commands_sync_per_chat_commands(self):
+        """/start LINK_ valid pasang 3 perintah karyawan; LINK_ invalid & /unlink pasang 2 perintah tamu."""
+        frappe.set_user(self.employee)
+        link_res = linking.create_link_token(self.employee)
+        raw_token = link_res["deep_link"].split("LINK_")[1]
+
+        with (
+            patch.object(telegram_client, "send_message", return_value=True),
+            patch.object(telegram_client, "set_my_commands", return_value=True) as mock_cmds,
+        ):
+            # 1. Token tidak valid -> tidak menyinkronkan perintah karyawan
+            res_bad = dispatch.process_update(
+                {
+                    "update_id": 301,
+                    "message": {
+                        "message_id": 301,
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": "/start LINK_invalid_token_xyz",
+                    },
+                }
+            )
+            self.assertFalse(res_bad["success"])
+            mock_cmds.assert_called_with(int(CHAT_ID), dispatch.GUEST_COMMANDS)
+
+            # 2. /unlink saat tamu -> tetap menyinkronkan 2 perintah tamu
+            mock_cmds.reset_mock()
+            res_guest_unlink = dispatch.process_update(
+                {
+                    "update_id": 302,
+                    "message": {
+                        "message_id": 302,
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": "/unlink",
+                    },
+                }
+            )
+            self.assertTrue(res_guest_unlink["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.GUEST_COMMANDS)
+
+            # 3. /start LINK_ valid -> menyinkronkan 3 perintah karyawan
+            mock_cmds.reset_mock()
+            res_ok = dispatch.process_update(
+                {
+                    "update_id": 303,
+                    "message": {
+                        "message_id": 303,
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": f"/start LINK_{raw_token}",
+                    },
+                }
+            )
+            self.assertTrue(res_ok["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.EMPLOYEE_COMMANDS)
+
+            # 4. /unlink saat tertaut -> kembali ke 2 perintah tamu
+            mock_cmds.reset_mock()
+            res_unlink = dispatch.process_update(
+                {
+                    "update_id": 304,
+                    "message": {
+                        "message_id": 304,
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": "/unlink",
+                    },
+                }
+            )
+            self.assertTrue(res_unlink["success"])
+            mock_cmds.assert_called_once_with(int(CHAT_ID), dispatch.GUEST_COMMANDS)
+
+    def test_set_my_commands_failure_does_not_block_link_or_unlink(self):
+        """Kegagalan set_my_commands (False/exception) tidak menggagalkan link, unlink, atau send_message."""
+        frappe.set_user(self.employee)
+        link_res = linking.create_link_token(self.employee)
+        raw_token = link_res["deep_link"].split("LINK_")[1]
+
+        with (
+            patch.object(telegram_client, "send_message", return_value=True) as mock_send,
+            patch.object(telegram_client, "set_my_commands", return_value=False),
+        ):
+            res_ok = dispatch.process_update(
+                {
+                    "update_id": 310,
+                    "message": {
+                        "message_id": 310,
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": f"/start LINK_{raw_token}",
+                    },
+                }
+            )
+            self.assertTrue(res_ok["success"])
+            doc = frappe.get_doc(THREAD, res_ok["thread"])
+            self.assertEqual(doc.linked_user, self.employee)
+            mock_send.assert_called_once()
+
+        with (
+            patch.object(telegram_client, "send_message", return_value=True) as mock_send,
+            patch.object(telegram_client, "set_my_commands", side_effect=RuntimeError("telegram down")),
+            patch("aios_v1.lib.error_utils.frappe.log_error"),
+        ):
+            res_unlink = dispatch.process_update(
+                {
+                    "update_id": 311,
+                    "message": {
+                        "message_id": 311,
+                        "chat": {"id": int(CHAT_ID)},
+                        "text": "/unlink",
+                    },
+                }
+            )
+            self.assertTrue(res_unlink["success"])
+            doc.reload()
+            self.assertIsNone(doc.linked_user)
+            self.assertEqual(frappe.db.get_value(CONV, doc.conversation, "user"), "Guest")
+            mock_send.assert_called_once()
+
+    def test_unlink_by_user_and_api_unlink_telegram_sync_guest_commands_best_effort(self):
+        """Q1: unlink_by_user & api.connector.unlink_telegram menyinkronkan perintah tamu secara best-effort."""
+        from aios_v1.api import connector as connector_api
+
+        thread = dispatch.get_or_create_thread(CHAT_ID)
+        linking.link_thread_to_user(CHAT_ID, self.employee, thread["name"])
+
+        with patch.object(telegram_client, "set_my_commands", return_value=True) as mock_cmds:
+            self.assertTrue(linking.unlink_by_user(self.employee))
+        mock_cmds.assert_called_once_with(CHAT_ID, dispatch.GUEST_COMMANDS)
+        self.assertIsNone(frappe.db.get_value(THREAD, thread["name"], "linked_user"))
+
+        # Tautkan lagi lalu unlink lewat API Ekasa Desk meski Telegram error
+        linking.link_thread_to_user(CHAT_ID, self.employee, thread["name"])
+        frappe.set_user(self.employee)
+        with (
+            patch.object(telegram_client, "set_my_commands", side_effect=RuntimeError("timeout")) as mock_cmds,
+            patch("aios_v1.lib.error_utils.frappe.log_error"),
+        ):
+            api_res = connector_api.unlink_telegram()
+        self.assertEqual(api_res, {"success": True})
+        mock_cmds.assert_called_once_with(CHAT_ID, dispatch.GUEST_COMMANDS)
+        self.assertIsNone(frappe.db.get_value(THREAD, thread["name"], "linked_user"))
 
 
 def run_tests():

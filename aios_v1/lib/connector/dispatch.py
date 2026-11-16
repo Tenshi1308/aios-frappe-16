@@ -44,6 +44,26 @@ RATE_LIMIT_HOUR = 60
 RATE_LIMIT_DAY = 200
 TELEGRAM_MAX_MESSAGE_LENGTH = 4096
 
+GUEST_COMMANDS: list[dict[str, str]] = [
+    {"command": "start", "description": "Mulai percakapan baru"},
+    {"command": "clear", "description": "Bersihkan riwayat percakapan"},
+]
+
+EMPLOYEE_COMMANDS: list[dict[str, str]] = [
+    *GUEST_COMMANDS,
+    {"command": "unlink", "description": "Putuskan tautan akun karyawan"},
+]
+
+
+def _sync_chat_commands(chat_id, is_linked: bool) -> bool:
+    """Best-effort sync of per-chat Telegram slash commands; never raises."""
+    commands = EMPLOYEE_COMMANDS if is_linked else GUEST_COMMANDS
+    try:
+        return bool(telegram_client.set_my_commands(chat_id, commands))
+    except Exception as exc:
+        log_exception("AIOS Connector Commands Sync", exc=exc, context=f"chat={chat_id}")
+        return False
+
 
 def _strip_inline_markdown(line: str) -> str:
     """Convert inline markdown syntax in one line to readable plain text."""
@@ -443,6 +463,7 @@ def process_message(update: dict) -> dict:
         else:
             reply = msg
 
+        _sync_chat_commands(chat_id, bool(thread.get("linked_user")))
         telegram_client.send_message(chat_id, reply)
         return {
             "success": success,
@@ -463,6 +484,7 @@ def process_message(update: dict) -> dict:
             reply = f"Halo {thread['linked_user']}! Anda terhubung sebagai karyawan. Ada yang bisa dibantu untuk urusan penjualan hari ini?"
         else:
             reply = "Halo! Selamat datang di layanan kami. Ada informasi barang atau katalog produk yang ingin Anda tanyakan?"
+        _sync_chat_commands(chat_id, bool(thread.get("linked_user")))
         telegram_client.send_message(chat_id, reply)
         return {
             "success": True,
@@ -489,6 +511,7 @@ def process_message(update: dict) -> dict:
                 "Riwayat percakapan telah dibersihkan. Halo! Selamat datang di layanan kami. "
                 "Ada informasi barang atau katalog produk yang ingin Anda tanyakan?"
             )
+        _sync_chat_commands(chat_id, bool(thread.get("linked_user")))
         telegram_client.send_message(chat_id, reply)
         return {
             "success": True,
@@ -514,6 +537,7 @@ def process_message(update: dict) -> dict:
         else:
             reply = "Chat Telegram ini belum tertaut ke akun karyawan mana pun."
 
+        _sync_chat_commands(chat_id, False)
         telegram_client.send_message(chat_id, reply)
         return {
             "success": True,

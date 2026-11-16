@@ -188,7 +188,7 @@ def get_link_status() -> dict:
 # ---------------------------------------------------------------------------
 @frappe.whitelist(methods=["POST"])
 def unlink_telegram() -> dict:
-    """Putuskan tautan Telegram akun sendiri (write)."""
+    """Putuskan tautan Telegram akun sendiri (write) lalu sinkronkan daftar perintah tamu."""
     user = _current_user()
     success = unlink_by_user(user)
     return {"success": success}

@@ -321,6 +321,13 @@ def unlink_by_user(user: str) -> bool:
     logger = frappe.logger("aios_connector", allow_site=True)
     logger.setLevel(logging.INFO)
     logger.info(f"User {user} unlinked from Telegram threads: {[r['external_thread_id'] for r in threads]}")
+
+    from aios_v1.lib.connector.dispatch import _sync_chat_commands
+
+    for row in threads:
+        chat_id = row.get("external_thread_id")
+        if chat_id:
+            _sync_chat_commands(chat_id, False)
     return True
 
 

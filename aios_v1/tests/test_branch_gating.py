@@ -1,8 +1,9 @@
 """Branch gating and channel connector gating tests."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
+import requests
 
 from aios_v1.lib.connector import telegram_client
 from aios_v1.lib.tool_registry import execute_tool, get_tools_schema_for_worker
@@ -56,10 +57,86 @@ class TestConnectorGating(IntegrationTestCase):
             self.assertFalse(telegram_client.is_configured())
             self.assertFalse(telegram_client.send_message("1", "hello"))
             self.assertFalse(telegram_client.send_chat_action("1"))
+            self.assertFalse(
+                telegram_client.set_my_commands("1", [{"command": "start", "description": "Mulai percakapan baru"}])
+            )
             with self.assertRaises(telegram_client.ConnectorError) as raised:
                 telegram_client.get_updates(0)
             self.assertEqual(raised.exception.code, "CONNECTOR_NO_TOKEN")
         post.assert_not_called()
+
+    def test_set_my_commands_sends_chat_scoped_payload(self):
+        fake_resp = MagicMock()
+        fake_resp.json.return_value = {"ok": True, "result": True}
+        commands = [
+            {"command": "start", "description": "Mulai percakapan baru"},
+            {"command": "clear", "description": "Bersihkan riwayat percakapan"},
+        ]
+        token = "123456:TEST_TOKEN_SECRET_VALUE_987654"
+        with patch.object(
+            telegram_client,
+            "get_config",
+            return_value={
+                "bot_token": token,
+                "bot_username": "test_bot",
+                "is_active": True,
+                "persona_tone": "Ramah & Kasual",
+                "custom_instructions": "",
+            },
+        ), patch.object(telegram_client.requests, "post", return_value=fake_resp) as post:
+            ok = telegram_client.set_my_commands(99001122, commands)
+
+        self.assertTrue(ok)
+        post.assert_called_once()
+        call_args, call_kwargs = post.call_args
+        self.assertEqual(call_args[0], f"{telegram_client.API_BASE}/bot{token}/setMyCommands")
+        self.assertEqual(
+            call_kwargs["json"],
+            {
+                "commands": commands,
+                "scope": {"type": "chat", "chat_id": 99001122},
+            },
+        )
+
+    def test_set_my_commands_failure_modes_are_logged_without_token_and_return_false(self):
+        token = "123456:TEST_TOKEN_SECRET_VALUE_987654"
+        commands = [{"command": "start", "description": "Mulai percakapan baru"}]
+        bad_resp = MagicMock()
+        bad_resp.json.return_value = {
+            "ok": False,
+            "description": f"Bad Request: chat not found (bot{token})",
+        }
+        cases = [
+            requests.exceptions.Timeout(f"timeout for bot{token}"),
+            requests.exceptions.RequestException(f"network error on bot{token}"),
+            bad_resp,
+        ]
+
+        for outcome in cases:
+            with self.subTest(outcome=type(outcome).__name__):
+                post_kwargs = (
+                    {"side_effect": outcome} if isinstance(outcome, Exception) else {"return_value": outcome}
+                )
+                with patch.object(
+                    telegram_client,
+                    "get_config",
+                    return_value={
+                        "bot_token": token,
+                        "bot_username": "test_bot",
+                        "is_active": True,
+                        "persona_tone": "Ramah & Kasual",
+                        "custom_instructions": "",
+                    },
+                ), patch.object(telegram_client.requests, "post", **post_kwargs), patch(
+                    "aios_v1.lib.error_utils.frappe.log_error"
+                ) as log_error_mock:
+                    ok = telegram_client.set_my_commands(99001122, commands)
+
+                self.assertFalse(ok)
+                self.assertTrue(log_error_mock.called)
+                for call in log_error_mock.call_args_list:
+                    combined = f"{call.args} {call.kwargs}"
+                    self.assertNotIn(token, combined)
 
     def test_connector_health_is_read_only(self):
         from aios_v1.lib.connector.dispatch import health
