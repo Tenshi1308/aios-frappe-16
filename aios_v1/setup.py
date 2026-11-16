@@ -70,6 +70,7 @@ def after_install():
     ensure_builtin_plugins()
     ensure_signup_utm_source()
     ensure_connector_defaults()
+    ensure_sales_tax_template()
 
 
 def after_migrate():
@@ -78,6 +79,34 @@ def after_migrate():
     ensure_builtin_plugins()
     ensure_signup_utm_source()
     ensure_connector_defaults()
+    ensure_sales_tax_template()
+
+
+def ensure_sales_tax_template():
+    """Pastikan Sales Taxes and Charges Template PPN 11% aktif & default untuk company site."""
+    if not frappe.db.exists("DocType", "Sales Taxes and Charges Template"):
+        return
+
+    from aios_v1.lib.draft_manager import _resolve_sales_tax_template
+    from aios_v1.lib.error_utils import log_exception
+
+    companies: list[str] = []
+    for dt in ("AIOS Setting", "Global Defaults"):
+        if frappe.db.exists("DocType", dt):
+            comp = frappe.db.get_single_value(dt, "default_company")
+            if comp and comp not in companies:
+                companies.append(str(comp))
+    for comp in frappe.get_all("Company", filters={"country": "Indonesia"}, pluck="name"):
+        if comp and comp not in companies:
+            companies.append(str(comp))
+
+    for company in companies:
+        if not frappe.db.exists("Company", company):
+            continue
+        try:
+            _resolve_sales_tax_template(company)
+        except Exception as exc:
+            log_exception("AIOS Ensure Sales Tax Template", exc=exc, context=f"company={company}")
 
 
 def migrate_owner_user_to_channel_roles():

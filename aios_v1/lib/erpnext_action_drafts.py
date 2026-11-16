@@ -11,8 +11,10 @@ from frappe.utils import get_datetime, now_datetime
 from aios_v1.lib.draft_manager import (
     ALLOWED_DRAFT_DOCTYPES,
     DraftExecutionError,
+    _calculate_sales_tax_breakdown,
     _format_currency_amount,
     _is_channel_draft,
+    _resolve_sales_tax_template,
     _site_company,
     approve_and_execute_draft,
     confirm_draft_cash_payment,
@@ -200,8 +202,31 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
                 validated_customer_info["payment_method"] = "Cash"
                 payload["customer_info"] = validated_customer_info
 
-        validate_data_fields(frappe.get_meta(doctype), draft_data)
-        if frappe.get_meta(doctype).has_field("company"):
+        if doctype == "Quotation":
+            if "customer" in draft_data and not draft_data.get("party_name"):
+                draft_data["party_name"] = draft_data.pop("customer")
+            else:
+                draft_data.pop("customer", None)
+            quotation_meta = frappe.get_meta("Quotation")
+            if quotation_meta.has_field("quotation_to") and not draft_data.get("quotation_to"):
+                draft_data["quotation_to"] = "Customer"
+            if (
+                quotation_meta.has_field("party_name")
+                and not draft_data.get("party_name")
+                and validated_customer_info
+            ):
+                draft_data["party_name"] = validated_customer_info["customer_name"]
+
+        target_meta = frappe.get_meta(doctype)
+        if (
+            doctype in {"Sales Order", "Quotation"}
+            and target_meta.has_field("taxes_and_charges")
+            and not draft_data.get("taxes_and_charges")
+        ):
+            draft_data["taxes_and_charges"] = _resolve_sales_tax_template(company)
+
+        validate_data_fields(target_meta, draft_data)
+        if target_meta.has_field("company"):
             draft_data["company"] = company
         payload["data"] = draft_data
     else:
@@ -240,13 +265,28 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
 
         thread = getattr(frappe.local, "aios_channel_thread", None)
         notify_order_draft(draft, thread=thread)
-    return {
+    response = {
         "status": "PENDING_APPROVAL",
         "draft_id": draft.name,
         "action_type": action_type,
         "doctype": doctype,
         "message": "Draf tersimpan untuk ditinjau; dokumen ERPNext belum dibuat.",
     }
+    if action_type == "CREATE" and doctype in {"Sales Order", "Quotation"}:
+        summary = _build_draft_summary(draft, payload, action="approve")
+        response.update(
+            {
+                "taxes_and_charges": summary.get("taxes_and_charges", ""),
+                "base_total": summary.get("base_total"),
+                "formatted_base_total": summary.get("formatted_base_total"),
+                "tax_amount": summary.get("tax_amount"),
+                "formatted_tax_amount": summary.get("formatted_tax_amount"),
+                "total": summary.get("total"),
+                "formatted_total": summary.get("formatted_total"),
+                "summary": summary,
+            }
+        )
+    return response
 
 
 _CONFIRM_TTL_SECONDS = 300
@@ -496,6 +536,8 @@ def _build_draft_summary(doc, payload: dict, action: str, reason: str = "") -> d
         so_name = str(result_obj.get("name") or result_obj.get("document") or "")
         so = frappe.get_doc("Sales Order", so_name)
         so_currency = str(so.currency or currency)
+        base_val = float(so.net_total or so.total or 0)
+        tax_val = float(so.total_taxes_and_charges or 0)
         total_val = float(so.rounded_total or so.grand_total or 0)
         items = [
             {
@@ -515,6 +557,11 @@ def _build_draft_summary(doc, payload: dict, action: str, reason: str = "") -> d
             "doctype": "Sales Order",
             "customer": str(so.customer_name or so.customer or "-"),
             "currency": so_currency,
+            "taxes_and_charges": str(so.taxes_and_charges or ""),
+            "base_total": base_val,
+            "formatted_base_total": _format_currency_amount(base_val, so_currency),
+            "tax_amount": tax_val,
+            "formatted_tax_amount": _format_currency_amount(tax_val, so_currency),
             "total": total_val,
             "formatted_total": _format_currency_amount(total_val, so_currency),
             "items": items,
@@ -581,21 +628,65 @@ def _build_draft_summary(doc, payload: dict, action: str, reason: str = "") -> d
             }
         )
 
+    doctype_name = str(payload.get("doctype") or getattr(doc, "type", None) or "Sales Order")
+    tax_template_name = str(data.get("taxes_and_charges") or "")
+    base_total: float | None
+    tax_amount: float | None
+    summary_total: float | None
     if items and all_priced:
-        formatted_total = _format_currency_amount(total_val, currency)
-        summary_total: float | None = total_val
+        if doctype_name in {"Sales Order", "Quotation"} and company:
+            breakdown = _calculate_sales_tax_breakdown(
+                doctype_name,
+                company,
+                currency,
+                price_list,
+                items,
+                taxes_and_charges=tax_template_name or None,
+            )
+            base_total = breakdown["base_total"]
+            tax_amount = breakdown["tax_amount"]
+            summary_total = breakdown["grand_total"]
+            tax_template_name = breakdown["taxes_and_charges"]
+        else:
+            base_total = total_val
+            tax_amount = 0.0
+            summary_total = total_val
+        formatted_base_total = _format_currency_amount(base_total, currency)
+        formatted_tax_amount = _format_currency_amount(tax_amount, currency)
+        formatted_total = _format_currency_amount(summary_total, currency)
     elif data.get("grand_total") is not None:
+        base_total = float(data["net_total"]) if data.get("net_total") is not None else None
+        tax_amount = (
+            float(data["total_taxes_and_charges"])
+            if data.get("total_taxes_and_charges") is not None
+            else None
+        )
         summary_total = float(data["grand_total"])
+        formatted_base_total = (
+            _format_currency_amount(base_total, currency) if base_total is not None else "-"
+        )
+        formatted_tax_amount = (
+            _format_currency_amount(tax_amount, currency) if tax_amount is not None else "-"
+        )
         formatted_total = _format_currency_amount(summary_total, currency)
     else:
+        base_total = None
+        tax_amount = None
         summary_total = None
+        formatted_base_total = "Menunggu perhitungan ERPNext"
+        formatted_tax_amount = "Menunggu perhitungan ERPNext"
         formatted_total = "Menunggu perhitungan ERPNext"
 
     summary = {
         "draft_id": doc.name,
-        "doctype": str(payload.get("doctype") or doc.type or "Sales Order"),
+        "doctype": doctype_name,
         "customer": customer,
         "currency": currency,
+        "taxes_and_charges": tax_template_name,
+        "base_total": base_total,
+        "formatted_base_total": formatted_base_total,
+        "tax_amount": tax_amount,
+        "formatted_tax_amount": formatted_tax_amount,
         "total": summary_total,
         "formatted_total": formatted_total,
         "items": items,
@@ -621,6 +712,8 @@ def _format_confirmation_message(action: str, summary: dict) -> str:
         f"Konfirmasi sebelum {action_label}:\n"
         f"Nomor Draf: {summary['draft_id']}{so_line}\n"
         f"Customer: {summary['customer']}\n"
+        f"Harga Dasar: {summary.get('formatted_base_total', summary['formatted_total'])}\n"
+        f"PPN 11%: {summary.get('formatted_tax_amount', '-')}\n"
         f"Total: {summary['formatted_total']}\n"
         f"Item:\n{items_block}{reason_line}\n\n"
         f"Apakah Anda yakin ingin {action_label}? Jawab ya untuk melanjutkan atau tidak untuk membatalkan."

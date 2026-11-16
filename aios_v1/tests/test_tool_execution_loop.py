@@ -309,8 +309,9 @@ class TestToolExecutionLoop(IntegrationTestCase):
             prompt,
         )
         self.assertNotIn("|", prompt)
-        for tax_term in ("PPN", "pajak", "Tax"):
-            self.assertNotIn(tax_term, prompt)
+        for required_tax_label in ("Harga Dasar", "PPN 11%", "Total"):
+            self.assertIn(required_tax_label, prompt)
+        self.assertNotIn("(belum termasuk pajak/PPN)", prompt)
         mock_user_get_value.assert_not_called()
 
         for forbidden in (

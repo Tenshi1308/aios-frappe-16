@@ -457,9 +457,182 @@ def _ensure_customer_for_draft(payload: dict, company: str) -> str | None:
     return created_cust_name
 
 
+_PPN_RATE = 11.0
+
+
+def _pick_ppn_11_template(company: str) -> str | None:
+    """Cari Sales Taxes and Charges Template aktif milik company dengan PPN 11% On Net Total."""
+    candidates = frappe.get_all(
+        "Sales Taxes and Charges Template",
+        filters={"company": company, "disabled": 0},
+        fields=["name", "title", "is_default"],
+        order_by="is_default desc, name asc",
+    )
+    scored: list[tuple[tuple[int, int, int, str], str]] = []
+    for row in candidates:
+        tpl_doc = frappe.get_doc("Sales Taxes and Charges Template", row.name)
+        matching_rows = [
+            tax
+            for tax in (tpl_doc.get("taxes") or [])
+            if tax.charge_type == "On Net Total"
+            and abs(float(tax.rate or 0) - _PPN_RATE) < 1e-6
+            and int(tax.included_in_print_rate or 0) == 0
+        ]
+        if not matching_rows:
+            continue
+        title_lower = str(row.get("title") or "").strip().lower()
+        is_sales_tax = int(
+            title_lower == "sales tax"
+            or any(
+                "keluaran" in f"{tax.account_head or ''} {tax.description or ''}".lower()
+                for tax in matching_rows
+            )
+        )
+        not_purchase_tax = int(
+            "purchase" not in title_lower
+            and all(
+                "masukan" not in f"{tax.account_head or ''} {tax.description or ''}".lower()
+                for tax in matching_rows
+            )
+        )
+        scored.append(((is_sales_tax, not_purchase_tax, int(row.get("is_default") or 0), str(row.name)), str(row.name)))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return scored[0][1]
+
+
+def _resolve_sales_tax_template(company: str) -> str:
+    """Resolve or create the official ERPNext PPN 11% Sales Taxes and Charges Template for `company`."""
+    if not company:
+        raise DraftExecutionError("COMPANY_NOT_CONFIGURED", "Company default belum dikonfigurasi.")
+
+    template_name = _pick_ppn_11_template(company)
+    if not template_name:
+        from erpnext.setup.setup_wizard.operations.taxes_setup import (
+            make_taxes_and_charges_template,
+            setup_taxes_and_charges,
+        )
+
+        try:
+            setup_taxes_and_charges(company, "Indonesia")
+        except Exception as exc:
+            log_exception("AIOS Setup Taxes And Charges", exc=exc, context=f"company={company}")
+
+        template_name = _pick_ppn_11_template(company)
+        if not template_name:
+            try:
+                make_taxes_and_charges_template(
+                    company,
+                    "Sales Taxes and Charges Template",
+                    {
+                        "title": "Sales Tax",
+                        "is_default": 1,
+                        "taxes": [{"account_head": {"account_name": "PPN Keluaran", "tax_rate": _PPN_RATE}}],
+                    },
+                )
+            except Exception as exc:
+                log_exception("AIOS Make Sales Tax Template", exc=exc, context=f"company={company}")
+                raise DraftExecutionError(
+                    "TAX_TEMPLATE_SETUP_FAILED",
+                    f"Gagal menyiapkan template PPN 11% untuk company {company}.",
+                ) from exc
+            template_name = _pick_ppn_11_template(company)
+
+    if not template_name:
+        raise DraftExecutionError(
+            "TAX_TEMPLATE_MISSING",
+            f"Template pajak PPN 11% tidak ditemukan untuk company {company}.",
+        )
+
+    if not frappe.db.exists(
+        "Sales Taxes and Charges Template",
+        {"company": company, "disabled": 0, "is_default": 1},
+    ):
+        frappe.db.set_value(
+            "Sales Taxes and Charges Template",
+            template_name,
+            "is_default",
+            1,
+            update_modified=False,
+        )
+    return template_name
+
+
+def _calculate_sales_tax_breakdown(
+    doctype: str,
+    company: str,
+    currency: str,
+    price_list: str | None,
+    items: list[dict],
+    taxes_and_charges: str | None = None,
+) -> dict:
+    """Calculate base total, PPN 11% tax, and grand total using ERPNext's in-memory tax controller."""
+    tax_template = str(taxes_and_charges or "").strip() or _resolve_sales_tax_template(company)
+    temp_items = []
+    for it in items:
+        qty_val = float(it.get("qty") or 0)
+        rate_val = float(it.get("rate") or 0)
+        uom_val = str(it.get("uom") or "").strip() or "Nos"
+        temp_items.append(
+            {
+                "item_code": it.get("item_code"),
+                "item_name": it.get("item_name") or it.get("item_code"),
+                "qty": qty_val,
+                "uom": uom_val,
+                "stock_uom": uom_val,
+                "conversion_factor": 1.0,
+                "rate": rate_val,
+                "price_list_rate": rate_val,
+            }
+        )
+
+    doc_dict = {
+        "doctype": doctype,
+        "company": company,
+        "currency": currency,
+        "conversion_rate": 1.0,
+        "selling_price_list": price_list or "Standard Selling",
+        "price_list_currency": currency,
+        "plc_conversion_rate": 1.0,
+        "taxes_and_charges": tax_template,
+        "items": temp_items,
+    }
+    temp_doc = frappe.get_doc(doc_dict)
+    if tax_template and hasattr(temp_doc, "append_taxes_from_master"):
+        temp_doc.append_taxes_from_master()
+    if hasattr(temp_doc, "calculate_taxes_and_totals"):
+        temp_doc.calculate_taxes_and_totals()
+
+    base_total = float(temp_doc.get("net_total") or temp_doc.get("total") or 0.0)
+    tax_amount = float(temp_doc.get("total_taxes_and_charges") or 0.0)
+    grand_total = float(
+        temp_doc.get("rounded_total") or temp_doc.get("grand_total") or (base_total + tax_amount)
+    )
+    return {
+        "base_total": base_total,
+        "tax_amount": tax_amount,
+        "grand_total": grand_total,
+        "taxes_and_charges": tax_template,
+    }
+
+
 def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     business_data = dict(data)
     business_data.pop("company", None)
+    if doctype == "Quotation":
+        if "customer" in business_data and not business_data.get("party_name"):
+            business_data["party_name"] = business_data.pop("customer")
+        else:
+            business_data.pop("customer", None)
+        if frappe.get_meta("Quotation").has_field("quotation_to") and not business_data.get("quotation_to"):
+            business_data["quotation_to"] = "Customer"
+    if (
+        doctype in {"Sales Order", "Quotation"}
+        and frappe.get_meta(doctype).has_field("taxes_and_charges")
+        and not business_data.get("taxes_and_charges")
+    ):
+        business_data["taxes_and_charges"] = _resolve_sales_tax_template(company)
     validate_data_fields(frappe.get_meta(doctype), business_data)
     if doctype == "Sales Order" and not frappe.db.exists("Mode of Payment", "Cash"):
         raise DraftExecutionError(
@@ -470,6 +643,13 @@ def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     if frappe.get_meta(doctype).has_field("company"):
         target_data["company"] = company
     target = frappe.get_doc(target_data)
+    if (
+        doctype in {"Sales Order", "Quotation"}
+        and target.get("taxes_and_charges")
+        and not target.get("taxes")
+        and hasattr(target, "append_taxes_from_master")
+    ):
+        target.append_taxes_from_master()
     target.flags.ignore_permissions = True
     target.insert(ignore_permissions=True)
     if doctype == "Sales Order":
@@ -478,12 +658,20 @@ def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
     target.flags.ignore_permissions = True
     target.submit()
     res = {"doctype": doctype, "name": target.name, "docstatus": 1}
-    if doctype == "Sales Order":
+    if doctype in {"Sales Order", "Quotation"}:
+        base_total = float(target.get("net_total") or target.get("total") or 0)
+        tax_amount = float(target.get("total_taxes_and_charges") or 0)
         grand_total = float(target.get("rounded_total") or target.get("grand_total") or 0)
+        res["net_total"] = base_total
+        res["base_total"] = base_total
+        res["total_taxes_and_charges"] = tax_amount
+        res["tax_amount"] = tax_amount
         res["grand_total"] = grand_total
         res["rounded_total"] = float(target.get("rounded_total") or grand_total)
+        res["taxes_and_charges"] = str(target.get("taxes_and_charges") or "")
         res["currency"] = str(target.get("currency") or "IDR")
-        res["delivery_date"] = str(target.get("delivery_date") or "")
+        if doctype == "Sales Order":
+            res["delivery_date"] = str(target.get("delivery_date") or "")
     return res
 
 
@@ -507,10 +695,14 @@ def execute_draft(doc) -> dict:
     if doc.type == "CREATE":
         if doctype in {"Sales Order", "Quotation"}:
             resolved_customer = _ensure_customer_for_draft(payload, company)
-            if resolved_customer:
-                data["customer"] = resolved_customer
-                if doctype == "Quotation" and frappe.get_meta("Quotation").has_field("party_name"):
+            if doctype == "Quotation":
+                data.pop("customer", None)
+                if frappe.get_meta("Quotation").has_field("quotation_to") and not data.get("quotation_to"):
+                    data["quotation_to"] = "Customer"
+                if resolved_customer and frappe.get_meta("Quotation").has_field("party_name"):
                     data["party_name"] = resolved_customer
+            elif resolved_customer:
+                data["customer"] = resolved_customer
         return _create_and_submit(doctype, data, company)
 
     name = payload.get("name")
@@ -797,9 +989,18 @@ def approve_and_execute_draft(draft_id: str) -> dict:
     frappe.db.commit()
 
     if doc.type == "CREATE" and payload.get("doctype") == "Sales Order":
+        currency_code = result.get("currency") or "IDR"
+        formatted_base = _format_currency_amount(
+            result.get("base_total") or result.get("net_total") or 0,
+            currency_code,
+        )
+        formatted_tax = _format_currency_amount(
+            result.get("tax_amount") or result.get("total_taxes_and_charges") or 0,
+            currency_code,
+        )
         formatted_total = _format_currency_amount(
             result.get("grand_total") or 0,
-            result.get("currency") or "IDR",
+            currency_code,
         )
         delivery_date_str = str(
             result.get("delivery_date")
@@ -808,6 +1009,8 @@ def approve_and_execute_draft(draft_id: str) -> dict:
         )
         guest_approve_msg = (
             f"Halo! Pesanan Anda telah disetujui. "
+            f"Harga Dasar: {formatted_base}. "
+            f"PPN 11%: {formatted_tax}. "
             f"Total Pembayaran: {formatted_total}. "
             f"Rencana Tanggal Pengiriman: {delivery_date_str}. "
             f"Metode Pembayaran: Cash (Tunai). "

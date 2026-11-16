@@ -100,6 +100,10 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
                 for so in frappe.get_all("Sales Order", filters={"customer": c_name}, pluck="name"):
                     frappe.db.set_value("Sales Order", so, "docstatus", 2)
                     frappe.delete_doc("Sales Order", so, ignore_permissions=True, force=True)
+                # Hapus quotation terkait
+                for qtn in frappe.get_all("Quotation", filters={"party_name": c_name}, pluck="name"):
+                    frappe.db.set_value("Quotation", qtn, "docstatus", 2)
+                    frappe.delete_doc("Quotation", qtn, ignore_permissions=True, force=True)
                 # Hapus contact
                 for c in frappe.get_all("Dynamic Link", filters={"link_doctype": "Customer", "link_name": c_name}, pluck="parent"):
                     frappe.delete_doc("Contact", c, ignore_permissions=True, force=True)
@@ -736,7 +740,10 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertNotIn("Sales Order", msg_text, "Pesan customer tidak boleh memuat label internal Sales Order")
         self.assertIn("Pesanan Anda telah disetujui.", msg_text)
         self.assertIn(str(so_doc.delivery_date), msg_text, "Pesan harus memuat tanggal pengiriman")
-        self.assertTrue("150.000" in msg_text or "150,000" in msg_text, f"Pesan harus memuat total terformat: {msg_text}")
+        self.assertTrue("150.000" in msg_text or "150,000" in msg_text, f"Pesan harus memuat harga dasar terformat: {msg_text}")
+        self.assertTrue("16.500" in msg_text or "16,500" in msg_text, f"Pesan harus memuat PPN 11% terformat: {msg_text}")
+        self.assertTrue("166.500" in msg_text or "166,500" in msg_text, f"Pesan harus memuat total termasuk PPN terformat: {msg_text}")
+        self.assertNotIn("(belum termasuk pajak/PPN)", msg_text)
         self.assertIn("Cash (Tunai)", msg_text, "Pesan harus memuat info pembayaran Cash (Tunai)")
         self.assertIn("ditahan", msg_text, "Pesan harus memuat info pengiriman ditahan bila belum dibayar")
         self.assertFalse(bool(emoji_pattern.search(msg_text)), "Pesan notifikasi approve sukses tidak boleh memuat emoji")
@@ -947,7 +954,7 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertNotIn("ACC-PAY", paid_msg, "Pesan customer tidak boleh memuat nomor internal Payment Entry")
         self.assertNotIn("Sales Order", paid_msg, "Pesan customer tidak boleh memuat label internal Sales Order")
         self.assertIn("Pembayaran Cash Anda sebesar", paid_msg)
-        self.assertTrue("150.000" in paid_msg or "150,000" in paid_msg, f"Pesan harus memuat nominal bayar terformat: {paid_msg}")
+        self.assertTrue("166.500" in paid_msg or "166,500" in paid_msg, f"Pesan harus memuat nominal bayar terformat (termasuk PPN 11%): {paid_msg}")
         self.assertIn(str(so_doc.delivery_date), paid_msg, "Pesan harus memuat tanggal pengiriman")
         self.assertIn("Cash", paid_msg)
         self.assertFalse(bool(emoji_pattern.search(paid_msg)), "Notifikasi pembayaran tidak boleh memuat emoji")
@@ -959,3 +966,130 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         saved_result = json.loads(draft.payload or "{}").get("result", {})
         self.assertEqual(saved_result.get("document"), so_name)
         self.assertEqual(saved_result.get("payment_entry"), pe_name)
+
+    def test_guest_sales_order_draft_applies_ppn_11_and_matches_erpnext_grand_total(self):
+        """Guest Sales Order draft menerapkan Sales Taxes and Charges Template PPN 11% dan total cocok dengan grand_total ERPNext."""
+        from aios_v1.lib.erpnext_action_drafts import _build_draft_summary, _format_confirmation_message
+
+        cust_name = "_Test Guest SO PPN 11"
+        self.created_customers.append(cust_name)
+        item_payload = {"item_code": self.item_code, "qty": 1, "rate": 850000, "delivery_date": nowdate()}
+        if self.warehouse:
+            item_payload["warehouse"] = self.warehouse
+
+        frappe.set_user("Guest")
+        try:
+            with unittest.mock.patch("aios_v1.lib.connector.notify.get_channel_recipients", return_value=[self.USER_EMAIL]):
+                draft_res = erpnext_action_draft_create(
+                    action_type="CREATE",
+                    doctype="Sales Order",
+                    data={
+                        "customer": cust_name,
+                        "selling_price_list": self.price_list,
+                        "delivery_date": nowdate(),
+                        "items": [item_payload],
+                    },
+                    reason="Uji PPN 11% Sales Order tamu",
+                    customer_info={
+                        "customer_type": "Individual",
+                        "customer_name": cust_name,
+                        "mobile_no": "081299990021",
+                        "address": "Jalan Merdeka No. 10, Bandung",
+                        "payment_method": "Cash",
+                    },
+                )
+        finally:
+            frappe.set_user(self.USER_EMAIL)
+
+        self.assertEqual(draft_res.get("status"), "PENDING_APPROVAL")
+        self.assertTrue(draft_res.get("taxes_and_charges"))
+        self.assertEqual(draft_res.get("base_total"), 850000.0)
+        self.assertEqual(draft_res.get("tax_amount"), 93500.0)
+        self.assertEqual(draft_res.get("total"), 943500.0)
+        self.assertEqual(draft_res.get("formatted_base_total"), "Rp 850.000")
+        self.assertEqual(draft_res.get("formatted_tax_amount"), "Rp 93.500")
+        self.assertEqual(draft_res.get("formatted_total"), "Rp 943.500")
+
+        draft_doc = frappe.get_doc("Pending Action Draft", draft_res["draft_id"])
+        summary = _build_draft_summary(draft_doc, json.loads(draft_doc.payload or "{}"), action="approve")
+        confirm_msg = _format_confirmation_message("approve", summary)
+        self.assertIn("Harga Dasar: Rp 850.000", confirm_msg)
+        self.assertIn("PPN 11%: Rp 93.500", confirm_msg)
+        self.assertIn("Total: Rp 943.500", confirm_msg)
+        self.assertNotIn("(belum termasuk pajak/PPN)", confirm_msg)
+
+        exec_res = approve_and_execute_draft(draft_res["draft_id"])
+        self.assertTrue(exec_res.get("executed"), exec_res.get("message"))
+        so_doc = frappe.get_doc("Sales Order", exec_res["document"])
+        self.assertEqual(so_doc.docstatus, 1)
+        self.assertEqual(so_doc.taxes_and_charges, draft_res["taxes_and_charges"])
+        self.assertEqual(float(so_doc.net_total), 850000.0)
+        self.assertEqual(float(so_doc.total_taxes_and_charges), 93500.0)
+        self.assertEqual(float(so_doc.grand_total), 943500.0)
+        self.assertEqual(float(draft_res["total"]), float(so_doc.rounded_total or so_doc.grand_total))
+
+    def test_guest_quotation_draft_maps_customer_and_applies_ppn_11_matching_erpnext_grand_total(self):
+        """Guest Quotation draft memperbaiki mapping party_name + quotation_to='Customer', menerapkan PPN 11%, dan total cocok dengan grand_total ERPNext."""
+        from aios_v1.lib.erpnext_action_drafts import _build_draft_summary, _format_confirmation_message
+
+        cust_name = "_Test Guest Quotation PPN 11"
+        self.created_customers.append(cust_name)
+        item_payload = {"item_code": self.item_code, "qty": 2, "rate": 850000}
+
+        frappe.set_user("Guest")
+        try:
+            with unittest.mock.patch("aios_v1.lib.connector.notify.get_channel_recipients", return_value=[self.USER_EMAIL]):
+                draft_res = erpnext_action_draft_create(
+                    action_type="CREATE",
+                    doctype="Quotation",
+                    data={
+                        "customer": cust_name,
+                        "selling_price_list": self.price_list,
+                        "items": [item_payload],
+                    },
+                    reason="Permintaan penawaran harga tamu dengan PPN 11%",
+                    customer_info={
+                        "customer_type": "Company",
+                        "customer_name": cust_name,
+                        "contact_person": "Andi Saputra",
+                        "mobile_no": "081299990022",
+                        "address": "Jalan Gatot Subroto No. 22, Jakarta",
+                    },
+                )
+        finally:
+            frappe.set_user(self.USER_EMAIL)
+
+        self.assertEqual(draft_res.get("status"), "PENDING_APPROVAL")
+        self.assertEqual(draft_res.get("doctype"), "Quotation")
+        self.assertTrue(draft_res.get("taxes_and_charges"))
+        self.assertEqual(draft_res.get("base_total"), 1700000.0)
+        self.assertEqual(draft_res.get("tax_amount"), 187000.0)
+        self.assertEqual(draft_res.get("total"), 1887000.0)
+        self.assertEqual(draft_res.get("formatted_base_total"), "Rp 1.700.000")
+        self.assertEqual(draft_res.get("formatted_tax_amount"), "Rp 187.000")
+        self.assertEqual(draft_res.get("formatted_total"), "Rp 1.887.000")
+
+        draft_doc = frappe.get_doc("Pending Action Draft", draft_res["draft_id"])
+        saved_data = json.loads(draft_doc.payload or "{}").get("data", {})
+        self.assertNotIn("customer", saved_data)
+        self.assertEqual(saved_data.get("quotation_to"), "Customer")
+        self.assertEqual(saved_data.get("party_name"), cust_name)
+
+        summary = _build_draft_summary(draft_doc, json.loads(draft_doc.payload or "{}"), action="approve")
+        confirm_msg = _format_confirmation_message("approve", summary)
+        self.assertIn("Harga Dasar: Rp 1.700.000", confirm_msg)
+        self.assertIn("PPN 11%: Rp 187.000", confirm_msg)
+        self.assertIn("Total: Rp 1.887.000", confirm_msg)
+        self.assertNotIn("(belum termasuk pajak/PPN)", confirm_msg)
+
+        exec_res = approve_and_execute_draft(draft_res["draft_id"])
+        self.assertTrue(exec_res.get("executed"), exec_res.get("message"))
+        qtn_doc = frappe.get_doc("Quotation", exec_res["document"])
+        self.assertEqual(qtn_doc.docstatus, 1)
+        self.assertEqual(qtn_doc.quotation_to, "Customer")
+        self.assertEqual(qtn_doc.party_name, cust_name)
+        self.assertEqual(qtn_doc.taxes_and_charges, draft_res["taxes_and_charges"])
+        self.assertEqual(float(qtn_doc.net_total), 1700000.0)
+        self.assertEqual(float(qtn_doc.total_taxes_and_charges), 187000.0)
+        self.assertEqual(float(qtn_doc.grand_total), 1887000.0)
+        self.assertEqual(float(draft_res["total"]), float(qtn_doc.rounded_total or qtn_doc.grand_total))

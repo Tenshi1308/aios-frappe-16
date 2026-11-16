@@ -36,7 +36,9 @@ DRF_00080_MARKDOWN_REPLY = (
     "| Item | Qty | Harga Satuan | Subtotal |\n"
     "|---|---|---|---|\n"
     "| Kabel Jaringan Cat6 UTP 100 Meter (CBL-CAT6-100) | 1 pcs | Rp 850.000 | **Rp 850.000** |\n\n"
-    "💰 **Total: Rp 850.000** (belum termasuk pajak/PPN)\n\n"
+    "💰 **Harga Dasar:** Rp 850.000\n"
+    "🧾 **PPN 11%:** Rp 93.500\n"
+    "💰 **Total: Rp 943.500**\n\n"
     "### 📋 Data Pelanggan (Perorangan)\n"
     "- **Nama:** Tenshi\n"
     "- **No. HP:** 08123456789\n"
@@ -309,7 +311,9 @@ class TestConnectorDispatch(ConnectorTestBase):
             "✅ Draf Pesanan Berhasil Dibuat",
             "- Item — Qty — Harga Satuan — Subtotal",
             "- Kabel Jaringan Cat6 UTP 100 Meter (CBL-CAT6-100) — 1 pcs — Rp 850.000 — Rp 850.000",
-            "💰 Total: Rp 850.000 (belum termasuk pajak/PPN)",
+            "💰 Harga Dasar: Rp 850.000",
+            "🧾 PPN 11%: Rp 93.500",
+            "💰 Total: Rp 943.500",
             "📋 Data Pelanggan (Perorangan)",
             "- Nama: Tenshi",
             "- No. HP: 08123456789",
@@ -324,6 +328,7 @@ class TestConnectorDispatch(ConnectorTestBase):
             "Apakah ada lagi yang bisa saya bantu? 😊",
         ):
             self.assertIn(expected_text, plain)
+        self.assertNotIn("(belum termasuk pajak/PPN)", plain)
 
         extra_md = (
             "Lihat [Panduan](https://example.com/panduan) untuk `DRF-2026-11-00080` "
