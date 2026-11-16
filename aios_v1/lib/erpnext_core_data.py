@@ -2,6 +2,11 @@
 
 import frappe
 
+from aios_v1.lib.draft_manager import (
+    _calculate_sales_tax_breakdown,
+    _format_currency_amount,
+    _resolve_sales_tax_template,
+)
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.tool_registry import ai_tool, get_tool_context
 from aios_v1.permissions import ERP_CLIENT_DOCTYPES
@@ -59,10 +64,14 @@ _GUEST_DOC_LIST_DESCRIPTION = (
     f"DocType yang diizinkan: {_GUEST_ALLOWED_DOCTYPE_TEXT}."
     " Saat menggunakan hasil tool ini, sebutkan filter yang kamu pakai dan "
     "cakupannya; jangan menyebut hasil terfilter sebagai seluruh data."
+    " Untuk Item Price, hasil otomatis menyertakan rincian PPN 11% resmi ERPNext "
+    "(base_rate, ppn_11_per_unit, rate_with_ppn_11 beserta format Rupiahnya)."
 )
 _GUEST_DOC_GET_DESCRIPTION = (
     f"Membaca detail satu dokumen katalog perusahaan yang diizinkan. "
     f"DocType yang diizinkan: {_GUEST_ALLOWED_DOCTYPE_TEXT}."
+    " Untuk Item Price, hasil otomatis menyertakan rincian PPN 11% resmi ERPNext "
+    "(base_rate, ppn_11_per_unit, rate_with_ppn_11 beserta format Rupiahnya)."
 )
 _GUEST_DOC_SCHEMA_DESCRIPTION = (
     f"Membaca field yang tersedia pada DocType katalog perusahaan yang diizinkan. "
@@ -127,6 +136,87 @@ def _validate_fields(doctype: str, values, label: str, allow_empty: bool = True)
     return values
 
 
+def _resolve_tax_preview_company(company: str) -> str:
+    """Resolve active Company record for tax preview calculation."""
+    if company and frappe.db.exists("Company", company):
+        return company
+    default_company = ""
+    if frappe.get_meta("AIOS Setting").has_field("default_company"):
+        default_company = frappe.db.get_single_value("AIOS Setting", "default_company") or ""
+    if not default_company and frappe.db.exists("DocType", "Global Defaults"):
+        default_company = frappe.db.get_single_value("Global Defaults", "default_company") or ""
+    return str(default_company).strip() or company
+
+
+def _enrich_guest_item_price_row(
+    row_dict: dict,
+    company: str,
+    taxes_and_charges: str | None = None,
+) -> dict:
+    """Enrich one guest Item Price row with ERPNext official in-memory PPN 11% breakdown."""
+    enriched = dict(row_dict)
+    if (
+        enriched.get("price_list_rate") is None
+        and enriched.get("name")
+        and frappe.db.exists("Item Price", enriched["name"])
+    ):
+        ip_fields = (
+            frappe.db.get_value(
+                "Item Price",
+                enriched["name"],
+                ["price_list_rate", "currency", "item_code", "item_name", "uom"],
+                as_dict=True,
+            )
+            or {}
+        )
+        for key, val in ip_fields.items():
+            if enriched.get(key) is None:
+                enriched[key] = val
+
+    rate_val = float(enriched.get("price_list_rate") or 0.0)
+    eff_company = _resolve_tax_preview_company(company)
+    currency = (
+        str(
+            enriched.get("currency")
+            or (frappe.get_cached_value("Company", eff_company, "default_currency") if eff_company else None)
+            or "IDR"
+        ).strip()
+        or "IDR"
+    )
+    uom = str(enriched.get("uom") or "").strip() or "Nos"
+    breakdown = _calculate_sales_tax_breakdown(
+        "Sales Order",
+        eff_company,
+        currency,
+        STANDARD_SELLING_PRICE_LIST,
+        [
+            {
+                "item_code": enriched.get("item_code"),
+                "item_name": enriched.get("item_name") or enriched.get("item_code") or enriched.get("name"),
+                "qty": 1,
+                "rate": rate_val,
+                "uom": uom,
+            }
+        ],
+        taxes_and_charges=taxes_and_charges,
+    )
+    base_rate = float(breakdown["base_total"])
+    ppn_11_per_unit = float(breakdown["tax_amount"])
+    rate_with_ppn_11 = float(breakdown["grand_total"])
+    enriched.update(
+        {
+            "base_rate": base_rate,
+            "formatted_base_rate": _format_currency_amount(base_rate, currency),
+            "ppn_11_per_unit": ppn_11_per_unit,
+            "formatted_ppn_11_per_unit": _format_currency_amount(ppn_11_per_unit, currency),
+            "rate_with_ppn_11": rate_with_ppn_11,
+            "formatted_rate_with_ppn_11": _format_currency_amount(rate_with_ppn_11, currency),
+            "taxes_and_charges": breakdown["taxes_and_charges"],
+        }
+    )
+    return enriched
+
+
 @ai_tool(
     name="erpnext_doc_list",
     description=_DOC_LIST_DESCRIPTION,
@@ -158,9 +248,17 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
     elif meta.has_field("company"):
         filters["company"] = _company()
 
-    if doctype == "Item Price" and _is_guest():
+    guest_item_price = doctype == "Item Price" and _is_guest()
+    query_fields = list(fields) if fields is not None else ["name"]
+    if guest_item_price:
         filters["price_list"] = STANDARD_SELLING_PRICE_LIST
         filters["selling"] = 1
+        if fields is not None:
+            for req_field in ("price_list_rate", "currency", "item_code", "item_name", "uom"):
+                if req_field not in query_fields and req_field in valid:
+                    query_fields.append(req_field)
+        else:
+            query_fields = ["name", "item_code", "item_name", "price_list_rate", "currency", "uom"]
 
     try:
         limit = DEFAULT_LIST_LIMIT if limit is None else int(limit)
@@ -181,13 +279,21 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
 
     rows = frappe.get_list(
         doctype,
-        fields=fields or ["name"],
+        fields=query_fields,
         filters=filters,
         limit_page_length=limit,
         limit_start=offset,
         order_by=order_by or "modified desc",
     )
-    return {"doctype": doctype, "company": _company(), "data": [dict(row) for row in rows]}
+    company_name = _company()
+    data_rows = [dict(row) for row in rows]
+    if guest_item_price and data_rows:
+        tax_template = _resolve_sales_tax_template(_resolve_tax_preview_company(company_name))
+        data_rows = [
+            _enrich_guest_item_price_row(row, company_name, taxes_and_charges=tax_template)
+            for row in data_rows
+        ]
+    return {"doctype": doctype, "company": company_name, "data": data_rows}
 
 
 @ai_tool(
@@ -204,7 +310,10 @@ def erpnext_doc_get(doctype, name):
     error = _validate_doctype(doctype)
     if error:
         return error
-    doc = frappe.get_doc(doctype, name, check_permission="read")
+    if _is_guest():
+        doc = frappe.get_doc(doctype, name)
+    else:
+        doc = frappe.get_doc(doctype, name, check_permission="read")
     if doctype == "Company" and name != _company():
         frappe.throw("Dokumen tidak ditemukan untuk company aktif.")
     if frappe.get_meta(doctype).has_field("company") and doc.get("company") != _company():
@@ -215,6 +324,8 @@ def erpnext_doc_get(doctype, name):
                 "Dokumen harga tidak ditemukan atau bukan harga jual standar.",
                 "PRICE_NOT_ALLOWED",
             )
+        doc_dict = doc.as_dict() if hasattr(doc, "as_dict") else dict(doc)
+        return _enrich_guest_item_price_row(doc_dict, _company())
     return doc.as_dict()
 
 

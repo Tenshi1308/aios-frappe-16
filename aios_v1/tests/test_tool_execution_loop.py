@@ -309,8 +309,12 @@ class TestToolExecutionLoop(IntegrationTestCase):
             prompt,
         )
         self.assertNotIn("|", prompt)
-        for required_tax_label in ("Harga Dasar", "PPN 11%", "Total"):
+        for required_tax_label in ("Harga Dasar", "PPN 11%", "Total = Harga Dasar + PPN 11%"):
             self.assertIn(required_tax_label, prompt)
+        for point_prefix in ("6. ", "7. ", "8. ", "9. "):
+            point_line = next(line for line in prompt.splitlines() if line.startswith(point_prefix))
+            for required_label in ("Harga Dasar", "PPN 11%", "Total = Harga Dasar + PPN 11%"):
+                self.assertIn(required_label, point_line)
         self.assertNotIn("(belum termasuk pajak/PPN)", prompt)
         mock_user_get_value.assert_not_called()
 
@@ -371,14 +375,14 @@ class TestToolExecutionLoop(IntegrationTestCase):
         ):
             list(sales_mgr.handle_stream("Disini ada apa aja?", conversation_id=99, user="Guest"))
 
+        from aios_v1.shared.guest_persona import GUEST_ACTIVE_DIRECTIVE
+
         self.assertEqual(len(captured_messages), 1)
         sys_contents = [m["content"] for m in captured_messages[0] if m.get("role") == "system"]
-        expected_directive = (
-            "[DIREKTIF PERAN AKTIF]: Anda adalah Asisten Layanan Pelanggan untuk tamu/pelanggan. "
-            "Jawablah sebagai Customer Service yang melayani informasi katalog produk, harga jual, "
-            "dan pencatatan pesanan/penawaran baru."
-        )
-        self.assertIn(expected_directive, sys_contents)
+        self.assertIn(GUEST_ACTIVE_DIRECTIVE, sys_contents)
+        for required_label in ("Harga Dasar", "PPN 11%", "Total = Harga Dasar + PPN 11%"):
+            self.assertIn(required_label, GUEST_ACTIVE_DIRECTIVE)
+        self.assertNotIn("(belum termasuk pajak/PPN)", GUEST_ACTIVE_DIRECTIVE)
         self.assertFalse(any("AI MANAGER SALES AND DISTRIBUTION" in c for c in sys_contents))
 
         tool_names = {t["function"]["name"] for t in captured_tools[0]}

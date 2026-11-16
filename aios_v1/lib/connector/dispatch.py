@@ -432,8 +432,10 @@ def process_message(update: dict) -> dict:
         success, msg, target_user = verify_and_consume_token(chat_id, raw_token)
         thread = get_or_create_thread(chat_id, from_user)
         if success and target_user:
-            link_thread_to_user(chat_id, target_user, thread["name"])
+            new_conv = link_thread_to_user(chat_id, target_user, thread["name"])
             thread["linked_user"] = target_user
+            if new_conv:
+                thread["conversation"] = new_conv
             reply = (
                 f"Akun Telegram Anda berhasil ditautkan ke akun AIOS '{target_user}'. "
                 "Sekarang Anda dapat menggunakan layanan karyawan."
@@ -450,9 +452,13 @@ def process_message(update: dict) -> dict:
             "reply": reply,
         }
 
-    # 2. Greeting /start without token
+    # 2. Greeting /start without token (rotates conversation)
     if clean_text == "/start":
+        from aios_v1.lib.connector.linking import rotate_thread_conversation
+
         thread = get_or_create_thread(chat_id, from_user)
+        effective_user = thread.get("linked_user") or "Guest"
+        thread["conversation"] = rotate_thread_conversation(thread["name"], effective_user)
         if thread.get("linked_user"):
             reply = f"Halo {thread['linked_user']}! Anda terhubung sebagai karyawan. Ada yang bisa dibantu untuk urusan penjualan hari ini?"
         else:
@@ -466,7 +472,33 @@ def process_message(update: dict) -> dict:
             "reply": reply,
         }
 
-    # 3. Unlink command: /unlink
+    # 3. Clear context command: /clear
+    if clean_text == "/clear":
+        from aios_v1.lib.connector.linking import rotate_thread_conversation
+
+        thread = get_or_create_thread(chat_id, from_user)
+        effective_user = thread.get("linked_user") or "Guest"
+        thread["conversation"] = rotate_thread_conversation(thread["name"], effective_user)
+        if thread.get("linked_user"):
+            reply = (
+                f"Riwayat percakapan telah dibersihkan. Halo {thread['linked_user']}! "
+                "Silakan mulai percakapan baru sebagai karyawan."
+            )
+        else:
+            reply = (
+                "Riwayat percakapan telah dibersihkan. Halo! Selamat datang di layanan kami. "
+                "Ada informasi barang atau katalog produk yang ingin Anda tanyakan?"
+            )
+        telegram_client.send_message(chat_id, reply)
+        return {
+            "success": True,
+            "thread": thread["name"],
+            "conversation": thread["conversation"],
+            "action": "clear",
+            "reply": reply,
+        }
+
+    # 4. Unlink command: /unlink
     if clean_text == "/unlink":
         from aios_v1.lib.connector.linking import unlink_thread
 
@@ -474,6 +506,10 @@ def process_message(update: dict) -> dict:
         if thread.get("linked_user"):
             unlink_thread(chat_id)
             thread["linked_user"] = None
+            thread["conversation"] = str(
+                frappe.db.get_value(THREAD_DOCTYPE, thread["name"], "conversation")
+                or thread["conversation"]
+            )
             reply = "Tautan akun Telegram telah diputuskan. Anda kini dilayani sebagai tamu."
         else:
             reply = "Chat Telegram ini belum tertaut ke akun karyawan mana pun."

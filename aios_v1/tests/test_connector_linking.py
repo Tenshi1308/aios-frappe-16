@@ -113,7 +113,16 @@ class TestConnectorLinking(IntegrationTestCase):
                 conv = frappe.db.get_value(THREAD, t, "conversation")
                 frappe.delete_doc(THREAD, t, ignore_permissions=True, force=True, delete_permanently=True)
                 if conv and frappe.db.exists(CONV, conv):
+                    for m in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                        frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
                     frappe.delete_doc(CONV, conv, ignore_permissions=True, force=True, delete_permanently=True)
+        for email in (OWNER, EMP, OTHER_USER):
+            for usage_name in frappe.get_all("AIOS Token Usage", filters={"user": email}, pluck="name"):
+                frappe.delete_doc("AIOS Token Usage", usage_name, ignore_permissions=True, force=True, delete_permanently=True)
+            for conv in frappe.get_all(CONV, filters={"user": email}, pluck="name"):
+                for m in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc(CONV, conv, ignore_permissions=True, force=True, delete_permanently=True)
 
     def test_token_expiry_rejected(self):
         """1. Token kedaluwarsa ditolak."""
@@ -270,7 +279,11 @@ class TestConnectorLinking(IntegrationTestCase):
                 return [{"name": "PRICE-STD", "price_list_rate": 100000}]
             return orig_get_list(doctype, *args, **kwargs)
 
-        with tool_context({"user_id": "Guest", "allowed_company": "Test Co"}):
+        site_company = (
+            frappe.db.get_single_value("AIOS Setting", "default_company")
+            or frappe.db.get_single_value("Global Defaults", "default_company")
+        )
+        with tool_context({"user_id": "Guest", "allowed_company": site_company}):
             with patch.object(frappe, "get_list", side_effect=fake_get_list):
                 res = erpnext_doc_list("Item Price")
                 self.assertIn("data", res)
@@ -279,6 +292,9 @@ class TestConnectorLinking(IntegrationTestCase):
                 _, kwargs = recorded_calls[0]
                 self.assertEqual(kwargs["filters"].get("price_list"), "Standard Selling")
                 self.assertEqual(kwargs["filters"].get("selling"), 1)
+                self.assertEqual(res["data"][0]["base_rate"], 100000.0)
+                self.assertEqual(res["data"][0]["ppn_11_per_unit"], 11000.0)
+                self.assertEqual(res["data"][0]["rate_with_ppn_11"], 111000.0)
 
             # Draf CREATE diizinkan untuk tamu
             with patch("aios_v1.lib.erpnext_action_drafts.create_draft") as mock_draft:
@@ -492,6 +508,192 @@ class TestConnectorLinking(IntegrationTestCase):
             self.assertEqual(len(captured_prompts), 3)
             self.assertIn("Asisten Layanan Pelanggan resmi perusahaan kami.", captured_prompts[2])
             self.assertNotIn("AI Manager bidang Sales and Distribution", captured_prompts[2])
+
+    def test_guest_item_price_list_and_get_include_official_ppn_11_preview(self):
+        """Guest erpnext_doc_list & erpnext_doc_get pada Item Price menyertakan base_rate, ppn_11_per_unit, rate_with_ppn_11 resmi ERPNext; karyawan tidak berubah."""
+        item_code = "_Test Item PPN Preview"
+        frappe.set_user("Administrator")
+        if not frappe.db.exists("Item", item_code):
+            frappe.get_doc(
+                {
+                    "doctype": "Item",
+                    "item_code": item_code,
+                    "item_name": "Switch Uji PPN 11",
+                    "item_group": frappe.get_all("Item Group", filters={"is_group": 0}, pluck="name", limit=1)[0],
+                    "stock_uom": "Nos",
+                    "is_stock_item": 0,
+                    "standard_rate": 850000,
+                }
+            ).insert(ignore_permissions=True)
+
+        existing_ip = frappe.db.get_value(
+            "Item Price",
+            {"item_code": item_code, "price_list": "Standard Selling", "selling": 1},
+            "name",
+        )
+        created_ip = None
+        if not existing_ip:
+            ip_doc = frappe.get_doc(
+                {
+                    "doctype": "Item Price",
+                    "item_code": item_code,
+                    "price_list": "Standard Selling",
+                    "selling": 1,
+                    "currency": "IDR",
+                    "price_list_rate": 850000,
+                }
+            ).insert(ignore_permissions=True)
+            ip_name = ip_doc.name
+            created_ip = ip_name
+        else:
+            ip_name = existing_ip
+            frappe.db.set_value("Item Price", ip_name, "price_list_rate", 850000)
+
+        try:
+            # 1. Guest calls erpnext_doc_list & erpnext_doc_get
+            frappe.set_user("Guest")
+            guest_ctx = {"user": "Guest", "branch": "sales", "worker_key": "manager"}
+            list_res = json.loads(
+                execute_tool(
+                    "erpnext_doc_list",
+                    json.dumps({"doctype": "Item Price", "filters": {"item_code": item_code}}),
+                    context=guest_ctx,
+                )
+            )
+            self.assertEqual(len(list_res.get("data") or []), 1)
+            row = list_res["data"][0]
+            self.assertEqual(row["base_rate"], 850000.0)
+            self.assertEqual(row["formatted_base_rate"], "Rp 850.000")
+            self.assertEqual(row["ppn_11_per_unit"], 93500.0)
+            self.assertEqual(row["formatted_ppn_11_per_unit"], "Rp 93.500")
+            self.assertEqual(row["rate_with_ppn_11"], 943500.0)
+            self.assertEqual(row["formatted_rate_with_ppn_11"], "Rp 943.500")
+            self.assertTrue(row.get("taxes_and_charges"))
+
+            get_res = json.loads(
+                execute_tool(
+                    "erpnext_doc_get",
+                    json.dumps({"doctype": "Item Price", "name": ip_name}),
+                    context=guest_ctx,
+                )
+            )
+            self.assertEqual(get_res["base_rate"], 850000.0)
+            self.assertEqual(get_res["ppn_11_per_unit"], 93500.0)
+            self.assertEqual(get_res["rate_with_ppn_11"], 943500.0)
+            self.assertEqual(get_res["formatted_rate_with_ppn_11"], "Rp 943.500")
+
+            # 2. Internal employee calls must remain untouched (no guest tax preview fields)
+            frappe.set_user(self.employee)
+            emp_ctx = {"user": self.employee, "branch": "sales", "worker_key": "manager"}
+            emp_list = json.loads(
+                execute_tool(
+                    "erpnext_doc_list",
+                    json.dumps({"doctype": "Item Price", "filters": {"item_code": item_code}, "fields": ["name", "price_list_rate"]}),
+                    context=emp_ctx,
+                )
+            )
+            emp_row = emp_list["data"][0]
+            self.assertNotIn("base_rate", emp_row)
+            self.assertNotIn("ppn_11_per_unit", emp_row)
+            self.assertNotIn("rate_with_ppn_11", emp_row)
+
+            emp_get = json.loads(
+                execute_tool(
+                    "erpnext_doc_get",
+                    json.dumps({"doctype": "Item Price", "name": ip_name}),
+                    context=emp_ctx,
+                )
+            )
+            self.assertNotIn("ppn_11_per_unit", emp_get)
+            self.assertNotIn("rate_with_ppn_11", emp_get)
+        finally:
+            frappe.set_user("Administrator")
+            if created_ip and frappe.db.exists("Item Price", created_ip):
+                frappe.delete_doc("Item Price", created_ip, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("Item", item_code):
+                frappe.delete_doc("Item", item_code, ignore_permissions=True, force=True, delete_permanently=True)
+
+    def test_clear_and_start_and_link_unlink_rotate_conversation_preserving_audit(self):
+        """Perintah /clear, /start, link, dan unlink merotasi AIOS Channel Thread ke conversation baru tanpa menghapus history lama."""
+        rotated_convs: list[str] = []
+
+        def fake_chat(messages, usage=None, tools=None, tool_calls=None):
+            if usage is not None:
+                usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            return iter(["Balasan"])
+
+        try:
+            with (
+                patch.object(telegram_client, "send_message", return_value=True),
+                patch.object(telegram_client, "send_chat_action", return_value=True),
+                patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat),
+                patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+            ):
+                res1 = dispatch.process_update(
+                    {"update_id": 201, "message": {"message_id": 201, "chat": {"id": int(CHAT_ID)}, "text": "Pesan lama"}}
+                )
+                conv1 = str(res1["conversation"])
+                rotated_convs.append(conv1)
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv1}), 2)
+
+                res_clear = dispatch.process_update(
+                    {"update_id": 202, "message": {"message_id": 202, "chat": {"id": int(CHAT_ID)}, "text": "/clear"}}
+                )
+                self.assertTrue(res_clear["success"])
+                self.assertEqual(res_clear["action"], "clear")
+                conv2 = str(res_clear["conversation"])
+                rotated_convs.append(conv2)
+                self.assertNotEqual(conv2, conv1)
+                self.assertEqual(frappe.db.get_value(THREAD, res_clear["thread"], "conversation"), conv2)
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv2}), 0)
+                self.assertTrue(frappe.db.exists(CONV, conv1))
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv1}), 2)
+
+                res_start = dispatch.process_update(
+                    {"update_id": 203, "message": {"message_id": 203, "chat": {"id": int(CHAT_ID)}, "text": "/start"}}
+                )
+                self.assertTrue(res_start["success"])
+                self.assertEqual(res_start["action"], "start")
+                conv3 = str(res_start["conversation"])
+                rotated_convs.append(conv3)
+                self.assertNotEqual(conv3, conv2)
+                self.assertEqual(frappe.db.get_value(THREAD, res_start["thread"], "conversation"), conv3)
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv3}), 0)
+
+                # Link -> new employee conversation
+                conv4 = str(linking.link_thread_to_user(CHAT_ID, self.employee, res_start["thread"]))
+                rotated_convs.append(conv4)
+                self.assertNotEqual(conv4, conv3)
+                self.assertEqual(frappe.db.get_value(THREAD, res_start["thread"], "conversation"), conv4)
+                self.assertEqual(frappe.db.get_value(CONV, conv4, "user"), self.employee)
+
+                # Unlink via /unlink -> new Guest conversation, conv4 preserved
+                res_unlink = dispatch.process_update(
+                    {"update_id": 204, "message": {"message_id": 204, "chat": {"id": int(CHAT_ID)}, "text": "/unlink"}}
+                )
+                conv5 = str(res_unlink["conversation"])
+                rotated_convs.append(conv5)
+                self.assertNotEqual(conv5, conv4)
+                self.assertEqual(frappe.db.get_value(THREAD, res_start["thread"], "conversation"), conv5)
+                self.assertEqual(frappe.db.get_value(CONV, conv5, "user"), "Guest")
+                self.assertTrue(frappe.db.exists(CONV, conv4))
+
+                # Link again then unlink_by_user -> rotates again
+                conv6 = str(linking.link_thread_to_user(CHAT_ID, self.employee, res_start["thread"]))
+                rotated_convs.append(conv6)
+                self.assertNotEqual(conv6, conv5)
+                self.assertTrue(linking.unlink_by_user(self.employee))
+                conv7 = str(frappe.db.get_value(THREAD, res_start["thread"], "conversation"))
+                rotated_convs.append(conv7)
+                self.assertNotEqual(conv7, conv6)
+                self.assertEqual(frappe.db.get_value(CONV, conv7, "user"), "Guest")
+        finally:
+            frappe.set_user("Administrator")
+            for cid in reversed(rotated_convs):
+                for m in frappe.get_all("AIOS Message", filters={"conversation": cid}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
+                if frappe.db.exists(CONV, cid):
+                    frappe.delete_doc(CONV, cid, ignore_permissions=True, force=True, delete_permanently=True)
 
 
 def run_tests():

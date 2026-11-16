@@ -219,8 +219,31 @@ def verify_and_consume_token(chat_id: str | int, raw_token: str) -> tuple[bool, 
     return (True, "Tautan valid.", target_user)
 
 
-def link_thread_to_user(chat_id: str | int, user: str, thread_name: str | None = None) -> None:
-    """Persist linked_user and linked_at on AIOS Channel Thread."""
+def _new_conversation_for_user(user: str | None = None) -> str:
+    """Create a fresh AIOS Conversation for `user` (defaulting to Guest) without deleting old history."""
+    from aios_v1.lib.connector import BRANCH
+    from aios_v1.managers import get_manager
+
+    conv_user = (user or "").strip() or "Guest"
+    return str(get_manager(BRANCH).ensure_conversation(conv_user, force_new=True))
+
+
+def rotate_thread_conversation(thread_name: str, user: str | None = None) -> str:
+    """Point `thread_name` to a fresh AIOS Conversation while keeping old conversations for audit."""
+    new_conv = _new_conversation_for_user(user)
+    frappe.db.set_value(
+        THREAD_DOCTYPE,
+        thread_name,
+        "conversation",
+        new_conv,
+        update_modified=False,
+    )
+    frappe.db.commit()
+    return new_conv
+
+
+def link_thread_to_user(chat_id: str | int, user: str, thread_name: str | None = None) -> str | None:
+    """Persist linked_user, linked_at, and a fresh AIOS Conversation on AIOS Channel Thread."""
     chat_str = str(chat_id)
     if not thread_name:
         thread_name = frappe.db.get_value(
@@ -230,11 +253,13 @@ def link_thread_to_user(chat_id: str | int, user: str, thread_name: str | None =
         )
 
     now = now_datetime()
+    new_conv: str | None = None
     if thread_name:
+        new_conv = _new_conversation_for_user(user)
         frappe.db.set_value(
             THREAD_DOCTYPE,
             thread_name,
-            {"linked_user": user, "linked_at": now},
+            {"linked_user": user, "linked_at": now, "conversation": new_conv},
             update_modified=False,
         )
         frappe.db.commit()
@@ -242,10 +267,11 @@ def link_thread_to_user(chat_id: str | int, user: str, thread_name: str | None =
     logger = frappe.logger("aios_connector", allow_site=True)
     logger.setLevel(logging.INFO)
     logger.info(f"Telegram chat {chat_str} successfully linked to employee user {user}")
+    return new_conv
 
 
 def unlink_thread(chat_id: str | int) -> bool:
-    """Clear linked_user and linked_at for a given chat_id."""
+    """Clear linked_user and linked_at for a given chat_id, rotating to a clean Guest conversation."""
     chat_str = str(chat_id)
     thread = frappe.db.get_value(
         THREAD_DOCTYPE,
@@ -257,10 +283,11 @@ def unlink_thread(chat_id: str | int) -> bool:
         return False
 
     old_user = thread["linked_user"]
+    new_conv = _new_conversation_for_user("Guest")
     frappe.db.set_value(
         THREAD_DOCTYPE,
         thread["name"],
-        {"linked_user": None, "linked_at": None},
+        {"linked_user": None, "linked_at": None, "conversation": new_conv},
         update_modified=False,
     )
     frappe.db.commit()
@@ -272,7 +299,7 @@ def unlink_thread(chat_id: str | int) -> bool:
 
 
 def unlink_by_user(user: str) -> bool:
-    """Clear linked_user and linked_at for the specified employee user."""
+    """Clear linked_user and linked_at for the specified employee user, rotating to clean Guest conversations."""
     threads = frappe.get_all(
         THREAD_DOCTYPE,
         filters={"channel": "telegram", "linked_user": user},
@@ -282,10 +309,11 @@ def unlink_by_user(user: str) -> bool:
         return False
 
     for row in threads:
+        new_conv = _new_conversation_for_user("Guest")
         frappe.db.set_value(
             THREAD_DOCTYPE,
             row["name"],
-            {"linked_user": None, "linked_at": None},
+            {"linked_user": None, "linked_at": None, "conversation": new_conv},
             update_modified=False,
         )
     frappe.db.commit()

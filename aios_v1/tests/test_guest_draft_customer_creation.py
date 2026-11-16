@@ -1093,3 +1093,238 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
         self.assertEqual(float(qtn_doc.total_taxes_and_charges), 187000.0)
         self.assertEqual(float(qtn_doc.grand_total), 1887000.0)
         self.assertEqual(float(draft_res["total"]), float(qtn_doc.rounded_total or qtn_doc.grand_total))
+
+    def test_guest_interim_summary_single_confirmation_and_draft_creation_flow(self):
+        """Alur multi-turn tamu: katalog Item Price menyuplai pratinjau PPN 11%, satu ringkasan lengkap sebelum konfirmasi, lalu draf dibuat dengan total ERPNext identik."""
+        from aios_v1.managers import get_manager
+        from aios_v1.shared.guest_persona import GUEST_ACTIVE_DIRECTIVE
+
+        cust_name = "_Test Guest Flow 3 Baris"
+        self.created_customers.append(cust_name)
+        sales_mgr = get_manager("sales")
+        conv_id = sales_mgr.ensure_conversation("Guest", force_new=True)
+
+        temp_ip_created = None
+        orig_ip_rate = None
+        existing_ip = frappe.db.get_value(
+            "Item Price",
+            {"item_code": self.item_code, "price_list": "Standard Selling", "selling": 1},
+            "name",
+        )
+        if existing_ip:
+            orig_ip_rate = frappe.db.get_value("Item Price", existing_ip, "price_list_rate")
+            frappe.db.set_value("Item Price", existing_ip, "price_list_rate", 850000)
+            ip_name = existing_ip
+        else:
+            ip_doc = frappe.get_doc(
+                {
+                    "doctype": "Item Price",
+                    "item_code": self.item_code,
+                    "price_list": "Standard Selling",
+                    "selling": 1,
+                    "currency": "IDR",
+                    "price_list_rate": 850000,
+                }
+            ).insert(ignore_permissions=True)
+            ip_name = ip_doc.name
+            temp_ip_created = ip_name
+
+        captured_prompts: list[str] = []
+        observed_tool_results: list[dict] = []
+        created_draft_ids: list[str] = []
+        turn_idx = {"n": 0}
+        tool_round = {"n": 0}
+
+        def scripted_chat(messages, usage=None, tools=None, tool_calls=None):
+            if usage is not None:
+                usage.update(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+            if messages[0]["role"] == "system" and (not captured_prompts or tool_round["n"] == 0):
+                sys_blob = "\n".join(m["content"] for m in messages if m.get("role") == "system")
+                captured_prompts.append(sys_blob)
+
+            # Turn 1: guest asks catalog + orders 1 pcs -> call erpnext_doc_list("Item Price") -> show interim 3-line breakdown
+            if turn_idx["n"] == 0:
+                if tool_round["n"] == 0:
+                    tool_round["n"] += 1
+                    tool_calls.append(
+                        {
+                            "id": "call_catalog_1",
+                            "type": "function",
+                            "function": {
+                                "name": "erpnext_doc_list",
+                                "arguments": json.dumps(
+                                    {"doctype": "Item Price", "filters": {"item_code": self.item_code}}
+                                ),
+                            },
+                        }
+                    )
+                    return iter(["Sebentar saya cek katalog resmi ya."])
+                ip_tool_payload = json.loads(messages[-1]["content"])
+                observed_tool_results.append(ip_tool_payload)
+                row = ip_tool_payload["data"][0]
+                item_label = row.get("item_name") or self.item_code
+                return iter(
+                    [
+                        "\n## 📝 Rincian Pesanan Sementara\n"
+                        f"• {item_label} (1 unit)\n"
+                        f"Harga Dasar: {row['formatted_base_rate']}\n"
+                        f"PPN 11%: {row['formatted_ppn_11_per_unit']}\n"
+                        f"Total: {row['formatted_rate_with_ppn_11']}\n"
+                        "Atas nama Perorangan atau Perusahaan?"
+                    ]
+                )
+
+            # Turn 2: guest sends complete details -> single Ringkasan Pemesanan + 1x confirmation (no draft tool yet)
+            if turn_idx["n"] == 1:
+                row = observed_tool_results[0]["data"][0]
+                item_label = row.get("item_name") or self.item_code
+                return iter(
+                    [
+                        "## 📝 Ringkasan Pemesanan\n"
+                        f"• {item_label} x1\n"
+                        f"Harga Dasar: {row['formatted_base_rate']}\n"
+                        f"PPN 11%: {row['formatted_ppn_11_per_unit']}\n"
+                        f"Total: {row['formatted_rate_with_ppn_11']}\n"
+                        f"Pemesan: {cust_name} (081299990055)\n"
+                        "Alamat: Jalan Merdeka No. 50, Bandung\n"
+                        f"Tanggal Pengiriman: {nowdate()}\n"
+                        "Pembayaran: Cash (Tunai) sebelum barang dikirim.\n"
+                        "Apakah ringkasan dan ketentuan pembayaran Cash di atas sudah sesuai?"
+                    ]
+                )
+
+            # Turn 3: guest confirms once -> immediately call erpnext_action_draft_create
+            if tool_round["n"] == 0:
+                tool_round["n"] += 1
+                item_arg = {"item_code": self.item_code, "qty": 1, "rate": 850000, "delivery_date": nowdate()}
+                if self.warehouse:
+                    item_arg["warehouse"] = self.warehouse
+                tool_calls.append(
+                    {
+                        "id": "call_draft_1",
+                        "type": "function",
+                        "function": {
+                            "name": "erpnext_action_draft_create",
+                            "arguments": json.dumps(
+                                {
+                                    "action_type": "CREATE",
+                                    "doctype": "Sales Order",
+                                    "data": {
+                                        "customer": cust_name,
+                                        "selling_price_list": "Standard Selling",
+                                        "delivery_date": nowdate(),
+                                        "items": [item_arg],
+                                    },
+                                    "reason": "Pesanan uji alur 3 baris PPN",
+                                    "customer_info": {
+                                        "customer_type": "Individual",
+                                        "customer_name": cust_name,
+                                        "mobile_no": "081299990055",
+                                        "address": "Jalan Merdeka No. 50, Bandung",
+                                        "payment_method": "Cash",
+                                    },
+                                }
+                            ),
+                        },
+                    }
+                )
+                return iter(["Baik, saya buatkan draf pesanannya."])
+
+            draft_tool_payload = json.loads(messages[-1]["content"])
+            observed_tool_results.append(draft_tool_payload)
+            if draft_tool_payload.get("draft_id"):
+                created_draft_ids.append(draft_tool_payload["draft_id"])
+            return iter(
+                [
+                    f"\nNomor Draf: {draft_tool_payload['draft_id']}\n"
+                    f"Harga Dasar: {draft_tool_payload['formatted_base_total']}\n"
+                    f"PPN 11%: {draft_tool_payload['formatted_tax_amount']}\n"
+                    f"Total: {draft_tool_payload['formatted_total']}"
+                ]
+            )
+
+        try:
+            with (
+                unittest.mock.patch("aios_v1.managers.base_manager.chat_stream", side_effect=scripted_chat),
+                unittest.mock.patch("aios_v1.managers.base_manager.record_token_usage_batch"),
+                unittest.mock.patch("aios_v1.lib.connector.notify.get_channel_recipients", return_value=[self.USER_EMAIL]),
+                unittest.mock.patch("aios_v1.lib.tool_registry._plugin_enabled", return_value=True),
+                unittest.mock.patch("aios_v1.lib.tool_registry._plugin_scope_allows", return_value=True),
+            ):
+                frappe.set_user("Guest")
+
+                # Turn 1
+                turn_idx["n"] = 0
+                tool_round["n"] = 0
+                list(sales_mgr.handle_stream("Saya mau pesan 1 pcs", conversation_id=conv_id, user="Guest"))
+
+                # Turn 2
+                turn_idx["n"] = 1
+                tool_round["n"] = 0
+                list(
+                    sales_mgr.handle_stream(
+                        f"Perorangan, nama {cust_name}, 081299990055, Jalan Merdeka No. 50 Bandung, kirim hari ini",
+                        conversation_id=conv_id,
+                        user="Guest",
+                    )
+                )
+                # Before confirmation, no draft created yet
+                self.assertEqual(len(created_draft_ids), 0)
+
+                # Turn 3 (single confirmation)
+                turn_idx["n"] = 2
+                tool_round["n"] = 0
+                list(sales_mgr.handle_stream("Ya, setuju Cash, buatkan drafnya", conversation_id=conv_id, user="Guest"))
+
+            # Verify prompt enforcement across turns
+            self.assertEqual(len(captured_prompts), 3)
+            self.assertIn(GUEST_ACTIVE_DIRECTIVE, captured_prompts[-1])
+            self.assertIn("minta satu kali konfirmasi saja sebelum membuat draf", captured_prompts[0])
+            self.assertNotIn("(belum termasuk pajak/PPN)", captured_prompts[0])
+
+            # Verify Item Price enrichment & Draft match ERPNext calculation
+            self.assertEqual(len(observed_tool_results), 2)
+            ip_row = observed_tool_results[0]["data"][0]
+            self.assertEqual(ip_row["base_rate"], 850000.0)
+            self.assertEqual(ip_row["ppn_11_per_unit"], 93500.0)
+            self.assertEqual(ip_row["rate_with_ppn_11"], 943500.0)
+            self.assertEqual(ip_row["formatted_base_rate"], "Rp 850.000")
+            self.assertEqual(ip_row["formatted_ppn_11_per_unit"], "Rp 93.500")
+            self.assertEqual(ip_row["formatted_rate_with_ppn_11"], "Rp 943.500")
+
+            draft_tool_res = observed_tool_results[1]
+            self.assertEqual(draft_tool_res["base_total"], 850000.0)
+            self.assertEqual(draft_tool_res["tax_amount"], 93500.0)
+            self.assertEqual(draft_tool_res["total"], 943500.0)
+
+            # Stored assistant messages show 3 lines on interim and final, no old disclaimer
+            msgs = frappe.get_all(
+                "AIOS Message",
+                filters={"conversation": str(conv_id), "role": "manager"},
+                fields=["content"],
+                order_by="creation asc",
+            )
+            self.assertEqual(len(msgs), 3)
+            for m in msgs:
+                self.assertIn("Harga Dasar: Rp 850.000", m.content)
+                self.assertIn("PPN 11%: Rp 93.500", m.content)
+                self.assertIn("Total: Rp 943.500", m.content)
+                self.assertNotIn("(belum termasuk pajak/PPN)", m.content)
+
+            # Approve created draft and verify grand_total matches
+            frappe.set_user(self.USER_EMAIL)
+            self.assertEqual(len(created_draft_ids), 1)
+            exec_res = approve_and_execute_draft(created_draft_ids[0])
+            self.assertTrue(exec_res.get("executed"), exec_res.get("message"))
+            so_doc = frappe.get_doc("Sales Order", exec_res["document"])
+            self.assertEqual(float(so_doc.rounded_total or so_doc.grand_total), 943500.0)
+        finally:
+            frappe.set_user("Administrator")
+            if temp_ip_created and frappe.db.exists("Item Price", temp_ip_created):
+                frappe.delete_doc("Item Price", temp_ip_created, ignore_permissions=True, force=True, delete_permanently=True)
+            elif existing_ip and orig_ip_rate is not None:
+                frappe.db.set_value("Item Price", existing_ip, "price_list_rate", orig_ip_rate)
+            for msg_name in frappe.get_all("AIOS Message", filters={"conversation": str(conv_id)}, pluck="name"):
+                frappe.delete_doc("AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True)
+            if frappe.db.exists("AIOS Conversation", str(conv_id)):
+                frappe.delete_doc("AIOS Conversation", str(conv_id), ignore_permissions=True, force=True, delete_permanently=True)

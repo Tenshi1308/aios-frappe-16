@@ -443,6 +443,71 @@ class TestConnectorDispatch(ConnectorTestBase):
         self.assertIn("| Item | Qty | Harga Satuan | Subtotal |", stored_content)
         self.assertIn("**Rp 850.000**", stored_content)
 
+    def test_clear_and_start_commands_rotate_conversation_and_prevent_history_leakage(self):
+        """/clear dan /start merotasi thread ke AIOS Conversation baru tanpa menghapus arsip lama."""
+        captured_histories: list[list[dict]] = []
+        rotated_convs: list[str] = []
+
+        def fake_llm(messages, usage=None, tools=None, tool_calls=None):
+            captured_histories.append(list(messages))
+            if usage is not None:
+                usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if len(captured_histories) == 1:
+                yield "💰 Total: Rp 850.000 (belum termasuk pajak/PPN)"
+            else:
+                yield "Harga Dasar: Rp 850.000\nPPN 11%: Rp 93.500\nTotal: Rp 943.500"
+
+        try:
+            with patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_llm), patch.object(
+                telegram_client, "send_chat_action", return_value=True
+            ), patch.object(telegram_client, "send_message", return_value=True):
+                res1 = dispatch.process_update(self._update("Harga lama Rp 850.000 belum termasuk pajak/PPN", 20))
+                self.assertTrue(res1["success"])
+                conv1 = str(res1["conversation"])
+                rotated_convs.append(conv1)
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv1}), 2)
+
+                res_clear = dispatch.process_update(self._update("/clear", 21))
+                self.assertTrue(res_clear["success"])
+                self.assertEqual(res_clear["action"], "clear")
+                self.assertIn("dibersihkan", res_clear["reply"].lower())
+                conv2 = str(res_clear["conversation"])
+                rotated_convs.append(conv2)
+                self.assertNotEqual(conv2, conv1)
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv2}), 0)
+                self.assertTrue(frappe.db.exists("AIOS Conversation", conv1))
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv1}), 2)
+
+                res2 = dispatch.process_update(self._update("Beli switch 1 pcs", 22))
+                self.assertTrue(res2["success"])
+                self.assertEqual(str(res2["conversation"]), conv2)
+
+                second_payload_texts = [m.get("content") or "" for m in captured_histories[1]]
+                self.assertFalse(
+                    any("(belum termasuk pajak/PPN)" in txt for txt in second_payload_texts),
+                    f"Riwayat lama tidak boleh terbawa ke percakapan baru setelah /clear: {second_payload_texts}",
+                )
+                self.assertFalse(
+                    any("Harga lama" in txt for txt in second_payload_texts),
+                    "Pesan percakapan lama tidak boleh terbawa setelah /clear",
+                )
+
+                res_start = dispatch.process_update(self._update("/start", 23))
+                self.assertTrue(res_start["success"])
+                self.assertEqual(res_start["action"], "start")
+                conv3 = str(res_start["conversation"])
+                rotated_convs.append(conv3)
+                self.assertNotEqual(conv3, conv2)
+                self.assertTrue(frappe.db.exists("AIOS Conversation", conv2))
+                self.assertEqual(frappe.db.count("AIOS Message", {"conversation": conv3}), 0)
+        finally:
+            frappe.set_user("Administrator")
+            for cid in reversed(rotated_convs):
+                for m in frappe.get_all("AIOS Message", filters={"conversation": cid}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
+                if frappe.db.exists("AIOS Conversation", cid):
+                    frappe.delete_doc("AIOS Conversation", cid, ignore_permissions=True, force=True, delete_permanently=True)
+
 
 class TestConnectorFlags(ConnectorTestBase):
     def test_rule_creates_flag_with_evidence(self):

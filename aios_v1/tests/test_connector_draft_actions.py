@@ -164,6 +164,10 @@ class TestConnectorDraftActions(IntegrationTestCase):
         for cid in (CHAT_RECEIVER, CHAT_OWNER, CHAT_STAFF, CHAT_CUSTOMER):
             dispatch.clear_rate_limit(cid)
         for email in (RECEIVER, OWNER, STAFF):
+            for conv_name in frappe.get_all("AIOS Conversation", filters={"user": email}, pluck="name"):
+                for msg_name in frappe.get_all("AIOS Message", filters={"conversation": conv_name}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc("AIOS Conversation", conv_name, ignore_permissions=True, force=True, delete_permanently=True)
             for usage_name in frappe.get_all("AIOS Token Usage", filters={"user": email}, pluck="name"):
                 frappe.delete_doc("AIOS Token Usage", usage_name, ignore_permissions=True, force=True, delete_permanently=True)
             for cname in frappe.get_all("Contact", filters={"user": email}, pluck="name"):
