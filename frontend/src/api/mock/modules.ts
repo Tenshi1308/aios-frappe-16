@@ -60,7 +60,7 @@ const MOCK_MODULES: ModuleMeta[] = [
       { key: 'party', label: 'Customer', type: 'text' },
     ],
     cards: [
-      { key: 'submitted_count', label: 'Invoice disetujui', format: 'number', scope: 'company' },
+      { key: 'submitted_count', label: 'Invoice terbit', format: 'number', scope: 'company' },
       { key: 'submitted_total', label: 'Total invoice', format: 'currency', scope: 'company' },
     ],
   },
@@ -144,7 +144,7 @@ export async function fetchModule(
     cards: [
       {
         key: 'submitted_count',
-        label: 'Invoice disetujui',
+        label: 'Invoice terbit',
         value: MOCK_ROWS.length,
         format: 'number',
         scope: 'company',

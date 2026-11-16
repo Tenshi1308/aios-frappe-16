@@ -41,7 +41,7 @@ _MODULES = (
         "cards": (
             {
                 "key": "count",
-                "label": "Invoice disetujui",
+                "label": "Invoice terbit",
                 "aggregate": "count",
                 "field": "name",
                 "format": "number",
@@ -95,7 +95,7 @@ _MODULES = (
         "cards": (
             {
                 "key": "count",
-                "label": "Order disetujui",
+                "label": "Order terbit",
                 "aggregate": "count",
                 "field": "name",
                 "format": "number",
@@ -149,7 +149,7 @@ _MODULES = (
         "cards": (
             {
                 "key": "count",
-                "label": "Quotation disetujui",
+                "label": "Quotation terbit",
                 "aggregate": "count",
                 "field": "name",
                 "format": "number",
@@ -203,7 +203,7 @@ _MODULES = (
         "cards": (
             {
                 "key": "count",
-                "label": "Invoice pembelian disetujui",
+                "label": "Invoice pembelian terbit",
                 "aggregate": "count",
                 "field": "name",
                 "format": "number",
