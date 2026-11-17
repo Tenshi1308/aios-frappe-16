@@ -47,6 +47,8 @@ COLOR_LITERAL_RE = re.compile(
 CATALOG_DOCTYPES = (
     "Sales Invoice",
     "Sales Order",
+    "Quotation",
+    "Delivery Note",
     "Purchase Invoice",
     "Payment Entry",
     "Customer",

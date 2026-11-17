@@ -146,6 +146,8 @@ class TestDesktopDomains(IntegrationTestCase):
             for doctype in (
                 "Sales Invoice",
                 "Sales Order",
+                "Quotation",
+                "Delivery Note",
                 "Purchase Invoice",
                 "Payment Entry",
                 "Journal Entry",
