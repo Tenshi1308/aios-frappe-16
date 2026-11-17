@@ -80,3 +80,15 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 
 9. **[09 — Catatan Masalah Terbuka (Backlog Perbaikan)](./09-catatan-masalah-terbuka.md)** — *catatan kerja* (bukan norma, bukan roadmap)
    - Temuan terkonfirmasi + keputusan + urutan kerja untuk menutup celah antara kode dan **Flow Utama** (`docs/00` §1.1). Bila berbeda dengan `00`–`04`, dokumen normatif yang menang; bila berbeda dengan Frappe resmi, Frappe yang menang.
+
+10. **[10 — Peta: Tampilkan Semua Modul di Ekasa Desk](./10-peta-tampil-semua-modul.md)** — *peta investigasi & keputusan*
+    - Pemetaan tiga lapis modul ERPNext (Lapis A: 6 DocType sudah diizinkan; Lapis B: 9 bidang `planned`; Lapis C: HRIS/Payroll) beserta implikasi izin, agen, dan keputusan Ten (§9).
+
+11. **[11 — Tugas: Tampilkan Semua Modul + Branding Finto OS](./11-tugas-tampil-semua-modul.md)** — *daftar tugas & status*
+    - Checklist eksekusi per tugas (Task 1–6 Lapis A, Fase 2–3, branding paralel) yang mencerminkan posisi pekerjaan terkini beserta nomor commit dan hasil verifikasi.
+
+### Rencana Implementasi (Superpowers Plans)
+
+- **[Plan Lapis A — Tampilkan 6 Modul di Ekasa Desk](./superpowers/plans/2026-11-16-lapis-a-tampil-semua-modul.md)** — *plan eksekusi*
+  - Rincian langkah implementasi Task 1–6 (Delivery Note, Item Price, Journal Entry, GL Entry, Account, Company), nilai katalog yang dipin, pola tes, dan kriteria verifikasi live.
+
