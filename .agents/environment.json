@@ -1,0 +1,3 @@
+{
+  "install": "sed -i '/case \\$- in/,/esac/d' ~/.bashrc 2>/dev/null || true && (grep -qxF 'export PATH=\"$HOME/.local/bin:$PATH\"' ~/.bashrc || echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc) && export PATH=\"$HOME/.local/bin:$PATH\" && uv tool install ruff && uv tool install pre-commit && npm --prefix frontend ci --no-audit --no-fund"
+}
