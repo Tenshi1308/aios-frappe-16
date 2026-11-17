@@ -28,7 +28,7 @@ const MOCK_DOMAINS: DomainMeta[] = [
     label: 'Sales',
     icon: 'tag',
     color_token: 'domain-sales',
-    module_count: 6,
+    module_count: 7,
   },
   {
     key: 'finance',
@@ -130,6 +130,7 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
           { key: 'delivery_note', label: 'Delivery Note', icon: 'file', row_count: 0 },
           { key: 'customer', label: 'Customer', icon: 'users', row_count: 8 },
           { key: 'item', label: 'Item', icon: 'box', row_count: 12 },
+          { key: 'item_price', label: 'Item Price', icon: 'folder', row_count: 0 },
         ],
   };
 }

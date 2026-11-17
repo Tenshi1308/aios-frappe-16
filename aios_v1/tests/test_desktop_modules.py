@@ -200,13 +200,14 @@ class TestDesktopModules(IntegrationTestCase):
                 "customer",
                 "supplier",
                 "item",
+                "item_price",
             },
         )
         self.assertNotIn("Purchase Order", {module["doctype"] for module in modules})
         self.assertTrue(all(module["doctype"] in ERP_CLIENT_DOCTYPES for module in modules))
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Sales"},
-            {"sales_invoice", "sales_order", "quotation", "delivery_note", "customer", "item"},
+            {"sales_invoice", "sales_order", "quotation", "delivery_note", "customer", "item", "item_price"},
         )
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Finance"},
@@ -707,6 +708,99 @@ class TestDesktopModules(IntegrationTestCase):
             [item["name"] for item in searched_party["results"] if item["type"] == "document"],
             ["MAT-DN-2026-00001"],
         )
+
+    def test_item_price_module_is_site_scoped_without_company_field(self):
+        self.assertFalse(frappe.get_meta("Item Price").has_field("company"))
+        rows = [
+            {
+                "name": "ip-sell-001",
+                "item_code": "LAP-ENT-14",
+                "item_name": "Laptop Enterprise 14 Inch",
+                "price_list": "Standard Selling",
+                "price_list_rate": 18500000.0,
+                "valid_from": "2026-10-30",
+                "valid_upto": None,
+                "selling": 1,
+                "buying": 0,
+            },
+            {
+                "name": "ip-buy-001",
+                "item_code": "LAP-ENT-14",
+                "item_name": "Laptop Enterprise 14 Inch",
+                "price_list": "Standard Buying",
+                "price_list_rate": 14000000.0,
+                "valid_from": "2026-10-30",
+                "valid_upto": None,
+                "selling": 0,
+                "buying": 1,
+            },
+        ]
+
+        def fake_get_list(doctype, fields=None, filters=None, or_filters=None, **kwargs):
+            filters = dict(filters or {})
+            if doctype != "Item Price":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [r for r in rows if r.get("selling") == filters.get("selling")]
+            if or_filters:
+                needle = or_filters[0][2].strip("%").casefold()
+                selected = [
+                    r for r in selected if any(needle in str(r.get(cond[0], "")).casefold() for cond in or_filters)
+                ]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                return [{"value": 0}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            result = frappe.call(desktop_api.module, module="item_price", page=1, page_size=1)
+            searched = frappe.call(desktop_api.search, q="Laptop Enterprise")
+
+        self.assertEqual(result["module"]["key"], "item_price")
+        self.assertEqual([r["name"] for r in result["rows"]], ["ip-sell-001"])
+        self.assertEqual(len(result["cards"]), 1)
+        self.assertEqual(result["cards"][0]["scope"], "site")
+        self.assertEqual(result["cards"][0]["value"], 1)
+        self.assertTrue(
+            any(
+                col["field"] == "price_list_rate" and col["format"] == "currency"
+                for col in result["module"]["columns"]
+            )
+        )
+        self.assertEqual(
+            [item["name"] for item in searched["results"] if item["type"] == "document"],
+            ["ip-sell-001"],
+        )
+
+    def test_item_price_includes_expired_valid_upto_rows(self):
+        yesterday = frappe.utils.add_days(frappe.utils.today(), -1)
+        rows = [
+            {
+                "name": "ip-expired-001",
+                "item_code": "SKU-EXP-01",
+                "item_name": "Expired Price Item",
+                "price_list": "Standard Selling",
+                "price_list_rate": 50000.0,
+                "valid_from": "2025-01-01",
+                "valid_upto": yesterday,
+                "selling": 1,
+                "buying": 0,
+            }
+        ]
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            if doctype != "Item Price":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [r for r in rows if r.get("selling") == filters.get("selling")]
+            if fields and isinstance(fields[0], dict):
+                return [{"total": len(selected), "value": len(selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            result = frappe.call(desktop_api.module, module="item_price", page=1, page_size=10)
+
+        self.assertEqual([r["name"] for r in result["rows"]], ["ip-expired-001"])
 
     def test_search_is_company_scoped_and_returns_module_and_document_results(self):
         rows = [

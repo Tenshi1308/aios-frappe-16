@@ -154,6 +154,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 "Customer",
                 "Supplier",
                 "Item",
+                "Item Price",
             )
         }
 

@@ -223,7 +223,7 @@ def _server_filters(module: dict, company_id: str, client_filters: dict | None =
     meta = frappe.get_meta(module["doctype"])
     if meta.has_field("company"):
         filters["company"] = company_id
-    elif module["group"] in {"Sales", "Finance"} and module["doctype"] not in {"Customer", "Supplier", "Item"}:
+    elif module["group"] in {"Sales", "Finance"} and module["doctype"] not in {"Customer", "Supplier", "Item", "Item Price"}:
         log_exception("AIOS Desktop Company", context=f"DocType {module['doctype']} tanpa field company.")
         frappe.throw("Cakupan company tidak dapat dipastikan.", frappe.ValidationError)
     if client_filters:

@@ -430,6 +430,36 @@ _MODULES = (
             },
         ),
     },
+    {
+        "key": "item_price",
+        "label": "Item Price",
+        "group": "Sales",
+        "icon": "folder",
+        "doctype": "Item Price",
+        "columns": (
+            {"key": "name", "label": "ID", "field": "name", "format": "text"},
+            {"key": "party", "label": "Nama item", "field": "item_name", "format": "text"},
+            {"key": "price_list", "label": "Price list", "field": "price_list", "format": "text"},
+            {"key": "amount", "label": "Harga", "field": "price_list_rate", "format": "currency"},
+            {"key": "valid_from", "label": "Berlaku dari", "field": "valid_from", "format": "date"},
+        ),
+        "filters": (),
+        "filter_fields": {},
+        "search_fields": ("name", "item_code", "item_name", "price_list"),
+        "order_field": "item_name",
+        "base_filters": {"selling": 1},
+        "cards": (
+            {
+                "key": "count",
+                "label": "Harga item di site",
+                "aggregate": "count",
+                "field": "name",
+                "format": "number",
+                "scope": "site",
+                "filters": {"selling": 1},
+            },
+        ),
+    },
 )
 
 _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}
