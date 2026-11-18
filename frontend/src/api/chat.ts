@@ -316,9 +316,12 @@ export async function streamChat(
 
 const DRAFT_API = '/api/method/aios_v1.lib.draft_manager';
 
-export async function fetchPendingDrafts(csrfToken: string): Promise<PendingDraft[]> {
+export async function fetchPendingDrafts(
+  csrfToken: string,
+  status: 'PENDING_APPROVAL' | 'EXPIRED' = 'PENDING_APPROVAL',
+): Promise<PendingDraft[]> {
   const raw = unwrapMessage<PendingDraft[]>(
-    await apiFetch(`${DRAFT_API}.list_pending_drafts`, {
+    await apiFetch(`${DRAFT_API}.list_pending_drafts?status=${encodeURIComponent(status)}`, {
       headers: { 'X-Frappe-CSRF-Token': csrfToken },
     }),
   );
@@ -361,6 +364,20 @@ export async function rejectDraft(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
       body: JSON.stringify({ draft_id: draftId, reason }),
+    }),
+  );
+  return raw ?? {};
+}
+
+export async function closeDraft(
+  draftId: string,
+  csrfToken: string,
+): Promise<DraftActionResult> {
+  const raw = unwrapMessage<DraftActionResult>(
+    await apiFetch(`${DRAFT_API}.close_expired_draft`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ draft_id: draftId }),
     }),
   );
   return raw ?? {};

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import {
   approveDraft,
+  closeDraft,
   confirmDraftCashPayment,
   fetchConversationMessages,
   fetchConversations,
@@ -19,6 +20,7 @@ import type {
   ChatMessage,
   ContextUsageStats,
   ConversationItem,
+  DraftListStatus,
   FileEntry,
   PendingDraft,
   TraceEvent,
@@ -48,6 +50,9 @@ export const useChatStore = defineStore('chat', {
     pendingDrafts: [] as PendingDraft[],
     pendingDraftsLoading: false,
     pendingDraftsError: '',
+    expiredDrafts: [] as PendingDraft[],
+    expiredDraftsLoading: false,
+    expiredDraftsError: '',
     contextUsage: {} as Record<string, ContextUsageStats | null>,
     /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
     artifactWindows: {} as Record<string, ArtifactEvent>,
@@ -73,12 +78,38 @@ export const useChatStore = defineStore('chat', {
       this.artifactWindows[artifactKey] = artifact;
       useWindowManager().open(`artifact:${artifactKey}`, artifact.file_name);
     },
-    async loadPendingDrafts() {
+    async loadPendingDrafts(status: DraftListStatus = 'PENDING_APPROVAL') {
       const session = useSessionStore();
+      if (status === 'EXPIRED') {
+        this.expiredDraftsLoading = true;
+        this.expiredDraftsError = '';
+        try {
+          this.expiredDrafts = await fetchPendingDrafts(session.csrfToken, 'EXPIRED');
+        } catch (err) {
+          this.expiredDrafts = [];
+          this.expiredDraftsError = 'Daftar draft tidak dapat dimuat.';
+          const msg =
+            err instanceof Error && err.message.trim()
+              ? err.message
+              : 'Daftar draft tidak dapat dimuat.';
+          void reportClientError(
+            {
+              message: msg,
+              context: 'loadPendingDrafts:EXPIRED',
+              stack: err instanceof Error ? (err.stack ?? '') : '',
+            },
+            session.csrfToken,
+          );
+        } finally {
+          this.expiredDraftsLoading = false;
+        }
+        return;
+      }
+
       this.pendingDraftsLoading = true;
       this.pendingDraftsError = '';
       try {
-        this.pendingDrafts = await fetchPendingDrafts(session.csrfToken);
+        this.pendingDrafts = await fetchPendingDrafts(session.csrfToken, 'PENDING_APPROVAL');
       } catch (err) {
         this.pendingDrafts = [];
         this.pendingDraftsError = 'Daftar draft tidak dapat dimuat.';
@@ -101,13 +132,19 @@ export const useChatStore = defineStore('chat', {
     async approveDraft(draftId: string) {
       const session = useSessionStore();
       const result = await approveDraft(draftId, session.csrfToken);
-      await this.loadPendingDrafts();
+      await this.loadPendingDrafts('PENDING_APPROVAL');
       return result;
     },
     async rejectDraft(draftId: string, reason: string) {
       const session = useSessionStore();
       const result = await rejectDraft(draftId, reason, session.csrfToken);
-      await this.loadPendingDrafts();
+      await this.loadPendingDrafts('PENDING_APPROVAL');
+      return result;
+    },
+    async closeDraft(draftId: string) {
+      const session = useSessionStore();
+      const result = await closeDraft(draftId, session.csrfToken);
+      await this.loadPendingDrafts('PENDING_APPROVAL');
       return result;
     },
     async confirmDraftCashPayment(draftId: string) {

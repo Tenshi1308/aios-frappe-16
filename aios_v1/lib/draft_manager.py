@@ -10,7 +10,7 @@ import json
 import re
 
 import frappe
-from frappe.utils import add_to_date, now_datetime
+from frappe.utils import add_to_date, get_datetime, now_datetime
 
 from aios_v1.lib.error_utils import log_exception
 
@@ -866,25 +866,57 @@ def get_draft(draft_id: str) -> dict:
 
 
 @frappe.whitelist()
-def list_pending_drafts(limit: int = 50) -> list:
-    """Daftar draft pending milik pemanggil (owner-scoped), terbaru dulu.
+def list_pending_drafts(limit: int = 50, status: str | None = None) -> list:
+    """Daftar draft milik pemanggil (owner-scoped), default status PENDING_APPROVAL, terbaru dulu.
 
     Detail isi draf diambil UI lewat `get_draft` — doctype/aksi ada di dalam
     `payload` dan tidak di-expose di sini.
     """
+    allowed_statuses = {"PENDING_APPROVAL", "EXPIRED"}
+    resolved_status = (status or "PENDING_APPROVAL").strip().upper()
+    if resolved_status not in allowed_statuses:
+        frappe.throw("Status daftar draf hanya mendukung PENDING_APPROVAL atau EXPIRED.")
+
     try:
         limit = int(limit)
     except (TypeError, ValueError) as exc:
         log_exception("AIOS Draft List Limit", exc=exc)
         limit = 50
     limit = max(1, min(limit, 100))
-    return frappe.get_all(
+    rows = frappe.get_all(
         "Pending Action Draft",
-        filters={"user": frappe.session.user, "status": "PENDING_APPROVAL"},
+        filters={"user": frappe.session.user, "status": resolved_status},
         fields=["name", "type", "branch", "status", "expires_at", "creation"],
         order_by="creation desc",
         limit_page_length=limit,
     )
+    now_dt = now_datetime()
+    for row in rows:
+        expires_dt = get_datetime(row.get("expires_at")) if row.get("expires_at") else None
+        row["expired"] = bool(expires_dt and expires_dt < now_dt)
+    return rows
+
+
+@frappe.whitelist()
+def close_expired_draft(draft_id: str) -> dict:
+    """Tutup draf PENDING_APPROVAL yang sudah kedaluwarsa menjadi EXPIRED tanpa notifikasi."""
+    doc = frappe.get_doc(DRAFT_DOCTYPE, draft_id, check_permission="read")
+    _assert_draft_owner(doc)
+    if doc.status != "PENDING_APPROVAL":
+        frappe.throw(f"Draft tidak bisa ditutup karena berstatus {doc.status}.")
+
+    expires_dt = get_datetime(doc.expires_at) if doc.expires_at else None
+    if not expires_dt or expires_dt >= now_datetime():
+        frappe.throw("Draft belum kedaluwarsa sehingga tidak bisa ditutup.")
+
+    frappe.db.set_value(DRAFT_DOCTYPE, doc.name, "status", "EXPIRED")
+    frappe.db.commit()
+    return {
+        "status": "success",
+        "draft_id": doc.name,
+        "draft_status": "EXPIRED",
+        "message": f"Draf kedaluwarsa {doc.name} telah ditutup (status: EXPIRED).",
+    }
 
 
 def _is_channel_draft(draft_name: str) -> bool:

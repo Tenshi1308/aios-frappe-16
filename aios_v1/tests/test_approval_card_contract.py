@@ -196,3 +196,35 @@ class TestApprovalCardContract(unittest.TestCase):
         self.assertIn('<td class="item-name" data-label="Nama Item">', template)
         self.assertNotIn('<th scope="col" class="item-name"', template)
         self.assertIn('<td class="num total-value" data-label="Total">', template)
+
+
+PENDING_DRAFTS_WINDOW = (
+    REPO_ROOT / "frontend" / "src" / "components" / "windows" / "PendingDraftsWindow.vue"
+)
+
+
+class TestPendingDraftsContract(unittest.TestCase):
+    """Static UI contract tests for PendingDraftsWindow.vue filter, expired badge, and 2-step close button."""
+
+    def test_filter_tabs_expired_badge_and_two_step_close_contract(self) -> None:
+        source = PENDING_DRAFTS_WINDOW.read_text(encoding="utf-8")
+        script = _extract_block(source, "script")
+        template = _extract_block(source, "template")
+
+        # Filter controls for "Menunggu" (PENDING_APPROVAL) and "Kedaluwarsa" (EXPIRED)
+        self.assertIn("Menunggu", template)
+        self.assertIn("Kedaluwarsa", template)
+        self.assertIn("PENDING_APPROVAL", source)
+        self.assertIn("EXPIRED", source)
+        self.assertIn("loadPendingDrafts", source)
+
+        # Two-step close confirmation calling closeDraft
+        self.assertIn("closeDraft", script)
+        self.assertIn("Konfirmasi Tutup", template)
+
+        # Badge "Kedaluwarsa" and close button gated strictly on expired state; no nested <button>
+        self.assertRegex(template, r'v-if="[^"]*Expired[^"]*"[^>]*>Kedaluwarsa<')
+        self.assertRegex(template, r'v-if="[^"]*PENDING_APPROVAL[^"]*Expired[^"]*"')
+        self.assertIn('class="pd-row-main"', template)
+        row_main_block = template.split('class="pd-row-main"')[1].split("</button>")[0]
+        self.assertNotIn("<button", row_main_block)

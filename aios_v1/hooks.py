@@ -238,6 +238,7 @@ has_permission = {
 scheduler_events = {
 	"daily": [
 		"aios_v1.services.usage.reset_daily_counters",
+		"aios_v1.lib.draft_manager.expire_old_drafts",
 	],
 }
 

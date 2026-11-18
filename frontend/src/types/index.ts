@@ -115,6 +115,8 @@ export interface FileArtifact {
 
 export type ArtifactEvent = ApprovalCardArtifact | FileArtifact;
 
+export type DraftListStatus = 'PENDING_APPROVAL' | 'EXPIRED';
+
 export interface PendingDraft {
   name: string;
   type: string;
@@ -122,6 +124,7 @@ export interface PendingDraft {
   status: string;
   expires_at: string;
   creation: string;
+  expired?: boolean;
 }
 
 /** Hasil `get_draft` — `payload` adalah string JSON yang di-parse UI. */
