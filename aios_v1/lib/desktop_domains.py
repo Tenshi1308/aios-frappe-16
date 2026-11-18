@@ -179,7 +179,7 @@ _DOMAINS = (
         "icon": "wallet",
         "color_token": "domain-accounting",
         "status": "active",
-        "modules": ("journal_entry", "gl_entry", "account"),
+        "modules": ("journal_entry", "gl_entry", "account", "company"),
         "cards": (
             {
                 "key": "journal_debit",

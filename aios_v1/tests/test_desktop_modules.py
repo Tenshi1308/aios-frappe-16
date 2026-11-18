@@ -204,6 +204,7 @@ class TestDesktopModules(IntegrationTestCase):
                 "item",
                 "item_price",
                 "account",
+                "company",
             },
         )
         self.assertNotIn("Purchase Order", {module["doctype"] for module in modules})
@@ -218,7 +219,7 @@ class TestDesktopModules(IntegrationTestCase):
         )
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Accounting"},
-            {"journal_entry", "gl_entry", "account"},
+            {"journal_entry", "gl_entry", "account", "company"},
         )
 
     def test_catalog_fields_are_valid_for_every_doctype(self):
@@ -496,7 +497,7 @@ class TestDesktopModules(IntegrationTestCase):
                 return [{"total": 7, "value": 7}]
             return []
 
-        for module_key, doctype in (("customer", "Customer"), ("account", "Account")):
+        for module_key, doctype in (("customer", "Customer"), ("account", "Account"), ("company", "Company")):
             with self.subTest(module=module_key):
                 with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
                     result = frappe.call(desktop_api.module, module=module_key)
@@ -991,6 +992,66 @@ class TestDesktopModules(IntegrationTestCase):
         self.assertEqual(
             [item["name"] for item in searched_acc["results"] if item["type"] == "document"],
             ["ACC-GLE-2026-00580"],
+        )
+
+    def test_company_module_is_site_wide_without_company_field(self):
+        self.assertFalse(frappe.get_meta("Company").has_field("company"))
+        rows = [
+            {
+                "name": "Tenshi Company",
+                "company_name": "Tenshi Company",
+                "abbr": "TC",
+                "default_currency": "IDR",
+                "country": "Indonesia",
+            },
+        ]
+        list_calls = []
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            list_calls.append((doctype, fields, filters, kwargs))
+            if doctype != "Company":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = list(rows)
+            or_filters = kwargs.get("or_filters")
+            if or_filters:
+                selected = [
+                    r
+                    for r in selected
+                    if any(
+                        flt[1] == "like"
+                        and flt[2].strip("%").casefold() in str(r.get(flt[0]) or "").casefold()
+                        for flt in or_filters
+                    )
+                ]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                return [{"value": 0}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            result = frappe.call(desktop_api.module, module="company", page=1, page_size=1)
+            searched = frappe.call(desktop_api.search, q="Tenshi Company")
+
+        self.assertEqual(result["module"]["key"], "company")
+        self.assertEqual([r["name"] for r in result["rows"]], ["Tenshi Company"])
+        self.assertEqual(len(result["cards"]), 1)
+        self.assertEqual(
+            (
+                result["cards"][0]["key"],
+                result["cards"][0]["label"],
+                result["cards"][0]["scope"],
+                result["cards"][0]["value"],
+            ),
+            ("count", "Company di site", "site", 1),
+        )
+        company_calls = [c for c in list_calls if c[0] == "Company"]
+        self.assertTrue(company_calls)
+        self.assertTrue(all("company" not in c[2] for c in company_calls))
+        self.assertEqual(
+            [item["name"] for item in searched["results"] if item["type"] == "document"],
+            ["Tenshi Company"],
         )
 
     def test_search_is_company_scoped_and_returns_module_and_document_results(self):

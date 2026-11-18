@@ -58,6 +58,7 @@ CATALOG_DOCTYPES = (
     "Item",
     "Item Price",
     "Account",
+    "Company",
 )
 
 DOCTYPE_LITERAL_RE = re.compile(

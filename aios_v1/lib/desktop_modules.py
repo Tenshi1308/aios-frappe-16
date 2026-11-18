@@ -600,6 +600,36 @@ _MODULES = (
             },
         ),
     },
+    {
+        "key": "company",
+        "label": "Company",
+        "group": "Accounting",
+        "icon": "building",
+        "doctype": "Company",
+        "columns": (
+            {"key": "name", "label": "ID", "field": "name", "format": "text"},
+            {"key": "company_name", "label": "Nama company", "field": "company_name", "format": "text"},
+            {"key": "abbr", "label": "Singkatan", "field": "abbr", "format": "text"},
+            {"key": "default_currency", "label": "Mata uang", "field": "default_currency", "format": "text"},
+            {"key": "country", "label": "Negara", "field": "country", "format": "text"},
+        ),
+        "filters": (),
+        "filter_fields": {},
+        "search_fields": ("name", "company_name", "abbr"),
+        "order_field": "company_name",
+        "base_filters": {},
+        "cards": (
+            {
+                "key": "count",
+                "label": "Company di site",
+                "aggregate": "count",
+                "field": "name",
+                "format": "number",
+                "scope": "site",
+                "filters": {},
+            },
+        ),
+    },
 )
 
 _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}

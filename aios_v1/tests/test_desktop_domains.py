@@ -157,6 +157,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 "Item",
                 "Item Price",
                 "Account",
+                "Company",
             )
         }
 
@@ -305,7 +306,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 if domain_key == "accounting":
                     self.assertEqual(
                         [m["key"] for m in result["modules"]],
-                        ["journal_entry", "gl_entry", "account"],
+                        ["journal_entry", "gl_entry", "account", "company"],
                     )
                 for mod_out in result["modules"]:
                     self.assertEqual(set(mod_out.keys()), {"key", "label", "icon", "row_count"})
