@@ -288,7 +288,13 @@ class TestConnectorOrdersPagination(IntegrationTestCase):
 
         before_count = views.count_orders(self.owner, unread_only=True)
         with patch("aios_v1.lib.erpnext_action_drafts.get_tool_context", return_value={"user_id": self.owner, "allowed_company": "Windu Utama PT", "branch": "sales", "worker_key": "sales"}):
-            with patch("aios_v1.lib.erpnext_action_drafts.validate_data_fields"):
+            with (
+                patch("aios_v1.lib.erpnext_action_drafts.validate_data_fields"),
+                patch(
+                    "aios_v1.lib.erpnext_action_drafts._resolve_sales_tax_template",
+                    return_value="Sales Tax - Test",
+                ),
+            ):
                 frappe.set_user(self.owner)
                 # `delivery_date` wajib untuk draf Sales Order non-guest
                 # (erpnext_action_drafts.py:138-144); data uji harus lengkap.

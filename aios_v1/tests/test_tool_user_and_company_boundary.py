@@ -106,7 +106,7 @@ class TestToolContextBoundary(IntegrationTestCase):
         branch_params = branch_schema["function"]["parameters"]
         self.assertIn("department", branch_params["properties"])
 
-        worker_schemas = get_tools_schema_for_worker("finance", "manager")
+        worker_schemas = get_tools_schema_for_worker("finance", "manager", user="Administrator")
         self.assertIn(PROBE_BRANCH, [s["function"]["name"] for s in worker_schemas])
         for schema in worker_schemas:
             self.assertNotIn("user_id", schema["function"]["parameters"]["properties"])

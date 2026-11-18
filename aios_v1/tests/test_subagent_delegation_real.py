@@ -103,7 +103,7 @@ class TestSubagentDelegationReal(IntegrationTestCase):
             return real_get_list(doctype, *args, **kwargs)
 
         with patch.object(manager, "build_system_prompt", return_value="system prompt hidden"), \
-             patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", side_effect=lambda branch, worker: ["manager"] if worker == "manager" else ["worker"]), \
+             patch("aios_v1.managers.base_manager.get_tools_schema_for_worker", side_effect=lambda branch, worker, user=None: ["manager"] if worker == "manager" else ["worker"]), \
              patch("aios_v1.managers.base_manager.chat_stream", side_effect=fake_chat), \
              patch("aios_v1.managers.base_manager.execute_tool", return_value='{"ok":true}') as execute, \
              patch("aios_v1.managers.base_manager.record_token_usage_batch", side_effect=lambda user, batch: records.extend(batch)), \

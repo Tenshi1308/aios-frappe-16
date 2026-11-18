@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import add_to_date, nowdate
 
 from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
 from aios_v1.lib.tool_registry import _resolve_allowed_company, execute_tool, get_tools_schema_for_worker
@@ -204,10 +205,17 @@ class TestERPNextFinanceTools(IntegrationTestCase):
         arguments = {
             "action_type": "CREATE",
             "doctype": doctype,
-            "data": {"company": "_Test Forged Company"},
+            "data": {
+                "company": "_Test Forged Company",
+                "delivery_date": str(add_to_date(nowdate(), days=7)),
+            },
             "reason": "_Test draft only",
         }
         with (
+            patch(
+                "aios_v1.lib.erpnext_action_drafts._resolve_sales_tax_template",
+                return_value="Sales Tax - Test",
+            ),
             patch("aios_v1.lib.erpnext_action_drafts.frappe.get_doc", wraps=frappe.get_doc) as get_doc,
             patch("aios_v1.lib.erpnext_action_drafts.frappe.db.commit") as commit,
             patch.object(Document, "submit", autospec=True) as submit,
