@@ -2,8 +2,9 @@
 
 import importlib
 import json
+import unittest
 from threading import Thread
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.utils import format_datetime, get_test_client, get_url
@@ -786,3 +787,66 @@ class TestDesktopSettings(IntegrationTestCase):
         # Link kosong / None
         self.assertIsNone(_normalize_invitation_url(None))
         self.assertEqual(_normalize_invitation_url(""), "")
+
+
+class TestStaffPersonaAllowlist(IntegrationTestCase):
+    """Kontrak allowlist & opsi field persona 'accounting' tanpa insert User nyata."""
+
+    def test_create_client_staff_accepts_accounting_and_rejects_unknown_persona_with_patches(self):
+        fake_user_doc = MagicMock()
+        fake_user_doc._reset_password.return_value = "http://aios-client1.localhost/update-password?key=fakekey"
+        fake_payload = {
+            "users": [],
+            "effective_recipients": [],
+            "using_owner_fallback": False,
+            "quota": {"active_users": 2, "max_users": 20, "remaining_slots": 18},
+        }
+
+        with (
+            patch.object(desktop_api, "_require_active_client_owner", return_value=("_test.owner@example.com", {})),
+            patch.object(desktop_api, "_company_context", return_value={"name": "_Test Company"}),
+            patch.object(desktop_api, "_record_owner_activity") as record_activity,
+            patch.object(desktop_api, "_build_staff_and_recipients_payload", return_value=fake_payload),
+            patch("aios_v1.api.desktop.frappe.db.exists", return_value=False),
+            patch("aios_v1.setup.assert_within_max_users", return_value=(1, 20)),
+            patch("aios_v1.api.desktop.frappe.get_doc", return_value=fake_user_doc) as get_doc,
+        ):
+            created = desktop_api.create_client_staff(
+                email="_test.acc.staff@example.com",
+                full_name="Staf Akuntansi",
+                persona="accounting",
+            )
+            self.assertTrue(created["ok"])
+            self.assertEqual(created["persona"], "accounting")
+            self.assertIn("/update-password?key=fakekey", created["invitation_url"])
+            self.assertEqual(get_doc.call_count, 1)
+            self.assertEqual(get_doc.call_args.args[0]["aios_persona"], "accounting")
+            fake_user_doc.insert.assert_called_once_with(ignore_permissions=True)
+            record_activity.assert_called_once()
+
+            get_doc.reset_mock()
+            with self.assertRaises(frappe.ValidationError) as ctx:
+                desktop_api.create_client_staff(
+                    email="_test.unknown.staff@example.com",
+                    full_name="Staf Asing",
+                    persona="tidak_dikenal",
+                )
+            self.assertIn("Persona staf tidak valid", str(ctx.exception))
+            get_doc.assert_not_called()
+
+    def test_user_aios_persona_field_options_and_allowlist_include_accounting(self):
+        from aios_v1.setup import USER_CUSTOM_FIELDS
+
+        self.assertIn("accounting", desktop_api._ALLOWED_STAFF_PERSONAS)
+        self.assertNotIn("tidak_dikenal", desktop_api._ALLOWED_STAFF_PERSONAS)
+
+        setup_field = next(
+            field for field in USER_CUSTOM_FIELDS["User"] if field["fieldname"] == "aios_persona"
+        )
+        setup_options = [opt for opt in setup_field["options"].splitlines() if opt]
+        self.assertIn("accounting", setup_options)
+
+        meta_field = frappe.get_meta("User").get_field("aios_persona")
+        self.assertIsNotNone(meta_field)
+        meta_options = [opt for opt in (meta_field.options or "").splitlines() if opt]
+        self.assertIn("accounting", meta_options)

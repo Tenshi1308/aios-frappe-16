@@ -17,7 +17,7 @@ USER_CUSTOM_FIELDS = {
             "fieldname": "aios_persona",
             "fieldtype": "Select",
             "label": "AIOS Persona",
-            "options": "\nexecutive\nfinance\nsales\noperations\nsystem",
+            "options": "\nexecutive\nfinance\nsales\naccounting\noperations\nsystem",
             "default": "executive",
             "insert_after": "username",
         },

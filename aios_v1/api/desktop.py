@@ -659,7 +659,7 @@ def log_client_error(message: str, context: str = "", stack: str = ""):
         frappe.throw(_("Permintaan gagal."), frappe.ValidationError)
 
 
-_ALLOWED_STAFF_PERSONAS = frozenset({"executive", "finance", "sales", "operations", "system"})
+_ALLOWED_STAFF_PERSONAS = frozenset({"executive", "finance", "sales", "accounting", "operations", "system"})
 
 
 def _require_active_client_owner() -> tuple[str, dict]:

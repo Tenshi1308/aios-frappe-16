@@ -80,6 +80,16 @@ class TestSetupHooks(unittest.TestCase):
         self.assertIn("def sync_aios_status_enabled(doc, method=None)", src)
         self.assertIn('{"AIOS Admin", "AIOS Client"}', src)
 
+    def test_aios_persona_options_include_accounting(self):
+        src = SETUP.read_text(encoding="utf-8")
+        match = re.search(r'"fieldname":\s*"aios_persona".*?"options":\s*"([^"]+)"', src, re.DOTALL)
+        self.assertIsNotNone(match, "Field aios_persona tidak ditemukan di setup.py")
+        options = [opt for opt in match.group(1).split("\\n") if opt]
+        self.assertEqual(
+            set(options),
+            {"executive", "finance", "sales", "accounting", "operations", "system"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
