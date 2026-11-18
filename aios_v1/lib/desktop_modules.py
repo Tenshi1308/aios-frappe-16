@@ -509,6 +509,67 @@ _MODULES = (
             },
         ),
     },
+    {
+        "key": "gl_entry",
+        "label": "GL Entry",
+        "group": "Accounting",
+        "icon": "file",
+        "doctype": "GL Entry",
+        "columns": (
+            {"key": "name", "label": "Nomor", "field": "name", "format": "text"},
+            {"key": "posting_date", "label": "Tanggal", "field": "posting_date", "format": "date"},
+            {"key": "account", "label": "Akun", "field": "account", "format": "text"},
+            {"key": "party", "label": "Pihak", "field": "party", "format": "text"},
+            {"key": "voucher_no", "label": "No. voucher", "field": "voucher_no", "format": "text"},
+            {"key": "debit", "label": "Debit", "field": "debit", "format": "currency"},
+            {"key": "credit", "label": "Kredit", "field": "credit", "format": "currency"},
+        ),
+        "filters": (
+            {"key": "date_from", "label": "Dari tanggal", "type": "date"},
+            {"key": "date_to", "label": "Sampai tanggal", "type": "date"},
+            {"key": "account", "label": "Akun", "type": "text"},
+            {"key": "party", "label": "Pihak", "type": "text"},
+        ),
+        "filter_fields": {
+            "date_from": {"field": "posting_date", "operator": ">="},
+            "date_to": {"field": "posting_date", "operator": "<="},
+            "account": {"field": "account", "operator": "like"},
+            "party": {"field": "party", "operator": "like"},
+        },
+        "search_fields": ("name", "account", "party", "voucher_no", "remarks"),
+        "order_field": "posting_date",
+        # GL Entry dibuat oleh posting dan selalu ber-docstatus 1 — pakai is_cancelled 0 untuk mengecualikan entri batal, jangan pakai docstatus 1.
+        "base_filters": {"is_cancelled": 0},
+        "cards": (
+            {
+                "key": "count",
+                "label": "Entri GL tercatat",
+                "aggregate": "count",
+                "field": "name",
+                "format": "number",
+                "scope": "company",
+                "filters": {"is_cancelled": 0},
+            },
+            {
+                "key": "debit",
+                "label": "Total debit",
+                "aggregate": "sum",
+                "field": "debit",
+                "format": "currency",
+                "scope": "company",
+                "filters": {"is_cancelled": 0},
+            },
+            {
+                "key": "credit",
+                "label": "Total kredit",
+                "aggregate": "sum",
+                "field": "credit",
+                "format": "currency",
+                "scope": "company",
+                "filters": {"is_cancelled": 0},
+            },
+        ),
+    },
 )
 
 _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}

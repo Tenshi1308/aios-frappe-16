@@ -198,6 +198,7 @@ class TestDesktopModules(IntegrationTestCase):
                 "purchase_invoice",
                 "payment_entry",
                 "journal_entry",
+                "gl_entry",
                 "customer",
                 "supplier",
                 "item",
@@ -216,7 +217,7 @@ class TestDesktopModules(IntegrationTestCase):
         )
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Accounting"},
-            {"journal_entry"},
+            {"journal_entry", "gl_entry"},
         )
 
     def test_catalog_fields_are_valid_for_every_doctype(self):
@@ -890,6 +891,103 @@ class TestDesktopModules(IntegrationTestCase):
         self.assertEqual(
             [item["name"] for item in searched_title["results"] if item["type"] == "document"],
             ["ACC-JV-2026-00011"],
+        )
+
+    def test_gl_entry_list_returns_rows_without_docstatus_filter(self):
+        self.assertTrue(frappe.get_meta("GL Entry").has_field("company"))
+        gl_def = get_module_definition("gl_entry")
+        self.assertIsNotNone(gl_def)
+        self.assertEqual(gl_def["base_filters"], {"is_cancelled": 0})
+        rows = [
+            {
+                "name": "ACC-GLE-2026-00580",
+                "posting_date": "2026-11-16",
+                "account": "1111.001 - Kas Kecil - TC",
+                "party": "",
+                "voucher_no": "ACC-PAY-2026-00096",
+                "remarks": "Kas kecil masuk",
+                "debit": 5328000.0,
+                "credit": 0.0,
+                "company": self.company,
+                "docstatus": 1,
+                "is_cancelled": 0,
+            },
+            {
+                "name": "ACC-GLE-2026-99999",
+                "posting_date": "2026-11-16",
+                "account": "1111.001 - Kas Kecil - TC",
+                "party": "",
+                "voucher_no": "ACC-PAY-2026-99999",
+                "remarks": "Entri dibatalkan",
+                "debit": 999000.0,
+                "credit": 0.0,
+                "company": self.company,
+                "docstatus": 1,
+                "is_cancelled": 1,
+            },
+            {
+                "name": "ACC-GLE-OTHER-00001",
+                "posting_date": "2026-11-16",
+                "account": "1111.001 - Kas Kecil - OTHER",
+                "party": "",
+                "voucher_no": "ACC-PAY-OTHER-00001",
+                "remarks": "Other company",
+                "debit": 777000.0,
+                "credit": 0.0,
+                "company": "_Test Other Company",
+                "docstatus": 1,
+                "is_cancelled": 0,
+            },
+        ]
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            if doctype != "GL Entry":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [
+                r
+                for r in rows
+                if r["company"] == filters.get("company")
+                and r["is_cancelled"] == filters.get("is_cancelled")
+            ]
+            or_filters = kwargs.get("or_filters")
+            if or_filters:
+                selected = [
+                    r
+                    for r in selected
+                    if any(
+                        flt[1] == "like"
+                        and flt[2].strip("%").casefold() in str(r.get(flt[0]) or "").casefold()
+                        for flt in or_filters
+                    )
+                ]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            mod_res = frappe.call(desktop_api.module, module="gl_entry", page=1, page_size=1)
+            searched_acc = frappe.call(desktop_api.search, q="Kas Kecil")
+
+        self.assertEqual([r["name"] for r in mod_res["rows"]], ["ACC-GLE-2026-00580"])
+        self.assertEqual(
+            [(c["key"], c["label"], c["scope"], c["value"]) for c in mod_res["cards"]],
+            [
+                ("count", "Entri GL tercatat", "company", 1),
+                ("debit", "Total debit", "company", 5328000.0),
+                ("credit", "Total kredit", "company", 0.0),
+            ],
+        )
+        currency_cols = [c["field"] for c in mod_res["module"]["columns"] if c["format"] == "currency"]
+        self.assertIn("debit", currency_cols)
+        self.assertEqual(currency_cols, ["debit", "credit"])
+        self.assertEqual(
+            [item["name"] for item in searched_acc["results"] if item["type"] == "document"],
+            ["ACC-GLE-2026-00580"],
         )
 
     def test_search_is_company_scoped_and_returns_module_and_document_results(self):

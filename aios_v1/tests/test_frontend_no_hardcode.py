@@ -52,6 +52,7 @@ CATALOG_DOCTYPES = (
     "Purchase Invoice",
     "Payment Entry",
     "Journal Entry",
+    "GL Entry",
     "Customer",
     "Supplier",
     "Item",

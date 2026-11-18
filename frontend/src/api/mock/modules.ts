@@ -37,6 +37,13 @@ const MOCK_DOMAINS: DomainMeta[] = [
     color_token: 'domain-finance',
     module_count: 3,
   },
+  {
+    key: 'accounting',
+    label: 'Accounting',
+    icon: 'wallet',
+    color_token: 'domain-accounting',
+    module_count: 2,
+  },
 ];
 
 const MOCK_MODULES: ModuleMeta[] = [
@@ -97,6 +104,7 @@ export async function fetchBootstrap(): Promise<BootstrapData> {
 export async function fetchDomain(key: string): Promise<DomainDetailData> {
   const dom = MOCK_DOMAINS.find((d) => d.key === key) ?? MOCK_DOMAINS[0];
   const isFinance = dom.key === 'finance';
+  const isAccounting = dom.key === 'accounting';
   return {
     domain: dom,
     company: {
@@ -111,27 +119,39 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
           { key: 'journal_month', label: 'Jurnal bulan ini', value: 0, format: 'number' },
           { key: 'supplier_active', label: 'Supplier aktif', value: 8, format: 'number' },
         ]
-      : [
-          { key: 'invoice_month', label: 'Invoice bulan ini', value: 363000, format: 'currency', currency: 'IDR' },
-          { key: 'open_so', label: 'Order terbuka', value: 2, format: 'number' },
-          { key: 'ar_outstanding', label: 'Piutang', value: 316000, format: 'currency', currency: 'IDR' },
-          { key: 'customer_active', label: 'Customer aktif', value: 8, format: 'number' },
-        ],
+      : isAccounting
+        ? [
+            { key: 'journal_debit', label: 'Total debit jurnal', value: 0, format: 'currency', currency: 'IDR' },
+            { key: 'gl_count', label: 'Entri GL tercatat', value: 0, format: 'number' },
+            { key: 'gl_debit', label: 'Total debit', value: 0, format: 'currency', currency: 'IDR' },
+            { key: 'gl_credit', label: 'Total kredit', value: 0, format: 'currency', currency: 'IDR' },
+          ]
+        : [
+            { key: 'invoice_month', label: 'Invoice bulan ini', value: 363000, format: 'currency', currency: 'IDR' },
+            { key: 'open_so', label: 'Order terbuka', value: 2, format: 'number' },
+            { key: 'ar_outstanding', label: 'Piutang', value: 316000, format: 'currency', currency: 'IDR' },
+            { key: 'customer_active', label: 'Customer aktif', value: 8, format: 'number' },
+          ],
     modules: isFinance
       ? [
           { key: 'purchase_invoice', label: 'Purchase Invoice', icon: 'file', row_count: 3 },
           { key: 'payment_entry', label: 'Payment Entry', icon: 'wallet', row_count: 2 },
           { key: 'supplier', label: 'Supplier', icon: 'users', row_count: 8 },
         ]
-      : [
-          { key: 'sales_invoice', label: 'Sales Invoice', icon: 'file', row_count: 5 },
-          { key: 'sales_order', label: 'Sales Order', icon: 'cart', row_count: 2 },
-          { key: 'quotation', label: 'Quotation', icon: 'file', row_count: 0 },
-          { key: 'delivery_note', label: 'Delivery Note', icon: 'file', row_count: 0 },
-          { key: 'customer', label: 'Customer', icon: 'users', row_count: 8 },
-          { key: 'item', label: 'Item', icon: 'box', row_count: 12 },
-          { key: 'item_price', label: 'Item Price', icon: 'folder', row_count: 0 },
-        ],
+      : isAccounting
+        ? [
+            { key: 'journal_entry', label: 'Journal Entry', icon: 'file', row_count: 0 },
+            { key: 'gl_entry', label: 'GL Entry', icon: 'file', row_count: 0 },
+          ]
+        : [
+            { key: 'sales_invoice', label: 'Sales Invoice', icon: 'file', row_count: 5 },
+            { key: 'sales_order', label: 'Sales Order', icon: 'cart', row_count: 2 },
+            { key: 'quotation', label: 'Quotation', icon: 'file', row_count: 0 },
+            { key: 'delivery_note', label: 'Delivery Note', icon: 'file', row_count: 0 },
+            { key: 'customer', label: 'Customer', icon: 'users', row_count: 8 },
+            { key: 'item', label: 'Item', icon: 'box', row_count: 12 },
+            { key: 'item_price', label: 'Item Price', icon: 'folder', row_count: 0 },
+          ],
   };
 }
 

@@ -151,6 +151,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 "Purchase Invoice",
                 "Payment Entry",
                 "Journal Entry",
+                "GL Entry",
                 "Customer",
                 "Supplier",
                 "Item",
@@ -257,7 +258,7 @@ class TestDesktopDomains(IntegrationTestCase):
     def test_domain_sales_and_finance_shape_kpi_and_no_mutation(self):
         before = self._snapshot_counts()
 
-        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 1)):
+        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 4)):
             with self.subTest(domain=domain_key):
                 definition = get_domain_definition(domain_key)
                 result = frappe.call(desktop_api.domain, domain=domain_key)
@@ -300,6 +301,11 @@ class TestDesktopDomains(IntegrationTestCase):
                     [m["key"] for m in result["modules"]],
                     list(definition["modules"]),
                 )
+                if domain_key == "accounting":
+                    self.assertEqual(
+                        [m["key"] for m in result["modules"]],
+                        ["journal_entry", "gl_entry"],
+                    )
                 for mod_out in result["modules"]:
                     self.assertEqual(set(mod_out.keys()), {"key", "label", "icon", "row_count"})
                     mod_def = get_module_definition(mod_out["key"])
@@ -366,17 +372,28 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(open_domain("sales"), {"ok": True, "domain": "sales"})
         self.assertEqual(open_domain("finance"), {"ok": True, "domain": "finance"})
         self.assertEqual(open_domain("accounting"), {"ok": True, "domain": "accounting"})
+        self.assertEqual(open_module("gl_entry"), {"ok": True, "module": "gl_entry"})
         self.assertEqual(open_domain("sales_invoice").get("code"), "DOMAIN_NOT_ALLOWED")
+        self.assertEqual(open_domain("gl_entry").get("code"), "DOMAIN_NOT_ALLOWED")
         self.assertEqual(open_domain("purchasing").get("code"), "DOMAIN_NOT_ALLOWED")
 
         # 3. _open_module_event and _open_domain_event do not cross-accept each other's payloads
         _open_domain_event = getattr(base_manager, "_open_domain_event", None)
         self.assertTrue(callable(_open_domain_event), "_open_domain_event belum tersedia di base_manager")
+        self.assertEqual(
+            _open_module_event("open_module", json.dumps({"ok": True, "module": "gl_entry"})),
+            {"type": "open_module", "module": "gl_entry"},
+        )
+        self.assertEqual(
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "accounting"})),
+            {"type": "open_domain", "domain": "accounting"},
+        )
         self.assertIsNone(_open_module_event("open_module", json.dumps({"ok": True, "module": "sales"})))
         self.assertIsNone(_open_module_event("open_domain", json.dumps({"ok": True, "domain": "sales"})))
         self.assertIsNone(_open_domain_event("open_module", json.dumps({"ok": True, "module": "sales_invoice"})))
         self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"})))
         self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales_invoice"})))
+        self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "gl_entry"})))
 
         # 4. Full path (tool -> SSE event -> HTTP endpoint):
         mod_res = open_module("sales_invoice")
