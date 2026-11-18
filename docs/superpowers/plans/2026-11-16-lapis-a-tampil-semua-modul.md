@@ -422,7 +422,7 @@ git commit -m "feat(desk): tambah modul Account read-only di Ekasa Desk"
 - Consumes: bidang `accounting` aktif (Task 3); pola entri master Customer/Supplier/Item; `_server_filters` (`aios_v1/api/desktop.py:221-230` — grup modul `Accounting` TIDAK ada di `{"Sales", "Finance"}`, jadi DocType tanpa field `company` TIDAK melempar; list memakai `base_filters` saja).
 - Produces: key modul `"company"` terdaftar di `_MODULES_BY_KEY`; bidang `accounting` berisi `("journal_entry", "gl_entry", "account", "company")` — KEADAAN AKHIR Fase 1: 14 modul, 3 bidang aktif (sales, finance, accounting), 8 bidang planned.
 
-**Riset field (terverifikasi dari `company.json`, ERPNext 16.34.2):** TIDAK submittable; field `company` TIDAK ADA (record Company ADALAH company itu sendiri); `company_name` [Data] (sumber `autoname` — field `name` = nama company); `abbr` [Data]; `default_currency` [Link → Currency]; `country` [Link]; `tax_id` [Data]; `is_group` [Check]; `parent_company` [Link → Company]. Field `disabled` TIDAK ADA; field `status` TIDAK ADA; field tanggal TIDAK ADA.
+**Riset field (terverifikasi dari `company.json`, ERPNext 16.34.2):** TIDAK submittable; field `company` TIDAK ADA (record Company ADALAH company itu sendiri); `company_name` [Data] (sumber `autoname` — field `name` = nama company); `abbr` [Data]; `default_currency` [Link → Currency]; `country` [Link]; `tax_id` [Data]; `is_group` [Check]; `parent_company` [Link → Company]. Field `disabled` TIDAK ADA; field `status` TIDAK ADA; field tanggal: ADA 4 field Date (date_of_establishment, date_of_incorporation, date_of_commencement, accounts_frozen_till_date) — koreksi 18 Nov, investigasi Task 6; tidak dipakai di entri katalog, tanpa dampak.
 
 **Keputusan yang dipin (tidak bisa ditebak implementer):**
 - **List menampilkan SEMUA company di site (site-wide, tanpa filter company).** Tidak ada cara memfilter Company ke company aktif — record-nya sendiri adalah company. Diterima untuk Fase 1 (Review Focus #3): Company adalah master data dan site normalnya punya 1 company. Label kartu memakai "di site" karena di sini benar-benar site-wide.
@@ -436,7 +436,7 @@ git commit -m "feat(desk): tambah modul Account read-only di Ekasa Desk"
 - `base_filters`: `{}`
 - `cards`: `count` "Company di site" (count, `name`, number, scope `site`, `{}`) — SATU kartu saja
 
-- [ ] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes` KE KEADAAN AKHIR: set key menjadi 14 key (`sales_invoice`, `sales_order`, `quotation`, `purchase_invoice`, `payment_entry`, `customer`, `supplier`, `item`, `delivery_note`, `item_price`, `journal_entry`, `gl_entry`, `account`, `company`); grup Sales menjadi 7 key; grup Finance tetap 3 key; grup Accounting menjadi `{"journal_entry", "gl_entry", "account", "company"}`; `assertNotIn("Purchase Order", ...)` tetap. Perluas loop di `test_master_cards_are_site_counts_without_nominal_fields` menjadi `(("customer", "Customer"), ("account", "Account"), ("company", "Company"))`. Tambah tes baru `test_company_module_is_site_wide_without_company_field`: assert `frappe.get_meta("Company").has_field("company") is False`; assert endpoint modul `company` mengembalikan company tes tanpa throw; assert kartu scope `site`. Tambah `"Company"` ke `_snapshot_counts` di `test_desktop_domains.py`.
+- [x] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes` KE KEADAAN AKHIR: set key menjadi 14 key (`sales_invoice`, `sales_order`, `quotation`, `purchase_invoice`, `payment_entry`, `customer`, `supplier`, `item`, `delivery_note`, `item_price`, `journal_entry`, `gl_entry`, `account`, `company`); grup Sales menjadi 7 key; grup Finance tetap 3 key; grup Accounting menjadi `{"journal_entry", "gl_entry", "account", "company"}`; `assertNotIn("Purchase Order", ...)` tetap. Perluas loop di `test_master_cards_are_site_counts_without_nominal_fields` menjadi `(("customer", "Customer"), ("account", "Account"), ("company", "Company"))`. Tambah tes baru `test_company_module_is_site_wide_without_company_field`: assert `frappe.get_meta("Company").has_field("company") is False`; assert endpoint modul `company` mengembalikan company tes tanpa throw; assert kartu scope `site`. Tambah `"Company"` ke `_snapshot_counts` di `test_desktop_domains.py`.
 
 ```python
 def test_company_module_is_site_wide_without_company_field(self):
@@ -448,31 +448,33 @@ def test_company_module_is_site_wide_without_company_field(self):
     self.assertEqual(result["cards"][0]["scope"], "site")
 ```
 
-- [ ] **Step 2: Jalankan tes untuk memastikan gagal.**
+- [x] **Step 2: Jalankan tes untuk memastikan gagal.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules`
 Expected: FAIL — daftar-eksak (set key belum berisi `company`) dan tes site-wide baru (modul belum ada).
 
-- [ ] **Step 3: Implementasi entri katalog `company` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas.
+- [x] **Step 3: Implementasi entri katalog `company` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas.
 
-- [ ] **Step 4: Penempatan bidang.** Di `aios_v1/lib/desktop_domains.py`, tambah `"company"` ke modul bidang `accounting` (setelah `"account"`). Kartu KPI bidang Accounting TIDAK diubah (tetap 4 kartu dari Task 3 + Task 4).
+- [x] **Step 4: Penempatan bidang.** Di `aios_v1/lib/desktop_domains.py`, tambah `"company"` ke modul bidang `accounting` (setelah `"account"`). Kartu KPI bidang Accounting TIDAK diubah (tetap 4 kartu dari Task 3 + Task 4).
 
-- [ ] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` accounting `module_count` 3 → 4; cabang accounting di `fetchDomain` tambah `{ key: 'company', label: 'Company', icon: 'building', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"Company"` ke `CATALOG_DOCTYPES`.
+- [x] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` accounting `module_count` 3 → 4; cabang accounting di `fetchDomain` tambah `{ key: 'company', label: 'Company', icon: 'building', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"Company"` ke `CATALOG_DOCTYPES`.
 
-- [ ] **Step 6: Jalankan tes untuk memastikan lolos — SEKALIGUS verifikasi akhir Fase 1.**
+- [x] **Step 6: Jalankan tes untuk memastikan lolos — SEKALIGUS verifikasi akhir Fase 1.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_domains` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_frontend_no_hardcode`
 Expected: PASS — ketiga modul hijau. Verifikasi akhir keadaan Fase 1 (assert di tes yang sudah ada): `get_module_keys()` = 14 key; `get_domain_keys()` = `["sales", "finance", "accounting"]`; `get_planned_domain_count()` = 8; `len(_DOMAINS)` = 11.
 
-- [ ] **Step 7: Verifikasi live oleh Ten sendiri (verifikasi akhir Fase 1; screenshot dari Chrome Ten di bench PC).** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bootstrap memuat 14 modul dan 3 bidang aktif; bidang Accounting menampilkan 4 modul (Journal Entry, GL Entry, Account, Company) dan 4 kartu KPI; buka modul Company — list menampilkan company; search dengan nama company menemukan barisnya; nilai kartu "Company di site" cocok dengan jumlah company di site. Cek silang global search: cari satu dokumen dari tiap modul baru (Delivery Note, Item Price, Journal Entry, GL Entry, Account, Company) — semuanya ditemukan. Cek silang agen: `open_module` menerima keenam key baru (enum dinamis dari `get_module_keys()`).
+- [x] **Step 7: Verifikasi live oleh Ten sendiri (verifikasi akhir Fase 1; screenshot dari Chrome Ten di bench PC).** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bootstrap memuat 14 modul dan 3 bidang aktif; bidang Accounting menampilkan 4 modul (Journal Entry, GL Entry, Account, Company) dan 4 kartu KPI; buka modul Company — list menampilkan company; search dengan nama company menemukan barisnya; nilai kartu "Company di site" cocok dengan jumlah company di site. Cek silang global search: cari satu dokumen dari tiap modul baru (Delivery Note, Item Price, Journal Entry, GL Entry, Account, Company) — semuanya ditemukan. Cek silang agen: `open_module` menerima keenam key baru (enum dinamis dari `get_module_keys()`).
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 git add aios_v1/lib/desktop_modules.py aios_v1/lib/desktop_domains.py aios_v1/tests/test_desktop_modules.py aios_v1/tests/test_desktop_domains.py aios_v1/tests/test_frontend_no_hardcode.py frontend/src/api/mock/modules.ts
 git commit -m "feat(desk): tambah modul Company read-only di Ekasa Desk"
 ```
 
+
+**Hasil Task 6 (18 Nov 2026, commit 85cb46f, verifikasi live AKHIR Fase 1 LOLOS oleh Muse sendiri via browser Chrome Ten 11:05 WIB — atas permintaan Ten "coba kamu verif sendiri", bukan screenshot Ten seperti Step 7):** investigasi 10/10 (temuan kecil: company.json punya 4 field Date — plan bilang tidak ada, tidak memengaruhi katalog; "Company" sudah di ERP_CLIENT_DOCTYPES :62; ikon "building" tersedia, tanpa fallback); tes hijau 30/8/13 (klaim Gemini, Muse belum menjalankan ulang; RED awal 1 failure + 2 errors); hitung langsung client1: 1 company (Tenshi Company, TC, IDR, Indonesia); live: bootstrap 14 modul + 3 bidang aktif, Accounting 4 modul + 4 kartu (angka semua cocok), Company 1 baris + kartu "Company di site" 1, global search 6/6 dokumen modul baru ditemukan, Account kartu 220 + 220 baris; catatan: modul Company TIDAK punya kotak search di dalam modul (hanya Refresh) — search lewat global search; kolom ID menampilkan nama bukan kode; cek silang open_module TIDAK dites live (enum dinamis dari get_module_keys(), tercakup tes). **LAPIS A SELESAI PENUH (6/6 modul).**
 ---
 
 ## Self-Review

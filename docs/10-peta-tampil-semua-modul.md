@@ -56,7 +56,7 @@ Planned — sudah ada key, ikon, dan `color_token`, tapi modul dan kartu KOSONG 
 | `assets` — Assets | kosong |
 | `support` — Support | kosong |
 | `quality` — Quality | kosong |
-| `accounting` — Accounting | 3 modul (Journal Entry, GL Entry, Account) + 4 kartu |
+| `accounting` — Accounting | 4 modul (Journal Entry, GL Entry, Account, Company) + 4 kartu |
 
 Catatan: **tidak ada bidang HR** — bahkan sebagai "planned" pun tidak ada. "Akuntansi & HRIS" dari log booting tidak punya wadah di katalog bidang saat ini.
 
@@ -66,7 +66,7 @@ Quotation, Sales Order, Sales Invoice, Purchase Invoice, Delivery Note, Payment 
 
 Peran `AIOS Client`: read + report saja (`ERP_CLIENT_PERMS`), di-scope ke company aktif lewat `permission_query_conditions` / `has_permission`. `ensure_aios_permissions()` memasang Custom DocPerm saat install/migrate.
 
-**Dari 14 ini, 1 belum tampil sebagai modul (peluang termurah, §3a):** Company. (Delivery Note, Journal Entry, GL Entry, Item Price, Account sudah tampil di Lapis A — Task 1–5.)
+**Dari 14 ini, 0 belum tampil sebagai modul:** keenam DocType (Delivery Note, Journal Entry, GL Entry, Item Price, Account, Company) sudah tampil semua di Lapis A (Task 1–6).
 
 ### 1d. Sisi agen (yang ikut kebuka kalau modul ditambah)
 
@@ -94,7 +94,7 @@ Delivery Note, Journal Entry, GL Entry, Item Price, Company, Account. Sudah ada 
 
 Kandidat penempatan bidang:
 - Delivery Note → Sales (dokumen pengiriman penjualan; juga dipakai buying) atau Inventory bila bidang itu diaktifkan.
-- Journal Entry + GL Entry + Account + Company → Accounting (bidang sudah aktif sejak Task 3; Journal Entry, GL Entry, Account sudah tampil — Task 3–5; Company berikutnya, Task 6) atau Finance.
+- Journal Entry + GL Entry + Account + Company → Accounting (bidang sudah aktif sejak Task 3; keempatnya sudah tampil — Task 3–6) atau Finance.
 - Item Price → Sales (katalog harga; juga sudah bisa dibaca tamu).
 
 ### Lapis B — Bidang planned (9 bidang) + DocType ERPNext baru
@@ -111,7 +111,7 @@ Setiap bidang planned diisi modul dari DocType ERPNext yang memang ada di site (
 | assets | Asset, Asset Category, Asset Maintenance | 28 DocType |
 | support | Issue, Service Level Agreement | 13 DocType |
 | quality | Quality Inspection, Quality Goal | 18 DocType |
-| accounting | Journal Entry, GL Entry, Account, Company, Cost Center, Bank Account | Journal Entry, GL Entry, Account sudah tampil di Lapis A (Task 3–5); bidang aktif; Company berikutnya (Task 6) |
+| accounting | Journal Entry, GL Entry, Account, Company, Cost Center, Bank Account | Keempatnya sudah tampil di Lapis A (Task 3–6); bidang aktif; Lapis A selesai |
 
 Setiap DocType baru di lapis ini butuh: tambah ke `ERP_CLIENT_DOCTYPES` → migrate di bench PC + server testing (pasang Custom DocPerm) → katalog → bidang → tes → verifikasi. Dan otomatis membuka baca agen untuk DocType itu (lihat §4).
 
@@ -161,7 +161,7 @@ Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal
 
 | Klaim / harapan | Kenyataan (terverifikasi dari kode) |
 |---|---|
-| Semua fitur sudah ada | Hanya 8 modul + 9 bidang planned kosong. 6 DocType sudah diizinkan tapi belum tampil. Payroll tidak ada DocType-nya. |
+| Semua fitur sudah ada | 14 modul tampil + 8 bidang planned kosong. Keenam DocType yang diizinkan sudah tampil semua di Lapis A (Task 1–6). Payroll tidak ada DocType-nya. |
 | Modul tampil = fitur lengkap | **Tidak ada halaman detail dokumen sama sekali** — backend tidak punya endpoint detail, frontend hanya `ModuleWindow` list. Setiap modul baru = list-only. Detail adalah scope terpisah (dicatat sebagai follow-up Quotation). |
 | Approval bisa dipakai untuk semua modul | Kartu approval tidak menampilkan harga (Harga Satuan + Subtotal "—"); notifikasi approval ke tamu hanya untuk Sales Order (`draft_manager.py:991`); draf CREATE hanya SO/Quotation. |
 | HRIS & Penggajian tinggal tampilkan | HRMS tidak terpasang; DocType payroll tidak ada di site. |

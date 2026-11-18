@@ -3,7 +3,7 @@
 Daftar tugas gaya Superpowers — menandai posisi kita sekarang. Peta analisis/keputusan ada di `peta-tampil-semua-modul.md` (dokumen acuan, stabil); file ini yang hidup (dicentang tiap selesai). Detail tiap tugas (nilai yang dipin, langkah 1–8) ada di plan (`rencana-lapis-a-superpowers.md`); file ini cermin checklist-nya supaya alur tiap fase kelihatan dari A sampai Z.
 
 ## 📍 POSISI SEKARANG
-Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit lokal 362b51a, belum push). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit lokal 5381790, belum push). Task 5 (Account) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 10:34 WIB, commit lokal 6fad288, belum push).** Dokumentasi ini (docs 10, 11, plan) di-commit 18 Nov, up to date dengan kondisi Task 5. Berikutnya: Task 6 (Company), satu-satu, setelah Ten bilang lanjut.
+Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit lokal 362b51a, belum push). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit lokal 5381790, belum push). Task 5 (Account) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 10:34 WIB, commit lokal 6fad288, belum push). Task 6 (Company) SELESAI PENUH + verifikasi live AKHIR Fase 1 LOLOS oleh Muse sendiri via browser Chrome Ten (18 Nov 11:05 WIB, commit lokal 85cb46f, belum push).** Dokumentasi ini (docs 10, 11, plan) di-commit 18 Nov, up to date dengan kondisi Task 6 — Lapis A SELESAI PENUH (6/6 modul). Berikutnya: tombol tutup draf kadaluarsa, satu-satu, setelah Ten bilang lanjut.
 
 ## Fase 0 — Investigasi & peta (SELESAI)
 - [x] Peta tampil-semua-modul (`peta-tampil-semua-modul.md`)
@@ -75,15 +75,15 @@ Tiap tugas: draf investigasi → investigasi + crosscheck → draf implementasi 
 - [x] Commit 6fad288, lokal tanpa push
 - Catatan: kartu "Akun aktif" (tanpa "di site"); base_filters `{"disabled": 0}`; Account punya field company (di-scope ke company aktif). Klarifikasi Ten: 220 itu akun-akun akuntansi di bagan akun — bukan customer, bukan akun user Frappe.
 
-### Task 6: Company → Accounting — BELUM DIMULAI
-- [ ] Draf investigasi
-- [ ] Investigasi Gemini + crosscheck Muse
-- [ ] Draf implementasi
-- [ ] Implementasi Gemini + crosscheck Muse
-- [ ] Tes
-- [ ] Verifikasi live
-- [ ] Commit
-- Catatan: list site-wide tanpa filter company (record Company ADALAH company itu sendiri); kartu "Company di site". Keadaan akhir Fase 1: 14 modul, 3 bidang aktif (sales, finance, accounting), 8 bidang planned.
+### Task 6: Company → Accounting — SELESAI PENUH ✅
+- [x] Draf investigasi — ditulis Muse 18 Nov, dibaca Ten, dikirim ke Gemini via CLI (conversation baru 723ca1be)
+- [x] Investigasi Gemini + crosscheck Muse (18 Nov 10:43, 10/10; TEMUAN KECIL: company.json punya 4 field Date — plan bilang tidak ada, tidak memengaruhi katalog; "Company" sudah di ERP_CLIENT_DOCTYPES :62; ikon "building" tersedia di AppIcon.vue:64, tanpa fallback; hitung langsung client1: 1 company — Tenshi Company, TC, IDR, Indonesia)
+- [x] Draf implementasi — ditulis Muse 18 Nov, dibaca + disetujui Ten, dikirim via CLI di sesi yang sama (conversation 723ca1be, Hydrogen High)
+- [x] Implementasi Gemini + crosscheck Muse (18 Nov 10:51, commit 85cb46f; entri company :603-632, domain accounting 4 modul, mock module_count 4, assert 4 modul, tes baru :997)
+- [x] Tes (30/8/13 PASS — angka klaim Gemini, Muse belum menjalankan ulang; follow-up: deadlock MariaDB bila 2 suite jalan paralel, berurutan lolos; ruff tidak terpasang di PATH CLI)
+- [x] Verifikasi live AKHIR Fase 1 oleh Muse sendiri via browser Chrome Ten 18 Nov 11:05 WIB (atas permintaan Ten; bootstrap 14 modul + 3 bidang aktif; Accounting 4 modul + 4 kartu — angka semua cocok; Sales/Finance tidak berubah; Company 1 baris, kartu "Company di site" 1; global search 6/6 dokumen modul baru ditemukan; Account kartu 220, 220 baris; catatan: modul Company tidak punya kotak search di dalam modul — hanya Refresh, search lewat global search; kolom ID menampilkan nama bukan kode; cek silang open_module tidak dites live)
+- [x] Commit 85cb46f, lokal tanpa push
+- Catatan: list site-wide tanpa filter company (record Company ADALAH company itu sendiri); kartu "Company di site". Keadaan akhir Fase 1: 14 modul, 3 bidang aktif (sales, finance, accounting), 8 bidang planned. **LAPIS A SELESAI PENUH (6/6 modul).**
 
 ## Sesudah Lapis A — antrean follow-up (keputusan Ten 18 Nov; dikerjakan urut, satu-satu, sesudah Task 6)
 - [ ] Tombol tutup untuk draf kadaluarsa di list Persetujuan Tertunda (DRF-2026-11-00082 masih tampil padahal sudah kedaluwarsa 17 Nov 14.00; list mengembalikan semua PENDING_APPROVAL, hanya ditandai flag expired) — solusi yang diputuskan Ten: tambah tombol tutup saja (bukan sembunyikan otomatis). Urutan: tugas berikutnya sesudah Task 6.
