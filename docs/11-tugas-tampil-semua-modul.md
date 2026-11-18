@@ -3,7 +3,7 @@
 Daftar tugas gaya Superpowers — menandai posisi kita sekarang. Peta analisis/keputusan ada di `peta-tampil-semua-modul.md` (dokumen acuan, stabil); file ini yang hidup (dicentang tiap selesai). Detail tiap tugas (nilai yang dipin, langkah 1–8) ada di plan (`rencana-lapis-a-superpowers.md`); file ini cermin checklist-nya supaya alur tiap fase kelihatan dari A sampai Z.
 
 ## 📍 POSISI SEKARANG
-Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit lokal 362b51a, belum push).** Dokumentasi ini (docs 10, 11, plan, branding) di-commit 18 Nov, up to date dengan kondisi Task 3. Berikutnya: Task 4 (GL Entry), satu-satu, setelah Ten bilang lanjut.
+Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit lokal 362b51a, belum push).** Dokumentasi ini (docs 10, 11, plan) di-commit 18 Nov, up to date dengan kondisi Task 4. Berikutnya: Task 5 (Account), satu-satu, setelah Ten bilang lanjut.
 
 ## Fase 0 — Investigasi & peta (SELESAI)
 - [x] Peta tampil-semua-modul (`peta-tampil-semua-modul.md`)
@@ -55,15 +55,15 @@ Tiap tugas: draf investigasi → investigasi + crosscheck → draf implementasi 
 - [x] Commit 362b51a, lokal tanpa push
 - Catatan: bidang Accounting planned → active; kartu KPI `journal_debit` "Total debit jurnal"; Journal Entry tidak punya field status (filter Jenis menggantikannya).
 
-### Task 4: GL Entry → Accounting — BELUM DIMULAI
-- [ ] Draf investigasi
-- [ ] Investigasi Gemini + crosscheck Muse
-- [ ] Draf implementasi
-- [ ] Implementasi Gemini + crosscheck Muse
-- [ ] Tes
-- [ ] Verifikasi live
-- [ ] Commit
-- Catatan: base_filters `{"is_cancelled": 0}` — BUKAN `{"docstatus": 1}` (GL Entry tidak pernah disubmit); 3 kartu bidang (Entri GL tercatat, Total debit, Total kredit).
+### Task 4: GL Entry → Accounting — SELESAI PENUH ✅
+- [x] Draf investigasi — ditulis Muse 18 Nov, dibaca Ten, dikirim ke Gemini via CLI (conversation baru c6a896b6)
+- [x] Investigasi Gemini + crosscheck Muse (18 Nov 09:27, 10/10; TEMUAN: docstatus GL selalu 1 — asumsi plan terbantah, base_filters is_cancelled tetap benar, komentar dipin perlu diubah; mock belum punya cabang accounting — Opsi A diputuskan Ten; hitung langsung client1: 576 entri, debit = kredit Rp 78.525.598.000, contoh ACC-GLE-2026-00580 Rp 5.328.000)
+- [x] Draf implementasi — ditulis Muse 18 Nov, dibaca + disetujui Ten, dikirim via CLI di sesi yang sama (conversation c6a896b6, Hydrogen High)
+- [x] Implementasi Gemini + crosscheck Muse (18 Nov 09:42, commit 5381790; entri GL Entry :513, komentar dipin :541, kartu gl_count/gl_debit/gl_credit, mock cabang accounting Opsi A, tes baru :896)
+- [x] Tes (29/8/13 PASS + typecheck — angka klaim Gemini, Muse belum menjalankan ulang; suite penuh: 22 error + 1 failure pra-ada di luar scope — tabel 'tabError Log' crash)
+- [x] Verifikasi live oleh Ten 18 Nov 09:45 WIB (Accounting 4 kartu: Total debit jurnal Rp 90.400.000, Entri GL tercatat 576, Total debit = Total kredit Rp 78.525.598.000; modul GL Entry: 3 kartu sama, baris teratas ACC-GLE-2026-00580; catatan: search "Kas Kecil" tidak tampak eksplisit di screenshot, barisnya kelihatan dan jalur search tercakup tes hijau)
+- [x] Commit 5381790, lokal tanpa push
+- Catatan: base_filters `{"is_cancelled": 0}` — BUKAN `{"docstatus": 1}` (GL Entry dibuat oleh posting dan selalu ber-docstatus 1 — pakai is_cancelled 0 untuk mengecualikan 4 entri batal); 3 kartu bidang (Entri GL tercatat, Total debit, Total kredit). Mock cabang accounting SELESAI (Opsi A).
 
 ### Task 5: Account → Accounting — BELUM DIMULAI
 - [ ] Draf investigasi
@@ -84,6 +84,10 @@ Tiap tugas: draf investigasi → investigasi + crosscheck → draf implementasi 
 - [ ] Verifikasi live
 - [ ] Commit
 - Catatan: list site-wide tanpa filter company (record Company ADALAH company itu sendiri); kartu "Company di site". Keadaan akhir Fase 1: 14 modul, 3 bidang aktif (sales, finance, accounting), 8 bidang planned.
+
+## Sesudah Lapis A — antrean follow-up (keputusan Ten 18 Nov; dikerjakan urut, satu-satu, sesudah Task 6)
+- [ ] Tombol tutup untuk draf kadaluarsa di list Persetujuan Tertunda (DRF-2026-11-00082 masih tampil padahal sudah kedaluwarsa 17 Nov 14.00; list mengembalikan semua PENDING_APPROVAL, hanya ditandai flag expired) — solusi yang diputuskan Ten: tambah tombol tutup saja (bukan sembunyikan otomatis). Urutan: tugas berikutnya sesudah Task 6.
+- [ ] Persona agent Accounting (tiap agent bidang punya persona masing-masing; Finance dan Sales sudah punya, Accounting belum dibikin) — sesudah tombol tutup, atau sesuai arahan Ten nanti.
 
 ## Fase 2 — 1 bidang planned sebagai pola: Purchasing (BELUM DIMULAI)
 

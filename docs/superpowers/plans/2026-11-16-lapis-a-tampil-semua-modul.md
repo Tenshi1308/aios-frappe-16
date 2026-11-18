@@ -31,7 +31,7 @@ Setiap task secara implisit mencakup bagian ini.
 
 Lima mode kegagalan yang paling mungkin menggigit pengguna, yang tidak ditangkap tes-tes yang sudah ada. Tiap baris sudah ditambah tesnya di task yang bersangkutan.
 
-1. **GL Entry tanpa docstatus — list kosong padahal data ada.** GL Entry tidak pernah disubmit (docstatus selalu 0); `base_filters {"docstatus": 1}` lolos validasi field (docstatus adalah kolom standar) tapi mengembalikan 0 baris, sehingga pengguna membuka modul GL Entry yang kosong. Tes penambat: Task 4 (`test_gl_entry_list_returns_rows_without_docstatus_filter` + assert `base_filters == {"is_cancelled": 0}`).
+1. **GL Entry tanpa filter batal — entri batal ikut tampil.** GL Entry dibuat oleh posting dan selalu ber-docstatus 1 (termasuk 4 entri batal di data live); `base_filters {"docstatus": 1}` lolos validasi field tapi mengembalikan SEMUA baris termasuk entri batal, sehingga pengguna melihat entri batal di list. Yang benar `base_filters == {"is_cancelled": 0}`. (Koreksi 18 Nov: asumsi awal plan "docstatus selalu 0" terbantah investigasi Task 4.) Tes penambat: Task 4 (`test_gl_entry_list_returns_rows_without_docstatus_filter` + assert `base_filters == {"is_cancelled": 0}`).
 2. **Item Price tanpa field company — endpoint melempar error.** `_server_filters` (`aios_v1/api/desktop.py:221-230`) melempar `ValidationError` "Cakupan company tidak dapat dipastikan" untuk DocType tanpa field `company` bila `group` modul adalah Sales/Finance dan doctype tidak masuk daftar pengecualian `{Customer, Supplier, Item}`. Tanpa pengecualian, endpoint list/modul/kartu DAN ringkasan modul bidang Sales semuanya gagal untuk Item Price. Tes penambat: Task 2 (`test_item_price_module_is_site_scoped_without_company_field` — endpoint modul mengembalikan baris tanpa throw).
 3. **Company tanpa field company — list menampilkan SEMUA company di site.** Company adalah record company itu sendiri, jadi tidak bisa di-scope ke company aktif. Diterima untuk Fase 1 (Company adalah master data; site normalnya punya 1 company); bila pemisahan multi-company menjadi kebutuhan, itu mekanisme baru di luar scope. Tes penambat: Task 6 (`test_company_module_is_site_wide_without_company_field` — endpoint bekerja, kartu scope `site`).
 4. **Search memakai nama tampilan pihak tidak menemukan apa-apa.** Bila `search_fields` hanya berisi field ID (mis. `customer`) dan bukan field nama tampilan (`customer_name`), pencarian "Tenshi" tidak menemukan dokumen padahal namanya tampil di list. Tes penambat: Task 1 (Delivery Note — assert search `customer_name` menemukan baris) dan Task 2 (Item Price — assert search `item_name` menemukan baris).
@@ -282,11 +282,11 @@ git commit -m "feat(desk): aktifkan bidang Accounting + tambah modul Journal Ent
 - Consumes: bidang `accounting` aktif (Task 3); `_domain_definition` (`aios_v1/api/desktop.py:315-334` — field kartu bidang harus ada di `meta.get_valid_columns()`); `_domain_card_value` (:335-343 — GL Entry punya field `company`, jadi kartu bidang di-scope ke company aktif tanpa pengecualian).
 - Produces: key modul `"gl_entry"` terdaftar di `_MODULES_BY_KEY`; bidang `accounting` berisi `("journal_entry", "gl_entry")` dengan 4 kartu KPI (1 JE + 3 GL).
 
-**Riset field (terverifikasi dari `gl_entry.json`, ERPNext 16.34.2):** TIDAK submittable (`is_submittable` kosong — GL Entry dibuat oleh posting, bukan disubmit); `company` [Link] ADA; `posting_date` [Date]; `transaction_date` [Date]; `account` [Link → Account]; `party_type` [Link → DocType] + `party` [Dynamic Link]; `debit`/`credit` [Currency]; `voucher_type` [Link → DocType] + `voucher_no` [Dynamic Link]; `against` [Text]; `remarks` [Text]; `is_opening` [Select]; `is_cancelled` [Check]; `fiscal_year` [Link]; `autoname` `ACC-GLE-.YYYY.-.#####`. Field `status` TIDAK ADA; `docstatus` ADA sebagai kolom standar tapi SELALU 0 untuk GL Entry (tidak pernah disubmit).
+**Riset field (terverifikasi dari `gl_entry.json`, ERPNext 16.34.2):** TIDAK submittable (`is_submittable` kosong — GL Entry dibuat oleh posting, bukan disubmit); `company` [Link] ADA; `posting_date` [Date]; `transaction_date` [Date]; `account` [Link → Account]; `party_type` [Link → DocType] + `party` [Dynamic Link]; `debit`/`credit` [Currency]; `voucher_type` [Link → DocType] + `voucher_no` [Dynamic Link]; `against` [Text]; `remarks` [Text]; `is_opening` [Select]; `is_cancelled` [Check]; `fiscal_year` [Link]; `autoname` `ACC-GLE-.YYYY.-.#####`. Field `status` TIDAK ADA; `docstatus` ADA sebagai kolom standar dan SELALU 1 untuk GL Entry (dibuat oleh posting — koreksi 18 Nov, investigasi Task 4).
 
 **Keputusan yang dipin (tidak bisa ditebak implementer):**
-- **`base_filters` = `{"is_cancelled": 0}` — BUKAN `{"docstatus": 1}`.** `docstatus` lolos validasi field tapi selalu 0 untuk GL Entry, sehingga filter `docstatus` 1 mengembalikan 0 baris (Review Focus #1). Tulis komentar satu baris di kode di atas entri: `# GL Entry tidak pernah disubmit (docstatus selalu 0) — jangan ganti ke docstatus 1.`
-- **Label kartu TIDAK memakai "terbit"** (GL Entry tidak disubmit): "Entri GL tercatat", "Total debit", "Total kredit".
+- **`base_filters` = `{"is_cancelled": 0}` — BUKAN `{"docstatus": 1}`.** `docstatus` lolos validasi field tapi selalu 1 untuk GL Entry (termasuk entri batal), sehingga filter `docstatus` 1 mengembalikan semua baris termasuk yang batal (Review Focus #1). Tulis komentar satu baris di kode di atas entri: `# GL Entry dibuat oleh posting dan selalu ber-docstatus 1 — pakai is_cancelled 0 untuk mengecualikan entri batal, jangan pakai docstatus 1.`
+- **Label kartu TIDAK memakai "terbit"** (GL Entry bukan DocType submittable — `is_submittable` kosong): "Entri GL tercatat", "Total debit", "Total kredit".
 - **Volume baris:** setiap posting menghasilkan banyak baris GL — list GL Entry adalah list terbesar di Desk. `order_field` `posting_date` + paginasi (cap 100 baris/halaman, pola yang sudah ada) yang berlaku; tidak ada langkah khusus di task ini selain verifikasi live bahwa halaman 2 termuat.
 
 **Entri katalog yang dipin:**
@@ -304,7 +304,7 @@ git commit -m "feat(desk): aktifkan bidang Accounting + tambah modul Journal Ent
 - `gl_debit` "Total debit" (sum, GL Entry, `debit`, currency, `{"is_cancelled": 0}`)
 - `gl_credit` "Total kredit" (sum, GL Entry, `credit`, currency, `{"is_cancelled": 0}`)
 
-- [ ] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes`: set key menjadi 12 key (11 + `"gl_entry"`); grup Accounting menjadi `{"journal_entry", "gl_entry"}`. Tambah tes baru `test_gl_entry_list_returns_rows_without_docstatus_filter`: pola tes = patch `frappe.get_list` (bukan sisip dokumen ke DB) untuk mengembalikan baris GL (`is_cancelled` 0), lalu assert endpoint modul `gl_entry` mengembalikan baris-baris GL-nya dan assert `get_module_definition("gl_entry")["base_filters"] == {"is_cancelled": 0}`; assert 3 kartu modul dengan label yang dipin. JANGAN tambah `"gl_entry"` ke tuple di `test_transaction_cards_use_base_currency_and_exclude_internal_transfers` (:527) — kartu sum GL memakai field `debit`/`credit`, bukan `base_grand_total`. Tambah `"GL Entry"` ke `_snapshot_counts` di `test_desktop_domains.py`. Di `test_desktop_domains.py`, update `test_domain_sales_and_finance_shape_kpi_and_no_mutation`: ubah ekspektasi kartu accounting dari 1 menjadi 4.
+- [x] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes`: set key menjadi 12 key (11 + `"gl_entry"`); grup Accounting menjadi `{"journal_entry", "gl_entry"}`. Tambah tes baru `test_gl_entry_list_returns_rows_without_docstatus_filter`: pola tes = patch `frappe.get_list` (bukan sisip dokumen ke DB) untuk mengembalikan baris GL (`is_cancelled` 0), lalu assert endpoint modul `gl_entry` mengembalikan baris-baris GL-nya dan assert `get_module_definition("gl_entry")["base_filters"] == {"is_cancelled": 0}`; assert 3 kartu modul dengan label yang dipin. JANGAN tambah `"gl_entry"` ke tuple di `test_transaction_cards_use_base_currency_and_exclude_internal_transfers` (:527) — kartu sum GL memakai field `debit`/`credit`, bukan `base_grand_total`. Tambah `"GL Entry"` ke `_snapshot_counts` di `test_desktop_domains.py`. Di `test_desktop_domains.py`, update `test_domain_sales_and_finance_shape_kpi_and_no_mutation`: ubah ekspektasi kartu accounting dari 1 menjadi 4.
 
 ```python
 def test_gl_entry_list_returns_rows_without_docstatus_filter(self):
@@ -315,31 +315,33 @@ def test_gl_entry_list_returns_rows_without_docstatus_filter(self):
     self.assertEqual(len(result["cards"]), 3)
 ```
 
-- [ ] **Step 2: Jalankan tes untuk memastikan gagal.**
+- [x] **Step 2: Jalankan tes untuk memastikan gagal.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_domains`
 Expected: FAIL — daftar-eksak (set key belum berisi `gl_entry`), tes GL baru (modul belum ada), dan bentuk domain (kartu accounting masih 1, bukan 4).
 
-- [ ] **Step 3: Implementasi entri katalog `gl_entry` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas, termasuk komentar satu baris soal `docstatus` di atas `base_filters`.
+- [x] **Step 3: Implementasi entri katalog `gl_entry` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas, termasuk komentar satu baris soal `docstatus` di atas `base_filters`.
 
-- [ ] **Step 4: Penempatan bidang + kartu KPI.** Di `aios_v1/lib/desktop_domains.py`, tambah `"gl_entry"` ke modul bidang `accounting` (setelah `"journal_entry"`) dan tambah 3 kartu GL seperti dipin di atas.
+- [x] **Step 4: Penempatan bidang + kartu KPI.** Di `aios_v1/lib/desktop_domains.py`, tambah `"gl_entry"` ke modul bidang `accounting` (setelah `"journal_entry"`) dan tambah 3 kartu GL seperti dipin di atas.
 
-- [ ] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` accounting `module_count` 1 → 2; cabang accounting di `fetchDomain` tambah `{ key: 'gl_entry', label: 'GL Entry', icon: 'file', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"GL Entry"` ke `CATALOG_DOCTYPES`.
+- [x] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` accounting `module_count` 1 → 2; cabang accounting di `fetchDomain` tambah `{ key: 'gl_entry', label: 'GL Entry', icon: 'file', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"GL Entry"` ke `CATALOG_DOCTYPES`.
 
-- [ ] **Step 6: Jalankan tes untuk memastikan lolos.**
+- [x] **Step 6: Jalankan tes untuk memastikan lolos.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_domains` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_frontend_no_hardcode`
 Expected: PASS — ketiga modul hijau, termasuk `test_gl_entry_list_returns_rows_without_docstatus_filter` (list GL mengembalikan baris) dan bentuk domain accounting (4 kartu, nilai cocok dengan hitung langsung).
 
-- [ ] **Step 7: Verifikasi live oleh Ten sendiri (screenshot dari Chrome Ten di bench PC).** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bidang Accounting menampilkan 4 kartu KPI (1 JE + 3 GL) dengan nilai yang cocok dengan hitung langsung; buka modul GL Entry — list menampilkan baris GL terbaru dulu (`posting_date` desc); buka halaman 2 — termuat tanpa error (list GL adalah yang terbesar); search dengan `voucher_no` menemukan barisnya; filter Akun mempersempit list ke akun itu.
+- [x] **Step 7: Verifikasi live oleh Ten sendiri (screenshot dari Chrome Ten di bench PC).** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bidang Accounting menampilkan 4 kartu KPI (1 JE + 3 GL) dengan nilai yang cocok dengan hitung langsung; buka modul GL Entry — list menampilkan baris GL terbaru dulu (`posting_date` desc); buka halaman 2 — termuat tanpa error (list GL adalah yang terbesar); search dengan `voucher_no` menemukan barisnya; filter Akun mempersempit list ke akun itu.
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 git add aios_v1/lib/desktop_modules.py aios_v1/lib/desktop_domains.py aios_v1/tests/test_desktop_modules.py aios_v1/tests/test_desktop_domains.py aios_v1/tests/test_frontend_no_hardcode.py frontend/src/api/mock/modules.ts
 git commit -m "feat(desk): tambah modul GL Entry read-only di Ekasa Desk"
 ```
 
+
+**Hasil Task 4 (18 Nov 2026, commit 5381790, terverifikasi live oleh Ten 09:45 WIB):** investigasi 10/10 (asumsi "docstatus selalu 0" terbantah — semua baris GL ber-docstatus 1; komentar dipin diganti); mock dijalankan sebagai Opsi A (cabang accounting dibuat baru berisi journal_entry + gl_entry + 4 kartu KPI mock, karena cabangnya belum ada — menyimpang dari Step 5 yang mengasumsikan cabang sudah ada); tes hijau 29/8/13 + typecheck; hitung langsung client1: 576 entri, debit = kredit Rp 78.525.598.000, contoh ACC-GLE-2026-00580.
 ---
 
 ### Task 5: Account → Accounting

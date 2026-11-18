@@ -90,7 +90,7 @@ Peran `AIOS Client`: read + report saja (`ERP_CLIENT_PERMS`), di-scope ke compan
 
 Delivery Note, Journal Entry, GL Entry, Item Price, Company, Account. Sudah ada di `ERP_CLIENT_DOCTYPES`, Custom DocPerm sudah terpasang, agen sudah bisa membacanya. Pekerjaan per modul: entri katalog + penempatan bidang + tes + verifikasi. **Tidak perlu ubah `permissions.py`, tidak perlu migrate.**
 
-**Temuan riset plan (20:30, terverifikasi dari kode):** Item Price butuh pengecualian di `_server_filters` (`api/desktop.py`) — tanpa itu endpoint list/modul/kartu + ringkasan bidang Sales melempar `ValidationError` (DocType tanpa field `company` di grup Sales, tidak ada di `{Customer, Supplier, Item}`). Satu-satunya perubahan API di Lapis A; aman karena Item Price sudah bisa dibaca tamu. GL Entry tidak pernah disubmit (docstatus selalu 0) — `base_filters` memakai `{"is_cancelled": 0}`, bukan `{"docstatus": 1}`.
+**Temuan riset plan (20:30, terverifikasi dari kode):** Item Price butuh pengecualian di `_server_filters` (`api/desktop.py`) — tanpa itu endpoint list/modul/kartu + ringkasan bidang Sales melempar `ValidationError` (DocType tanpa field `company` di grup Sales, tidak ada di `{Customer, Supplier, Item}`). Satu-satunya perubahan API di Lapis A; aman karena Item Price sudah bisa dibaca tamu. GL Entry dibuat oleh posting dan selalu ber-docstatus 1 — `base_filters` memakai `{"is_cancelled": 0}` (bukan `{"docstatus": 1}`, karena entri batal tetap ber-docstatus 1).
 
 Kandidat penempatan bidang:
 - Delivery Note → Sales (dokumen pengiriman penjualan; juga dipakai buying) atau Inventory bila bidang itu diaktifkan.
