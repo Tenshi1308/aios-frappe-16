@@ -178,9 +178,19 @@ _DOMAINS = (
         "label": "Accounting",
         "icon": "wallet",
         "color_token": "domain-accounting",
-        "status": "planned",
-        "modules": (),
-        "cards": (),
+        "status": "active",
+        "modules": ("journal_entry",),
+        "cards": (
+            {
+                "key": "journal_debit",
+                "label": "Total debit jurnal",
+                "aggregate": "sum",
+                "doctype": "Journal Entry",
+                "field": "total_debit",
+                "format": "currency",
+                "filters": {"docstatus": 1},
+            },
+        ),
     },
 )
 

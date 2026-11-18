@@ -197,6 +197,7 @@ class TestDesktopModules(IntegrationTestCase):
                 "delivery_note",
                 "purchase_invoice",
                 "payment_entry",
+                "journal_entry",
                 "customer",
                 "supplier",
                 "item",
@@ -212,6 +213,10 @@ class TestDesktopModules(IntegrationTestCase):
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Finance"},
             {"purchase_invoice", "payment_entry", "supplier"},
+        )
+        self.assertEqual(
+            {module["key"] for module in modules if module["group"] == "Accounting"},
+            {"journal_entry"},
         )
 
     def test_catalog_fields_are_valid_for_every_doctype(self):
@@ -801,6 +806,91 @@ class TestDesktopModules(IntegrationTestCase):
             result = frappe.call(desktop_api.module, module="item_price", page=1, page_size=10)
 
         self.assertEqual([r["name"] for r in result["rows"]], ["ip-expired-001"])
+
+    def test_journal_entry_list_and_search_return_submitted_company_scoped_rows(self):
+        self.assertTrue(frappe.get_meta("Journal Entry").has_field("company"))
+        rows = [
+            {
+                "name": "ACC-JV-2026-00011",
+                "posting_date": "2026-10-09",
+                "pay_to_recd_from": "",
+                "voucher_type": "Journal Entry",
+                "title": "4210.000 - HPP Pembelian - TC",
+                "cheque_no": "",
+                "total_debit": 3000000.0,
+                "company": self.company,
+                "docstatus": 1,
+            },
+            {
+                "name": "ACC-JV-2026-99999",
+                "posting_date": "2026-10-09",
+                "pay_to_recd_from": "",
+                "voucher_type": "Journal Entry",
+                "title": "Draft Journal",
+                "cheque_no": "",
+                "total_debit": 500000.0,
+                "company": self.company,
+                "docstatus": 0,
+            },
+            {
+                "name": "ACC-JV-OTHER-00001",
+                "posting_date": "2026-10-09",
+                "pay_to_recd_from": "",
+                "voucher_type": "Journal Entry",
+                "title": "4210.000 - HPP Pembelian - Other",
+                "cheque_no": "",
+                "total_debit": 999999.0,
+                "company": "_Test Other Company",
+                "docstatus": 1,
+            },
+        ]
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            if doctype != "Journal Entry":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [
+                r
+                for r in rows
+                if r["company"] == filters.get("company") and r["docstatus"] == filters.get("docstatus")
+            ]
+            or_filters = kwargs.get("or_filters")
+            if or_filters:
+                selected = [
+                    r
+                    for r in selected
+                    if any(
+                        flt[1] == "like"
+                        and flt[2].strip("%").casefold() in str(r.get(flt[0]) or "").casefold()
+                        for flt in or_filters
+                    )
+                ]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            mod_res = frappe.call(desktop_api.module, module="journal_entry", page=1, page_size=1)
+            searched_title = frappe.call(desktop_api.search, q="HPP Pembelian")
+
+        self.assertEqual([r["name"] for r in mod_res["rows"]], ["ACC-JV-2026-00011"])
+        self.assertEqual(
+            [(c["key"], c["label"], c["scope"], c["value"]) for c in mod_res["cards"]],
+            [
+                ("count", "Jurnal terbit", "company", 1),
+                ("total", "Total debit jurnal", "company", 3000000.0),
+            ],
+        )
+        currency_cols = [c["field"] for c in mod_res["module"]["columns"] if c["format"] == "currency"]
+        self.assertEqual(currency_cols, ["total_debit"])
+        self.assertEqual(
+            [item["name"] for item in searched_title["results"] if item["type"] == "document"],
+            ["ACC-JV-2026-00011"],
+        )
 
     def test_search_is_company_scoped_and_returns_module_and_document_results(self):
         rows = [

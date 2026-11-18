@@ -160,9 +160,9 @@ class TestDesktopDomains(IntegrationTestCase):
 
     def test_catalog_contains_active_only_and_tracks_planned_count(self):
         catalog = get_domain_catalog()
-        self.assertEqual([item["key"] for item in catalog], ["sales", "finance"])
-        self.assertEqual(get_domain_keys(), ["sales", "finance"])
-        self.assertEqual(get_planned_domain_count(), 9)
+        self.assertEqual([item["key"] for item in catalog], ["sales", "finance", "accounting"])
+        self.assertEqual(get_domain_keys(), ["sales", "finance", "accounting"])
+        self.assertEqual(get_planned_domain_count(), 8)
         self.assertEqual(len(_DOMAINS), 11)
         for item in catalog:
             self.assertEqual(
@@ -232,7 +232,7 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[method], ["GET"])
 
     def test_domain_rejects_planned_unknown_and_unauthorized_users(self):
-        for invalid_domain in ("purchasing", "inventory", "accounting", "unknown_domain", ""):
+        for invalid_domain in ("purchasing", "inventory", "unknown_domain", ""):
             with self.subTest(domain=invalid_domain):
                 with self.assertRaises(frappe.ValidationError):
                     frappe.call(desktop_api.domain, domain=invalid_domain)
@@ -257,7 +257,7 @@ class TestDesktopDomains(IntegrationTestCase):
     def test_domain_sales_and_finance_shape_kpi_and_no_mutation(self):
         before = self._snapshot_counts()
 
-        for domain_key in ("sales", "finance"):
+        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 1)):
             with self.subTest(domain=domain_key):
                 definition = get_domain_definition(domain_key)
                 result = frappe.call(desktop_api.domain, domain=domain_key)
@@ -273,7 +273,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 )
                 self.assertEqual(result["company"]["id"], self.company)
                 self.assertEqual(result["company"]["currency"], self.currency)
-                self.assertEqual(len(result["cards"]), 4)
+                self.assertEqual(len(result["cards"]), expected_cards)
 
                 for card_def, card_out in zip(definition["cards"], result["cards"], strict=True):
                     expected_filters = dict(card_def["filters"])
@@ -330,6 +330,12 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(payload["domain"]["key"], "sales")
         self.assertEqual(payload["domain"]["color_token"], "domain-sales")
 
+        acc_resp = self._http_get("domain", {"domain": "accounting"})
+        self.assertEqual(acc_resp.status_code, 200, acc_resp.get_data(as_text=True))
+        acc_payload = acc_resp.json["message"]
+        self.assertEqual(acc_payload["domain"]["key"], "accounting")
+        self.assertEqual(acc_payload["domain"]["color_token"], "domain-accounting")
+
         planned_resp = self._http_get("domain", {"domain": "purchasing"})
         self.assertNotEqual(planned_resp.status_code, 200)
 
@@ -359,6 +365,7 @@ class TestDesktopDomains(IntegrationTestCase):
         )
         self.assertEqual(open_domain("sales"), {"ok": True, "domain": "sales"})
         self.assertEqual(open_domain("finance"), {"ok": True, "domain": "finance"})
+        self.assertEqual(open_domain("accounting"), {"ok": True, "domain": "accounting"})
         self.assertEqual(open_domain("sales_invoice").get("code"), "DOMAIN_NOT_ALLOWED")
         self.assertEqual(open_domain("purchasing").get("code"), "DOMAIN_NOT_ALLOWED")
 
@@ -385,3 +392,17 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(dom_ev, {"type": "open_domain", "domain": "sales"})
         dom_http = self._http_get("domain", {"domain": dom_ev["domain"]})
         self.assertEqual(dom_http.status_code, 200, dom_http.get_data(as_text=True))
+
+        je_mod_res = open_module("journal_entry")
+        self.assertEqual(je_mod_res, {"ok": True, "module": "journal_entry"})
+        je_mod_ev = _open_module_event("open_module", json.dumps(je_mod_res))
+        self.assertEqual(je_mod_ev, {"type": "open_module", "module": "journal_entry"})
+        je_mod_http = self._http_get("module", {"module": je_mod_ev["module"], "page_size": 1})
+        self.assertEqual(je_mod_http.status_code, 200, je_mod_http.get_data(as_text=True))
+
+        acc_dom_res = open_domain("accounting")
+        self.assertEqual(acc_dom_res, {"ok": True, "domain": "accounting"})
+        acc_dom_ev = _open_domain_event("open_domain", json.dumps(acc_dom_res))
+        self.assertEqual(acc_dom_ev, {"type": "open_domain", "domain": "accounting"})
+        acc_dom_http = self._http_get("domain", {"domain": acc_dom_ev["domain"]})
+        self.assertEqual(acc_dom_http.status_code, 200, acc_dom_http.get_data(as_text=True))

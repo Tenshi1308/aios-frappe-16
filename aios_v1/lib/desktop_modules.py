@@ -460,6 +460,55 @@ _MODULES = (
             },
         ),
     },
+    {
+        "key": "journal_entry",
+        "label": "Journal Entry",
+        "group": "Accounting",
+        "icon": "file",
+        "doctype": "Journal Entry",
+        "columns": (
+            {"key": "name", "label": "Nomor", "field": "name", "format": "text"},
+            {"key": "date", "label": "Tanggal", "field": "posting_date", "format": "date"},
+            {"key": "party", "label": "Pihak", "field": "pay_to_recd_from", "format": "text"},
+            {"key": "voucher_type", "label": "Jenis", "field": "voucher_type", "format": "text"},
+            {"key": "amount", "label": "Total debit", "field": "total_debit", "format": "currency"},
+        ),
+        "filters": (
+            {"key": "date_from", "label": "Dari tanggal", "type": "date"},
+            {"key": "date_to", "label": "Sampai tanggal", "type": "date"},
+            {"key": "voucher_type", "label": "Jenis", "type": "text"},
+            {"key": "party", "label": "Pihak", "type": "text"},
+        ),
+        "filter_fields": {
+            "date_from": {"field": "posting_date", "operator": ">="},
+            "date_to": {"field": "posting_date", "operator": "<="},
+            "voucher_type": {"field": "voucher_type", "operator": "="},
+            "party": {"field": "pay_to_recd_from", "operator": "like"},
+        },
+        "search_fields": ("name", "title", "voucher_type", "cheque_no", "pay_to_recd_from"),
+        "order_field": "posting_date",
+        "base_filters": {"docstatus": 1},
+        "cards": (
+            {
+                "key": "count",
+                "label": "Jurnal terbit",
+                "aggregate": "count",
+                "field": "name",
+                "format": "number",
+                "scope": "company",
+                "filters": {"docstatus": 1},
+            },
+            {
+                "key": "total",
+                "label": "Total debit jurnal",
+                "aggregate": "sum",
+                "field": "total_debit",
+                "format": "currency",
+                "scope": "company",
+                "filters": {"docstatus": 1},
+            },
+        ),
+    },
 )
 
 _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}
