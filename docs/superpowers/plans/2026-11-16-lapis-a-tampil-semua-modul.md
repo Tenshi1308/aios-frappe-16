@@ -371,7 +371,7 @@ git commit -m "feat(desk): tambah modul GL Entry read-only di Ekasa Desk"
 - `base_filters`: `{"disabled": 0}`
 - `cards`: `count` "Akun aktif" (count, `name`, number, scope `site`, `{"disabled": 0}`) — SATU kartu saja
 
-- [ ] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes`: set key menjadi 13 key (12 + `"account"`); grup Accounting menjadi `{"journal_entry", "gl_entry", "account"}`. Perluas `test_master_cards_are_site_counts_without_nominal_fields` (:485) dari satu modul (`customer`) menjadi loop atas `(("customer", "Customer"), ("account", "Account"))` dengan `subTest` — assert yang sama berlaku untuk keduanya (1 kartu, scope `site`, tanpa currency, tanpa kolom berformat currency, doctype cocok). Tambah `"Account"` ke `_snapshot_counts` di `test_desktop_domains.py`.
+- [x] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes`: set key menjadi 13 key (12 + `"account"`); grup Accounting menjadi `{"journal_entry", "gl_entry", "account"}`. Perluas `test_master_cards_are_site_counts_without_nominal_fields` (:492-506; plan awal menyebut :485 — koreksi 18 Nov, investigasi Task 5) dari satu modul (`customer`) menjadi loop atas `(("customer", "Customer"), ("account", "Account"))` dengan `subTest` — assert yang sama berlaku untuk keduanya (1 kartu, scope `site`, tanpa currency, tanpa kolom berformat currency, doctype cocok). Tambah `"Account"` ke `_snapshot_counts` di `test_desktop_domains.py`.
 
 ```python
 def test_master_cards_are_site_counts_without_nominal_fields(self):
@@ -380,31 +380,33 @@ def test_master_cards_are_site_counts_without_nominal_fields(self):
             # ... assert yang sama seperti sebelumnya, memakai module_key/doctype ...
 ```
 
-- [ ] **Step 2: Jalankan tes untuk memastikan gagal.**
+- [x] **Step 2: Jalankan tes untuk memastikan gagal.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules`
 Expected: FAIL — daftar-eksak (set key belum berisi `account`) dan tes kartu master (loop belum mencakup `account`).
 
-- [ ] **Step 3: Implementasi entri katalog `account` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas.
+- [x] **Step 3: Implementasi entri katalog `account` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas.
 
-- [ ] **Step 4: Penempatan bidang.** Di `aios_v1/lib/desktop_domains.py`, tambah `"account"` ke modul bidang `accounting` (setelah `"gl_entry"`). Kartu KPI bidang Accounting TIDAK diubah (tetap 4 kartu dari Task 3 + Task 4).
+- [x] **Step 4: Penempatan bidang.** Di `aios_v1/lib/desktop_domains.py`, tambah `"account"` ke modul bidang `accounting` (setelah `"gl_entry"`). Kartu KPI bidang Accounting TIDAK diubah (tetap 4 kartu dari Task 3 + Task 4).
 
-- [ ] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` accounting `module_count` 2 → 3; cabang accounting di `fetchDomain` tambah `{ key: 'account', label: 'Account', icon: 'folder', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"Account"` ke `CATALOG_DOCTYPES`.
+- [x] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` accounting `module_count` 2 → 3; cabang accounting di `fetchDomain` tambah `{ key: 'account', label: 'Account', icon: 'folder', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"Account"` ke `CATALOG_DOCTYPES`.
 
-- [ ] **Step 6: Jalankan tes untuk memastikan lolos.**
+- [x] **Step 6: Jalankan tes untuk memastikan lolos.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_domains` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_frontend_no_hardcode`
 Expected: PASS — ketiga modul hijau, termasuk `test_catalog_fields_are_valid_for_every_doctype` (semua field entri Account valid di meta) dan `test_module_endpoints_run_read_only_queries_for_catalog` (endpoint modul `account` mengembalikan kartu).
 
-- [ ] **Step 7: Verifikasi live oleh Ten sendiri (screenshot dari Chrome Ten di bench PC).** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bidang Accounting menampilkan Account; buka modul — list menampilkan chart of accounts company aktif (bukan semua company); search dengan nama akun menemukan barisnya; nilai kartu "Akun aktif" cocok dengan hitung langsung (count Account, `disabled` 0, company aktif).
+- [x] **Step 7: Verifikasi live oleh Ten sendiri (screenshot dari Chrome Ten di bench PC).** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bidang Accounting menampilkan Account; buka modul — list menampilkan chart of accounts company aktif (bukan semua company); search dengan nama akun menemukan barisnya; nilai kartu "Akun aktif" cocok dengan hitung langsung (count Account, `disabled` 0, company aktif).
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 git add aios_v1/lib/desktop_modules.py aios_v1/lib/desktop_domains.py aios_v1/tests/test_desktop_modules.py aios_v1/tests/test_desktop_domains.py aios_v1/tests/test_frontend_no_hardcode.py frontend/src/api/mock/modules.ts
 git commit -m "feat(desk): tambah modul Account read-only di Ekasa Desk"
 ```
 
+
+**Hasil Task 5 (18 Nov 2026, commit 6fad288, terverifikasi live oleh Ten 10:34 WIB):** investigasi 10/10 (jangkar tes baru :304-308 di test_desktop_domains meng-assert daftar modul accounting — tidak disebut plan, wajib diupdate, sudah diupdate di implementasi; tes kartu master aktual :492-506, plan menyebut :485); tes hijau 29/8/13 (klaim Gemini, Muse belum menjalankan ulang); hitung langsung client1: 220 akun aktif, 0 nonaktif, contoh "1000.000 - Aktiva - TC"; klarifikasi Ten: 220 itu akun-akun akuntansi di bagan akun, bukan customer, bukan akun user Frappe.
 ---
 
 ### Task 6: Company → Accounting

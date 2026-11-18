@@ -3,7 +3,7 @@
 Daftar tugas gaya Superpowers — menandai posisi kita sekarang. Peta analisis/keputusan ada di `peta-tampil-semua-modul.md` (dokumen acuan, stabil); file ini yang hidup (dicentang tiap selesai). Detail tiap tugas (nilai yang dipin, langkah 1–8) ada di plan (`rencana-lapis-a-superpowers.md`); file ini cermin checklist-nya supaya alur tiap fase kelihatan dari A sampai Z.
 
 ## 📍 POSISI SEKARANG
-Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit lokal 362b51a, belum push).** Dokumentasi ini (docs 10, 11, plan) di-commit 18 Nov, up to date dengan kondisi Task 4. Berikutnya: Task 5 (Account), satu-satu, setelah Ten bilang lanjut.
+Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit lokal 362b51a, belum push). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit lokal 5381790, belum push). Task 5 (Account) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 10:34 WIB, commit lokal 6fad288, belum push).** Dokumentasi ini (docs 10, 11, plan) di-commit 18 Nov, up to date dengan kondisi Task 5. Berikutnya: Task 6 (Company), satu-satu, setelah Ten bilang lanjut.
 
 ## Fase 0 — Investigasi & peta (SELESAI)
 - [x] Peta tampil-semua-modul (`peta-tampil-semua-modul.md`)
@@ -65,15 +65,15 @@ Tiap tugas: draf investigasi → investigasi + crosscheck → draf implementasi 
 - [x] Commit 5381790, lokal tanpa push
 - Catatan: base_filters `{"is_cancelled": 0}` — BUKAN `{"docstatus": 1}` (GL Entry dibuat oleh posting dan selalu ber-docstatus 1 — pakai is_cancelled 0 untuk mengecualikan 4 entri batal); 3 kartu bidang (Entri GL tercatat, Total debit, Total kredit). Mock cabang accounting SELESAI (Opsi A).
 
-### Task 5: Account → Accounting — BELUM DIMULAI
-- [ ] Draf investigasi
-- [ ] Investigasi Gemini + crosscheck Muse
-- [ ] Draf implementasi
-- [ ] Implementasi Gemini + crosscheck Muse
-- [ ] Tes
-- [ ] Verifikasi live
-- [ ] Commit
-- Catatan: kartu "Akun aktif" (tanpa "di site"); base_filters `{"disabled": 0}`; Account punya field company (di-scope ke company aktif).
+### Task 5: Account → Accounting — SELESAI PENUH ✅
+- [x] Draf investigasi — ditulis Muse 18 Nov, dibaca Ten, dikirim ke Gemini via CLI (conversation baru 7a4594a6)
+- [x] Investigasi Gemini + crosscheck Muse (18 Nov 09:55, 10/10; TEMUAN: jangkar tes baru :304-308 di test_desktop_domains meng-assert daftar modul accounting ["journal_entry", "gl_entry"] — tidak disebut plan, wajib ikut diupdate; tes kartu master aktual :492-506, plan menyebut :485; hitung langsung client1: 220 akun aktif, semua milik Tenshi Company, 0 nonaktif)
+- [x] Draf implementasi — ditulis Muse 18 Nov, dibaca + disetujui Ten, dikirim via CLI di sesi yang sama (conversation 7a4594a6, Hydrogen High)
+- [x] Implementasi Gemini + crosscheck Muse (18 Nov 10:14, commit 6fad288; entri account :573-602, domain accounting 3 modul, mock module_count 3, assert :305-309, subTest loop customer + account)
+- [x] Tes (29/8/13 PASS — angka klaim Gemini, Muse belum menjalankan ulang; follow-up: deadlock MariaDB bila 2 suite jalan paralel, berurutan lolos)
+- [x] Verifikasi live oleh Ten 18 Nov 10:34 WIB (Accounting 3 modul + 4 kartu: Total debit jurnal Rp 90.400.000, Entri GL tercatat 576, Total debit Rp 78.525.598.000, Total kredit Rp 78.525.598.000; modul Account: kartu "Akun aktif" 220, list 220 baris, Halaman 1 dari 9, baris teratas 1142.001 - Uang Muka Pembelian - TC; catatan: search tidak tampak eksplisit di screenshot, Sales/Finance tidak kelihatan di shot ini, kartu Total debit terpotong sebagian)
+- [x] Commit 6fad288, lokal tanpa push
+- Catatan: kartu "Akun aktif" (tanpa "di site"); base_filters `{"disabled": 0}`; Account punya field company (di-scope ke company aktif). Klarifikasi Ten: 220 itu akun-akun akuntansi di bagan akun — bukan customer, bukan akun user Frappe.
 
 ### Task 6: Company → Accounting — BELUM DIMULAI
 - [ ] Draf investigasi
