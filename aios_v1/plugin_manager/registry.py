@@ -1012,10 +1012,11 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                            'menyebutnya "GL Entry", dan sebaliknya), atau sebut nama laporan resmi bila memakai '
                            '`erpnext_report_run`.\n'
                            '- Cabang Accounting bersifat BACA-SAJA (tidak memiliki tool pembuatan, perubahan, atau '
-                           'persetujuan draf). Bila pengguna meminta pembuatan/perubahan draf transaksi atau '
-                           'pekerjaan bidang lain, sampaikan keterbatasan ini dan arahkan pengguna secara teks '
-                           'untuk berpindah cabang secara manual (misalnya ke Finance untuk pembuatan draf '
-                           'keuangan/jurnal atau Sales untuk transaksi penjualan).',
+                           'persetujuan draf). Bila pengguna meminta pembuatan/perubahan/persetujuan draf transaksi '
+                           'atau pekerjaan lanjutan bidang aktif lain (misalnya Sales atau Finance), gunakan tool '
+                           '`handoff_to_branch` untuk mengalihkan percakapan ke cabang tujuan yang sesuai (jangan '
+                           'sekadar menyuruh berpindah manual lewat teks dan jangan membuat draf di sini). Untuk '
+                           'pertanyaan fakta baca-saja satu kali dari cabang aktif lain, gunakan `cross_branch_consultation`.',
         'name': 'Accounting',
         'tagline': 'Mengelola pembukuan dan buku besar perusahaan',
         'workers': [   {   'answerStructure': [   'ringkasan jawaban langsung dengan angka dan satuan mata uang',

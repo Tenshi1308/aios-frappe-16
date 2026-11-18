@@ -70,6 +70,43 @@ class TestCrossBranchSalesFinance(unittest.TestCase):
                 "_Test Task", "sales", "finance", "action_request", {},
             )
 
+    def test_general_question_without_customer_routes_to_llm_handler_including_accounting(self):
+        cache_store = {}
+        with (
+            patch("frappe.cache", return_value=frappe._dict(
+                get_value=cache_store.get,
+                set_value=lambda k, v, expires_in_sec=None: cache_store.__setitem__(k, v),
+            )),
+            patch("aios_v1.lib.branch_handlers.llm_branch_consultation", return_value={
+                "branch": "accounting",
+                "status": "success",
+                "answer": "Total debit Journal Entry adalah Rp 10.000.000.",
+                "sources": ["Journal Entry"],
+            }) as llm_consult,
+            patch("aios_v1.lib.branch_handlers.finance_consultation") as fin_det,
+            patch("aios_v1.lib.branch_handlers.sales_consultation") as sales_det,
+        ):
+            res_acc = self.router.route_message(
+                "_Test Task Acc",
+                "finance",
+                "accounting",
+                "consultation",
+                {"question": "Berapa total debit jurnal?"},
+            )
+            res_fin = self.router.route_message(
+                "_Test Task Fin",
+                "sales",
+                "finance",
+                "consultation",
+                {"question": "Ringkasan pengeluaran bulan ini?"},
+            )
+        self.assertTrue(res_acc["ok"])
+        self.assertEqual(res_acc["response"]["sources"], ["Journal Entry"])
+        self.assertTrue(res_fin["ok"])
+        self.assertEqual(llm_consult.call_count, 2)
+        fin_det.assert_not_called()
+        sales_det.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

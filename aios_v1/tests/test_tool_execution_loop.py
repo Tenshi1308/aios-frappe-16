@@ -471,21 +471,53 @@ class TestToolExecutionLoop(IntegrationTestCase):
             if round_number == 1:
                 calls.append(self._tool_call(tool_name="cross_branch_consultation"))
                 calls[-1]["function"]["arguments"] = json.dumps(
-                    {"to_branch": "sales", "message_type": "consultation", "payload": {}}
+                    {"to_branch": "accounting", "message_type": "consultation", "payload": {"question": "Total debit?"}}
                 )
                 return iter(())
             return iter(["ok"])
 
         events, _, _, _ = self._run_manager(scripted)
         trace = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
-        self.assertEqual(
-            [event["type"] for event in trace if event["type"] == "trace_cross_branch"],
-            ["trace_cross_branch"],
-        )
+        cross_events = [event for event in trace if event["type"] == "trace_cross_branch"]
+        self.assertEqual([event["type"] for event in cross_events], ["trace_cross_branch"])
+        self.assertEqual(cross_events[0]["to_branch"], "accounting")
         self.assertEqual(
             [event for event in trace if event["type"] == "trace_subagent_tool"],
             [],
             "cross_branch_consultation tidak boleh dobel trace",
+        )
+
+    def test_handoff_to_branch_does_not_emit_subagent_tool_trace(self):
+        def scripted(round_number, usage, calls):
+            usage.update(prompt_tokens=1, completion_tokens=1, total_tokens=2)
+            if round_number == 1:
+                calls.append(self._tool_call(tool_name="handoff_to_branch"))
+                calls[-1]["function"]["arguments"] = json.dumps(
+                    {"to_branch": "accounting", "reason": "Analisis jurnal mendalam"}
+                )
+                return iter(())
+            return iter(["Dialihkan ke Accounting"])
+
+        handoff_json = json.dumps({
+            "ok": True,
+            "from_branch": "finance",
+            "from_branch_name": "Finance",
+            "to_branch": "accounting",
+            "to_branch_name": "Accounting",
+            "reason": "Analisis jurnal mendalam",
+            "handoff_summary": "",
+        })
+        with patch("aios_v1.api.desktop.get_user_handoff_mode", return_value="confirm"):
+            events, _, _, _ = self._run_manager(scripted, tool_result=handoff_json)
+        payloads = [json.loads(event[6:]) for event in events if event.startswith("data: {")]
+        handoffs = [p for p in payloads if p.get("type") == "handoff"]
+        self.assertEqual(len(handoffs), 1)
+        self.assertEqual(handoffs[0]["to_branch"], "accounting")
+        self.assertFalse(handoffs[0]["auto_send"])
+        self.assertEqual(
+            [p for p in payloads if p.get("type") == "trace_subagent_tool"],
+            [],
+            "handoff_to_branch tidak boleh memancarkan trace_subagent_tool",
         )
 
 

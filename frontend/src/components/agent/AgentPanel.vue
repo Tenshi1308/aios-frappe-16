@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useBranchesStore } from '../../stores/branches';
 import { useChatStore } from '../../stores/chat';
+import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
@@ -15,6 +16,7 @@ import RichText from '../base/RichText.vue';
 const session = useSessionStore();
 const branches = useBranchesStore();
 const chat = useChatStore();
+const modules = useModulesStore();
 const ui = useUiStore();
 
 const draft = ref('');
@@ -26,10 +28,12 @@ const contextOpen = ref(false);
 
 void branches.load();
 void chat.loadPendingDrafts();
+void modules.loadConversationSettings();
 
 const branch = computed(() => branches.selected);
 const branchKey = computed(() => branch.value?.key ?? '');
 const messages = computed(() => chat.threadFor(branchKey.value));
+const referral = computed(() => chat.referralFor(branchKey.value));
 const streaming = computed(() => chat.isStreaming(branchKey.value));
 const files = computed(() => chat.files(branchKey.value));
 const uploadPercent = computed(() => chat.uploadProgress[branchKey.value]);
@@ -125,6 +129,15 @@ function workingText(m: ChatMessage): string {
 
 function openPendingDrafts() {
   useWindowManager().open('pending-drafts', 'Persetujuan Tertunda');
+}
+
+function openConversationSettings() {
+  void modules.openSettings('conversation');
+}
+
+function confirmHandoff(m: ChatMessage) {
+  if (!m.handoff || m.handoffAccepted || !branchKey.value) return;
+  void chat.executeHandoff(branchKey.value, m.id, m.handoff);
 }
 
 function openArtifactChip(artifact: ArtifactEvent) {
@@ -252,6 +265,14 @@ async function onFilesPicked(e: Event) {
       <button class="icon-btn" aria-label="Riwayat percakapan" @click="chat.toggleHistory(branchKey)">
         <AppIcon name="history" :size="18" />
       </button>
+      <button
+        class="icon-btn"
+        aria-label="Pengaturan percakapan"
+        title="Pengaturan percakapan"
+        @click="openConversationSettings"
+      >
+        <AppIcon name="gear" :size="18" />
+      </button>
       <button class="icon-btn" aria-label="Tutup panel agent" @click="ui.closeAgent()">
         <AppIcon name="x" :size="18" />
       </button>
@@ -296,6 +317,17 @@ async function onFilesPicked(e: Event) {
     </div>
 
     <div ref="threadEl" class="ap-thread">
+      <div v-if="referral" class="ap-referral-banner" role="status">
+        <div class="ap-referral-head">
+          <AppIcon name="arrow-right" :size="13" />
+          <b>Dialihkan dari {{ referral.fromBranchName }}</b>
+        </div>
+        <small v-if="referral.reason">{{ referral.reason }}</small>
+        <details v-if="referral.summary" class="ap-referral-details">
+          <summary>Ringkasan konteks &amp; lampiran</summary>
+          <pre>{{ referral.summary }}</pre>
+        </details>
+      </div>
       <div v-if="showGreeting" class="msg agent">
         <div class="msg-who">
           <span v-if="branch" class="agent-dot xs" :data-branch="branch.key">{{ branch.name.charAt(0).toUpperCase() }}</span>
@@ -331,6 +363,25 @@ async function onFilesPicked(e: Event) {
             </div>
           </div>
           <div class="bubble"><RichText :text="m.text" /></div>
+          <div v-if="m.handoff" class="ap-handoff-card">
+            <div class="ap-handoff-info">
+              <b>Rujukan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</b>
+              <small v-if="m.handoff.reason">{{ m.handoff.reason }}</small>
+            </div>
+            <button
+              v-if="!m.handoffAccepted"
+              type="button"
+              class="ap-handoff-btn"
+              @click="confirmHandoff(m)"
+            >
+              <AppIcon name="arrow-right" :size="13" />
+              <span>Pindahkan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</span>
+            </button>
+            <span v-else class="ap-handoff-done">
+              <AppIcon name="check" :size="13" />
+              <span>Dialihkan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</span>
+            </span>
+          </div>
           <div v-if="m.artifacts?.length" class="msg-artifacts">
             <button
               v-for="a in m.artifacts"

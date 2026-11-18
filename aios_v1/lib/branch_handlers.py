@@ -1,4 +1,6 @@
-"""Read-only Finance and Sales handlers for cross-branch consultation."""
+"""Read-only cross-branch consultation handlers (deterministic + LLM fallback)."""
+
+import json
 
 import frappe
 
@@ -73,3 +75,47 @@ def sales_consultation(*, user_id: str, task_id: str, from_branch: str,
         "sales_orders": [dict(order) for order in orders],
         "quotations": [dict(quotation) for quotation in quotations],
     }
+
+
+def llm_branch_consultation(
+    *,
+    user_id: str,
+    task_id: str,
+    from_branch: str,
+    to_branch: str,
+    message_type: str,
+    payload: dict,
+) -> dict:
+    """Run read-only LLM manager consultation for general questions across any active branch."""
+    if message_type != "consultation":
+        frappe.throw("Konsultasi lintas cabang hanya menerima message_type consultation read-only.")
+    if not isinstance(payload, dict) or not payload:
+        frappe.throw("Pertanyaan konsultasi lintas cabang wajib diisi.")
+
+    question = str(
+        payload.get("question") or payload.get("query") or payload.get("prompt") or ""
+    ).strip()
+    extra_context = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"question", "query", "prompt"}
+    }
+    if not question:
+        question = (
+            "Jawab pertanyaan konsultasi baca-saja berikut berdasarkan data yang tersedia: "
+            + json.dumps(payload, ensure_ascii=False)
+        )
+        extra_context = {}
+
+    from aios_v1.managers import get_manager
+
+    tool_ctx = get_tool_context()
+    usage_records = tool_ctx.get("_usage_records") if isinstance(tool_ctx.get("_usage_records"), list) else None
+    target_manager = get_manager(to_branch)
+    return target_manager.consult_readonly(
+        question=question,
+        from_branch=from_branch,
+        user=user_id,
+        context_data=extra_context or None,
+        usage_records=usage_records,
+    )

@@ -35,7 +35,8 @@ from aios_v1.lib.workspace import (
     validate_attachments,
 )
 from aios_v1.managers import get_manager
-from aios_v1.plugin_manager.registry import is_branch_enabled
+from aios_v1.managers.base_manager import parse_referral_session_summary
+from aios_v1.plugin_manager.registry import get_branch, is_branch_enabled
 from aios_v1.services.usage import check_site_token_quota
 
 # Batas ukuran file PDF yang boleh diproses (S4), sama seperti dispatcher lama.
@@ -354,6 +355,7 @@ def get_conversation(conversation_id: str, branch: str = "") -> dict:
         conversation_id=str(conv.name),
         branch=str(conv.branch or branch),
     )
+    referral = parse_referral_session_summary(conv.get("session_summary"))
     return {
         "conversation": {
             "id": conv.name,
@@ -362,6 +364,7 @@ def get_conversation(conversation_id: str, branch: str = "") -> dict:
             "messages": msgs,
             "legacyFiles": legacy_attachments,
             "context": context_stats,
+            "referral": referral,
         }
     }
 
@@ -395,6 +398,31 @@ def stream_chat(branch: str = "", message: str = "", worker_key: str | None = No
     conversation_id = conversation_id or body.get("conversationId") or None
     file_ids = body.get("file_ids") or []
     new_conv = _parse_bool_flag(new_conversation) or _parse_bool_flag(body.get("new_conversation"))
+    raw_handoff = body.get("handoff")
+    handoff_context = None
+    if raw_handoff is not None:
+        if not isinstance(raw_handoff, dict):
+            _raise_safe(400, "HANDOFF_INVALID", "Konteks hand-off tidak valid.")
+        from_branch = str(raw_handoff.get("from_branch") or "").strip().lower()
+        if not from_branch or not is_branch_enabled(from_branch) or from_branch == branch:
+            _raise_safe(400, "HANDOFF_INVALID", "Cabang asal hand-off tidak valid.")
+        source_conv_id = str(raw_handoff.get("source_conversation_id") or "").strip()
+        if source_conv_id:
+            try:
+                get_owned_conversation(source_conv_id, user)
+            except WorkspaceError as exc:
+                log_exception("AIOS Chat Stream Handoff Source", context=exc.code)
+                _raise_safe(exc.status, exc.code, exc.message)
+        from_def = get_branch(from_branch) or {}
+        handoff_context = {
+            "from_branch": from_branch,
+            "from_branch_name": str(
+                raw_handoff.get("from_branch_name") or from_def.get("name") or from_branch
+            ).strip(),
+            "reason": str(raw_handoff.get("reason") or "").strip(),
+            "referral_summary": str(raw_handoff.get("referral_summary") or "").strip(),
+            "source_conversation_id": source_conv_id,
+        }
 
     if not is_branch_enabled(branch):
         _raise_safe(404, "BRANCH_DISABLED", "Cabang ini belum tersedia.")
@@ -412,24 +440,40 @@ def stream_chat(branch: str = "", message: str = "", worker_key: str | None = No
             frappe.throw("Percakapan tidak ditemukan", frappe.DoesNotExistError)
 
     attachments = []
+    mgr = None
     if file_ids:
+        source_conv_id = handoff_context.get("source_conversation_id") if handoff_context else ""
+        if new_conv and handoff_context and source_conv_id:
+            mgr = get_manager(branch)
+            conversation_id = str(mgr.ensure_conversation(user, force_new=True))
+            new_conv = False
         if not conversation_id:
             _raise_safe(400, "CONVERSATION_REQUIRED", "Percakapan wajib dipilih saat mengirim lampiran.")
         try:
-            attachments = validate_attachments(file_ids, conversation_id, user)
+            attachments = validate_attachments(
+                file_ids,
+                conversation_id,
+                user,
+                source_conversation_id=source_conv_id or None,
+            )
         except WorkspaceError as exc:
             log_exception("AIOS Chat Stream Attachments", context=exc.code)
             _raise_safe(exc.status, exc.code, exc.message)
 
-    mgr = get_manager(branch)
-    stream_generator = mgr.handle_stream(
-        user_message=message,
-        worker_key=worker_key,
-        conversation_id=conversation_id,
-        user=user,
-        attachments=attachments,
-        new_conversation=new_conv,
-    )
+    if mgr is None:
+        mgr = get_manager(branch)
+
+    stream_kwargs = {
+        "user_message": message,
+        "worker_key": worker_key,
+        "conversation_id": conversation_id,
+        "user": user,
+        "attachments": attachments,
+        "new_conversation": new_conv,
+    }
+    if handoff_context is not None:
+        stream_kwargs["handoff_context"] = handoff_context
+    stream_generator = mgr.handle_stream(**stream_kwargs)
 
     res = Response(stream_generator, mimetype="text/event-stream; charset=utf-8")
     res.headers["Cache-Control"] = "no-cache, no-transform"

@@ -193,6 +193,113 @@ def extract_document_content(
 	raise DocumentExtractionError("FORMAT_UNSUPPORTED", "Format file tidak didukung.")
 
 
+def _resolve_conversation_file(file_id: str, conversation_id: str, user: str | None):
+	"""Load private File doc owned by user and bound to conversation_id; returns (file_doc, err_dict)."""
+	file_doc = None
+	try:
+		file_doc = frappe.get_doc("File", file_id)
+	except frappe.DoesNotExistError:
+		# Smart lookup fallback: jika pemanggil mengirim file_name alih-alih ID unik docname
+		candidates = frappe.get_all(
+			"File",
+			filters={"file_name": file_id, "is_private": 1},
+			fields=["name", "attached_to_doctype", "attached_to_name", "owner"],
+			order_by="creation desc",
+			limit=10,
+		)
+		for cand in candidates:
+			cand_conv = None
+			cand_doctype = cand.get("attached_to_doctype")
+			cand_parent = cand.get("attached_to_name")
+			cand_owner = cand.get("owner")
+			if cand_doctype == CONVERSATION_DOCTYPE:
+				cand_conv = str(cand_parent or "")
+			elif cand_doctype == "AIOS Message":
+				cand_conv = str(frappe.db.get_value("AIOS Message", cand_parent, "conversation") or "")
+			if cand_conv == conversation_id and (user == "Administrator" or cand_owner == user):
+				try:
+					file_doc = frappe.get_doc("File", cand.get("name"))
+					break
+				except Exception as exc:
+					log_exception("AIOS Document Smart File Lookup", exc=exc)
+		if not file_doc:
+			return None, _file_error("FILE_NOT_FOUND", f"File '{file_id}' tidak ditemukan pada percakapan ini.")
+	except Exception as exc:
+		log_exception("AIOS Document File Lookup", exc=exc)
+		return None, safe_error("File tidak tersedia untuk pengguna ini.", "FILE_FORBIDDEN")
+
+	if not file_doc:
+		return None, _file_error("FILE_NOT_FOUND", f"File '{file_id}' tidak ditemukan pada percakapan ini.")
+	if int(file_doc.get("is_private") or 0) != 1:
+		return None, _file_error("FILE_NOT_PRIVATE", "Hanya File privat yang dapat dibaca.")
+	if user != "Administrator" and file_doc.owner != user:
+		return None, _file_error("FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
+
+	attached_to_doctype = file_doc.get("attached_to_doctype")
+	attached_to_name = str(file_doc.get("attached_to_name") or "")
+	if attached_to_doctype == CONVERSATION_DOCTYPE:
+		is_attached = attached_to_name == conversation_id
+	elif attached_to_doctype == "AIOS Message":
+		message_conversation = frappe.db.get_value("AIOS Message", attached_to_name, "conversation")
+		is_attached = str(message_conversation or "") == conversation_id
+	else:
+		is_attached = False
+	if not is_attached:
+		return None, _file_error("FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
+	return file_doc, None
+
+
+def summarize_attachment_for_handoff(
+	file_id: str,
+	conversation_id: str,
+	user: str,
+	max_rows: int = 10,
+	max_chars: int = 600,
+) -> dict | None:
+	"""Extract a bounded text summary of one conversation attachment for hand-off referral."""
+	if not file_id or not conversation_id or not user:
+		return None
+	file_doc, err = _resolve_conversation_file(str(file_id).strip(), str(conversation_id).strip(), user)
+	if err or not file_doc:
+		return None
+	filename = file_doc.get("file_name") or PurePosixPath(urlsplit(file_doc.get("file_url") or "").path).name
+	file_format = _extension(filename, file_doc.get("file_url") or "")
+	if file_format not in {"pdf", "csv", "xlsx"}:
+		return None
+	try:
+		content = file_doc.get_content(encodings=[])
+		content_bytes = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+		if not content_bytes or len(content_bytes) > MAX_FILE_BYTES:
+			return None
+		extracted = extract_document_content(
+			file_doc.name,
+			filename,
+			file_format,
+			content_bytes,
+			max_rows=max_rows,
+			sheet_name=None,
+		)
+	except Exception as exc:
+		log_exception("AIOS Handoff Attachment Summary", exc=exc, context=f"file={file_id}")
+		return {"file_id": file_doc.name, "file_name": filename, "format": file_format, "summary": ""}
+
+	if file_format == "pdf":
+		snippet = " ".join(str(extracted.get("text") or "").split())
+	else:
+		cols = ", ".join(str(col) for col in (extracted.get("columns") or [])[:12])
+		sample_rows = extracted.get("rows") or []
+		row_lines = [str(row) for row in sample_rows[:5]]
+		snippet = f"Kolom: [{cols}] | Contoh baris ({len(sample_rows)}): " + "; ".join(row_lines)
+	if len(snippet) > max_chars:
+		snippet = snippet[: max_chars - 3].rstrip() + "..."
+	return {
+		"file_id": file_doc.name,
+		"file_name": filename,
+		"format": file_format,
+		"summary": snippet,
+	}
+
+
 @ai_tool(
 	name="document_extract",
 	description=(
@@ -237,59 +344,10 @@ def document_extract(file_id, format=None, sheet_name=None, max_rows=DEFAULT_MAX
 	if not conversation_id:
 		return _file_error("CONVERSATION_REQUIRED", "File hanya dapat dibaca dari percakapan yang sama.")
 
-	file_doc = None
 	user = getattr(frappe.session, "user", None)
-	try:
-		file_doc = frappe.get_doc("File", file_id)
-	except frappe.DoesNotExistError:
-		# Smart lookup fallback: jika pemanggil mengirim file_name alih-alih ID unik docname
-		candidates = frappe.get_all(
-			"File",
-			filters={"file_name": file_id, "is_private": 1},
-			fields=["name", "attached_to_doctype", "attached_to_name", "owner"],
-			order_by="creation desc",
-			limit=10,
-		)
-		for cand in candidates:
-			cand_conv = None
-			cand_doctype = cand.get("attached_to_doctype")
-			cand_parent = cand.get("attached_to_name")
-			cand_owner = cand.get("owner")
-			if cand_doctype == CONVERSATION_DOCTYPE:
-				cand_conv = str(cand_parent or "")
-			elif cand_doctype == "AIOS Message":
-				cand_conv = str(frappe.db.get_value("AIOS Message", cand_parent, "conversation") or "")
-			if cand_conv == conversation_id and (user == "Administrator" or cand_owner == user):
-				try:
-					file_doc = frappe.get_doc("File", cand.get("name"))
-					break
-				except Exception as exc:
-					log_exception("AIOS Document Smart File Lookup", exc=exc)
-		if not file_doc:
-			return _file_error("FILE_NOT_FOUND", f"File '{file_id}' tidak ditemukan pada percakapan ini.")
-	except Exception as exc:
-		log_exception("AIOS Document File Lookup", exc=exc)
-		return safe_error("File tidak tersedia untuk pengguna ini.", "FILE_FORBIDDEN")
-
-	if not file_doc:
-		return _file_error("FILE_NOT_FOUND", f"File '{file_id}' tidak ditemukan pada percakapan ini.")
-
-	if int(file_doc.get("is_private") or 0) != 1:
-		return _file_error("FILE_NOT_PRIVATE", "Hanya File privat yang dapat dibaca.")
-	user = getattr(frappe.session, "user", None)
-	if user != "Administrator" and file_doc.owner != user:
-		return _file_error("FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
-	attached_to_doctype = file_doc.get("attached_to_doctype")
-	attached_to_name = str(file_doc.get("attached_to_name") or "")
-	if attached_to_doctype == CONVERSATION_DOCTYPE:
-		is_attached_to_conversation = attached_to_name == conversation_id
-	elif attached_to_doctype == "AIOS Message":
-		message_conversation = frappe.db.get_value("AIOS Message", attached_to_name, "conversation")
-		is_attached_to_conversation = str(message_conversation or "") == conversation_id
-	else:
-		is_attached_to_conversation = False
-	if not is_attached_to_conversation:
-		return _file_error("FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
+	file_doc, err = _resolve_conversation_file(file_id, conversation_id, user)
+	if err:
+		return err
 	try:
 		declared_size = int(file_doc.get("file_size") or 0)
 	except (TypeError, ValueError) as exc:

@@ -63,26 +63,41 @@ class TestSwarmRouter(unittest.TestCase):
         self.assertEqual(chain["hops"][0]["status"], "SUCCESS")
 
     def test_multi_hop_chain(self):
-        """Uji rantai consultation Finance/Sales hingga beberapa hop."""
+        """Uji rantai consultation lintas cabang aktif termasuk accounting hingga beberapa hop."""
         task_id = "TSK-TEST-CHAIN"
         register_branch_handler("finance", lambda **kwargs: {"summary": "_Test finance"})
         register_branch_handler("sales", lambda **kwargs: {"summary": "_Test sales"})
-        
+        register_branch_handler("accounting", lambda **kwargs: {"summary": "_Test accounting"})
+
         # Hop 1: Sales -> Finance
         h1 = self.router.route_message(task_id, "sales", "finance", "consultation", {"item": "Bolt"})
         self.assertEqual(h1["chain_depth"], 1)
 
-        # Hop 2: Finance -> Sales
-        h2 = self.router.route_message(task_id, "finance", "sales", "consultation", {"item": "Bolt"})
+        # Hop 2: Finance -> Accounting
+        h2 = self.router.route_message(task_id, "finance", "accounting", "consultation", {"question": "Total debit jurnal?"})
         self.assertEqual(h2["chain_depth"], 2)
 
-        # Hop 3: Sales -> Finance
-        h3 = self.router.route_message(task_id, "sales", "finance", "consultation", {"check_budget": True})
+        # Hop 3: Accounting -> Sales
+        h3 = self.router.route_message(task_id, "accounting", "sales", "consultation", {"question": "Order aktif?"})
         self.assertEqual(h3["chain_depth"], 3)
 
         chain = self.ledger.get_task_chain(task_id)
         self.assertEqual(len(chain["hops"]), 3)
-        self.assertEqual(chain["current_branch"], "finance")
+        self.assertEqual(chain["current_branch"], "sales")
+
+    def test_dynamic_branch_validation_allows_enabled_and_rejects_disabled_or_action_request(self):
+        """SwarmRouter membaca cabang aktif secara dinamis dan selalu menolak action_request."""
+        register_branch_handler("accounting", lambda **kwargs: {"summary": "_Test accounting"})
+        res = self.router.route_message(
+            "TSK-ACC-001", "finance", "accounting", "consultation", {"question": "Berapa total debit?"}
+        )
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["to_branch"], "accounting")
+
+        with self.assertRaises(frappe.ValidationError):
+            self.router.route_message("TSK-DISABLED", "finance", "hr", "consultation", {"question": "test"})
+        with self.assertRaises(frappe.ValidationError):
+            self.router.route_message("TSK-ACTION", "finance", "accounting", "action_request", {"question": "test"})
 
     def test_infinite_loop_prevention_max_depth(self):
         """Uji pencegahan infinite loop saat rantai mencapai Max Chain Depth (5 hop)."""

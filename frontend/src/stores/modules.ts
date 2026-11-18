@@ -1,10 +1,12 @@
 import { defineStore } from 'pinia';
 import {
   fetchBootstrap,
+  fetchConversationSettings,
   fetchDomain,
   fetchList,
   fetchModule,
   fetchSettings,
+  saveConversationSettings,
   saveTheme,
   saveCompanyPersona,
   search as apiSearch,
@@ -25,9 +27,11 @@ import {
 } from '../api/connector';
 import type {
   ClientStaffAndRecipientsData,
+  ConversationSettingsData,
   CreateClientStaffResponse,
   DomainDetailData,
   DomainMeta,
+  HandoffMode,
   ModuleDetailData,
   ModuleFilters,
   ModuleMeta,
@@ -61,6 +65,11 @@ export const useModulesStore = defineStore('modules', {
     settings: null as SettingsData | null,
     settingsLoading: false,
     settingsError: '',
+    settingsTab: 'general' as 'general' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff',
+    conversationSettings: null as ConversationSettingsData | null,
+    conversationSettingsLoading: false,
+    conversationSettingsSaving: false,
+    conversationSettingsError: '',
     themeSaving: false,
     telegramStatus: null as TelegramLinkStatus | null,
     telegramDeepLink: '' as string,
@@ -360,9 +369,53 @@ export const useModulesStore = defineStore('modules', {
       }
     },
 
-    async openSettings() {
+    async openSettings(
+      tab?: 'general' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff',
+    ) {
+      if (tab) {
+        this.settingsTab = tab;
+      }
       useWindowManager().open('settings', 'Pengaturan');
-      await this.loadSettings(true);
+      await Promise.all([this.loadSettings(true), this.loadConversationSettings(true)]);
+    },
+
+    async loadConversationSettings(force = false) {
+      if (this.conversationSettingsLoading || (this.conversationSettings && !force)) return;
+      this.conversationSettingsLoading = true;
+      this.conversationSettingsError = '';
+      try {
+        this.conversationSettings = await fetchConversationSettings();
+      } catch (err) {
+        this.conversationSettingsError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Pengaturan percakapan tidak dapat dimuat.';
+      } finally {
+        this.conversationSettingsLoading = false;
+      }
+    },
+
+    async setHandoffMode(mode: HandoffMode) {
+      if (this.conversationSettingsSaving) return;
+      this.conversationSettingsSaving = true;
+      this.conversationSettingsError = '';
+      try {
+        const session = useSessionStore();
+        const saved = await saveConversationSettings(mode, session.csrfToken);
+        this.conversationSettings = {
+          handoff_mode: {
+            value: saved,
+            options: this.conversationSettings?.handoff_mode.options ?? ['confirm', 'auto'],
+          },
+        };
+      } catch (err) {
+        this.conversationSettingsError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Mode pindah cabang tidak dapat disimpan.';
+      } finally {
+        this.conversationSettingsSaving = false;
+      }
     },
 
     async setTheme(value: SettingsTheme) {

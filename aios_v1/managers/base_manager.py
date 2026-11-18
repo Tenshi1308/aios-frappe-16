@@ -11,6 +11,7 @@ from aios_v1.lib.context_manager import (
 )
 from aios_v1.lib.desktop_domains import get_domain_definition
 from aios_v1.lib.desktop_modules import get_module_definition
+from aios_v1.lib.document_intelligence import summarize_attachment_for_handoff
 from aios_v1.lib.error_utils import log_exception, safe_error
 from aios_v1.lib.llm_client import chat_stream
 from aios_v1.lib.tool_registry import (
@@ -19,7 +20,12 @@ from aios_v1.lib.tool_registry import (
     execute_tool,
     get_tools_schema_for_worker,
 )
-from aios_v1.lib.workspace import WorkspaceError, attach_private_files_to_message, build_attachment_context
+from aios_v1.lib.workspace import (
+    WorkspaceError,
+    attach_private_files_to_message,
+    build_attachment_context,
+    list_conversation_attachment_ids,
+)
 from aios_v1.plugin_manager.registry import get_branch, get_worker, is_branch_enabled
 from aios_v1.services.usage import record_token_usage_batch
 from aios_v1.shared.aios_ethos import AIOS_ETHOS
@@ -125,6 +131,138 @@ def _open_domain_event(tool_name, result_json):
         log_exception("AIOS Open Domain Event", context="hasil tool tidak berisi key bidang aktif.")
         return None
     return {"type": "open_domain", "domain": domain_key}
+
+
+REFERRAL_SUMMARY_PREFIX = "[RUJUKAN HAND-OFF]\n"
+
+
+def format_referral_session_summary(
+    from_branch_name: str,
+    reason: str,
+    original_query: str,
+    referral_summary: str,
+) -> str:
+    """Format persistent referral summary stored on target AIOS Conversation."""
+    lines = [
+        f"Dialihkan dari: {from_branch_name}",
+        f"Alasan: {reason}",
+        f"Pertanyaan awal: {original_query}",
+    ]
+    if referral_summary.strip():
+        lines.append(f"Ringkasan konteks:\n{referral_summary.strip()}")
+    return REFERRAL_SUMMARY_PREFIX + "\n".join(lines)
+
+
+def parse_referral_session_summary(session_summary: str | None) -> dict | None:
+    """Parse referral metadata from AIOS Conversation.session_summary if present."""
+    raw = str(session_summary or "")
+    if not raw.startswith(REFERRAL_SUMMARY_PREFIX):
+        return None
+    body = raw[len(REFERRAL_SUMMARY_PREFIX) :]
+    from_branch_name = ""
+    reason = ""
+    original_query = ""
+    summary_lines: list[str] = []
+    in_summary = False
+    for line in body.splitlines():
+        if in_summary:
+            summary_lines.append(line)
+        elif line.startswith("Dialihkan dari: "):
+            from_branch_name = line.split(": ", 1)[1].strip()
+        elif line.startswith("Alasan: "):
+            reason = line.split(": ", 1)[1].strip()
+        elif line.startswith("Pertanyaan awal: "):
+            original_query = line.split(": ", 1)[1].strip()
+        elif line == "Ringkasan konteks:":
+            in_summary = True
+    if not from_branch_name:
+        return None
+    return {
+        "fromBranchName": from_branch_name,
+        "reason": reason,
+        "originalQuery": original_query,
+        "summary": "\n".join(summary_lines).strip(),
+    }
+
+
+def _handoff_event(
+    tool_name: str,
+    result_json: str,
+    *,
+    user_message: str,
+    user: str,
+    conversation_id,
+    attachments: list | None = None,
+):
+    """Build a validated SSE handoff event with referral context and attachment summaries."""
+    if tool_name != "handoff_to_branch":
+        return None
+    try:
+        payload = json.loads(result_json)
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Handoff Event", exc=exc)
+        return None
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        return None
+
+    from_branch = str(payload.get("from_branch") or "").strip().lower()
+    to_branch = str(payload.get("to_branch") or "").strip().lower()
+    if not from_branch or not to_branch or from_branch == to_branch or not is_branch_enabled(to_branch):
+        log_exception("AIOS Handoff Event", context="cabang hand-off tidak valid.")
+        return None
+
+    source_def = get_branch(from_branch) or {}
+    target_def = get_branch(to_branch) or {}
+    from_name = str(payload.get("from_branch_name") or source_def.get("name") or from_branch)
+    to_name = str(payload.get("to_branch_name") or target_def.get("name") or to_branch)
+    reason = str(payload.get("reason") or "").strip()
+    summary_parts = []
+    if str(payload.get("handoff_summary") or "").strip():
+        summary_parts.append(str(payload["handoff_summary"]).strip())
+
+    file_ids: list[str] = []
+    if isinstance(attachments, list):
+        for item in attachments:
+            if isinstance(item, dict) and item.get("file_id"):
+                fid = str(item["file_id"]).strip()
+                if fid and fid not in file_ids:
+                    file_ids.append(fid)
+    if not file_ids and conversation_id and user:
+        try:
+            file_ids = list_conversation_attachment_ids(str(conversation_id), user)
+        except Exception as exc:
+            log_exception("AIOS Handoff Attachment Lookup", exc=exc)
+            file_ids = []
+
+    attachment_summaries = []
+    for fid in file_ids:
+        extracted = summarize_attachment_for_handoff(fid, str(conversation_id), user)
+        if not extracted:
+            continue
+        label = f"- {extracted['file_name']} ({extracted['format']})"
+        if extracted.get("summary"):
+            label += f": {extracted['summary']}"
+        attachment_summaries.append(label)
+    if attachment_summaries:
+        summary_parts.append("Ringkasan lampiran:\n" + "\n".join(attachment_summaries))
+
+    from aios_v1.api.desktop import get_user_handoff_mode
+
+    auto_send = get_user_handoff_mode(user) == "auto"
+    return {
+        "type": "handoff",
+        "from_branch": from_branch,
+        "from_branch_name": from_name,
+        "to_branch": to_branch,
+        "to_branch_name": to_name,
+        "reason": reason,
+        "handoff_prompt": user_message,
+        "query": user_message,
+        "auto_send": auto_send,
+        "referral_summary": "\n\n".join(summary_parts).strip(),
+        "file_ids": file_ids,
+        "source_conversation_id": str(conversation_id) if conversation_id is not None else "",
+    }
 
 
 class BaseManager:
@@ -400,8 +538,124 @@ class BaseManager:
         if result_holder is not None:
             result_holder.append(result)
 
+    def consult_readonly(
+        self,
+        question: str,
+        from_branch: str,
+        user: str,
+        context_data: dict | None = None,
+        usage_records: list | None = None,
+    ) -> dict:
+        """Jalankan mini-loop LLM manager cabang tujuan dalam mode baca-saja tanpa menulis AIOS Message."""
+        branch = self.branch["key"]
+        if not is_branch_enabled(branch):
+            frappe.throw("Cabang tujuan belum diaktifkan.")
+
+        prompt = self.build_system_prompt(None, user=user)
+        consultation_directive = (
+            f"[MODE KONSULTASI BACA-SAJA LINTAS CABANG DARI {from_branch.upper()}]: "
+            f"Anda adalah AI Manager bidang {self.branch['name']}. Jawab pertanyaan fakta baca-saja berikut "
+            f"hanya menggunakan tool baca-saja yang tersedia. "
+            f"DILARANG membuat draf, menyetujui draf, atau mengubah data. "
+            f"Sebutkan atribusi sumber data persis sesuai field 'doctype' atau nama report hasil tool "
+            f"(misalnya Journal Entry, GL Entry, Account, Company). Jangan menulis ke sesi cabang tujuan."
+        )
+        schemas = get_tools_schema_for_worker(branch, "manager", user=user, read_only=True)
+        user_content = question.strip()
+        if context_data:
+            user_content += "\n\nKonteks tambahan: " + json.dumps(context_data, ensure_ascii=False)
+        messages = [
+            {"role": "system", "content": prompt},
+            {"role": "system", "content": consultation_directive},
+            {"role": "user", "content": user_content},
+        ]
+
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        reply = ""
+        completed = False
+        llm_failed = False
+        sources_used: set[str] = set()
+
+        for round_number in range(MAX_TOOL_ROUNDS):
+            turn_usage, calls = {}, []
+            try:
+                for fragment in chat_stream(messages, usage=turn_usage, tools=schemas, tool_calls=calls):
+                    reply += fragment
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    usage[key] += int(turn_usage.get(key) or 0)
+                if turn_usage.get("provider"):
+                    usage["provider"] = turn_usage["provider"]
+                if turn_usage.get("model"):
+                    usage["model"] = turn_usage["model"]
+                if turn_usage.get("failed"):
+                    llm_failed = True
+                    break
+                if not calls:
+                    completed = True
+                    break
+                messages.append({"role": "assistant", "content": None, "tool_calls": calls})
+                for call in calls:
+                    function = call.get("function") or {}
+                    name = function.get("name", "")
+                    result = execute_tool(
+                        name,
+                        function.get("arguments") or "{}",
+                        context={
+                            "user": user,
+                            "branch": branch,
+                            "worker_key": "manager",
+                            "delegation_depth": MAX_DELEGATION_DEPTH - 1,
+                            "read_only": True,
+                            "handoff_mode": "consultation",
+                        },
+                    )
+                    try:
+                        parsed_res = json.loads(result)
+                        if isinstance(parsed_res, dict):
+                            if parsed_res.get("doctype"):
+                                sources_used.add(str(parsed_res["doctype"]))
+                            if parsed_res.get("report_name"):
+                                sources_used.add(str(parsed_res["report_name"]))
+                    except (TypeError, ValueError) as exc:
+                        log_exception("AIOS Cross-Branch Consultation Result", exc=exc)
+                    messages.append({"role": "tool", "tool_call_id": call.get("id", ""), "content": result})
+                if round_number == MAX_TOOL_ROUNDS - 1:
+                    break
+            except Exception as exc:
+                log_exception("AIOS Cross-Branch LLM Consultation", exc=exc)
+                llm_failed = True
+                break
+
+        total_tokens = usage["total_tokens"] or (usage["prompt_tokens"] + usage["completion_tokens"])
+        usage_entry = {
+            "provider": usage.get("provider", ""),
+            "model": usage.get("model", ""),
+            "branch": branch,
+            "agent": "manager",
+            "input_tokens": usage["prompt_tokens"],
+            "output_tokens": usage["completion_tokens"],
+            "total_tokens": total_tokens,
+        }
+        if usage_records is not None:
+            usage_records.append(usage_entry)
+        elif total_tokens > 0:
+            record_token_usage_batch(user, [usage_entry])
+
+        if llm_failed and not reply.strip():
+            frappe.throw("Konsultasi cabang tujuan gagal menghasilkan jawaban.")
+
+        return {
+            "branch": branch,
+            "branch_name": self.branch.get("name", branch),
+            "status": "success" if completed else "partial",
+            "answer": reply.strip(),
+            "sources": sorted(sources_used),
+            "usage": usage,
+        }
+
     def handle_stream(self, user_message: str, worker_key: str | None = None, conversation_id: int | None = None,
-                      user: str | None = None, attachments: list | None = None, new_conversation: bool = False):
+                      user: str | None = None, attachments: list | None = None, new_conversation: bool = False,
+                      handoff_context: dict | None = None):
         user = user or frappe.session.user
         # 0. Flush initial buffer untuk bypass proxy/nginx buffering
         yield f": {' ' * 1024}\n\n"
@@ -412,6 +666,21 @@ class BaseManager:
             conversation_id = self.ensure_conversation(user, force_new=True)
         elif not conversation_id:
             conversation_id = self.ensure_conversation(user)
+
+        if handoff_context and isinstance(handoff_context, dict) and frappe.db.exists("AIOS Conversation", str(conversation_id)):
+            from_name = str(handoff_context.get("from_branch_name") or handoff_context.get("from_branch") or "")
+            reason = str(handoff_context.get("reason") or "").strip()
+            referral_summary = str(handoff_context.get("referral_summary") or "").strip()
+            conv_doc = frappe.get_doc("AIOS Conversation", str(conversation_id))
+            conv_doc.title = f"Rujukan {from_name} → {self.branch['name']}"
+            conv_doc.session_summary = format_referral_session_summary(
+                from_branch_name=from_name,
+                reason=reason,
+                original_query=user_message,
+                referral_summary=referral_summary,
+            )
+            conv_doc.save(ignore_permissions=True)
+            frappe.db.commit()
 
         # 1. Kirim Meta Event
         yield f"data: {json.dumps({'type': 'meta', 'conversationId': conversation_id})}\n\n"
@@ -595,21 +864,24 @@ class BaseManager:
                             trace_args = {}
                         if not isinstance(trace_args, dict):
                             trace_args = {}
-                        if tool_name not in {"cross_branch_consultation", "open_module", "open_domain"}:
+                        if tool_name not in {"cross_branch_consultation", "handoff_to_branch", "open_module", "open_domain"}:
                             yield "data: " + json.dumps(trace_subagent_tool(
                                 self.branch.get("key", ""), "Orchestrator", tool_name, trace_args,
                             ), ensure_ascii=False) + "\n\n"
+                        tool_exec_context = {
+                            "user": user,
+                            "branch": self.branch.get("key"),
+                            "worker_key": worker_key or "manager",
+                            "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
+                            "conversation_id": str(conversation_id),
+                            "_created_file_ids": created_file_ids,
+                        }
+                        if tool_name == "cross_branch_consultation":
+                            tool_exec_context["_usage_records"] = usage_records
                         result = execute_tool(
                             tool_name,
                             function.get("arguments", "{}"),
-                            context={
-                                "user": user,
-                                "branch": self.branch.get("key"),
-                                "worker_key": worker_key or "manager",
-                                "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
-                                "conversation_id": str(conversation_id),
-                                "_created_file_ids": created_file_ids,
-                            },
+                            context=tool_exec_context,
                         )
                         card_event = _approval_card_event(tool_name, result, self.branch.get("key", ""))
                         if card_event is not None:
@@ -620,6 +892,16 @@ class BaseManager:
                         open_domain_event = _open_domain_event(tool_name, result)
                         if open_domain_event is not None:
                             yield "data: " + json.dumps(open_domain_event, ensure_ascii=False) + "\n\n"
+                        handoff_event = _handoff_event(
+                            tool_name,
+                            result,
+                            user_message=user_message,
+                            user=user,
+                            conversation_id=conversation_id,
+                            attachments=attachments,
+                        )
+                        if handoff_event is not None:
+                            yield "data: " + json.dumps(handoff_event, ensure_ascii=False) + "\n\n"
                         if worker_def is None and tool_name == "cross_branch_consultation":
                             try:
                                 trace_args = json.loads(function.get("arguments", "{}"))

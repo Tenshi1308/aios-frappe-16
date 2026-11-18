@@ -75,6 +75,7 @@ class TestAIManagerTools(IntegrationTestCase):
             "open_module",
             "open_domain",
             "cross_branch_consultation",
+            "handoff_to_branch",
             "escalate_to_human_approval",
             "monitor_global_task_ledger",
             "resolve_agent_conflict",
@@ -149,33 +150,59 @@ class TestAIManagerTools(IntegrationTestCase):
             self.assertEqual(result.get("code"), "TOOL_NOT_IMPLEMENTED")
 
     def test_cross_branch_consultation_uses_server_branch_and_manager_only(self):
-        args = {
-            "to_branch": "sales",
-            "message_type": "consultation",
-            "payload": {"question": "cek piutang"},
-        }
-        router = MagicMock()
-        router.route_message.return_value = {"ok": True}
-        with patch("aios_v1.lib.ai_manager_tools.get_swarm_router", return_value=router) as get_router:
-            result = json.loads(
-                execute_tool(
-                    "cross_branch_consultation",
-                    json.dumps(args),
-                    context=self.context,
-                )
-            )
-        get_router.assert_called_once_with(user_id=self.EMAIL)
-        route_args = router.route_message.call_args.kwargs
-        self.assertEqual(route_args["from_branch"], "finance")
-        self.assertEqual(route_args["to_branch"], "sales")
-        self.assertEqual(route_args["message_type"], "consultation")
-        self.assertEqual(result, {"ok": True})
+        for target_branch in ("sales", "accounting"):
+            with self.subTest(to_branch=target_branch):
+                args = {
+                    "to_branch": target_branch,
+                    "message_type": "consultation",
+                    "payload": {"question": "cek data"},
+                }
+                router = MagicMock()
+                router.route_message.return_value = {"ok": True}
+                with patch("aios_v1.lib.ai_manager_tools.get_swarm_router", return_value=router) as get_router:
+                    result = json.loads(
+                        execute_tool(
+                            "cross_branch_consultation",
+                            json.dumps(args),
+                            context=self.context,
+                        )
+                    )
+                get_router.assert_called_once_with(user_id=self.EMAIL)
+                route_args = router.route_message.call_args.kwargs
+                self.assertEqual(route_args["from_branch"], "finance")
+                self.assertEqual(route_args["to_branch"], target_branch)
+                self.assertEqual(route_args["message_type"], "consultation")
+                self.assertEqual(result, {"ok": True})
 
         worker_result = json.loads(execute_tool(
-            "cross_branch_consultation", json.dumps(args),
+            "cross_branch_consultation",
+            json.dumps({"to_branch": "sales", "message_type": "consultation", "payload": {"question": "cek piutang"}}),
             context={**self.context, "worker_key": "treasurer"},
         ))
         self.assertEqual(worker_result.get("code"), "TOOL_WORKER_FORBIDDEN")
+
+    def test_handoff_to_branch_is_manager_only_and_exposed_in_schema(self):
+        manager_names = {
+            schema["function"]["name"]
+            for schema in get_tools_schema_for_worker("finance", "manager")
+        }
+        worker_names = {
+            schema["function"]["name"]
+            for schema in get_tools_schema_for_worker("finance", "treasurer")
+        }
+        self.assertIn("handoff_to_branch", manager_names)
+        self.assertNotIn("handoff_to_branch", worker_names)
+
+        res = json.loads(
+            execute_tool(
+                "handoff_to_branch",
+                json.dumps({"to_branch": "accounting", "reason": "Butuh analisis buku besar"}),
+                context=self.context,
+            )
+        )
+        self.assertTrue(res.get("ok"))
+        self.assertEqual(res.get("from_branch"), "finance")
+        self.assertEqual(res.get("to_branch"), "accounting")
 
     def test_cross_branch_action_request_fails_loud(self):
         result = json.loads(execute_tool(

@@ -1,46 +1,49 @@
 ---
-name: "Cross Branch Collaboration and Swarm Coordination Workflow"
+name: "Cross Branch Collaboration and Hand-off Workflow"
 slug: "cross-branch-collaboration"
-version: "1.0.0"
+version: "2.0.0"
 branch: "orchestrator"
 role: "ai_manager"
 tools_required:
   - "cross_branch_consultation"
-  - "monitor_global_task_ledger"
-  - "resolve_agent_conflict"
+  - "handoff_to_branch"
 triggers:
   - "konsultasi lintas cabang"
   - "tanya cabang lain"
-  - "cek ledger global"
-  - "atasi konflik agent"
+  - "hand-off cabang"
+  - "pindah bidang"
   - "sinkronisasi antar divisi"
 priority: "high"
 ---
 
 # 1. Peran & Tujuan Bisnis (Role Context & Objective)
-Sebagai AI Manager dalam jaringan multi-agent (*Swarm Coordination*), skill ini mengatur kolaborasi lintas cabang secara sinkron/asinkron, pemantauan status buku besar tugas global (*Global Task Ledger*), dan resolusi sengketa rekomendasi antar agen (*Conflict Resolution*).
+Sebagai AI Manager, skill ini mengatur dua mekanisme kolaborasi lintas bidang (Model Kombinasi):
+1. **Konsultasi Baca-Saja di Belakang (`cross_branch_consultation`)**: untuk menjawab pertanyaan fakta baca-saja satu kali yang berada di bidang aktif lain tanpa memindahkan tab pengguna.
+2. **Hand-off Pindah Tab (`handoff_to_branch`)**: untuk mengalihkan percakapan ke tab cabang aktif tujuan ketika pekerjaan membutuhkan interaksi lanjutan multi-giliran, eksplorasi mendalam bidang tujuan, atau wewenang pembuatan/persetujuan draf di cabang tujuan.
 
-# 2. Alur Kerja Eksekusi (Step-by-Step Decision Tree)
-1. **Identifikasi Kebutuhan Data Lintas Cabang**:
-   * Jika eksekusi suatu tugas memerlukan data dari cabang lain, susun payload permintaan.
-2. **Konsultasi Antar Divisi (`cross_branch_consultation`)**:
-   * Panggil tool `cross_branch_consultation(task_id, from_branch, to_branch, message_type, payload, priority)`.
-3. **Pemantauan Status Ledger Global (`monitor_global_task_ledger`)**:
-   * Panggil `monitor_global_task_ledger(task_id, status_filter)`.
-4. **Penyelesaian Sengketa Keputusan (`resolve_agent_conflict`)**:
-   * Jika ada usulan bertolak belakang antar sub-agent, panggil `resolve_agent_conflict(conflict_topic, proposals, selected_decision, rationale)`.
+# 2. Kebijakan Routing: Konsultasi vs Hand-off
+1. **Gunakan `cross_branch_consultation` (tetap di tab asal) bila:**
+   * Pertanyaan bersifat baca-saja satu kali (single-turn lookup/agregat/laporan) di cabang aktif lain, lalu jawabannya tetap relevan disajikan di percakapan saat ini.
+   * Contoh: di cabang Finance pengguna bertanya *"Berapa total debit jurnal?"* -> panggil `cross_branch_consultation(to_branch="accounting", message_type="consultation", payload={"question": "Berapa total debit jurnal?"})`, lalu sampaikan angka dan atribusi sumber (`Journal Entry` / `GL Entry`) di tab Finance.
+   * Untuk lookup customer spesifik antara Finance dan Sales, sertakan `payload={"customer": "<nama customer>"}`; untuk pertanyaan umum/laporan/agregat tanpa customer, sertakan `payload={"question": "..."}`.
+2. **Gunakan `handoff_to_branch` (pindah ke tab tujuan) bila:**
+   * Pengguna meminta pekerjaan lanjutan multi-giliran atau eksplorasi penuh di bidang lain, atau meminta pembuatan/perubahan/persetujuan draf yang wewenangnya hanya ada di cabang tujuan (misalnya di cabang Accounting pengguna meminta pembuatan draf Sales Order -> alihkan ke `sales`).
+   * Panggil `handoff_to_branch(to_branch="<cabang_aktif_tujuan>", reason="...", handoff_summary="...")`.
 
-# 3. Pra-kondisi & Validasi (Pre-conditions)
-* Parameter `from_branch` dan `to_branch` harus valid di antara 9 cabang ERP.
-* Resolusi konflik wajib menyertakan dasar pemikiran logis (`rationale`).
+# 3. Pra-kondisi & Batas Wewenang (Pre-conditions & Safety)
+* `to_branch` wajib merupakan cabang yang sedang aktif di registry dan berbeda dari cabang saat ini.
+* `cross_branch_consultation` hanya mendukung `message_type="consultation"` (baca-saja); `action_request` ditolak di server.
+* `handoff_to_branch` hanya mengirim sinyal navigasi baca-saja dan **tidak pernah** membuat draf atau menjalankan aksi tulis di cabang asal maupun cabang tujuan secara otomatis.
+* **DILARANG** mengulang konsultasi berantai tanpa henti atau memindahkan data sensitif di luar kebutuhan tugas.
 
-# 4. Batasan Kepatuhan & Guardrails (Compliance & Safety)
-* **DILARANG** melakukan transfer data sensitif yang tidak relevan dengan kebutuhan tugas antar divisi.
-* Komunikasi antar cabang harus efisien dan tidak menimbulkan perulangan tanpa henti (*infinite ping-pong loop*).
+# 4. Contoh Interaksi (Few-Shot Examples)
 
-# 5. Contoh Interaksi (Few-Shot Examples)
+### Contoh 1: Konsultasi Fakta Baca-Saja (Tetap di Tab Finance)
+**User (di tab Finance):** "Berapa total debit jurnal?"
+**Tool Call:** `cross_branch_consultation(to_branch="accounting", message_type="consultation", payload={"question": "Berapa total debit jurnal?"})`
+**Respon AI Manager Finance:** Merangkum angka dari jawaban Accounting Manager beserta atribusi sumber `Journal Entry` di tab Finance.
 
-### Contoh: Manajer Sales Berkonsultasi Stok ke Manajer Material
-**User:** "Apakah kita bisa terima pesanan 500 unit pompa air?"
-**Tool Call:** `cross_branch_consultation(task_id="TSK-SO-500", from_branch="sales", to_branch="material", message_type="consultation", payload={"item": "Pompa Air", "qty": 500}, priority="URGENT")`
-**Respon AI:** "Permintaan ketersediaan stok 500 unit pompa air telah dikirimkan ke Divisi Material Management."
+### Contoh 2: Hand-off untuk Pekerjaan Aksi/Lanjutan (Pindah ke Tab Sales)
+**User (di tab Accounting):** "Tolong buatkan draf Sales Order untuk PT Maju Jaya."
+**Tool Call:** `handoff_to_branch(to_branch="sales", reason="Pembuatan draf Sales Order berada pada wewenang cabang Sales.", handoff_summary="Pengguna meminta pembuatan draf Sales Order untuk customer PT Maju Jaya.")`
+**Respon AI Manager Accounting:** "Permintaan pembuatan draf Sales Order dialihkan ke cabang Sales agar dapat ditangani sesuai wewenang bidang tersebut."

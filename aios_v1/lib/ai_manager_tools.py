@@ -16,6 +16,7 @@ from aios_v1.lib.error_utils import safe_error
 from aios_v1.lib.swarm_router import get_swarm_router
 from aios_v1.lib.task_ledger import get_task_ledger
 from aios_v1.lib.tool_registry import ai_tool, get_tool_context
+from aios_v1.plugin_manager.registry import get_branch, is_branch_enabled
 
 
 def _user_id_from_context() -> str:
@@ -105,14 +106,18 @@ def open_domain(domain: str) -> dict[str, Any]:
 # =========================================================================
 @ai_tool(
     name="cross_branch_consultation",
-    description="Meminta data atau keputusan dari AI Manager di divisi lain via Central Swarm Router.",
+    description=(
+        "Meminta data atau jawaban fakta baca-saja satu kali dari AI Manager di cabang aktif lain "
+        "via Central Swarm Router tanpa memindahkan tab percakapan pengguna. "
+        "Untuk pertanyaan umum/laporan/agregat (tanpa customer spesifik), isi payload dengan {'question': '...'}. "
+        "Untuk data kredit/pesanan customer spesifik antara Finance dan Sales, isi payload dengan {'customer': '...'}."
+    ),
     branch="ai_manager",
     dormant=False,
     parameters={
         "to_branch": {
             "type": "string",
-            "enum": ["finance", "sales"],
-            "description": "Nama cabang tujuan yang berbeda dari cabang aktif"
+            "description": "Key cabang aktif tujuan yang berbeda dari cabang aktif saat ini"
         },
         "message_type": {
             "type": "string",
@@ -121,30 +126,101 @@ def open_domain(domain: str) -> dict[str, Any]:
         },
         "payload": {
             "type": "object",
-            "description": "Isi pesan atau parameter pertanyaan/data"
+            "description": "Isi pertanyaan atau parameter baca-saja (mis. {'question': '...'} atau {'customer': '...'})"
         },
         "priority": {
             "type": "string",
-            "description": "Tingkat prioritas: 'NORMAL' atau 'URGENT'"
+            "description": "Tingkat prioritas: 'NORMAL' atau 'URGENT'",
+            "required": False,
         }
     }
 )
 def cross_branch_consultation(to_branch: str, message_type: str, payload: Dict[str, Any], priority: str = "NORMAL") -> Dict[str, Any]:
     context = get_tool_context()
-    from_branch = context.get("branch")
-    if from_branch not in {"finance", "sales"}:
-        frappe.throw("Cabang sumber konsultasi tidak valid.")
+    from_branch = str(context.get("branch") or "").strip().lower()
+    if not from_branch or not is_branch_enabled(from_branch):
+        frappe.throw("Cabang sumber konsultasi tidak valid atau belum diaktifkan.")
     if message_type != "consultation":
         frappe.throw("Hanya message_type consultation yang didukung.")
+    to_branch_norm = str(to_branch or "").strip().lower()
+    if not to_branch_norm or not is_branch_enabled(to_branch_norm):
+        frappe.throw("Cabang tujuan konsultasi tidak tersedia atau belum diaktifkan.")
+    if to_branch_norm == from_branch:
+        frappe.throw("Konsultasi lintas cabang memerlukan cabang tujuan berbeda.")
     router = get_swarm_router(user_id=_user_id_from_context())
     return router.route_message(
         task_id=f"AIOS-{uuid.uuid4()}",
         from_branch=from_branch,
-        to_branch=to_branch,
+        to_branch=to_branch_norm,
         message_type=message_type,
         payload=payload,
         priority=priority
     )
+
+
+@ai_tool(
+    name="handoff_to_branch",
+    description=(
+        "Mengalihkan percakapan pengguna ke tab cabang AIOS aktif lain untuk pekerjaan lanjutan multi-giliran, "
+        "eksplorasi mendalam bidang tersebut, atau permintaan yang memerlukan wewenang aksi/draf di cabang tujuan. "
+        "Tool ini hanya mengirim sinyal navigasi baca-saja dan tidak membuat draf maupun menjalankan aksi."
+    ),
+    branch="ai_manager",
+    dormant=False,
+    parameters={
+        "to_branch": {
+            "type": "string",
+            "description": "Key cabang aktif tujuan hand-off yang berbeda dari cabang aktif saat ini.",
+        },
+        "reason": {
+            "type": "string",
+            "description": "Alasan ringkas pengalihan ke cabang tujuan.",
+        },
+        "handoff_summary": {
+            "type": "string",
+            "description": "Ringkasan konteks percakapan untuk membantu agent cabang tujuan.",
+            "required": False,
+        },
+    },
+)
+def handoff_to_branch(to_branch: str, reason: str, handoff_summary: str = "") -> Dict[str, Any]:
+    """Return a validated read-only UI hand-off signal to another active branch."""
+    context = get_tool_context()
+    if context.get("read_only") or context.get("handoff_mode") == "consultation":
+        return safe_error("Hand-off tidak diizinkan dalam mode konsultasi baca-saja.", "CONSULTATION_READONLY_FORBIDDEN")
+
+    from_branch = str(context.get("branch") or "").strip().lower()
+    worker_key = str(context.get("worker_key") or "").strip().lower()
+    if worker_key not in {"manager", "ai_manager", f"{from_branch}_manager"}:
+        return safe_error("Hand-off hanya dapat dijalankan oleh AI Manager.", "TOOL_WORKER_FORBIDDEN")
+
+    if not from_branch or not is_branch_enabled(from_branch):
+        return safe_error("Cabang sumber tidak tersedia.", "BRANCH_DISABLED")
+
+    if not isinstance(to_branch, str) or not to_branch.strip():
+        return safe_error("Cabang tujuan hand-off wajib diisi.", "BRANCH_DISABLED")
+    to_branch_norm = to_branch.strip().lower()
+    if not is_branch_enabled(to_branch_norm):
+        return safe_error("Cabang tujuan tidak tersedia.", "BRANCH_DISABLED")
+    if to_branch_norm == from_branch:
+        return safe_error("Tidak dapat melakukan hand-off ke cabang yang sama.", "HANDOFF_SAME_BRANCH")
+
+    clean_reason = str(reason or "").strip() if isinstance(reason, str) else ""
+    if not clean_reason:
+        return safe_error("Alasan hand-off wajib diisi.", "HANDOFF_REASON_REQUIRED")
+
+    clean_summary = str(handoff_summary or "").strip() if isinstance(handoff_summary, str) else ""
+    source_def = get_branch(from_branch) or {}
+    target_def = get_branch(to_branch_norm) or {}
+    return {
+        "ok": True,
+        "from_branch": from_branch,
+        "from_branch_name": source_def.get("name") or from_branch,
+        "to_branch": to_branch_norm,
+        "to_branch_name": target_def.get("name") or to_branch_norm,
+        "reason": clean_reason,
+        "handoff_summary": clean_summary,
+    }
 
 # =========================================================================
 # 3. ESCALATE TO HUMAN APPROVAL

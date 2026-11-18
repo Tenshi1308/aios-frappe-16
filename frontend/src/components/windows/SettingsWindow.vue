@@ -2,12 +2,12 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
-import type { ClientStaffUser, SettingsTheme } from '../../types';
+import type { ClientStaffUser, HandoffMode, SettingsTheme } from '../../types';
 import { formatNumber } from '../../utils/format';
 import { resolveTheme } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
 
-type TabId = 'general' | 'connector' | 'personalization' | 'receivers' | 'staff';
+type TabId = 'general' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff';
 
 interface MenuTab {
   id: TabId;
@@ -17,6 +17,7 @@ interface MenuTab {
 
 const BASE_TABS: MenuTab[] = [
   { id: 'general', label: 'Umum', icon: 'gear' },
+  { id: 'conversation', label: 'Percakapan', icon: 'arrow-right' },
   { id: 'connector', label: 'Konektor', icon: 'link' },
   { id: 'personalization', label: 'Personalisasi', icon: 'sparkle' },
 ];
@@ -57,8 +58,39 @@ const visibleTabs = computed<MenuTab[]>(() =>
   isClientOwner.value ? [...BASE_TABS, ...OWNER_TABS] : BASE_TABS,
 );
 
-const activeTab = ref<TabId>('general');
+const activeTab = ref<TabId>(modules.settingsTab || 'general');
 const tabRefs = ref<HTMLElement[]>([]);
+
+watch(
+  () => modules.settingsTab,
+  (nextTab) => {
+    if (nextTab && visibleTabs.value.some((t) => t.id === nextTab)) {
+      activeTab.value = nextTab;
+    }
+  },
+);
+
+const HANDOFF_MODE_OPTIONS: Array<{ value: HandoffMode; label: string; description: string }> = [
+  {
+    value: 'confirm',
+    label: 'Minta konfirmasi dulu',
+    description: 'Tampilkan tombol persetujuan di chat sebelum berpindah ke tab cabang tujuan.',
+  },
+  {
+    value: 'auto',
+    label: 'Otomatis langsung pindah',
+    description: 'Langsung alihkan tab ke cabang tujuan dan kirim ulang pertanyaan asli Anda.',
+  },
+];
+
+const currentHandoffMode = computed<HandoffMode>(
+  () => modules.conversationSettings?.handoff_mode.value ?? 'confirm',
+);
+
+function selectHandoffMode(mode: HandoffMode) {
+  if (modules.conversationSettingsSaving || currentHandoffMode.value === mode) return;
+  void modules.setHandoffMode(mode);
+}
 
 function setTabRef(el: any, index: number) {
   if (el) {
@@ -148,6 +180,7 @@ onMounted(() => {
   if (!data.value && !loading.value) {
     void modules.loadSettings(true);
   }
+  void modules.loadConversationSettings(true);
   void modules.loadTelegramStatus();
   if (isClientOwner.value) {
     void modules.loadClientStaffAndRecipients();
@@ -200,6 +233,7 @@ const countdownText = computed(() => {
 
 function refresh() {
   void modules.loadSettings(true);
+  void modules.loadConversationSettings(true);
   void modules.loadTelegramStatus();
   if (isClientOwner.value) {
     void modules.loadClientStaffAndRecipients();
@@ -549,6 +583,50 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
               <b>{{ countdownText }}</b>
               <span v-if="data.reset.at_label" class="reset-time">pukul {{ data.reset.at_label }}</span>
             </div>
+          </section>
+        </div>
+
+        <!-- Halaman PERCAKAPAN -->
+        <div v-else-if="activeTab === 'conversation'" class="settings-sections">
+          <section class="settings-card" aria-label="Pengaturan percakapan dan hand-off">
+            <div class="card-head">
+              <div class="card-title-wrap">
+                <AppIcon name="arrow-right" :size="16" />
+                <h5>Mode pindah cabang (Hand-off)</h5>
+              </div>
+              <span v-if="modules.conversationSettingsSaving" class="save-status-pill">Menyimpan…</span>
+              <span v-else class="status-pill">
+                {{ currentHandoffMode === 'auto' ? 'Otomatis' : 'Konfirmasi' }}
+              </span>
+            </div>
+
+            <p class="tg-info-text">
+              Atur perilaku saat AI Manager perlu mengalihkan pekerjaan lanjutan ke cabang bidang lain. Pertanyaan fakta baca-saja tetap dijawab langsung di tab aktif.
+            </p>
+
+            <div class="handoff-options" role="radiogroup" aria-label="Mode pindah cabang">
+              <button
+                v-for="opt in HANDOFF_MODE_OPTIONS"
+                :key="opt.value"
+                type="button"
+                role="radio"
+                class="handoff-opt-btn"
+                :class="{ active: currentHandoffMode === opt.value }"
+                :aria-checked="currentHandoffMode === opt.value"
+                :disabled="modules.conversationSettingsSaving || modules.conversationSettingsLoading"
+                @click="selectHandoffMode(opt.value)"
+              >
+                <span class="handoff-opt-head">
+                  <b>{{ opt.label }}</b>
+                  <AppIcon v-if="currentHandoffMode === opt.value" name="check" :size="14" />
+                </span>
+                <small>{{ opt.description }}</small>
+              </button>
+            </div>
+
+            <p v-if="modules.conversationSettingsError" class="tg-error" role="alert">
+              {{ modules.conversationSettingsError }}
+            </p>
           </section>
         </div>
 
@@ -1152,6 +1230,64 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
 .theme-opt-btn:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+.handoff-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.handoff-opt-btn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-10) var(--space-12);
+  border-radius: var(--radius-8);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--dur-15) ease,
+    border-color var(--dur-15) ease;
+}
+
+.handoff-opt-btn:hover:not(:disabled):not(.active) {
+  background: var(--hover);
+}
+
+.handoff-opt-btn.active {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.handoff-opt-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.handoff-opt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  font-size: var(--fs-13);
+  color: var(--fg);
+}
+
+.handoff-opt-btn.active .handoff-opt-head {
+  color: var(--accent);
+}
+
+.handoff-opt-btn small {
+  font-size: var(--fs-11-5);
+  color: var(--muted);
+  line-height: 1.4;
 }
 
 .quota-pct {

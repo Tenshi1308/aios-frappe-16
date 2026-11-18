@@ -2,11 +2,13 @@ import type {
   BootstrapData,
   ClientStaffAndRecipientsData,
   ClientStaffUser,
+  ConversationSettingsData,
   CreateClientStaffResponse,
   DomainCard,
   DomainDetailData,
   DomainMeta,
   DomainModule,
+  HandoffMode,
   ModuleDetailData,
   ModuleFilters,
   ModuleListData,
@@ -21,6 +23,7 @@ import { ALLOWED_THEMES, normalizeTheme } from '../../utils/theme';
 
 let mockThemeValue: SettingsTheme = 'Automatic';
 let mockCompanyPersona = '';
+let mockHandoffMode: HandoffMode = 'confirm';
 
 const MOCK_DOMAINS: DomainMeta[] = [
   {
@@ -257,6 +260,23 @@ export async function saveTheme(theme: SettingsTheme, _csrfToken: string): Promi
   mockThemeValue = normalizeTheme(theme);
 }
 
+export async function fetchConversationSettings(): Promise<ConversationSettingsData> {
+  return {
+    handoff_mode: {
+      value: mockHandoffMode,
+      options: ['confirm', 'auto'],
+    },
+  };
+}
+
+export async function saveConversationSettings(
+  handoffMode: HandoffMode,
+  _csrfToken: string,
+): Promise<HandoffMode> {
+  mockHandoffMode = handoffMode === 'auto' ? 'auto' : 'confirm';
+  return mockHandoffMode;
+}
+
 export async function saveCompanyPersona(
   companyContextPersona: string,
   _csrfToken: string,
@@ -377,6 +397,8 @@ export const modulesApi = {
   fetchList,
   search,
   fetchSettings,
+  fetchConversationSettings,
+  saveConversationSettings,
   saveTheme,
   saveCompanyPersona,
   fetchClientStaffAndRecipients,

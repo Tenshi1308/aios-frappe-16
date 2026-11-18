@@ -18,11 +18,65 @@ def register_branch_handler(branch: str, handler: Callable):
     _BRANCH_HANDLERS[branch.lower()] = handler
 
 
-def _ensure_default_handlers():
-    from aios_v1.lib.branch_handlers import finance_consultation, sales_consultation
+def _make_default_handler(to_branch: str) -> Callable:
+    def _handler(
+        *,
+        user_id: str,
+        task_id: str,
+        from_branch: str,
+        message_type: str,
+        payload: dict,
+    ) -> dict:
+        from aios_v1.lib.branch_handlers import (
+            finance_consultation,
+            llm_branch_consultation,
+            sales_consultation,
+        )
 
-    _BRANCH_HANDLERS.setdefault("finance", finance_consultation)
-    _BRANCH_HANDLERS.setdefault("sales", sales_consultation)
+        has_question = bool(
+            isinstance(payload, dict)
+            and str(payload.get("question") or payload.get("query") or payload.get("prompt") or "").strip()
+        )
+        has_customer = bool(
+            isinstance(payload, dict)
+            and isinstance(payload.get("customer"), str)
+            and payload.get("customer").strip()
+        )
+        if to_branch == "finance" and has_customer and not has_question:
+            return finance_consultation(
+                user_id=user_id,
+                task_id=task_id,
+                from_branch=from_branch,
+                message_type=message_type,
+                payload=payload,
+            )
+        if to_branch == "sales" and has_customer and not has_question:
+            return sales_consultation(
+                user_id=user_id,
+                task_id=task_id,
+                from_branch=from_branch,
+                message_type=message_type,
+                payload=payload,
+            )
+        return llm_branch_consultation(
+            user_id=user_id,
+            task_id=task_id,
+            from_branch=from_branch,
+            to_branch=to_branch,
+            message_type=message_type,
+            payload=payload,
+        )
+
+    return _handler
+
+
+def _ensure_default_handlers():
+    from aios_v1.plugin_manager.registry import get_branches
+
+    for branch in get_branches():
+        key = str(branch.get("key") or "").strip().lower()
+        if key:
+            _BRANCH_HANDLERS.setdefault(key, _make_default_handler(key))
 
 class SwarmRouter:
     def __init__(self, user_id: str):
@@ -49,13 +103,12 @@ class SwarmRouter:
         from_branch_norm = from_branch.lower()
         if message_type != "consultation":
             frappe.throw("Hanya pesan consultation yang didukung.")
-        if from_branch_norm not in {"finance", "sales"} or to_branch_norm not in {"finance", "sales"}:
-            frappe.throw("Konsultasi hanya tersedia antara Finance dan Sales.")
-        if from_branch_norm == to_branch_norm:
-            frappe.throw("Konsultasi lintas cabang memerlukan cabang tujuan berbeda.")
-
         from aios_v1.plugin_manager.registry import is_branch_enabled
 
+        if not is_branch_enabled(from_branch_norm):
+            frappe.throw("Cabang sumber konsultasi belum diaktifkan.")
+        if from_branch_norm == to_branch_norm:
+            frappe.throw("Konsultasi lintas cabang memerlukan cabang tujuan berbeda.")
         if not is_branch_enabled(to_branch_norm):
             frappe.throw("Cabang tujuan belum diaktifkan.")
         _ensure_default_handlers()

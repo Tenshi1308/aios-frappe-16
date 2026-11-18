@@ -51,6 +51,37 @@ export interface FileEntry {
   creation: string;
 }
 
+export type HandoffMode = 'confirm' | 'auto';
+
+export interface ConversationSettingsData {
+  handoff_mode: {
+    value: HandoffMode;
+    options: HandoffMode[];
+  };
+}
+
+export interface HandoffEvent {
+  type: 'handoff';
+  from_branch: string;
+  from_branch_name: string;
+  to_branch: string;
+  to_branch_name: string;
+  reason: string;
+  handoff_prompt: string;
+  query: string;
+  auto_send: boolean;
+  referral_summary: string;
+  file_ids: string[];
+  source_conversation_id: string;
+}
+
+export interface ConversationReferral {
+  fromBranchName: string;
+  reason: string;
+  originalQuery?: string;
+  summary?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
@@ -65,6 +96,8 @@ export interface ChatMessage {
   tokens?: number;
   durationMs?: number;
   artifacts?: ArtifactEvent[];
+  handoff?: HandoffEvent;
+  handoffAccepted?: boolean;
 }
 
 /** Cermin payload event trace di `aios_v1/shared/trace_events.py` (dokumen docs/02 §3.1). */
@@ -395,6 +428,8 @@ export interface ModulesApi {
   ): Promise<ModuleListData>;
   search(q: string, limit?: number): Promise<SearchResult[]>;
   fetchSettings(): Promise<SettingsData>;
+  fetchConversationSettings(): Promise<ConversationSettingsData>;
+  saveConversationSettings(handoffMode: HandoffMode, csrfToken: string): Promise<HandoffMode>;
   saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void>;
   saveCompanyPersona(companyContextPersona: string, csrfToken: string): Promise<string>;
   fetchClientStaffAndRecipients(): Promise<ClientStaffAndRecipientsData>;

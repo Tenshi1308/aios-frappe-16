@@ -6,11 +6,13 @@ import type {
   ClientStaffAndRecipientsData,
   ClientStaffQuota,
   ClientStaffUser,
+  ConversationSettingsData,
   CreateClientStaffResponse,
   DomainCard,
   DomainDetailData,
   DomainMeta,
   DomainModule,
+  HandoffMode,
   ModuleCard,
   ModuleCardFormat,
   ModuleCardMeta,
@@ -556,6 +558,47 @@ export async function saveTheme(theme: SettingsTheme, csrfToken: string): Promis
   });
 }
 
+function normalizeHandoffMode(value: unknown): HandoffMode {
+  return value === 'auto' ? 'auto' : 'confirm';
+}
+
+export async function fetchConversationSettings(): Promise<ConversationSettingsData> {
+  const raw = unwrapMessage<unknown>(await apiFetch(`${DESKTOP_API}.conversation_settings`));
+  if (!isRecord(raw) || !isRecord(raw.handoff_mode)) {
+    throw new ApiError('Pengaturan percakapan tidak valid.');
+  }
+  const value = normalizeHandoffMode(raw.handoff_mode.value);
+  const options = Array.isArray(raw.handoff_mode.options)
+    ? raw.handoff_mode.options.filter((v): v is HandoffMode => v === 'confirm' || v === 'auto')
+    : [];
+  return {
+    handoff_mode: {
+      value,
+      options: options.length > 0 ? options : ['confirm', 'auto'],
+    },
+  };
+}
+
+export async function saveConversationSettings(
+  handoffMode: HandoffMode,
+  csrfToken: string,
+): Promise<HandoffMode> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.save_conversation_settings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ handoff_mode: handoffMode }),
+    }),
+  );
+  if (isRecord(raw) && (raw.handoff_mode === 'confirm' || raw.handoff_mode === 'auto')) {
+    return raw.handoff_mode;
+  }
+  return normalizeHandoffMode(handoffMode);
+}
+
 export async function saveCompanyPersona(
   companyContextPersona: string,
   csrfToken: string,
@@ -725,6 +768,8 @@ export const modulesApi = {
   fetchList,
   search,
   fetchSettings,
+  fetchConversationSettings,
+  saveConversationSettings,
   saveTheme,
   saveCompanyPersona,
   fetchClientStaffAndRecipients,

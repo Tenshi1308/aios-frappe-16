@@ -295,11 +295,87 @@ def save_private_file(file_name, content, conversation_id, user) -> dict:
     }
 
 
-def validate_attachments(file_ids, conversation_id, user) -> list:
-    """Validasi daftar File ID lampiran; mengembalikan metadata tanpa isi file."""
+def list_conversation_attachment_ids(conversation_id, user: str, limit: int = MAX_ATTACHMENTS) -> list[str]:
+    """Return private attachment File IDs belonging to user in an owned conversation."""
+    conversation = get_owned_conversation(conversation_id, user)
+    conv_id = str(conversation.name)
+    common_filters = {"owner": user, "is_private": 1, "is_folder": 0}
+    conv_files = frappe.get_all(
+        "File",
+        filters={
+            **common_filters,
+            "attached_to_doctype": CONVERSATION_DOCTYPE,
+            "attached_to_name": conv_id,
+        },
+        fields=["name", "file_name", "file_url", "creation"],
+        order_by="creation desc",
+        limit=limit * 2,
+        ignore_permissions=True,
+    )
+    msg_names = frappe.get_all(
+        MESSAGE_DOCTYPE,
+        filters={"conversation": conv_id},
+        pluck="name",
+        limit=200,
+        ignore_permissions=True,
+    )
+    msg_files = []
+    if msg_names:
+        msg_files = frappe.get_all(
+            "File",
+            filters={
+                **common_filters,
+                "attached_to_doctype": MESSAGE_DOCTYPE,
+                "attached_to_name": ["in", [str(m) for m in msg_names]],
+            },
+            fields=["name", "file_name", "file_url", "creation"],
+            order_by="creation desc",
+            limit=limit * 2,
+            ignore_permissions=True,
+        )
+    combined = [*conv_files, *msg_files]
+    combined.sort(key=lambda row: str(row.get("creation") or ""), reverse=True)
+    result: list[str] = []
+    for row in combined:
+        ext = _extension_of(row.get("file_name") or "", row.get("file_url") or "")
+        if ext in ATTACHMENT_EXTENSIONS and row.get("name") not in result:
+            result.append(str(row["name"]))
+        if len(result) >= limit:
+            break
+    return result
+
+
+def _is_file_bound_to_conversation(row: dict, conversation_id: str) -> bool:
+    doctype = row.get("attached_to_doctype")
+    parent = str(row.get("attached_to_name") or "")
+    if doctype == CONVERSATION_DOCTYPE:
+        return parent == str(conversation_id)
+    if doctype == MESSAGE_DOCTYPE and parent:
+        msg_conv = frappe.db.get_value(MESSAGE_DOCTYPE, parent, "conversation")
+        return str(msg_conv or "") == str(conversation_id)
+    return False
+
+
+def validate_attachments(
+    file_ids,
+    conversation_id,
+    user,
+    source_conversation_id=None,
+) -> list:
+    """Validasi daftar File ID lampiran; mengembalikan metadata tanpa isi file.
+
+    Saat `source_conversation_id` diberikan (hand-off milik user yang sama), file
+    dari percakapan asal disalin sebagai Private `File` baru di `conversation_id`
+    agar ikatan percakapan asal tetap utuh dan isolasi `document_extract` tetap ketat.
+    """
     if frappe.session.user != user:
         raise WorkspaceError(403, "WORKSPACE_CONTEXT_MISMATCH", "Sesi tidak cocok dengan pengguna workspace.")
     conversation = get_owned_conversation(conversation_id, user)
+    source_conversation = (
+        get_owned_conversation(source_conversation_id, user)
+        if source_conversation_id and str(source_conversation_id).strip() != str(conversation.name)
+        else None
+    )
     if not isinstance(file_ids, list) or not file_ids:
         raise WorkspaceError(400, "FILE_IDS_INVALID", "Daftar lampiran tidak valid.")
     if any(not isinstance(item, str) or not item.strip() for item in file_ids):
@@ -331,16 +407,38 @@ def validate_attachments(file_ids, conversation_id, user) -> list:
             raise WorkspaceError(403, "FILE_NOT_PRIVATE", "Hanya File privat yang dapat dipakai.")
         if row.get("owner") != user:
             raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak tersedia untuk pengguna ini.")
-        if row.get("attached_to_doctype") != CONVERSATION_DOCTYPE or str(
-            row.get("attached_to_name") or ""
-        ) != str(conversation.name):
-            raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
         file_format = _extension_of(row.get("file_name") or "", row.get("file_url") or "")
         if file_format not in ATTACHMENT_EXTENSIONS:
             raise WorkspaceError(400, "FORMAT_UNSUPPORTED", "Format lampiran tidak didukung.")
         file_size = int(row.get("file_size") or 0)
         if file_size > MAX_WORKSPACE_BYTES:
             raise WorkspaceError(413, "FILE_TOO_LARGE", "Ukuran file melebihi batas maksimum 10 MB.")
+
+        bound_to_target = (
+            row.get("attached_to_doctype") == CONVERSATION_DOCTYPE
+            and str(row.get("attached_to_name") or "") == str(conversation.name)
+        )
+        if not bound_to_target:
+            if not source_conversation or not _is_file_bound_to_conversation(row, str(source_conversation.name)):
+                raise WorkspaceError(403, "FILE_FORBIDDEN", "File tidak terikat ke percakapan ini.")
+            file_doc = frappe.get_doc("File", row.get("name"))
+            content = file_doc.get_content(encodings=[])
+            saved = save_private_file(
+                row.get("file_name") or file_doc.file_name,
+                content,
+                conversation.name,
+                user,
+            )
+            attachments.append(
+                {
+                    "file_id": saved["file_id"],
+                    "file_name": saved["file_name"],
+                    "file_size": saved["file_size"],
+                    "format": saved["format"],
+                }
+            )
+            continue
+
         attachments.append(
             {
                 "file_id": row.get("name"),

@@ -11,6 +11,7 @@ import {
   streamChat,
   uploadAttachment,
 } from '../api/chat';
+import { useBranchesStore } from './branches';
 import { useSessionStore } from './session';
 import { useModulesStore } from './modules';
 import { reportClientError } from '../api/client';
@@ -20,8 +21,10 @@ import type {
   ChatMessage,
   ContextUsageStats,
   ConversationItem,
+  ConversationReferral,
   DraftListStatus,
   FileEntry,
+  HandoffEvent,
   PendingDraft,
   TraceEvent,
 } from '../types';
@@ -54,6 +57,7 @@ export const useChatStore = defineStore('chat', {
     expiredDraftsLoading: false,
     expiredDraftsError: '',
     contextUsage: {} as Record<string, ContextUsageStats | null>,
+    referrals: {} as Record<string, ConversationReferral | null>,
     /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
     artifactWindows: {} as Record<string, ArtifactEvent>,
   }),
@@ -66,6 +70,10 @@ export const useChatStore = defineStore('chat', {
     contextFor: (s) => (branch: string) => {
       const conv = s.currentConversation[branch];
       return s.contextUsage[conv ?? `new:${branch}`] ?? null;
+    },
+    referralFor: (s) => (branch: string) => {
+      const conv = s.currentConversation[branch];
+      return s.referrals[conv ?? `new:${branch}`] ?? null;
     },
     files: (s) => (branch: string) => s.pendingFiles[branch] ?? [],
     isStreaming: (s) => (branch: string) => s.streaming[branch] ?? false,
@@ -182,6 +190,7 @@ export const useChatStore = defineStore('chat', {
         const history = await fetchConversationMessages(branch, conversationId);
         this.threads[conversationId] = history.messages;
         this.legacyFiles[conversationId] = history.legacyFiles;
+        this.referrals[conversationId] = history.referral ?? null;
         if (history.context) {
           this.contextUsage[conversationId] = history.context;
         }
@@ -194,6 +203,7 @@ export const useChatStore = defineStore('chat', {
       this.currentConversation[branch] = null;
       this.threads[`new:${branch}`] = [];
       this.contextUsage[`new:${branch}`] = null;
+      this.referrals[`new:${branch}`] = null;
       this.historyOpen[branch] = false;
       this.pendingFiles[branch] = [];
     },
@@ -231,10 +241,46 @@ export const useChatStore = defineStore('chat', {
     removeFile(branch: string, fileId: string) {
       this.pendingFiles[branch] = this.files(branch).filter((f) => f.id !== fileId);
     },
-    async send(branch: string, text: string, opts: { workerKey?: string } = {}) {
+    async executeHandoff(fromBranch: string, messageId: string, handoff: HandoffEvent) {
+      const toBranch = (handoff.to_branch || '').trim();
+      if (!toBranch || toBranch === fromBranch) return;
+      const branches = useBranchesStore();
+      if (!branches.byKey(toBranch)) return;
+      const sourceThreadKey = this.currentConversation[fromBranch] ?? `new:${fromBranch}`;
+      const sourceList = this.threads[sourceThreadKey];
+      if (sourceList) {
+        const idx = sourceList.findIndex((item) => item.id === messageId);
+        if (idx !== -1) {
+          if (sourceList[idx].handoffAccepted) return;
+          sourceList[idx] = { ...sourceList[idx], handoffAccepted: true };
+        }
+      }
+      this.streaming[fromBranch] = false;
+      branches.selectBranch(toBranch);
+      this.newConversation(toBranch);
+      const query = (handoff.query || handoff.handoff_prompt || '').trim();
+      if (!query) return;
+      await this.send(toBranch, query, {
+        fileIds: handoff.file_ids,
+        handoff,
+      });
+    },
+    async send(
+      branch: string,
+      text: string,
+      opts: { workerKey?: string; fileIds?: string[]; handoff?: HandoffEvent } = {},
+    ) {
       const session = useSessionStore();
       const trimmed = text.trim();
       if (!trimmed || this.isStreaming(branch)) return;
+      if (opts.handoff) {
+        this.referrals[`new:${branch}`] = {
+          fromBranchName: opts.handoff.from_branch_name || opts.handoff.from_branch,
+          reason: opts.handoff.reason,
+          originalQuery: opts.handoff.query,
+          summary: opts.handoff.referral_summary,
+        };
+      }
       const threadKey0 = this.currentConversation[branch] ?? `new:${branch}`;
       const pendingFiles = this.files(branch);
       const conversationId = this.currentConversation[branch] ?? '';
@@ -253,7 +299,8 @@ export const useChatStore = defineStore('chat', {
         { id: newMessageId(), role: 'user', text: trimmed, artifacts: userArtifacts },
       ];
       this.streaming[branch] = true;
-      const fileIds = pendingFiles.map((f) => f.id);
+      const fileIds =
+        opts.fileIds && opts.fileIds.length ? opts.fileIds : pendingFiles.map((f) => f.id);
       this.pendingFiles[branch] = [];
       const placeholder: ChatMessage = {
         id: newMessageId(),
@@ -268,6 +315,7 @@ export const useChatStore = defineStore('chat', {
       this.threads[threadKey] = [...threadAtStart, placeholder];
       const index = (this.threads[threadKey] ?? []).length - 1;
       const startedAt = performance.now();
+      const handoffHolder: { event: HandoffEvent | null } = { event: null };
       const appendDelta = (chunk: string) => {
         const list = this.threads[threadKey];
         if (!list || !list[index]) return;
@@ -312,7 +360,17 @@ export const useChatStore = defineStore('chat', {
             workerKey: opts.workerKey,
             conversationId: this.currentConversation[branch] ?? null,
             file_ids: fileIds.length ? fileIds : undefined,
-            new_conversation: this.pendingNew[branch] && !this.currentConversation[branch],
+            new_conversation:
+              Boolean(opts.handoff) || (this.pendingNew[branch] && !this.currentConversation[branch]),
+            handoff: opts.handoff
+              ? {
+                  from_branch: opts.handoff.from_branch,
+                  from_branch_name: opts.handoff.from_branch_name,
+                  reason: opts.handoff.reason,
+                  referral_summary: opts.handoff.referral_summary,
+                  source_conversation_id: opts.handoff.source_conversation_id,
+                }
+              : undefined,
           },
           session.csrfToken,
           {
@@ -325,6 +383,10 @@ export const useChatStore = defineStore('chat', {
                 if (threadKey !== conversationId && threadKey === (previous ?? `new:${branch}`)) {
                   this.threads[conversationId] = this.threads[threadKey] ?? [];
                   delete this.threads[threadKey];
+                  if (this.referrals[threadKey]) {
+                    this.referrals[conversationId] = this.referrals[threadKey];
+                    delete this.referrals[threadKey];
+                  }
                   threadKey = conversationId;
                 }
                 void this.loadConversations(branch);
@@ -340,6 +402,13 @@ export const useChatStore = defineStore('chat', {
             },
             onOpenDomain: (domainKey) => {
               useModulesStore().openDomain(domainKey);
+            },
+            onHandoff: (handoffEvent) => {
+              handoffHolder.event = handoffEvent;
+              const list = this.threads[threadKey];
+              if (list && list[index]) {
+                list[index] = { ...list[index], handoff: handoffEvent, handoffAccepted: false };
+              }
             },
             onDone: (tokens, context) => {
               const list = this.threads[threadKey];
@@ -386,13 +455,24 @@ export const useChatStore = defineStore('chat', {
         // Stream selesai tanpa satu pun delta: jangan biarkan bubble kosong
         // senyap — tampilkan pesan aman yang jujur.
         const list = this.threads[threadKey];
+        const finalHandoff = handoffHolder.event;
         if (list && list[index] && !list[index].text) {
-          list[index] = { ...list[index], live: false, text: 'Jawaban tidak dapat ditampilkan. Silakan coba lagi.' };
+          const fallbackText = finalHandoff
+            ? `Permintaan dialihkan ke ${finalHandoff.to_branch_name || finalHandoff.to_branch}.`
+            : 'Jawaban tidak dapat ditampilkan. Silakan coba lagi.';
+          list[index] = { ...list[index], live: false, text: fallbackText };
         }
         if (list && list[index]) {
           list[index] = { ...list[index], live: false };
         }
         this.streaming[branch] = false;
+        if (finalHandoff) {
+          const mode = useModulesStore().conversationSettings?.handoff_mode.value;
+          const shouldAuto = mode ? mode === 'auto' : !!finalHandoff.auto_send;
+          if (shouldAuto) {
+            void this.executeHandoff(branch, placeholder.id, finalHandoff);
+          }
+        }
       }
     },
   },

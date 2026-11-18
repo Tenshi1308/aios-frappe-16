@@ -22,7 +22,29 @@ DRAFT_TOOLS = frozenset({
     "reject_draft",
     "confirm_cash_payment",
 })
+CONSULTATION_FORBIDDEN_TOOLS = frozenset({
+    "erpnext_action_draft_create",
+    "escalate_to_human_approval",
+    "handoff_to_branch",
+    "cross_branch_consultation",
+    "orchestrator_delegate_to_subagent",
+    "workspace_create_file",
+    "open_module",
+    "open_domain",
+    *DRAFT_TOOLS,
+})
 MAX_DELEGATION_DEPTH = 2
+
+
+def _is_readonly_consultation_tool(name: str, tool_data: Dict[str, Any]) -> bool:
+    """True bila tool dilarang pada runner konsultasi lintas cabang baca-saja."""
+    if name in CONSULTATION_FORBIDDEN_TOOLS:
+        return True
+    if tool_data.get("plugin_key") == "erpnext-action-drafts":
+        return True
+    tool_branch = tool_data.get("branch")
+    branches = tool_branch if isinstance(tool_branch, list) else [tool_branch] if tool_branch else []
+    return any(item in ("ai_manager", "orchestrator") for item in branches)
 
 
 class ToolContextError(frappe.ValidationError):
@@ -105,11 +127,15 @@ def _build_tool_context(context: Optional[Dict[str, Any]] = None) -> Dict[str, A
         "branch": context.get("branch") if context else None,
         "worker_key": context.get("worker_key") if context else None,
         "delegation_depth": context.get("delegation_depth", 0) if context else 0,
+        "read_only": bool(context.get("read_only")) if context else False,
+        "handoff_mode": str(context.get("handoff_mode") or "").strip().lower() if context else "",
         # Context server, bukan argumen LLM; hanya tool yang membutuhkan yang menolak bila kosong.
         "conversation_id": _normalize_conversation_id(context.get("conversation_id")) if context else None,
     }
     if context and isinstance(context.get("_created_file_ids"), list):
         tool_context["_created_file_ids"] = context["_created_file_ids"]
+    if context and isinstance(context.get("_usage_records"), list):
+        tool_context["_usage_records"] = context["_usage_records"]
     return tool_context
 
 
@@ -270,13 +296,18 @@ def get_all_tools_schema():
         })
     return schemas
 
-def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: str | None = None):
+def get_tools_schema_for_worker(
+    branch: str,
+    worker_key: str = "manager",
+    user: str | None = None,
+    read_only: bool = False,
+):
     """
     Mengembalikan skema tools khusus yang diizinkan untuk worker/role tertentu (Prinsip Least Privilege).
     """
     _ensure_tools_loaded()
     schemas = []
-    from aios_v1.plugin_manager.registry import is_branch_enabled
+    from aios_v1.plugin_manager.registry import get_branches, is_branch_enabled
     requested_branches = [item.lower() for item in branch] if isinstance(branch, list) else [branch.lower()] if branch else []
     if any(not is_branch_enabled(item) for item in requested_branches):
         return []
@@ -289,9 +320,14 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: 
     if is_guest:
         from aios_v1.lib.erpnext_core_data import GUEST_TOOL_DESCRIPTIONS
         guest_descriptions = GUEST_TOOL_DESCRIPTIONS
+    other_active_branches = [
+        item["key"] for item in get_branches() if item.get("key") not in requested_branches
+    ]
     
     for t_name, t_data in _TOOL_REGISTRY.items():
         if t_data.get("dormant"):
+            continue
+        if read_only and _is_readonly_consultation_tool(t_name, t_data):
             continue
         if is_guest and t_name not in GUEST_ALLOWED_TOOLS:
             continue
@@ -306,6 +342,11 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: 
             ):
                 continue
             parameters, required = _public_parameters(t_data["parameters"])
+            if t_name in {"cross_branch_consultation", "handoff_to_branch"} and "to_branch" in parameters:
+                to_branch_schema = dict(parameters["to_branch"])
+                if other_active_branches:
+                    to_branch_schema["enum"] = list(other_active_branches)
+                parameters["to_branch"] = to_branch_schema
             description = guest_descriptions.get(t_name, t_data["description"]) if is_guest else t_data["description"]
             schemas.append({
                 "type": "function",
@@ -319,7 +360,7 @@ def get_tools_schema_for_worker(branch: str, worker_key: str = "manager", user: 
                     }
                 }
             })
-    if not is_guest and not is_telegram:
+    if not read_only and not is_guest and not is_telegram:
         from aios_v1.lib.mcp_client import get_mcp_tools_schema_for_worker
 
         for requested_branch in requested_branches:
@@ -347,6 +388,8 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
             if not isinstance(kwargs, dict):
                 return json.dumps(safe_error("Argumen tool MCP tidak valid.", "MCP_TOOL_FAILED"))
             ctx = _build_tool_context(context)
+            if ctx.get("read_only") or ctx.get("handoff_mode") == "consultation":
+                return _log_tool_denial("CONSULTATION_READONLY_FORBIDDEN", name)
             from aios_v1.lib.mcp_client import execute_mcp_tool
 
             with tool_context(ctx):
@@ -380,6 +423,10 @@ def execute_tool(name: str, arguments_json: str, context: Optional[Dict[str, Any
         eff_user = ctx.get("user_id") or getattr(frappe.session, "user", None)
         if eff_user == "Guest" and name not in GUEST_ALLOWED_TOOLS:
             return _log_tool_denial("GUEST_TOOL_FORBIDDEN", name)
+
+        if ctx.get("read_only") or ctx.get("handoff_mode") == "consultation":
+            if _is_readonly_consultation_tool(name, tool_data):
+                return _log_tool_denial("CONSULTATION_READONLY_FORBIDDEN", name)
 
         if getattr(frappe.local, "aios_channel", None) == "telegram":
             telegram_allowed = (

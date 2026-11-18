@@ -5,10 +5,12 @@ import type {
   ChatMessage,
   ContextUsageStats,
   ConversationItem,
+  ConversationReferral,
   DraftActionResult,
   DraftDetail,
   FileEntry,
   FileArtifact,
+  HandoffEvent,
   PendingDraft,
   TraceEvent,
 } from '../types';
@@ -28,6 +30,7 @@ export interface StreamHandlers {
   onArtifact?: (artifact: ArtifactEvent) => void;
   onOpenModule?: (moduleKey: string) => void;
   onOpenDomain?: (domainKey: string) => void;
+  onHandoff?: (event: HandoffEvent) => void;
   onDone?: (tokens?: number, context?: ContextUsageStats) => void;
 }
 
@@ -42,6 +45,7 @@ interface RawConversationDetail {
     messages?: { id?: unknown; role?: unknown; content?: unknown; artifacts?: unknown }[];
     legacyFiles?: unknown;
     context?: ContextUsageStats;
+    referral?: ConversationReferral | null;
   };
 }
 
@@ -125,7 +129,12 @@ export async function fetchMyFiles(conversationId?: string): Promise<FileEntry[]
 export async function fetchConversationMessages(
   branch: string,
   conversationId: string,
-): Promise<{ messages: ChatMessage[]; legacyFiles: FileEntry[]; context?: ContextUsageStats }> {
+): Promise<{
+  messages: ChatMessage[];
+  legacyFiles: FileEntry[];
+  context?: ContextUsageStats;
+  referral?: ConversationReferral | null;
+}> {
   const raw = unwrapMessage<RawConversationDetail>(
     await apiFetch(
       `${CHAT_API}.get_conversation?conversation_id=${encodeURIComponent(conversationId)}`
@@ -152,7 +161,10 @@ export async function fetchConversationMessages(
   const context = raw?.conversation?.context && typeof raw.conversation.context === 'object'
     ? (raw.conversation.context as ContextUsageStats)
     : undefined;
-  return { messages, legacyFiles, context };
+  const referral = raw?.conversation?.referral && typeof raw.conversation.referral === 'object'
+    ? raw.conversation.referral
+    : null;
+  return { messages, legacyFiles, context, referral };
 }
 
 export async function uploadAttachment(
@@ -232,6 +244,13 @@ export async function streamChat(
     conversationId?: string | null;
     file_ids?: string[];
     new_conversation?: boolean;
+    handoff?: {
+      from_branch: string;
+      from_branch_name?: string;
+      reason?: string;
+      referral_summary?: string;
+      source_conversation_id?: string;
+    };
   },
   csrfToken: string,
   handlers: StreamHandlers,
@@ -296,6 +315,8 @@ export async function streamChat(
           handlers.onOpenModule?.(event.module.trim());
         } else if (event.type === 'open_domain' && typeof event.domain === 'string' && event.domain.trim()) {
           handlers.onOpenDomain?.(event.domain.trim());
+        } else if (event.type === 'handoff' && typeof event.to_branch === 'string' && event.to_branch.trim()) {
+          handlers.onHandoff?.(event as unknown as HandoffEvent);
         } else if (event.type === 'done') {
           const tokens = typeof event.tokens === 'number' ? event.tokens : undefined;
           const context = event.context && typeof event.context === 'object'

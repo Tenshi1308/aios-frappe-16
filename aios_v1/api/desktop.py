@@ -32,7 +32,20 @@ RESET_JOB_METHOD = "aios_v1.services.usage.reset_daily_counters"
 _ALLOWED_FILTER_KEYS = frozenset({"date_from", "date_to", "status", "party"})
 _THEME_OPTIONS = ("Automatic", "Light", "Dark")
 _ALLOWED_THEMES = frozenset(_THEME_OPTIONS)
+HANDOFF_MODE_DEFAULT = "confirm"
+_HANDOFF_MODE_OPTIONS = ("confirm", "auto")
+_HANDOFF_MODE_ALLOWED = frozenset(_HANDOFF_MODE_OPTIONS)
+_HANDOFF_DEFAULT_KEY = "aios_handoff_mode"
 MAX_COMPANY_PERSONA_LENGTH = 2000
+
+
+def get_user_handoff_mode(user: str | None = None) -> str:
+    """Read per-user handoff mode preference via Frappe Defaults; defaults to 'confirm'."""
+    target = (user or getattr(frappe.session, "user", None) or "").strip()
+    if not target or target == "Guest":
+        return HANDOFF_MODE_DEFAULT
+    raw = frappe.defaults.get_user_default(_HANDOFF_DEFAULT_KEY, user=target)
+    return raw if raw in _HANDOFF_MODE_ALLOWED else HANDOFF_MODE_DEFAULT
 
 
 def _safe_api_errors(method_name: str):
@@ -622,6 +635,40 @@ def save_company_persona(company_context_persona: str = ""):
             defer_insert=True,
         )
         frappe.throw("Gagal menyimpan konteks perusahaan. Coba lagi nanti.", frappe.ValidationError)
+
+
+@_safe_api_errors("desktop.conversation_settings")
+def conversation_settings():
+    """Get per-user conversation preferences (branch hand-off trigger mode)."""
+    user, _ = _require_active_client()
+    return {
+        "handoff_mode": {
+            "value": get_user_handoff_mode(user),
+            "options": [*_HANDOFF_MODE_OPTIONS],
+        }
+    }
+
+
+@frappe.whitelist(methods=["POST"])
+def save_conversation_settings(handoff_mode: str = HANDOFF_MODE_DEFAULT):
+    """Save per-user conversation preferences via official Frappe Defaults."""
+    user, _ = _require_active_client()
+    try:
+        if not isinstance(handoff_mode, str) or handoff_mode.strip() not in _HANDOFF_MODE_ALLOWED:
+            frappe.throw("Mode pindah cabang tidak valid.", frappe.ValidationError)
+        cleaned = handoff_mode.strip()
+        frappe.defaults.set_user_default(_HANDOFF_DEFAULT_KEY, cleaned, user=user)
+        return {"handoff_mode": cleaned}
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception(
+            "AIOS Desktop API",
+            exc=exc,
+            context="desktop.save_conversation_settings",
+            defer_insert=True,
+        )
+        frappe.throw("Gagal menyimpan pengaturan percakapan. Coba lagi nanti.", frappe.ValidationError)
 
 
 @frappe.whitelist(methods=["POST"])
