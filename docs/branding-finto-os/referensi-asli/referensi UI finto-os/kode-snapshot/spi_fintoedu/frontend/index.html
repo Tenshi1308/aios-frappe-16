@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPI Digital System</title>
+    <style>
+    #splash-screen {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      background: white;
+      display: flex;
+      height: 100%;
+      width: 100%;
+      transform: translate(-50%, -50%);
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      opacity: 1;
+      transition: all 15s linear;
+      overflow: hidden;
+    }
+
+    #splash-screen.remove {
+      animation: fadeout 0.7s forwards;
+      z-index: 0;
+    }
+
+    @keyframes fadeout {
+      to {
+        opacity: 0;
+        visibility: hidden;
+      }
+    }
+
+    /* Mode desktop (Finto OS): tanpa splash logo SPI; animasi booting Finto OS yang tampil. */
+    html.os-mode #splash-screen {
+      display: none;
+    }
+    html.os-mode, html.os-mode body {
+      background: #05070d;
+    }
+
+    html, body, #app {
+      width: 100%;
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+    <script>
+      // Mode tampilan terakhir (disimpan stores/ui.ts). Splash hanya untuk mode web.
+      try {
+        if (localStorage.getItem("spi_ui_mode") !== "web") document.documentElement.classList.add("os-mode");
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="splash-screen">
+      <img
+        alt="Finto Edu"
+        src="./src/assets/images/logo-dark.png"
+        style="width: min(70vw, 360px); height: auto"
+      />
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+    <script>
+      const rootEl = document.querySelector('#app')
+      new MutationObserver(() => {
+        document.querySelector('#splash-screen')?.classList.add('remove');
+      }).observe(rootEl, { childList: true });
+    </script>
+  </body>
+</html>

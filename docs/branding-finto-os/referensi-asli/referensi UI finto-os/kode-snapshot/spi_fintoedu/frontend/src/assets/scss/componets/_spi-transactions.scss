@@ -1,0 +1,27 @@
+// Baris transaksi yang dapat diklik untuk membuka detail (keputusan pemilik 11 Nov 2026).
+// Pakai class "tx-row" pada <tr> + @click buka TransactionDetailModal; sel berisi tombol pakai @click.stop.
+tr.tx-row {
+  cursor: pointer;
+
+  &:hover > td {
+    background-color: rgba(var(--bs-primary-rgb), 0.06);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bs-primary);
+    outline-offset: -2px;
+  }
+}
+
+// Kartu transaksi yang dapat diklik (mis. daftar Proses Gaji).
+.tx-card {
+  cursor: pointer;
+
+  &:hover {
+    background-color: rgba(var(--bs-primary-rgb), 0.06);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--bs-primary);
+  }
+}

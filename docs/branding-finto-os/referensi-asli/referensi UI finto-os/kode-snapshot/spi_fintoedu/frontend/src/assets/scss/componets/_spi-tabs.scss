@@ -1,0 +1,57 @@
+// SPI (11 Nov 2026): tab halaman/modal harus jelas batasnya & tidak mepet.
+// - nav-pills (b-tabs pills): tiap tab berbingkai, ada jarak antar tab; "balon" aktif berjarak dari tepi & isi di bawahnya.
+// - nav-tabs: garis pemisah vertikal antar tab.
+// Hanya untuk area konten (bukan navbar topbar/sidebar).
+.nav.nav-pills:not(.navbar-nav) {
+  gap: 6px;
+  padding: 6px;
+  margin-bottom: 1rem;
+  border: 1px solid var(--#{$prefix}border-color);
+  border-radius: 10px;
+  background: var(--#{$prefix}tertiary-bg);
+
+  .nav-link {
+    height: 100%;
+    padding: 8px 14px;
+    border: 1px solid var(--#{$prefix}border-color);
+    border-radius: 8px;
+    background: var(--#{$prefix}body-bg);
+    color: var(--#{$prefix}body-color);
+    font-weight: 500;
+    line-height: 1.3;
+
+    &:hover:not(.active) {
+      border-color: var(--#{$prefix}primary);
+      color: var(--#{$prefix}primary);
+    }
+
+    &.active {
+      border-color: var(--#{$prefix}primary);
+      background: var(--#{$prefix}primary);
+      color: #fff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+  }
+}
+
+.nav.nav-tabs:not(.navbar-nav) {
+  .nav-item + .nav-item .nav-link,
+  > .nav-link + .nav-link {
+    border-left: 1px solid var(--#{$prefix}border-color);
+  }
+  .nav-link {
+    padding: 8px 16px;
+    color: var(--#{$prefix}body-color);
+    font-weight: 500;
+    &.active {
+      color: var(--#{$prefix}primary);
+    }
+  }
+}
+
+// Isi tab tidak menempel ke baris tab.
+.tabs > .tab-content,
+.nav-pills + .tab-content,
+.nav-tabs + .tab-content {
+  padding-top: 4px;
+}

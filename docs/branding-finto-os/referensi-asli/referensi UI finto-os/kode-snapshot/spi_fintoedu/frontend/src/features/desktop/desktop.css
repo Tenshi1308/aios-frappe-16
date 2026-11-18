@@ -1,0 +1,14 @@
+/* Wallpaper & variabel bersama mode desktop (Finto OS). */
+.os-wallpaper {
+  background:
+    radial-gradient(ellipse 60% 55% at 70% 60%, rgba(56, 130, 246, 0.85), transparent 70%),
+    radial-gradient(ellipse 45% 45% at 30% 35%, rgba(14, 165, 233, 0.55), transparent 70%),
+    radial-gradient(ellipse 50% 50% at 55% 85%, rgba(99, 102, 241, 0.55), transparent 70%),
+    linear-gradient(160deg, #0b1e3f 0%, #10325f 45%, #0a1a35 100%);
+  background-color: #0b1e3f;
+}
+body.os-dragging,
+body.os-dragging * {
+  user-select: none !important;
+  cursor: grabbing !important;
+}
