@@ -117,7 +117,8 @@ class TestPluginManager(IntegrationTestCase):
 		for key, _plugin_name in BUILTIN_PLUGIN_SEEDS:
 			name = frappe.db.get_value("AIOS Plugin", {"plugin_key": key}, "name")
 			counts[key] = frappe.db.count("AIOS Plugin Scope", {"parent": name})
-			self.assertEqual(counts[key], 2)
+			expected_count = 2 if key == "erpnext-action-drafts" else 3
+			self.assertEqual(counts[key], expected_count)
 		plugin_name = frappe.db.get_value("AIOS Plugin", {"plugin_key": "erpnext-core-data"}, "name")
 		plugin = frappe.get_doc("AIOS Plugin", plugin_name)
 		plugin.enabled = 0
@@ -136,7 +137,15 @@ class TestPluginManager(IntegrationTestCase):
 	def test_phase_two_plugins_are_seeded_and_enforced(self):
 		ensure_builtin_plugins()
 		self.assertEqual(frappe.db.count("AIOS Plugin"), len(BUILTIN_PLUGIN_SEEDS))
-		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), 2 * len(BUILTIN_PLUGIN_SEEDS))
+		expected_total_scopes = sum(
+			2 if key == "erpnext-action-drafts" else 3 for key, _plugin_name in BUILTIN_PLUGIN_SEEDS
+		)
+		self.assertEqual(frappe.db.count("AIOS Plugin Scope"), expected_total_scopes)
+		drafts_name = frappe.db.get_value("AIOS Plugin", {"plugin_key": "erpnext-action-drafts"}, "name")
+		drafts_plugin = frappe.get_doc("AIOS Plugin", drafts_name)
+		self.assertEqual(
+			{scope.scope_key for scope in drafts_plugin.scopes if scope.enabled}, {"finance", "sales"}
+		)
 		for plugin_key, tool_name in (
 			("quant-calculator", "quant_calculate"),
 			("document-intelligence", "document_extract"),
@@ -148,9 +157,10 @@ class TestPluginManager(IntegrationTestCase):
 				self.assertEqual(plugin.plugin_type, "BUILT_IN")
 				self.assertEqual(plugin.enabled, 1)
 				self.assertEqual(
-					{scope.scope_key for scope in plugin.scopes if scope.enabled}, {"finance", "sales"}
+					{scope.scope_key for scope in plugin.scopes if scope.enabled},
+					{"finance", "sales", "accounting"},
 				)
-				for branch in ("finance", "sales"):
+				for branch in ("finance", "sales", "accounting"):
 					self.assertIn(tool_name, self._schemas(branch))
 
 				plugin.enabled = 0
@@ -200,7 +210,8 @@ class TestPluginManager(IntegrationTestCase):
 		plugin = frappe.get_doc("AIOS Plugin", plugin_name)
 		self.assertEqual(plugin.plugin_type, "BUILT_IN")
 		self.assertEqual(
-			{scope.scope_key for scope in plugin.scopes if scope.enabled}, {"finance", "sales"}
+			{scope.scope_key for scope in plugin.scopes if scope.enabled},
+			{"finance", "sales", "accounting"},
 		)
 		context = {
 			"user": self.USER,

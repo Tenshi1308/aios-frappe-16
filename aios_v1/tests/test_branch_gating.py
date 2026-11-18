@@ -17,8 +17,8 @@ except ImportError:
 
 
 class TestBranchGating(IntegrationTestCase):
-    def test_only_finance_and_sales_are_listed(self):
-        self.assertEqual({branch["key"] for branch in get_branches()}, {"finance", "sales"})
+    def test_only_priority_branches_are_listed(self):
+        self.assertEqual({branch["key"] for branch in get_branches()}, {"finance", "sales", "accounting"})
         self.assertFalse(is_branch_enabled("hr"))
 
     def test_disabled_branch_schema_and_tool_execution_are_denied(self):

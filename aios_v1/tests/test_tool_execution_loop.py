@@ -343,7 +343,7 @@ class TestToolExecutionLoop(IntegrationTestCase):
             prompt = sales_mgr.build_system_prompt(None, user="_test.employee@example.com")
 
         self.assertIn("AI Manager bidang Sales and Distribution", prompt)
-        self.assertIn("Ekosistem 9 Cabang ERP AIOS", prompt)
+        self.assertIn("Ekosistem 10 Cabang ERP AIOS", prompt)
         self.assertIn("Task Orchestration and Delegation Workflow", prompt)
 
     def test_guest_handle_stream_injects_cs_active_directive_and_guest_tool_schemas(self):

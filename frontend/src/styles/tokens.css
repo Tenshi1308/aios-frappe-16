@@ -36,6 +36,7 @@
      branch tak dikenal memakai fallback --accent pada .agent-dot. */
   --agent-accent-finance: var(--ok);
   --agent-accent-sales: var(--accent);
+  --agent-accent-accounting: var(--domain-accounting);
 
   --domain-sales: #d9772b;
   --domain-finance: #1f8a70;
@@ -149,6 +150,10 @@
 
 [data-branch='sales'] {
   --agent-accent: var(--agent-accent-sales);
+}
+
+[data-branch='accounting'] {
+  --agent-accent: var(--agent-accent-accounting);
 }
 
 @media (prefers-color-scheme: dark) {

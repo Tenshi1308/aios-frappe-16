@@ -210,10 +210,30 @@ BUILTIN_PLUGIN_SEEDS = (
     ("workspace-artifact-builder", "Workspace Artifact Builder"),
 )
 
+_BASE_PLUGIN_BRANCHES = ("finance", "sales")
+_READONLY_ACCOUNTING_PLUGINS = frozenset(
+    {
+        "erpnext-core-data",
+        "erpnext-financial-reports",
+        "quant-calculator",
+        "document-intelligence",
+        "web-market-research",
+        "workspace-artifact-builder",
+    }
+)
+_LEGACY_UNTOUCHED_SCOPES = frozenset({("branch", "finance", 1), ("branch", "sales", 1)})
+
+
+def _default_branches_for_plugin(plugin_key: str) -> tuple[str, ...]:
+    if plugin_key in _READONLY_ACCOUNTING_PLUGINS:
+        return (*_BASE_PLUGIN_BRANCHES, "accounting")
+    return _BASE_PLUGIN_BRANCHES
+
 
 def ensure_builtin_plugins():
     """Upsert built-in plugin records without replacing operator state."""
     for plugin_key, plugin_name in BUILTIN_PLUGIN_SEEDS:
+        default_branches = _default_branches_for_plugin(plugin_key)
         name = frappe.db.get_value("AIOS Plugin", {"plugin_key": plugin_key}, "name")
         if name:
             plugin = frappe.get_doc("AIOS Plugin", name)
@@ -224,9 +244,24 @@ def ensure_builtin_plugins():
             if plugin.plugin_type != "BUILT_IN":
                 plugin.plugin_type = "BUILT_IN"
                 changed = True
-            if not plugin.get("scopes"):
-                plugin.append("scopes", {"scope_type": "branch", "scope_key": "finance", "enabled": 1})
-                plugin.append("scopes", {"scope_type": "branch", "scope_key": "sales", "enabled": 1})
+            existing_scopes = plugin.get("scopes") or []
+            if not existing_scopes:
+                for branch_key in default_branches:
+                    plugin.append("scopes", {"scope_type": "branch", "scope_key": branch_key, "enabled": 1})
+                changed = True
+            elif (
+                "accounting" in default_branches
+                and int(plugin.enabled or 0) == 1
+                and len(existing_scopes) == len(_LEGACY_UNTOUCHED_SCOPES)
+                and {
+                    (s.scope_type, (s.scope_key or "").strip(), int(s.enabled or 0))
+                    for s in existing_scopes
+                }
+                == _LEGACY_UNTOUCHED_SCOPES
+            ):
+                # Upgrade site eksisting yang masih memakai seed bawaan lama [finance, sales]
+                # tanpa menimpa state operator yang sudah diubah atau dinonaktifkan.
+                plugin.append("scopes", {"scope_type": "branch", "scope_key": "accounting", "enabled": 1})
                 changed = True
             if changed:
                 plugin.save(ignore_permissions=True)
@@ -240,8 +275,8 @@ def ensure_builtin_plugins():
                     "enabled": 1,
                 }
             )
-            plugin.append("scopes", {"scope_type": "branch", "scope_key": "finance", "enabled": 1})
-            plugin.append("scopes", {"scope_type": "branch", "scope_key": "sales", "enabled": 1})
+            for branch_key in default_branches:
+                plugin.append("scopes", {"scope_type": "branch", "scope_key": branch_key, "enabled": 1})
             plugin.insert(ignore_permissions=True)
 
 

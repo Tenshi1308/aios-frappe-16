@@ -238,14 +238,14 @@ Analisis deret waktu.
         self.assertNotIn("Corporate Scenario Simulation", dormant_only)
 
     # =========================================================================
-    # 9. TEST REAL SKILLS INTEGRITY & UNIK SLUGS (86 SKILLS AKTIF)
+    # 9. TEST REAL SKILLS INTEGRITY & UNIK SLUGS (87 SKILLS: 4 AKTIF, 83 DORMANT)
     # =========================================================================
     def test_09_real_skills_integrity_and_uniqueness(self):
-        """86 file utuh; skill AKTIF hanya merujuk tool terdaftar; dormant punya tool hilang."""
+        """87 file utuh; skill AKTIF hanya merujuk tool terdaftar; dormant punya tool hilang."""
         all_skills = load_all_skills(force_reload=True)
 
-        # Total harus 86 skills (3 Orch + 11 Fin + 10 Sales + 10 Mat + 11 HR + 7 Mfg + 9 QA + 9 Log + 8 Mnt + 8 Pln)
-        self.assertEqual(len(all_skills), 86, f"Ekspektasi 86 skills, ditemukan {len(all_skills)}: {list(all_skills.keys())}")
+        # Total harus 87 skills (3 Orch + 1 Acc + 11 Fin + 10 Sales + 10 Mat + 11 HR + 7 Mfg + 9 QA + 9 Log + 8 Mnt + 8 Pln)
+        self.assertEqual(len(all_skills), 87, f"Ekspektasi 87 skills, ditemukan {len(all_skills)}: {list(all_skills.keys())}")
 
         # Pastikan tidak ada slug yang duplikat
         slugs = list(all_skills.keys())
@@ -265,12 +265,12 @@ Analisis deret waktu.
                 dormant.append(skill)
                 self.assertTrue(missing, f"Skill dormant {skill['slug']} tidak punya tool hilang")
 
-        self.assertEqual(len(active), 3)
+        self.assertEqual(len(active), 4)
         self.assertEqual(len(dormant), 83)
 
         validation = validate_skill_dependencies()
         self.assertFalse(validation["valid"])
-        self.assertEqual(validation["total_skills_checked"], 86)
+        self.assertEqual(validation["total_skills_checked"], 87)
         self.assertEqual(len(validation["missing_tools"]), len(dormant))
 
     # =========================================================================

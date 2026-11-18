@@ -89,7 +89,7 @@ def _missing_report_filters(report_name, filters):
 @ai_tool(
     name="erpnext_report_run",
     description=_REPORT_DESCRIPTION,
-    branch=["finance", "sales"],
+    branch=["finance", "sales", "accounting"],
     plugin_key="erpnext-financial-reports",
     parameters={
         "report_name": {"type": "string", "description": "Nama laporan ERPNext yang diizinkan"},

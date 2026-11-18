@@ -199,7 +199,7 @@ def extract_document_content(
 		"Membaca isi file privat yang dilampirkan pada percakapan aktif; "
 		"hanya file milik pengguna dan terikat ke AIOS Conversation yang sama."
 	),
-	branch=["finance", "sales"],
+	branch=["finance", "sales", "accounting"],
 	roles=[],
 	plugin_key="document-intelligence",
 	parameters={

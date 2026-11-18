@@ -41,7 +41,35 @@ watch(query, (val) => {
 
 const selected = computed(() => branches.selected);
 const selectedKey = computed(() => selected.value?.key ?? '');
-const agentName = computed(() => selected.value?.name ?? 'AI agent');
+
+function branchForGroup(group: string | undefined) {
+  const norm = (group ?? '').trim().toLowerCase();
+  if (!norm) return null;
+  const domain = modules.domains.find(
+    (d) => d.key.toLowerCase() === norm || d.label.toLowerCase() === norm,
+  );
+  if (domain) {
+    const byDomain = branches.byKey(domain.key);
+    if (byDomain) return byDomain;
+  }
+  return (
+    branches.branches.find(
+      (b) => b.key.toLowerCase() === norm || b.name.toLowerCase() === norm,
+    ) ?? null
+  );
+}
+
+const suggestedBranch = computed(() => {
+  if (query.value.trim()) {
+    for (const item of modules.searchResults) {
+      const matched = branchForGroup(item.module.group);
+      if (matched) return matched;
+    }
+  }
+  return selected.value;
+});
+
+const suggestedAgentName = computed(() => suggestedBranch.value?.name ?? 'AI agent');
 
 const moduleResults = computed(() =>
   modules.searchResults.filter(
@@ -76,11 +104,13 @@ function openModuleResult(moduleKey: string) {
 
 function ask(text: string) {
   const q = text.trim();
-  if (!q || !selectedKey.value) return;
+  const target = suggestedBranch.value;
+  if (!q || !target) return;
+  branches.selectBranch(target.key);
   ui.openAgent();
   query.value = '';
   ui.closeFlyouts();
-  void chat.send(selectedKey.value, q);
+  void chat.send(target.key, q);
 }
 </script>
 
@@ -129,8 +159,8 @@ function ask(text: string) {
         <div class="sr-group">
           <h5>Tanyakan agent</h5>
           <button class="sr-item first" @click="ask(query)">
-            <span v-if="selected" class="agent-dot" :data-branch="selected.key">{{ selected.name.charAt(0).toUpperCase() }}</span>
-            <span class="t">Tanya {{ agentName }}: “{{ query }}”</span>
+            <span v-if="suggestedBranch" class="agent-dot" :data-branch="suggestedBranch.key">{{ suggestedBranch.name.charAt(0).toUpperCase() }}</span>
+            <span class="t">Tanya {{ suggestedAgentName }}: “{{ query }}”</span>
             <small>Enter</small>
           </button>
         </div>

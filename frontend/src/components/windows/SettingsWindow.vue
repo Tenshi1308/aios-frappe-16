@@ -41,6 +41,7 @@ const THEME_ICONS: Record<SettingsTheme, string> = {
 const PERSONA_OPTIONS = [
   { value: 'sales', label: 'Sales' },
   { value: 'finance', label: 'Finance' },
+  { value: 'accounting', label: 'Accounting' },
   { value: 'operations', label: 'Operations' },
   { value: 'executive', label: 'Executive' },
   { value: 'system', label: 'System' },
