@@ -42,7 +42,7 @@ const MOCK_DOMAINS: DomainMeta[] = [
     label: 'Accounting',
     icon: 'wallet',
     color_token: 'domain-accounting',
-    module_count: 2,
+    module_count: 3,
   },
 ];
 
@@ -142,6 +142,7 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
         ? [
             { key: 'journal_entry', label: 'Journal Entry', icon: 'file', row_count: 0 },
             { key: 'gl_entry', label: 'GL Entry', icon: 'file', row_count: 0 },
+            { key: 'account', label: 'Account', icon: 'folder', row_count: 0 },
           ]
         : [
             { key: 'sales_invoice', label: 'Sales Invoice', icon: 'file', row_count: 5 },

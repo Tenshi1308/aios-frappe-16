@@ -570,6 +570,36 @@ _MODULES = (
             },
         ),
     },
+    {
+        "key": "account",
+        "label": "Account",
+        "group": "Accounting",
+        "icon": "folder",
+        "doctype": "Account",
+        "columns": (
+            {"key": "name", "label": "ID", "field": "name", "format": "text"},
+            {"key": "account_name", "label": "Nama akun", "field": "account_name", "format": "text"},
+            {"key": "root_type", "label": "Tipe", "field": "root_type", "format": "text"},
+            {"key": "account_type", "label": "Jenis akun", "field": "account_type", "format": "text"},
+            {"key": "disabled", "label": "Nonaktif", "field": "disabled", "format": "boolean"},
+        ),
+        "filters": (),
+        "filter_fields": {},
+        "search_fields": ("name", "account_name", "account_number"),
+        "order_field": "account_name",
+        "base_filters": {"disabled": 0},
+        "cards": (
+            {
+                "key": "count",
+                "label": "Akun aktif",
+                "aggregate": "count",
+                "field": "name",
+                "format": "number",
+                "scope": "site",
+                "filters": {"disabled": 0},
+            },
+        ),
+    },
 )
 
 _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}

@@ -203,6 +203,7 @@ class TestDesktopModules(IntegrationTestCase):
                 "supplier",
                 "item",
                 "item_price",
+                "account",
             },
         )
         self.assertNotIn("Purchase Order", {module["doctype"] for module in modules})
@@ -217,7 +218,7 @@ class TestDesktopModules(IntegrationTestCase):
         )
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Accounting"},
-            {"journal_entry", "gl_entry"},
+            {"journal_entry", "gl_entry", "account"},
         )
 
     def test_catalog_fields_are_valid_for_every_doctype(self):
@@ -495,15 +496,17 @@ class TestDesktopModules(IntegrationTestCase):
                 return [{"total": 7, "value": 7}]
             return []
 
-        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
-            result = frappe.call(desktop_api.module, module="customer")
+        for module_key, doctype in (("customer", "Customer"), ("account", "Account")):
+            with self.subTest(module=module_key):
+                with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+                    result = frappe.call(desktop_api.module, module=module_key)
 
-        self.assertEqual(len(result["cards"]), 1)
-        self.assertEqual(result["cards"][0]["value"], 7)
-        self.assertEqual(result["cards"][0]["scope"], "site")
-        self.assertNotIn("currency", result["cards"][0])
-        self.assertFalse(any(column["format"] == "currency" for column in result["module"]["columns"]))
-        self.assertEqual(result["module"]["doctype"], "Customer")
+                self.assertEqual(len(result["cards"]), 1)
+                self.assertEqual(result["cards"][0]["value"], 7)
+                self.assertEqual(result["cards"][0]["scope"], "site")
+                self.assertNotIn("currency", result["cards"][0])
+                self.assertFalse(any(column["format"] == "currency" for column in result["module"]["columns"]))
+                self.assertEqual(result["module"]["doctype"], doctype)
 
     def test_module_endpoints_run_read_only_queries_for_catalog(self):
         for module_key in get_module_keys():
