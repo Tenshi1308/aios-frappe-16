@@ -370,7 +370,7 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIn("'Ekasa Desk'", settings_src)
 
     def test_finto_desktop_wallpaper_follows_color_mode(self):
-        """Wallpaper desktop Finto mengikuti Mode Warna (Light pastel, Dark navy), taskbar tetap navy."""
+        """Wallpaper desktop dan taskbar Finto mengikuti Mode Warna (Light terang/pastel, Dark navy)."""
         tokens_src = TOKENS_CSS.read_text(encoding="utf-8")
         light_block = _extract_css_block(tokens_src, ":root[data-brand='finto']")
         auto_dark_block = _extract_css_block(tokens_src, ":root[data-brand='finto']:not([data-theme='light'])")
@@ -379,18 +379,22 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIsNotNone(auto_dark_block)
         self.assertIsNotNone(dark_block)
 
-        # Light Mode: desktop wallpaper pastel + teks desktop gelap, taskbar tetap navy
+        # Light Mode: desktop wallpaper pastel + teks desktop gelap + taskbar terang
         self.assertIn("--desk-wall-base: #e8f0fa;", light_block)
         self.assertIn("--desk-fg: #0b1f3b;", light_block)
         self.assertIn("--desk-muted: #64708a;", light_block)
-        self.assertIn("--tb-bg: rgba(11, 31, 59, 0.92);", light_block)
-        self.assertIn("--tb-fg: #f3f7fb;", light_block)
+        self.assertIn("--tb-bg: rgba(243, 247, 251, 0.88);", light_block)
+        self.assertIn("--tb-fg: #0b1f3b;", light_block)
+        self.assertIn("--tb-muted: #64708a;", light_block)
 
-        # Dark Mode (auto & explicit): desktop wallpaper navy + teks desktop terang
+        # Dark Mode (auto & explicit): desktop wallpaper navy + teks desktop terang + taskbar navy
         for block in (auto_dark_block, dark_block):
             self.assertIn("--desk-wall-base: #06111f;", block)
             self.assertIn("--desk-fg: #f3f7fb;", block)
             self.assertIn("--desk-muted: #9fb3c8;", block)
+            self.assertIn("--tb-bg: rgba(11, 31, 59, 0.92);", block)
+            self.assertIn("--tb-fg: #f3f7fb;", block)
+            self.assertIn("--tb-muted: #9fb3c8;", block)
 
         # Token Ekasa tetap utuh
         ekasa_root = _extract_css_block(tokens_src, ":root")

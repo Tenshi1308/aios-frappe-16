@@ -304,7 +304,7 @@
   --wall-2: rgba(0, 212, 200, 0.2);
   --wall-3: rgba(139, 92, 246, 0.16);
 
-  /* Shell desktop mengikuti Mode Warna (pastel di Mode Terang); taskbar selalu Navy (Palet A3) */
+  /* Shell desktop & taskbar mengikuti Mode Warna (terang/pastel di Mode Terang) */
   --desk-wall-base: #e8f0fa;
   --desk-wall-1: rgba(14, 99, 255, 0.2);
   --desk-wall-2: rgba(0, 212, 200, 0.2);
@@ -312,14 +312,14 @@
   --desk-fg: #0b1f3b;
   --desk-muted: #64708a;
   --desk-text-shadow: rgba(243, 247, 251, 0.82);
-  --tb-bg: rgba(11, 31, 59, 0.92);
-  --tb-fg: #f3f7fb;
-  --tb-muted: #9fb3c8;
-  --tb-line: rgba(0, 212, 200, 0.18);
-  --tb-hover: rgba(255, 255, 255, 0.08);
-  --tb-press: rgba(255, 255, 255, 0.14);
-  --tb-search-bg: rgba(16, 42, 78, 0.88);
-  --tb-accent: #00d4c8;
+  --tb-bg: rgba(243, 247, 251, 0.88);
+  --tb-fg: #0b1f3b;
+  --tb-muted: #64708a;
+  --tb-line: rgba(11, 31, 59, 0.12);
+  --tb-hover: rgba(11, 31, 59, 0.06);
+  --tb-press: rgba(11, 31, 59, 0.11);
+  --tb-search-bg: rgba(255, 255, 255, 0.85);
+  --tb-accent: #0e63ff;
 
   /* Jendela, flyout & panel — Terang saat Light Mode */
   --glass: rgba(243, 247, 251, 0.82);
@@ -392,6 +392,14 @@
     --desk-fg: #f3f7fb;
     --desk-muted: #9fb3c8;
     --desk-text-shadow: rgba(6, 17, 31, 0.72);
+    --tb-bg: rgba(11, 31, 59, 0.92);
+    --tb-fg: #f3f7fb;
+    --tb-muted: #9fb3c8;
+    --tb-line: rgba(0, 212, 200, 0.18);
+    --tb-hover: rgba(255, 255, 255, 0.08);
+    --tb-press: rgba(255, 255, 255, 0.14);
+    --tb-search-bg: rgba(16, 42, 78, 0.88);
+    --tb-accent: #00d4c8;
 
     /* Jam putih di dinding navy; kartu Liquid Glass gelap mengikuti latar */
     --lock-clock-fg: #f3f7fb;
@@ -452,6 +460,14 @@
   --desk-fg: #f3f7fb;
   --desk-muted: #9fb3c8;
   --desk-text-shadow: rgba(6, 17, 31, 0.72);
+  --tb-bg: rgba(11, 31, 59, 0.92);
+  --tb-fg: #f3f7fb;
+  --tb-muted: #9fb3c8;
+  --tb-line: rgba(0, 212, 200, 0.18);
+  --tb-hover: rgba(255, 255, 255, 0.08);
+  --tb-press: rgba(255, 255, 255, 0.14);
+  --tb-search-bg: rgba(16, 42, 78, 0.88);
+  --tb-accent: #00d4c8;
 
   /* Jam putih di dinding navy; kartu Liquid Glass gelap mengikuti latar */
   --lock-clock-fg: #f3f7fb;
