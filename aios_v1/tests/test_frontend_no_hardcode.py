@@ -454,6 +454,26 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIsNotNone(foot_btn_css)
         self.assertIn("color: var(--fg);", foot_btn_css)
 
+    def test_favicon_files_and_index_link_exist(self):
+        """index.html merujuk favicon Finto dan aset /favicon.svg + /favicon.ico tersedia di public/."""
+        index_html = REPO_ROOT / "frontend" / "index.html"
+        favicon_svg = REPO_ROOT / "frontend" / "public" / "favicon.svg"
+        favicon_ico = REPO_ROOT / "frontend" / "public" / "favicon.ico"
+        self.assertTrue(index_html.exists(), "frontend/index.html tidak ditemukan")
+        html_src = index_html.read_text(encoding="utf-8")
+        self.assertIn('rel="icon"', html_src)
+        self.assertIn('href="/favicon.svg"', html_src)
+        self.assertIn('href="/favicon.ico"', html_src)
+
+        self.assertTrue(favicon_svg.exists(), "frontend/public/favicon.svg belum ada")
+        svg_src = favicon_svg.read_text(encoding="utf-8")
+        self.assertIn("<svg", svg_src)
+        self.assertNotIn("c2pa:manifest", svg_src)
+
+        self.assertTrue(favicon_ico.exists(), "frontend/public/favicon.ico belum ada")
+        ico_bytes = favicon_ico.read_bytes()
+        self.assertTrue(ico_bytes.startswith(b"\x00\x00\x01\x00"), "favicon.ico bukan format ICO valid")
+
 
 if __name__ == "__main__":
     unittest.main()
