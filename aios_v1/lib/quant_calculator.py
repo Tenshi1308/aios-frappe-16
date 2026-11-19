@@ -38,7 +38,7 @@ def _money(value: Decimal) -> str:
 @ai_tool(
 	name="quant_calculate",
 	description="Menghitung margin, pertumbuhan, pajak, rekonsiliasi, atau proyeksi linear secara deterministik.",
-	branch=["finance", "sales", "accounting"],
+	branch=["finance", "sales", "accounting", "purchasing"],
 	roles=[],
 	plugin_key="quant-calculator",
 	parameters={

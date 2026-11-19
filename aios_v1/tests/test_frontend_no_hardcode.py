@@ -478,6 +478,41 @@ class TestFrontendNoHardcode(unittest.TestCase):
         ico_bytes = favicon_ico.read_bytes()
         self.assertTrue(ico_bytes.startswith(b"\x00\x00\x01\x00"), "favicon.ico bukan format ICO valid")
 
+    def test_desktop_icons_wrap_to_next_column_and_keep_narrow_grid(self):
+        """Ikon desktop mengalir ke kolom berikutnya saat penuh dan mode narrow tetap grid 4 kolom."""
+        base_src = BASE_CSS.read_text(encoding="utf-8")
+        desk_icons_css = _extract_css_block(base_src, ".desk-icons")
+        desk_icon_css = _extract_css_block(base_src, ".desk-icon")
+        narrow_icons_css = _extract_css_block(base_src, ".os.narrow .desk-icons")
+        narrow_icon_css = _extract_css_block(base_src, ".os.narrow .desk-icon")
+
+        self.assertIsNotNone(desk_icons_css)
+        self.assertIn("bottom: 14px;", desk_icons_css)
+        self.assertIn("display: flex;", desk_icons_css)
+        self.assertIn("flex-direction: column;", desk_icons_css)
+        self.assertIn("flex-wrap: wrap;", desk_icons_css)
+        self.assertIn("align-content: flex-start;", desk_icons_css)
+        self.assertNotIn("width: 88px;", desk_icons_css)
+
+        self.assertIsNotNone(desk_icon_css)
+        self.assertIn("width: 88px;", desk_icon_css)
+
+        self.assertIsNotNone(narrow_icons_css)
+        self.assertIn("display: grid;", narrow_icons_css)
+        self.assertIn("grid-template-columns: repeat(4, 1fr);", narrow_icons_css)
+        self.assertIsNotNone(narrow_icon_css)
+        self.assertIn("width: auto;", narrow_icon_css)
+
+    def test_purchasing_agent_accent_tokens_and_settings_option_exist(self):
+        """Token aksen Purchasing di tokens.css dan opsi persona Purchasing di SettingsWindow tersedia."""
+        tokens_src = TOKENS_CSS.read_text(encoding="utf-8")
+        self.assertIn("--agent-accent-purchasing: var(--domain-purchasing);", tokens_src)
+        self.assertIn("[data-branch='purchasing']", tokens_src)
+        self.assertIn("--agent-accent: var(--agent-accent-purchasing);", tokens_src)
+
+        settings_src = SETTINGS_WINDOW.read_text(encoding="utf-8")
+        self.assertIn("{ value: 'purchasing', label: 'Purchasing' }", settings_src)
+
 
 if __name__ == "__main__":
     unittest.main()

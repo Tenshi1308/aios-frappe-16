@@ -220,7 +220,7 @@ def _enrich_guest_item_price_row(
 @ai_tool(
     name="erpnext_doc_list",
     description=_DOC_LIST_DESCRIPTION,
-    branch=["finance", "sales", "accounting"],
+    branch=["finance", "sales", "accounting", "purchasing"],
     plugin_key="erpnext-core-data",
     parameters={
         "doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"},
@@ -299,7 +299,7 @@ def erpnext_doc_list(doctype, fields=None, filters=None, limit=None, offset=0, o
 @ai_tool(
     name="erpnext_doc_get",
     description=_DOC_GET_DESCRIPTION,
-    branch=["finance", "sales", "accounting"],
+    branch=["finance", "sales", "accounting", "purchasing"],
     plugin_key="erpnext-core-data",
     parameters={
         "doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"},
@@ -332,7 +332,7 @@ def erpnext_doc_get(doctype, name):
 @ai_tool(
     name="erpnext_doctype_schema",
     description=_DOC_SCHEMA_DESCRIPTION,
-    branch=["finance", "sales", "accounting"],
+    branch=["finance", "sales", "accounting", "purchasing"],
     plugin_key="erpnext-core-data",
     parameters={"doctype": {"type": "string", "description": "DocType ERPNext yang diizinkan"}},
 )

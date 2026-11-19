@@ -851,6 +851,21 @@ class TestStaffPersonaAllowlist(IntegrationTestCase):
         meta_options = [opt for opt in (meta_field.options or "").splitlines() if opt]
         self.assertIn("accounting", meta_options)
 
+    def test_user_aios_persona_field_options_and_allowlist_include_purchasing(self):
+        from aios_v1.setup import USER_CUSTOM_FIELDS
+
+        self.assertIn("purchasing", desktop_api._ALLOWED_STAFF_PERSONAS)
+        setup_field = next(
+            field for field in USER_CUSTOM_FIELDS["User"] if field["fieldname"] == "aios_persona"
+        )
+        setup_options = [opt for opt in setup_field["options"].splitlines() if opt]
+        self.assertIn("purchasing", setup_options)
+
+        meta_field = frappe.get_meta("User").get_field("aios_persona")
+        self.assertIsNotNone(meta_field)
+        meta_options = [opt for opt in (meta_field.options or "").splitlines() if opt]
+        self.assertIn("purchasing", meta_options)
+
 
 class TestDesktopBrandSettings(IntegrationTestCase):
     """Kontrak dimensi desain 0C (aios_desk_brand) terpisah dari desk_theme Frappe."""

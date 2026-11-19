@@ -292,7 +292,7 @@ def _redact_url(url):
 	name="web_fetch",
 	description="Mengambil teks dari URL publik yang aman dan menampilkan ringkasan kontennya.",
 	parameters={"url": {"type": "string", "description": "URL halaman publik HTTP atau HTTPS"}},
-	branch=["finance", "sales", "accounting"],
+	branch=["finance", "sales", "accounting", "purchasing"],
 	roles=[],
 	plugin_key="web-market-research",
 )
@@ -314,7 +314,7 @@ def web_fetch(url):
 		"query": {"type": "string", "description": "Kata kunci pencarian"},
 		"limit": {"type": "integer", "description": "Jumlah hasil yang diminta", "required": False},
 	},
-	branch=["finance", "sales", "accounting"],
+	branch=["finance", "sales", "accounting", "purchasing"],
 	roles=[],
 	plugin_key="web-market-research",
 )

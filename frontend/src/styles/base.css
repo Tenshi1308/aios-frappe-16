@@ -720,13 +720,18 @@ textarea {
 .desk-icons {
   position: absolute;
   top: 14px;
+  bottom: 14px;
   left: 10px;
-  display: grid;
-  grid-auto-flow: row;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
   gap: var(--space-6);
-  width: 88px;
+  pointer-events: none;
 }
 .desk-icon {
+  width: 88px;
+  pointer-events: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1870,9 +1875,15 @@ textarea {
 /* ---------- NARROW (ponsel / tablet kecil) ---------- */
 .os.narrow .desk-icons {
   position: static;
+  bottom: auto;
   width: auto;
+  display: grid;
   grid-template-columns: repeat(4, 1fr);
   padding: var(--space-14) var(--space-12);
+  pointer-events: auto;
+}
+.os.narrow .desk-icon {
+  width: auto;
 }
 .os.narrow .desk-hint {
   display: none;

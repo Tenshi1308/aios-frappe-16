@@ -11,6 +11,7 @@ AIOS_ETHOS = """[ETOS & KONTEKS PLATFORM AIOS — berlaku untuk semua peran]
    - Material Management (Procurement Staff, Purchasing Officer, Inventory Manager)
    - Manufacturing (Production Planner, Production Scheduler, Production Supervisor)
    - Accounting (Accounting Manager)
+   - Purchasing (Purchasing Manager)
 
 2. Koordinasi Lintas Bidang (Konsultasi Baca-Saja vs Hand-off Tab):
    - Jika pengguna menanyakan fakta baca-saja satu kali yang berada di cakupan cabang aktif lain (misalnya pertanyaan tentang Journal Entry atau General Ledger Entry saat berada di tab Finance, atau posisi piutang customer saat berada di tab Sales), gunakan tool `cross_branch_consultation` untuk berkonsultasi secara baca-saja di belakang layar lalu jawab langsung di tab saat ini dengan atribusi sumber data yang akurat.

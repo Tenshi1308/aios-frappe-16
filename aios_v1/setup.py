@@ -17,7 +17,7 @@ USER_CUSTOM_FIELDS = {
             "fieldname": "aios_persona",
             "fieldtype": "Select",
             "label": "AIOS Persona",
-            "options": "\nexecutive\nfinance\nsales\naccounting\noperations\nsystem",
+            "options": "\nexecutive\nfinance\nsales\naccounting\npurchasing\noperations\nsystem",
             "default": "executive",
             "insert_after": "username",
         },
@@ -211,7 +211,7 @@ BUILTIN_PLUGIN_SEEDS = (
 )
 
 _BASE_PLUGIN_BRANCHES = ("finance", "sales")
-_READONLY_ACCOUNTING_PLUGINS = frozenset(
+_READONLY_BRANCH_PLUGINS = frozenset(
     {
         "erpnext-core-data",
         "erpnext-financial-reports",
@@ -221,12 +221,15 @@ _READONLY_ACCOUNTING_PLUGINS = frozenset(
         "workspace-artifact-builder",
     }
 )
-_LEGACY_UNTOUCHED_SCOPES = frozenset({("branch", "finance", 1), ("branch", "sales", 1)})
+_LEGACY_UNTOUCHED_SCOPE_SETS = (
+    frozenset({("branch", "finance", 1), ("branch", "sales", 1)}),
+    frozenset({("branch", "finance", 1), ("branch", "sales", 1), ("branch", "accounting", 1)}),
+)
 
 
 def _default_branches_for_plugin(plugin_key: str) -> tuple[str, ...]:
-    if plugin_key in _READONLY_ACCOUNTING_PLUGINS:
-        return (*_BASE_PLUGIN_BRANCHES, "accounting")
+    if plugin_key in _READONLY_BRANCH_PLUGINS:
+        return (*_BASE_PLUGIN_BRANCHES, "accounting", "purchasing")
     return _BASE_PLUGIN_BRANCHES
 
 
@@ -245,24 +248,24 @@ def ensure_builtin_plugins():
                 plugin.plugin_type = "BUILT_IN"
                 changed = True
             existing_scopes = plugin.get("scopes") or []
+            existing_scope_set = {
+                (s.scope_type, (s.scope_key or "").strip(), int(s.enabled or 0))
+                for s in existing_scopes
+            }
             if not existing_scopes:
                 for branch_key in default_branches:
                     plugin.append("scopes", {"scope_type": "branch", "scope_key": branch_key, "enabled": 1})
                 changed = True
-            elif (
-                "accounting" in default_branches
-                and int(plugin.enabled or 0) == 1
-                and len(existing_scopes) == len(_LEGACY_UNTOUCHED_SCOPES)
-                and {
-                    (s.scope_type, (s.scope_key or "").strip(), int(s.enabled or 0))
-                    for s in existing_scopes
-                }
-                == _LEGACY_UNTOUCHED_SCOPES
+            elif int(plugin.enabled or 0) == 1 and any(
+                existing_scope_set == untouched for untouched in _LEGACY_UNTOUCHED_SCOPE_SETS
             ):
-                # Upgrade site eksisting yang masih memakai seed bawaan lama [finance, sales]
-                # tanpa menimpa state operator yang sudah diubah atau dinonaktifkan.
-                plugin.append("scopes", {"scope_type": "branch", "scope_key": "accounting", "enabled": 1})
-                changed = True
+                # Upgrade site eksisting yang masih memakai seed bawaan sebelumnya
+                # ([finance, sales] atau [finance, sales, accounting]) tanpa menimpa
+                # state operator yang sudah diubah atau dinonaktifkan.
+                for branch_key in default_branches:
+                    if ("branch", branch_key, 1) not in existing_scope_set:
+                        plugin.append("scopes", {"scope_type": "branch", "scope_key": branch_key, "enabled": 1})
+                        changed = True
             if changed:
                 plugin.save(ignore_permissions=True)
         else:

@@ -39,7 +39,7 @@ class TestAccountingBranch(IntegrationTestCase):
         self.assertTrue(is_branch_enabled("accounting"))
         public = get_public_branches()
         public_keys = [branch["key"] for branch in public]
-        self.assertEqual(set(public_keys), {"finance", "sales", "accounting"})
+        self.assertEqual(set(public_keys), {"finance", "sales", "accounting", "purchasing"})
         for branch in public:
             self.assertNotIn("manager_persona", branch)
 

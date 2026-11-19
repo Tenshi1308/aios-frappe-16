@@ -306,7 +306,7 @@ def summarize_attachment_for_handoff(
 		"Membaca isi file privat yang dilampirkan pada percakapan aktif; "
 		"hanya file milik pengguna dan terikat ke AIOS Conversation yang sama."
 	),
-	branch=["finance", "sales", "accounting"],
+	branch=["finance", "sales", "accounting", "purchasing"],
 	roles=[],
 	plugin_key="document-intelligence",
 	parameters={

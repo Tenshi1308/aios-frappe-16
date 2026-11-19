@@ -47,3 +47,8 @@ Sebagai AI Manager, skill ini mengatur dua mekanisme kolaborasi lintas bidang (M
 **User (di tab Accounting):** "Tolong buatkan draf Sales Order untuk PT Maju Jaya."
 **Tool Call:** `handoff_to_branch(to_branch="sales", reason="Pembuatan draf Sales Order berada pada wewenang cabang Sales.", handoff_summary="Pengguna meminta pembuatan draf Sales Order untuk customer PT Maju Jaya.")`
 **Respon AI Manager Accounting:** "Permintaan pembuatan draf Sales Order dialihkan ke cabang Sales agar dapat ditangani sesuai wewenang bidang tersebut."
+
+### Contoh 3: Konsultasi Fakta Baca-Saja ke Purchasing (Tetap di Tab Finance)
+**User (di tab Finance):** "Berapa total Purchase Order yang sudah terbit?"
+**Tool Call:** `cross_branch_consultation(to_branch="purchasing", message_type="consultation", payload={"question": "Berapa total Purchase Order yang sudah terbit?"})`
+**Respon AI Manager Finance:** Merangkum angka dari jawaban Purchasing Manager beserta atribusi sumber `Purchase Order` di tab Finance.

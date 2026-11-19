@@ -172,7 +172,7 @@ class TestCrossBranchHandoff(IntegrationTestCase):
         )
         self.assertEqual(
             set(finance_schema["function"]["parameters"]["properties"]["to_branch"]["enum"]),
-            {"sales", "accounting"},
+            {"sales", "accounting", "purchasing"},
         )
 
         # Dynamically enabling an extra branch makes it immediately available without code change

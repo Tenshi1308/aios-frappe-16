@@ -87,7 +87,7 @@ class TestSetupHooks(unittest.TestCase):
         options = [opt for opt in match.group(1).split("\\n") if opt]
         self.assertEqual(
             set(options),
-            {"executive", "finance", "sales", "accounting", "operations", "system"},
+            {"executive", "finance", "sales", "accounting", "purchasing", "operations", "system"},
         )
 
 

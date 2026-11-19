@@ -37,6 +37,7 @@
   --agent-accent-finance: var(--ok);
   --agent-accent-sales: var(--accent);
   --agent-accent-accounting: var(--domain-accounting);
+  --agent-accent-purchasing: var(--domain-purchasing);
 
   --domain-sales: #d9772b;
   --domain-finance: #1f8a70;
@@ -172,6 +173,10 @@
 
 [data-branch='accounting'] {
   --agent-accent: var(--agent-accent-accounting);
+}
+
+[data-branch='purchasing'] {
+  --agent-accent: var(--agent-accent-purchasing);
 }
 
 @media (prefers-color-scheme: dark) {

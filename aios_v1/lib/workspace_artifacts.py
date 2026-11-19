@@ -121,7 +121,7 @@ def _build_pdf(content: str) -> bytes:
             "description": "Isi teks dokumen (wajib untuk md/pdf)",
         },
     },
-    branch=["finance", "sales", "accounting"],
+    branch=["finance", "sales", "accounting", "purchasing"],
     plugin_key="workspace-artifact-builder",
 )
 def workspace_create_file(file_name, format, rows=None, content=None):
