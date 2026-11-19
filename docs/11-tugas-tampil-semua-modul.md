@@ -114,6 +114,7 @@ Riset mendalam + plan Superpowers untuk fase ini dibuat SETELAH Fase 1 selesai (
 - [x] Task 4: Sinkronisasi dokumentasi Batch 1 — SELESAI PENUH 19 Nov 2026 ✅
 - [ ] Task B1: Riset + usulan pemetaan branding (investigasi saja, tanpa ubah tampilan)
 - [ ] Task B2: Implementasi branding sesuai pilihan Ten (terkunci sampai B1 dipilih Ten)
+- [ ] Agent Purchasing → Purchasing (task tersendiri mengikuti pola Opsi A Accounting, sesudah Batch 2 Branding — Ten, 19 Nov 2026)
 - Keputusan dicatat: membalik `assertNotIn("Purchase Order")` di tes katalog + ubah tes penolak modul tak dikenal (`:344`); **Request for Quotation TIDAK masuk Fase 2** — tidak punya `supplier_name`/total/mata uang, pihaknya tabel multi-supplier, pola katalog tidak berlaku (temuan riset 19 Nov, dipin di plan); allowlist + migrate jadi syarat baru (beda dari Lapis A); migrate site client hanya atas izin eksplisit Ten saat verifikasi live
 
 ### Task 1: Purchase Order → Purchasing — SELESAI PENUH ✅

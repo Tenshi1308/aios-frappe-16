@@ -4,6 +4,8 @@
 
 **Goal:** Menampilkan 3 DocType Purchasing (Purchase Order, Purchase Receipt, Supplier Quotation) sebagai modul read-only di Ekasa Desk, sehingga bidang menjadi 4 (Sales, Finance, Accounting, Purchasing) — satu bidang planned sebagai pola, bersamaan dengan branding Finto OS/Fino.
 
+**Tujuan utama AIOS (Ten, 19 Nov 2026 — koreksi framing plan ini):** jualan utama AIOS adalah AI Agent-nya — satu agent per bidang, sama seperti Accounting (Opsi A). Modul yang tampil di Desk ini adalah tempat kerja agent, bukan produknya. Tiap bidang selesai = agent-nya ikut dibuat sebagai task tersendiri mengikuti pola Opsi A (bukan bagian task modul Batch 1). Agent Purchasing dibuat sesudah Batch 2 Branding (Ten, 19 Nov 13:29: ikutin alur, jangan loncat-loncat). Plan ini tetap ber-scope modul + branding; agent TIDAK dikecualikan selamanya — hanya dikerjakan sebagai task tersendiri sesudahnya.
+
 **Architecture:** Ikuti preseden Lapis A (plan `2026-11-16-lapis-a-tampil-semua-modul.md`, 6 modul selesai penuh 18 Nov 2026, commit terakhir `5af2a28`): tiap modul = satu entri di katalog server `desktop_modules.py` + penempatan di bidang `desktop_domains.py` + update tes daftar-eksak + sinkron mock frontend. Beda dengan Lapis A: ketiga DocType BELUM ada di allowlist, jadi Task 1 menambahkannya ke `ERP_CLIENT_DOCTYPES` + migrate di site dev. Satu modul = satu task = satu commit; task berjalan berurutan 1 → 4 (jangan diparalelkan — update daftar-eksak tiap task dibangun di atas task sebelumnya). Branding dikerjakan sebagai Batch 2 terpisah, riset dulu (Task B1) baru implementasi sesudah Ten memilih pemetaannya (Task B2).
 
 **Tech Stack:** Frappe/ERPNext 16.34.2, Python (backend `aios_v1`), Vue (frontend Ekasa Desk, generik — tanpa ubah komponen), `bench run-tests`.
@@ -53,7 +55,7 @@ Konsekuensi yang dipin dari tabel ini (bukan asumsi):
 Setiap task secara implisit mencakup bagian ini.
 
 - Modul baru read-only (list + kartu hitung + filter + search). Aksi tetap hanya Sales + Finance (alur draf SO/Quotation tidak disentuh; tidak ada alur draf baru).
-- Agen ikut terbuka otomatis via allowlist global `ERP_CLIENT_DOCTYPES` (tidak bisa dipisah — keputusan Ten §9.3). Cabang agen tetap Sales + Finance + Accounting: tidak ada perubahan `_PRIORITY_BRANCHES` di `registry.py`, tidak ada handler baru di `branch_handlers.py`, tidak ada persona agent Purchasing (belum diputuskan Ten).
+- Agen ikut terbuka otomatis via allowlist global `ERP_CLIENT_DOCTYPES` (tidak bisa dipisah — keputusan Ten §9.3). Cabang agen tetap Sales + Finance + Accounting di Batch 1: tidak ada perubahan `_PRIORITY_BRANCHES` di `registry.py`, tidak ada handler baru di `branch_handlers.py` dalam task modul ini. Persona agent Purchasing DIBUAT sebagai task tersendiri sesudah Batch 2 Branding, mengikuti pola Opsi A Accounting (diputuskan Ten 19 Nov 2026) — bukan dikecualikan selamanya.
 - Request for Quotation TIDAK masuk Fase 2 (lihat tabel riset). Laporan keuangan sebagai modul Desk BUKAN bagian plan ini (scope terpisah, direncanakan belakangan). Tanpa HRIS/Payroll; tanpa pasang aplikasi baru.
 - Branding Finto OS/Fino dikerjakan sebagai Batch 2 plan ini, BUKAN di dalam task modul. Batch 1 tidak mengubah tampilan apa pun.
 - Frontend generik: tanpa ubah komponen Vue; hanya sinkron mock `frontend/src/api/mock/modules.ts` (dev parity) + token warna bila sudah ada.
@@ -92,7 +94,7 @@ File yang diubah plan ini (dan tanggung jawabnya):
 - `frontend/src/api/mock/modules.ts` — `MOCK_DOMAINS` (tambah entri purchasing) + cabang purchasing di `fetchDomain` (dev parity).
 - Branding (Batch 2, file ditentukan Task B1): aset di `docs/branding-finto-os/` sudah ada di repo; file tema/shell yang disentuh dipin di proposal B1 yang Ten pilih, bukan di plan ini.
 
-File yang TIDAK disentuh: `aios_v1/lib/branch_handlers.py`, `aios_v1/plugin_manager/registry.py`, `aios_v1/lib/erpnext_action_drafts.py`, `draft_manager.py`, `aios_v1/tests/test_client_seeder_contract.py`, komponen Vue apa pun (Batch 1).
+File yang TIDAK disentuh: `aios_v1/lib/branch_handlers.py`, `aios_v1/plugin_manager/registry.py`, `aios_v1/lib/erpnext_action_drafts.py`, `draft_manager.py`, `aios_v1/tests/test_client_seeder_contract.py`, komponen Vue apa pun (Batch 1 — task modul saja; agent dibuat sebagai task tersendiri sesudah Batch 2, bukan dikecualikan selamanya).
 
 ## Task Right-Sizing
 
@@ -328,7 +330,7 @@ git commit -m "docs: sinkronisasi dokumentasi Lapis B (Purchasing)"
 ### Task B1: Riset + usulan pemetaan branding (investigasi saja — TANPA ubah tampilan)
 
 **Files:**
-- Read-only: `frontend/src/styles/tokens.css`, `frontend/src/utils/theme.ts`, `frontend/src/components/shell/StartMenu.vue`, `frontend/src/components/domain/DomainWindow.vue`, `frontend/src/views/DesktopView.vue`, `frontend/src/stores/session.ts`, `frontend/src/api/session.ts`, `docs/branding-finto-os/README.md` + `logo/` + `mascot/` + `referensi-asli/02_SPESIFIKASI_TAMPILAN_FINTO_OS.md`
+- Read-only: `frontend/src/styles/tokens.css`, `frontend/src/utils/theme.ts`, `frontend/src/components/base/EkasaMark.vue` (logo dirender komponen ini, dipakai 7 tempat — lihat draf investigasi B1), `frontend/src/components/shell/StartMenu.vue`, `frontend/src/components/domain/DomainWindow.vue`, `frontend/src/views/DesktopView.vue`, `frontend/src/components/shell/BootScreen.vue`, `frontend/src/stores/session.ts`, `frontend/src/api/session.ts`, `docs/branding-finto-os/README.md` + `logo/` + `mascot/` + `referensi-asli/referensi UI finto-os/02_SPESIFIKASI_TAMPILAN_FINTO_OS.md`
 - Create: usulan pemetaan (dokumen, di workspace Muse dulu — bukan di repo)
 
 **Interfaces:**
@@ -361,7 +363,7 @@ git commit -m "feat(desk): terapkan branding Finto OS/Fino di Ekasa Desk"
 
 ## Self-Review (dilakukan penulis plan, 19 Nov 2026)
 
-1. **Spec coverage:** Peta §2 (Lapis B Purchasing — 4 kandidat) → Task 1–3 + keputusan RFQ dipin dengan alasan + tes. Peta §3 (pekerjaan per modul 8 langkah) → tiap task memuatnya (allowlist+migrate, katalog, bidang, tes, mock, verifikasi, commit; handler cabang TIDAK — sesuai keputusan). Peta §7 urutan (Lapis A dulu, lalu 1 bidang Purchasing) → dipatuhi, Fase 2 dimulai sesudah Lapis A selesai. Peta §9 keputusan Ten → semua masuk Global Constraints (read-only, agen ikut dibuka tanpa cabang baru, laporan keuangan bukan bagian plan, HRMS tunda, branding bersamaan). Daftar tugas Fase 2 (3 modul + RFQ dicatat) → tercakup. Satu yang TIDAK dicakup plan ini dan dicatat sebagai non-scope: laporan keuangan sebagai modul Desk (keputusan Ten §9.4 "Ya") — itu scope terpisah, direncanakan belakangan, bukan diam-diam dimasukkan ke Fase 2.
+1. **Spec coverage:** Peta §2 (Lapis B Purchasing — 4 kandidat) → Task 1–3 + keputusan RFQ dipin dengan alasan + tes. Peta §3 (pekerjaan per modul 8 langkah) → tiap task memuatnya (allowlist+migrate, katalog, bidang, tes, mock, verifikasi, commit; handler cabang TIDAK di task modul — agent dibuat sebagai task tersendiri per bidang mengikuti pola Opsi A, bukan dikecualikan selamanya). Peta §7 urutan (Lapis A dulu, lalu 1 bidang Purchasing) → dipatuhi, Fase 2 dimulai sesudah Lapis A selesai. Peta §9 keputusan Ten → semua masuk Global Constraints (read-only, agen ikut dibuka tanpa cabang baru, laporan keuangan bukan bagian plan, HRMS tunda, branding bersamaan). Daftar tugas Fase 2 (3 modul + RFQ dicatat) → tercakup. Satu yang TIDAK dicakup plan ini dan dicatat sebagai non-scope: laporan keuangan sebagai modul Desk (keputusan Ten §9.4 "Ya") — itu scope terpisah, direncanakan belakangan, bukan diam-diam dimasukkan ke Fase 2.
 2. **Step scan:** Tiap step satu aksi dengan hasil yang bisa dicek. Nilai yang dipin (field, filter, kartu, label) tertulis eksplisit per task; tidak ada "TBD" kecuali Task B2 — dan itu bukan kekosongan, melainkan gate yang didokumentasikan (langkah B2 ditulis dari pemetaan B1 sesudah Ten memilih; eksekutor dilarang mengarang pemetaan).
 3. **Type consistency:** Nama key/kartu konsisten lintas task: `purchase_order`/`purchase_receipt`/`supplier_quotation`; kartu modul `count`/`total`; kartu bidang `po_count`/`po_total`, `pr_count`/`pr_total`, `sq_count`/`sq_total`; grup `"Purchasing"` di semua entri; `base_filters {"docstatus": 1}` di semua modul.
 4. **Review Focus:** Kelima baris punya tes penambat di task pemiliknya (migrate → Task 1 Step 3+7; tes penolak PO → Task 1 Step 1; search nama tampilan → Task 1–3 Step 1; base_grand_total → Task 1–3 Step 1; retur/kedaluwarsa → Task 2–3 Step 1).

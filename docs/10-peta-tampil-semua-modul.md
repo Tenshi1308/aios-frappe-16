@@ -11,10 +11,12 @@
 
 ## 0. Ringkasan eksekutif
 
+**Tujuan utama AIOS (Ten, 19 Nov 2026):** jualan utamanya adalah AI Agent — satu agent per bidang, sama seperti Accounting (Opsi A). Modul yang tampil di Desk ini adalah tempat kerja agent, bukan produknya. Tiap bidang selesai = agent-nya ikut dibuat sebagai task tersendiri (Purchasing sesudah Batch 2 Branding, mengikuti pola Opsi A).
+
 1. **Yang tampil hari ini:** 4 bidang aktif (Sales, Finance, Accounting, Purchasing), 17 modul. (Di screenshot Pak Oscar 16 Nov: 2 bidang, 8 modul.)
 2. **"Semua" itu tiga lapis, bukan satu:** (a) 6 DocType yang dulu diizinkan tapi belum ditampilkan — sudah ditampilkan di Lapis A (18 Nov 2026); (b) 7 bidang "planned" yang sudah disiapkan kodenya tapi kosong — ini kerjaan menengah per modul; (c) HRIS + Penggajian — ini TIDAK BISA tanpa pasang aplikasi HRMS baru.
 3. **Klaim "fiturnya sudah ada semua" tidak sepenuhnya benar.** Yang sudah ada: izin baca 17 DocType + 8 laporan keuangan (sisi agen) + 7 bidang planned kosong. Yang belum ada: halaman detail dokumen, draf/aksi untuk modul selain Sales Order/Quotation, dan seluruh DocType payroll (tidak ada di site).
-4. **Menampilkan modul ≠ sekadar toggle tampil.** Per modul (preseden Quotation, commit `d8ab5aa`): entri katalog + daftar bidang + (bila DocType baru) izin + migrate + update tes + verifikasi live. Dan satu kopling penting: **DocType yang masuk `ERP_CLIENT_DOCTYPES` otomatis bisa dibaca agen** (Sales & Finance) — tampil di Desk dan bisa dibaca agen itu satu paket, tidak bisa dipisah.
+4. **Menampilkan modul ≠ sekadar toggle tampil.** Per modul (preseden Quotation, commit `d8ab5aa`): entri katalog + daftar bidang + (bila DocType baru) izin + migrate + update tes + verifikasi live. Dan satu kopling penting: **DocType yang masuk `ERP_CLIENT_DOCTYPES` otomatis bisa dibaca agen** (Sales, Finance, dan Accounting) — tampil di Desk dan bisa dibaca agen itu satu paket, tidak bisa dipisah.
 5. **Koreksi penting soal referensi branding:** menu di `menu-catalog.ts` referensi itu menu produk SEKOLAH (PPDB, Murid, SPP, Honor) — bukan daftar modul AIOS, jangan disalin. Video booting itu boot produk SPI, bukan boot AIOS.
 
 ---
