@@ -5,6 +5,7 @@ import { useWindowManager } from '../../composables/useWindowManager';
 import type { DraftListStatus, PendingDraft } from '../../types';
 import { formatDateTime } from '../../utils/format';
 import AppIcon from '../base/AppIcon.vue';
+import ErrorState from '../base/ErrorState.vue';
 
 const chat = useChatStore();
 const wm = useWindowManager();
@@ -205,17 +206,14 @@ onMounted(() => {
       <div v-if="isLoading" class="pd-empty">
         Memuat draft…
       </div>
-      <div v-else-if="loadError" class="pd-error" role="alert">
-        <span>{{ loadError }}</span>
-        <button
-          class="pd-retry"
-          type="button"
-          :disabled="isLoading"
-          @click="reloadActive()"
-        >
-          Coba lagi
-        </button>
-      </div>
+      <ErrorState
+        v-else-if="loadError"
+        :message="loadError"
+        :loading="isLoading"
+        container-class="pd-error"
+        button-class="pd-retry"
+        @retry="reloadActive()"
+      />
       <div v-else-if="!visibleDrafts.length" class="pd-empty">
         {{
           activeFilter === 'EXPIRED'

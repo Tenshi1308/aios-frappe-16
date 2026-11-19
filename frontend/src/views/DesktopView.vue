@@ -9,6 +9,7 @@ import { currentBrand } from '../utils/theme';
 import AgentPanel from '../components/agent/AgentPanel.vue';
 import AgentAvatar from '../components/base/AgentAvatar.vue';
 import AppIcon from '../components/base/AppIcon.vue';
+import ErrorState from '../components/base/ErrorState.vue';
 import Toasts from '../components/base/Toasts.vue';
 import SearchFlyout from '../components/shell/SearchFlyout.vue';
 import StartMenu from '../components/shell/StartMenu.vue';
@@ -147,22 +148,16 @@ function onKey(e: KeyboardEvent) {
         <span>Klik dua kali ikon untuk membuka</span>
       </div>
 
-      <div
+      <ErrorState
         v-if="modules.bootstrapFailed"
-        class="domain-banner domain-error desk-banner"
-        role="alert"
-      >
-        <span>{{ modules.bootstrapError }}</span>
-        <button
-          class="domain-refresh"
-          type="button"
-          :disabled="modules.loading"
-          @click="modules.loadBootstrap(true)"
-        >
-          <AppIcon name="refresh" :size="13" />
-          <span>Coba lagi</span>
-        </button>
-      </div>
+        :message="modules.bootstrapError"
+        :loading="modules.loading"
+        container-class="domain-banner domain-error desk-banner"
+        button-class="domain-refresh"
+        show-icon
+        :icon-size="13"
+        @retry="modules.loadBootstrap(true)"
+      />
 
       <WindowHost ref="windowHost" :narrow="narrow" />
 

@@ -13,6 +13,7 @@ import {
 import { reportClientError } from '../../api/client';
 import { formatDateTime } from '../../utils/format';
 import AppIcon from '../base/AppIcon.vue';
+import ErrorState from '../base/ErrorState.vue';
 
 const session = useSessionStore();
 const wm = useWindowManager();
@@ -154,10 +155,14 @@ onUnmounted(() => window.clearInterval(timer));
       </button>
     </div>
 
-    <div v-if="error" class="cf-error" role="alert">
-      <span>{{ error }}</span>
-      <button class="cf-btn" type="button" :disabled="loading" @click="load()">Coba lagi</button>
-    </div>
+    <ErrorState
+      v-if="error"
+      :message="error"
+      :loading="loading"
+      container-class="cf-error"
+      button-class="cf-btn"
+      @retry="load()"
+    />
 
     <div v-else-if="loading && !totalCount" class="cf-empty">Memuat peringatan…</div>
     <div v-else-if="!totalCount" class="cf-empty">

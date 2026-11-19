@@ -288,7 +288,10 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIn("historyLoading", text)
         ap_src = AGENT_PANEL.read_text(encoding="utf-8")
         self.assertIn("historyError", ap_src)
-        self.assertIn("Coba lagi", ap_src)
+        self.assertIn("<ErrorState", ap_src)
+        error_state_path = BASE_DIR / "ErrorState.vue"
+        self.assertTrue(error_state_path.exists(), "frontend/src/components/base/ErrorState.vue belum ada")
+        self.assertIn("Coba lagi", error_state_path.read_text(encoding="utf-8"))
 
     def test_regex_detectors_catch_synthetic_violations(self):
         self.assertIsNotNone(COLOR_LITERAL_RE.search("color: #1a2b3c;"))

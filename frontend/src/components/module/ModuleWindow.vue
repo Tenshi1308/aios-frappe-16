@@ -13,6 +13,7 @@ import { formatCurrency, formatNumber, formatShortDate } from '../../utils/forma
 import { currentBrand } from '../../utils/theme';
 import fintoAnalyzeDataImg from '../../assets/branding/finto-analyze-data-transparent.png';
 import AppIcon from '../base/AppIcon.vue';
+import ErrorState from '../base/ErrorState.vue';
 
 const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
@@ -200,12 +201,14 @@ async function onNextPage() {
       </button>
     </header>
 
-    <div v-if="error" class="mod-banner mod-error" role="alert">
-      <span>{{ error }}</span>
-      <button class="btn ghost" type="button" :disabled="loading" @click="onRefresh">
-        Coba lagi
-      </button>
-    </div>
+    <ErrorState
+      v-if="error"
+      :message="error"
+      :loading="loading"
+      container-class="mod-banner mod-error"
+      button-class="btn ghost"
+      @retry="onRefresh"
+    />
 
     <div v-if="loading && !entry" class="mod-state">Memuat data modul…</div>
 

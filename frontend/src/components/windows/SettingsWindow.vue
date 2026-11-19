@@ -6,6 +6,7 @@ import type { ClientStaffUser, HandoffMode, SettingsBrand, SettingsTheme } from 
 import { formatNumber } from '../../utils/format';
 import { currentBrand, resolveTheme } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
+import ErrorState from '../base/ErrorState.vue';
 
 type TabId = 'general' | 'design' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff';
 
@@ -416,18 +417,15 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
 
 <template>
   <div class="settings-win">
-    <div v-if="error" class="settings-error" role="alert">
-      <span>{{ error }}</span>
-      <button
-        type="button"
-        class="settings-retry-btn"
-        aria-label="Coba lagi"
-        title="Coba lagi"
-        @click="refresh"
-      >
-        <AppIcon name="refresh" :size="14" />
-      </button>
-    </div>
+    <ErrorState
+      v-if="error"
+      :message="error"
+      container-class="settings-error"
+      button-class="settings-retry-btn"
+      icon-only
+      :icon-size="14"
+      @retry="refresh"
+    />
 
     <div v-if="loading && !data" class="settings-state">
       Memuat pengaturan site…

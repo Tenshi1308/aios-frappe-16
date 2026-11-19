@@ -16,6 +16,8 @@ import type { ArtifactEvent, ChatMessage, ConversationItem, FileEntry } from '..
 import AgentStep from './AgentStep.vue';
 import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
+import ErrorState from '../base/ErrorState.vue';
+import PopoverMenu from '../base/PopoverMenu.vue';
 import RichText from '../base/RichText.vue';
 
 interface SpeechRecognitionAlternativeLike {
@@ -567,7 +569,12 @@ async function onFilesPicked(e: Event) {
           <span v-if="chat.pendingDrafts.length" class="badge">{{ chat.pendingDrafts.length }}</span>
           <span v-else-if="chat.pendingDraftsError" class="badge">!</span>
         </button>
-        <div v-if="headerMenuOpen" class="ap-popover-menu ap-head-menu" @click.stop>
+        <PopoverMenu
+          :open="headerMenuOpen"
+          menu-class="ap-head-menu"
+          aria-label="Menu panel"
+          @close="headerMenuOpen = false"
+        >
           <button
             type="button"
             @click="
@@ -590,7 +597,7 @@ async function onFilesPicked(e: Event) {
             <span v-if="chat.pendingDrafts.length" class="ap-menu-count">{{ chat.pendingDrafts.length }}</span>
             <span v-else-if="chat.pendingDraftsError" class="ap-menu-count warn">!</span>
           </button>
-        </div>
+        </PopoverMenu>
       </div>
       <button
         class="icon-btn"
@@ -665,7 +672,11 @@ async function onFilesPicked(e: Event) {
               >
                 <AppIcon name="more-vertical" :size="16" />
               </button>
-              <div v-if="historyMenuOpen" class="ap-popover-menu" @click.stop>
+              <PopoverMenu
+                :open="historyMenuOpen"
+                aria-label="Opsi daftar percakapan"
+                @close="historyMenuOpen = false"
+              >
                 <button
                   type="button"
                   :class="{ active: historySort === 'desc' }"
@@ -687,7 +698,7 @@ async function onFilesPicked(e: Event) {
                   <AppIcon name="archive" :size="14" />
                   <span>{{ isArchivedView ? 'Kembali ke aktif' : 'Archived' }}</span>
                 </button>
-              </div>
+              </PopoverMenu>
             </div>
             <button
               v-if="!isArchivedView"
@@ -751,7 +762,14 @@ async function onFilesPicked(e: Event) {
                 >
                   <AppIcon name="more-vertical" :size="14" />
                 </button>
-                <div v-if="activeConvMenuId === c.id" class="ap-popover-menu" @click.stop>
+                <PopoverMenu
+                  :open="activeConvMenuId === c.id"
+                  aria-label="Menu percakapan"
+                  @close="
+                    activeConvMenuId = null;
+                    confirmingDeleteId = null;
+                  "
+                >
                   <template v-if="confirmingDeleteId === c.id">
                     <div class="ap-confirm-text">Hapus permanen?</div>
                     <button
@@ -791,7 +809,7 @@ async function onFilesPicked(e: Event) {
                       <span>Delete</span>
                     </button>
                   </template>
-                </div>
+                </PopoverMenu>
               </div>
             </template>
           </div>
@@ -799,17 +817,14 @@ async function onFilesPicked(e: Event) {
           <div v-if="chat.historyLoading[branchKey]" class="empty-note">
             Memuat riwayat…
           </div>
-          <div v-else-if="historyError" class="ap-history-error" role="alert">
-            <span>{{ historyError }}</span>
-            <button
-              type="button"
-              class="btn ghost"
-              :disabled="chat.historyLoading[branchKey]"
-              @click="chat.loadConversations(branchKey)"
-            >
-              Coba lagi
-            </button>
-          </div>
+          <ErrorState
+            v-else-if="historyError"
+            :message="historyError"
+            :loading="!!chat.historyLoading[branchKey]"
+            container-class="ap-history-error"
+            button-class="btn ghost"
+            @retry="chat.loadConversations(branchKey)"
+          />
           <div v-else-if="!conversations.length" class="empty-note">
             {{ isArchivedView ? 'Tidak ada percakapan diarsipkan.' : 'Belum ada percakapan di cabang ini.' }}
           </div>

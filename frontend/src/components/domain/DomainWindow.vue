@@ -10,6 +10,7 @@ import { currentBrand } from '../../utils/theme';
 import fintoAnalyzeDataImg from '../../assets/branding/finto-analyze-data-transparent.png';
 import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
+import ErrorState from '../base/ErrorState.vue';
 
 const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
@@ -97,12 +98,14 @@ onMounted(() => {
       </button>
     </header>
 
-    <div v-if="error" class="domain-banner domain-error" role="alert">
-      <span>{{ error }}</span>
-      <button class="btn ghost" type="button" :disabled="loading" @click="onRefresh">
-        Coba lagi
-      </button>
-    </div>
+    <ErrorState
+      v-if="error"
+      :message="error"
+      :loading="loading"
+      container-class="domain-banner domain-error"
+      button-class="btn ghost"
+      @retry="onRefresh"
+    />
 
     <div v-if="loading && !entry" class="domain-state">Memuat data bidang…</div>
 
