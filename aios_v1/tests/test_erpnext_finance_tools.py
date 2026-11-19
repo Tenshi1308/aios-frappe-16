@@ -132,14 +132,15 @@ class TestERPNextFinanceTools(IntegrationTestCase):
 
     def test_doctype_outside_allowlist_is_rejected(self):
         self.assertNotIn("ToDo", ERP_CLIENT_DOCTYPES)
+        self.assertNotIn("Request for Quotation", ERP_CLIENT_DOCTYPES)
         result = self._execute("erpnext_doc_list", {"doctype": "ToDo"})
         self.assertFalse(result.get("success", True))
         self.assertEqual(result.get("code"), "DOCTYPE_NOT_ALLOWED")
         self.assertIn("Sales Order", result.get("error", ""), "error harus memuat daftar valid")
-        self.assertNotIn("Purchase Order", result.get("error", ""))
+        self.assertNotIn("Request for Quotation", result.get("error", ""))
 
-    def test_purchase_order_rejected_with_doctype_not_allowed(self):
-        result = self._execute("erpnext_doc_list", {"doctype": "Purchase Order"})
+    def test_request_for_quotation_rejected_with_doctype_not_allowed(self):
+        result = self._execute("erpnext_doc_list", {"doctype": "Request for Quotation"})
         self.assertEqual(result.get("code"), "DOCTYPE_NOT_ALLOWED")
         self.assertNotEqual(result.get("code"), "TOOL_FAILED")
 
@@ -156,8 +157,9 @@ class TestERPNextFinanceTools(IntegrationTestCase):
             description = _TOOL_REGISTRY[name]["description"]
             self.assertIn(purpose, description, name)
             self.assertIn("Purchase Invoice", description, name)
+            self.assertIn("Purchase Order", description, name)
             self.assertIn("Report Accounts Payable", description, name)
-            self.assertNotIn("Purchase Order", description, name)
+            self.assertNotIn("Request for Quotation", description, name)
         report_desc = _TOOL_REGISTRY["erpnext_report_run"]["description"]
         self.assertIn("gunakan report Accounts Payable", report_desc)
 
@@ -513,9 +515,10 @@ class TestReportClientAccess(IntegrationTestCase):
         )
         self.assertEqual(detail["company"], self.company)
 
-    def test_purchase_order_still_rejected_for_client(self):
-        result = self._execute_doc_tool("erpnext_doc_list", {"doctype": "Purchase Order"})
+    def test_request_for_quotation_still_rejected_for_client(self):
+        result = self._execute_doc_tool("erpnext_doc_list", {"doctype": "Request for Quotation"})
         self.assertFalse(result.get("success", True))
+        self.assertEqual(result.get("code"), "DOCTYPE_NOT_ALLOWED")
 
     def test_sales_analytics_runs_without_error_as_client(self):
         # Script Sales Analytics mengakses `doc_type`/`tree_type` langsung

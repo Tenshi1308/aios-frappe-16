@@ -158,14 +158,15 @@ class TestDesktopDomains(IntegrationTestCase):
                 "Item Price",
                 "Account",
                 "Company",
+                "Purchase Order",
             )
         }
 
     def test_catalog_contains_active_only_and_tracks_planned_count(self):
         catalog = get_domain_catalog()
-        self.assertEqual([item["key"] for item in catalog], ["sales", "finance", "accounting"])
-        self.assertEqual(get_domain_keys(), ["sales", "finance", "accounting"])
-        self.assertEqual(get_planned_domain_count(), 8)
+        self.assertEqual([item["key"] for item in catalog], ["sales", "finance", "accounting", "purchasing"])
+        self.assertEqual(get_domain_keys(), ["sales", "finance", "accounting", "purchasing"])
+        self.assertEqual(get_planned_domain_count(), 7)
         self.assertEqual(len(_DOMAINS), 11)
         for item in catalog:
             self.assertEqual(
@@ -212,7 +213,7 @@ class TestDesktopDomains(IntegrationTestCase):
                                 "key": "c1",
                                 "label": "Card",
                                 "aggregate": "count",
-                                "doctype": "Purchase Order",
+                                "doctype": "Request for Quotation",
                                 "field": "name",
                                 "format": "number",
                                 "filters": {},
@@ -235,7 +236,7 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[method], ["GET"])
 
     def test_domain_rejects_planned_unknown_and_unauthorized_users(self):
-        for invalid_domain in ("purchasing", "inventory", "unknown_domain", ""):
+        for invalid_domain in ("inventory", "manufacturing", "unknown_domain", ""):
             with self.subTest(domain=invalid_domain):
                 with self.assertRaises(frappe.ValidationError):
                     frappe.call(desktop_api.domain, domain=invalid_domain)
@@ -260,7 +261,7 @@ class TestDesktopDomains(IntegrationTestCase):
     def test_domain_sales_and_finance_shape_kpi_and_no_mutation(self):
         before = self._snapshot_counts()
 
-        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 4)):
+        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 4), ("purchasing", 2)):
             with self.subTest(domain=domain_key):
                 definition = get_domain_definition(domain_key)
                 result = frappe.call(desktop_api.domain, domain=domain_key)
@@ -308,6 +309,11 @@ class TestDesktopDomains(IntegrationTestCase):
                         [m["key"] for m in result["modules"]],
                         ["journal_entry", "gl_entry", "account", "company"],
                     )
+                elif domain_key == "purchasing":
+                    self.assertEqual(
+                        [m["key"] for m in result["modules"]],
+                        ["purchase_order"],
+                    )
                 for mod_out in result["modules"]:
                     self.assertEqual(set(mod_out.keys()), {"key", "label", "icon", "row_count"})
                     mod_def = get_module_definition(mod_out["key"])
@@ -344,7 +350,13 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(acc_payload["domain"]["key"], "accounting")
         self.assertEqual(acc_payload["domain"]["color_token"], "domain-accounting")
 
-        planned_resp = self._http_get("domain", {"domain": "purchasing"})
+        pur_resp = self._http_get("domain", {"domain": "purchasing"})
+        self.assertEqual(pur_resp.status_code, 200, pur_resp.get_data(as_text=True))
+        pur_payload = pur_resp.json["message"]
+        self.assertEqual(pur_payload["domain"]["key"], "purchasing")
+        self.assertEqual(pur_payload["domain"]["color_token"], "domain-purchasing")
+
+        planned_resp = self._http_get("domain", {"domain": "inventory"})
         self.assertNotEqual(planned_resp.status_code, 200)
 
     def test_open_module_and_open_domain_full_path_and_separation(self):
@@ -374,10 +386,12 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(open_domain("sales"), {"ok": True, "domain": "sales"})
         self.assertEqual(open_domain("finance"), {"ok": True, "domain": "finance"})
         self.assertEqual(open_domain("accounting"), {"ok": True, "domain": "accounting"})
+        self.assertEqual(open_domain("purchasing"), {"ok": True, "domain": "purchasing"})
         self.assertEqual(open_module("gl_entry"), {"ok": True, "module": "gl_entry"})
+        self.assertEqual(open_module("purchase_order"), {"ok": True, "module": "purchase_order"})
         self.assertEqual(open_domain("sales_invoice").get("code"), "DOMAIN_NOT_ALLOWED")
         self.assertEqual(open_domain("gl_entry").get("code"), "DOMAIN_NOT_ALLOWED")
-        self.assertEqual(open_domain("purchasing").get("code"), "DOMAIN_NOT_ALLOWED")
+        self.assertEqual(open_domain("inventory").get("code"), "DOMAIN_NOT_ALLOWED")
 
         # 3. _open_module_event and _open_domain_event do not cross-accept each other's payloads
         _open_domain_event = getattr(base_manager, "_open_domain_event", None)
@@ -390,10 +404,14 @@ class TestDesktopDomains(IntegrationTestCase):
             _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "accounting"})),
             {"type": "open_domain", "domain": "accounting"},
         )
+        self.assertEqual(
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"})),
+            {"type": "open_domain", "domain": "purchasing"},
+        )
         self.assertIsNone(_open_module_event("open_module", json.dumps({"ok": True, "module": "sales"})))
         self.assertIsNone(_open_module_event("open_domain", json.dumps({"ok": True, "domain": "sales"})))
         self.assertIsNone(_open_domain_event("open_module", json.dumps({"ok": True, "module": "sales_invoice"})))
-        self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"})))
+        self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "inventory"})))
         self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales_invoice"})))
         self.assertIsNone(_open_domain_event("open_domain", json.dumps({"ok": True, "domain": "gl_entry"})))
 

@@ -47,6 +47,13 @@ const MOCK_DOMAINS: DomainMeta[] = [
     color_token: 'domain-accounting',
     module_count: 4,
   },
+  {
+    key: 'purchasing',
+    label: 'Purchasing',
+    icon: 'cart',
+    color_token: 'domain-purchasing',
+    module_count: 1,
+  },
 ];
 
 const MOCK_MODULES: ModuleMeta[] = [
@@ -108,6 +115,7 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
   const dom = MOCK_DOMAINS.find((d) => d.key === key) ?? MOCK_DOMAINS[0];
   const isFinance = dom.key === 'finance';
   const isAccounting = dom.key === 'accounting';
+  const isPurchasing = dom.key === 'purchasing';
   return {
     domain: dom,
     company: {
@@ -129,12 +137,17 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
             { key: 'gl_debit', label: 'Total debit', value: 0, format: 'currency', currency: 'IDR' },
             { key: 'gl_credit', label: 'Total kredit', value: 0, format: 'currency', currency: 'IDR' },
           ]
-        : [
-            { key: 'invoice_month', label: 'Invoice bulan ini', value: 363000, format: 'currency', currency: 'IDR' },
-            { key: 'open_so', label: 'Order terbuka', value: 2, format: 'number' },
-            { key: 'ar_outstanding', label: 'Piutang', value: 316000, format: 'currency', currency: 'IDR' },
-            { key: 'customer_active', label: 'Customer aktif', value: 8, format: 'number' },
-          ],
+        : isPurchasing
+          ? [
+              { key: 'po_count', label: 'Order pembelian terbit', value: 0, format: 'number' },
+              { key: 'po_total', label: 'Total order pembelian', value: 0, format: 'currency', currency: 'IDR' },
+            ]
+          : [
+              { key: 'invoice_month', label: 'Invoice bulan ini', value: 363000, format: 'currency', currency: 'IDR' },
+              { key: 'open_so', label: 'Order terbuka', value: 2, format: 'number' },
+              { key: 'ar_outstanding', label: 'Piutang', value: 316000, format: 'currency', currency: 'IDR' },
+              { key: 'customer_active', label: 'Customer aktif', value: 8, format: 'number' },
+            ],
     modules: isFinance
       ? [
           { key: 'purchase_invoice', label: 'Purchase Invoice', icon: 'file', row_count: 3 },
@@ -148,7 +161,11 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
             { key: 'account', label: 'Account', icon: 'folder', row_count: 0 },
             { key: 'company', label: 'Company', icon: 'building', row_count: 0 },
           ]
-        : [
+        : isPurchasing
+          ? [
+              { key: 'purchase_order', label: 'Purchase Order', icon: 'file', row_count: 0 },
+            ]
+          : [
             { key: 'sales_invoice', label: 'Sales Invoice', icon: 'file', row_count: 5 },
             { key: 'sales_order', label: 'Sales Order', icon: 'cart', row_count: 2 },
             { key: 'quotation', label: 'Quotation', icon: 'file', row_count: 0 },

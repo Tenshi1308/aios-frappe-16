@@ -205,9 +205,10 @@ class TestDesktopModules(IntegrationTestCase):
                 "item_price",
                 "account",
                 "company",
+                "purchase_order",
             },
         )
-        self.assertNotIn("Purchase Order", {module["doctype"] for module in modules})
+        self.assertNotIn("Request for Quotation", {module["doctype"] for module in modules})
         self.assertTrue(all(module["doctype"] in ERP_CLIENT_DOCTYPES for module in modules))
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Sales"},
@@ -220,6 +221,10 @@ class TestDesktopModules(IntegrationTestCase):
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Accounting"},
             {"journal_entry", "gl_entry", "account", "company"},
+        )
+        self.assertEqual(
+            {module["key"] for module in modules if module["group"] == "Purchasing"},
+            {"purchase_order"},
         )
 
     def test_catalog_fields_are_valid_for_every_doctype(self):
@@ -342,7 +347,7 @@ class TestDesktopModules(IntegrationTestCase):
 
     def test_list_rejects_unknown_module_doctype_and_filter_fields(self):
         with self.assertRaises(frappe.ValidationError):
-            frappe.call(desktop_api.list, module="purchase_order", doctype="Purchase Order")
+            frappe.call(desktop_api.list, module="request_for_quotation", doctype="Request for Quotation")
         with self.assertRaises(frappe.ValidationError):
             frappe.call(desktop_api.list, module="sales_invoice", doctype="Sales Order")
         with self.assertRaises(frappe.ValidationError):
@@ -543,11 +548,110 @@ class TestDesktopModules(IntegrationTestCase):
             {card["field"] for card in payment["cards"] if card["aggregate"] == "sum"},
             {"base_paid_amount", "base_received_amount"},
         )
-        for key in ("sales_invoice", "sales_order", "quotation", "delivery_note", "purchase_invoice"):
+        for key in ("sales_invoice", "sales_order", "quotation", "delivery_note", "purchase_invoice", "purchase_order"):
             module = get_module_definition(key)
             amount = next(card for card in module["cards"] if card["aggregate"] == "sum")
             self.assertEqual(amount["field"], "base_grand_total")
             self.assertEqual(amount["filters"]["docstatus"], 1)
+
+    def test_purchase_order_list_and_search_return_submitted_company_scoped_rows(self):
+        rows = [
+            {
+                "name": "PUR-ORD-2026-00001",
+                "transaction_date": "2026-11-19",
+                "supplier": "SUP-INT-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "To Receive and Bill",
+                "base_grand_total": 2500000.0,
+                "company": self.company,
+                "docstatus": 1,
+                "is_internal_supplier": 1,
+            },
+            {
+                "name": "PUR-ORD-2026-99999",
+                "transaction_date": "2026-11-19",
+                "supplier": "SUP-INT-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "Draft",
+                "base_grand_total": 500000.0,
+                "company": self.company,
+                "docstatus": 0,
+                "is_internal_supplier": 0,
+            },
+            {
+                "name": "PUR-ORD-OTHER-00001",
+                "transaction_date": "2026-11-19",
+                "supplier": "SUP-INT-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "To Receive and Bill",
+                "base_grand_total": 999999.0,
+                "company": "_Test Other Company",
+                "docstatus": 1,
+                "is_internal_supplier": 0,
+            },
+        ]
+        list_calls = []
+
+        def fake_get_list(doctype, fields=None, filters=None, or_filters=None, **kwargs):
+            filters = dict(filters or {})
+            list_calls.append((doctype, fields, filters, or_filters, kwargs))
+            if doctype != "Purchase Order":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [
+                r
+                for r in rows
+                if r["company"] == filters.get("company") and r["docstatus"] == filters.get("docstatus")
+            ]
+            if "supplier" in filters and isinstance(filters["supplier"], list):
+                needle = filters["supplier"][1].strip("%").casefold()
+                selected = [r for r in selected if needle in r["supplier"].casefold()]
+            if or_filters:
+                matched = []
+                for r in selected:
+                    if any(
+                        cond[1] == "like"
+                        and cond[2].strip("%").casefold() in str(r.get(cond[0], "")).casefold()
+                        for cond in or_filters
+                    ):
+                        matched.append(r)
+                selected = matched
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            listed = frappe.call(
+                desktop_api.list,
+                module="purchase_order",
+                doctype="Purchase Order",
+                filters={"party": "SUP-INT-001"},
+            )
+            searched_num = frappe.call(desktop_api.search, q="PUR-ORD-2026-00001")
+            searched_party = frappe.call(desktop_api.search, q="Tenshi Supplier")
+
+        self.assertEqual([r["name"] for r in listed["rows"]], ["PUR-ORD-2026-00001"])
+        self.assertEqual(listed["rows"][0]["base_grand_total"], 2500000.0)
+        self.assertEqual(
+            {c["key"]: c["value"] for c in listed["cards"]},
+            {"count": 1, "total": 2500000.0},
+        )
+        po_row_call = next(
+            c for c in list_calls if c[0] == "Purchase Order" and c[1] and not isinstance(c[1][0], dict)
+        )
+        self.assertEqual(po_row_call[2]["supplier"], ["like", "%SUP-INT-001%"])
+        self.assertNotIn("is_internal_supplier", po_row_call[2])
+        self.assertEqual(
+            [item["name"] for item in searched_num["results"] if item["type"] == "document"],
+            ["PUR-ORD-2026-00001"],
+        )
+        self.assertEqual(
+            [item["name"] for item in searched_party["results"] if item["type"] == "document"],
+            ["PUR-ORD-2026-00001"],
+        )
 
     def test_quotation_list_and_search_return_submitted_company_scoped_rows(self):
         rows = [
@@ -1111,8 +1215,12 @@ class TestDesktopModules(IntegrationTestCase):
         self.assertIsNone(
             _open_module_event("open_module", json.dumps({"ok": True, "module": "sales"}))
         )
+        self.assertEqual(
+            _open_module_event("open_module", json.dumps({"ok": True, "module": "purchase_order"})),
+            {"type": "open_module", "module": "purchase_order"},
+        )
         self.assertIsNone(
-            _open_module_event("open_module", json.dumps({"ok": True, "module": "purchase_order"}))
+            _open_module_event("open_module", json.dumps({"ok": True, "module": "request_for_quotation"}))
         )
         self.assertIsNone(_open_module_event("erpnext_doc_list", json.dumps({"ok": True, "module": "sales_invoice"})))
 
@@ -1120,9 +1228,13 @@ class TestDesktopModules(IntegrationTestCase):
             _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales"})),
             {"type": "open_domain", "domain": "sales"},
         )
+        self.assertEqual(
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"})),
+            {"type": "open_domain", "domain": "purchasing"},
+        )
         self.assertIsNone(
             _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "sales_invoice"}))
         )
         self.assertIsNone(
-            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "purchasing"}))
+            _open_domain_event("open_domain", json.dumps({"ok": True, "domain": "inventory"}))
         )

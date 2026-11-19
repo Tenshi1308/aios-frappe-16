@@ -59,6 +59,7 @@ CATALOG_DOCTYPES = (
     "Item Price",
     "Account",
     "Company",
+    "Purchase Order",
 )
 
 DOCTYPE_LITERAL_RE = re.compile(
@@ -67,7 +68,7 @@ DOCTYPE_LITERAL_RE = re.compile(
     + r""")\s*\1|\b(?:Sales\s+Invoice|Sales\s+Order|Purchase\s+Invoice|Payment\s+Entry)\b"""
 )
 
-ACTIVE_DOMAINS = ("Sales", "Finance", "Accounting")
+ACTIVE_DOMAINS = ("Sales", "Finance", "Accounting", "Purchasing")
 DOMAIN_LITERAL_RE = re.compile(
     r"""(['"`])\s*(?:"""
     + "|".join(re.escape(d) for d in ACTIVE_DOMAINS)
