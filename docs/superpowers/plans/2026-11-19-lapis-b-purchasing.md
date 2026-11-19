@@ -236,12 +236,13 @@ git commit -m "feat(desk): tambah modul Purchase Receipt read-only di Ekasa Desk
 
 ---
 
-### Task 3: Supplier Quotation → Purchasing
+### Task 3: Supplier Quotation → Purchasing — SELESAI PENUH 19 Nov 2026 ✅
 
 **Files:**
 - Modify: `aios_v1/lib/desktop_modules.py` (tambah entri `supplier_quotation` ke `_MODULES`)
 - Modify: `aios_v1/lib/desktop_domains.py` (bidang `purchasing`: modul tambah `"supplier_quotation"`, kartu tambah `sq_count` + `sq_total`)
 - Modify: `aios_v1/tests/test_desktop_modules.py` (daftar-eksak + tes list/search SQ + tes perilaku kedaluwarsa + tuple kartu transaksi)
+- Modify: `aios_v1/tests/test_desktop_domains.py` (_snapshot_counts + kartu purchasing 4 → 6 + assertion :313-317)
 - Modify: `aios_v1/tests/test_frontend_no_hardcode.py` (tambah `"Supplier Quotation"` ke `CATALOG_DOCTYPES`)
 - Modify: `frontend/src/api/mock/modules.ts` (`MOCK_DOMAINS` purchasing `module_count` 2 → 3; cabang purchasing di `fetchDomain` tambah entri `supplier_quotation`, `row_count` 0)
 
@@ -269,27 +270,27 @@ git commit -m "feat(desk): tambah modul Purchase Receipt read-only di Ekasa Desk
 - `sq_count` "Penawaran supplier terbit" (count, Supplier Quotation, `name`, number, `{"docstatus": 1}`)
 - `sq_total` "Total penawaran supplier" (sum, Supplier Quotation, `base_grand_total`, currency, `{"docstatus": 1}`)
 
-- [ ] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes` KE KEADAAN AKHIR Batch 1: set key menjadi 17 key (16 + `"supplier_quotation"`); grup Purchasing menjadi `{"purchase_order", "purchase_receipt", "supplier_quotation"}`; `assertNotIn("Request for Quotation", ...)` tetap. Tambah `"supplier_quotation"` ke tuple di `test_transaction_cards_use_base_currency_and_exclude_internal_transfers`. Tambah tes baru `test_supplier_quotation_list_and_search_return_submitted_company_scoped_rows`, mengikuti pola tes Quotation: sisipkan 3 baris Supplier Quotation (satu `docstatus` 1 di company aktif; satu draft/`docstatus` 0; satu `docstatus` 1 di company lain), assert list hanya mengembalikan yang submitted + company aktif, dan assert search dengan `supplier_name` menemukan nomornya. Tambah tes perilaku kedaluwarsa (Review Focus #5): sisipkan 1 baris Supplier Quotation (`valid_till` kemarin, `docstatus` 1, company aktif), assert list modul tetap mengembalikannya (Fase 2: tanpa filter validitas). Tambah `"Supplier Quotation"` ke `_snapshot_counts` di `test_desktop_domains.py`. Di `test_desktop_domains.py`, update ekspektasi kartu purchasing dari 4 menjadi 6.
+- [x] **Step 1: Tulis tes yang gagal.** Di `test_desktop_modules.py`, update `test_catalog_only_contains_approved_modules_and_doctypes` KE KEADAAN AKHIR Batch 1: set key menjadi 17 key (16 + `"supplier_quotation"`); grup Purchasing menjadi `{"purchase_order", "purchase_receipt", "supplier_quotation"}`; `assertNotIn("Request for Quotation", ...)` tetap. Tambah `"supplier_quotation"` ke tuple di `test_transaction_cards_use_base_currency_and_exclude_internal_transfers`. Tambah tes baru `test_supplier_quotation_list_and_search_return_submitted_company_scoped_rows`, mengikuti pola tes Quotation: sisipkan 3 baris Supplier Quotation (satu `docstatus` 1 di company aktif; satu draft/`docstatus` 0; satu `docstatus` 1 di company lain), assert list hanya mengembalikan yang submitted + company aktif, dan assert search dengan `supplier_name` menemukan nomornya. Tambah tes perilaku kedaluwarsa (Review Focus #5): sisipkan 1 baris Supplier Quotation (`valid_till` kemarin, `docstatus` 1, company aktif), assert list modul tetap mengembalikannya (Fase 2: tanpa filter validitas). Tambah `"Supplier Quotation"` ke `_snapshot_counts` di `test_desktop_domains.py`. Di `test_desktop_domains.py`, update ekspektasi kartu purchasing dari 4 menjadi 6.
 
-- [ ] **Step 2: Jalankan tes untuk memastikan gagal.**
+- [x] **Step 2: Jalankan tes untuk memastikan gagal.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_domains`
 Expected: FAIL — daftar-eksak (set key belum berisi `supplier_quotation`), tes list/search SQ baru (modul belum ada), dan bentuk domain (kartu purchasing masih 4, bukan 6).
 
-- [ ] **Step 3: Implementasi entri katalog `supplier_quotation` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas, mengikuti persis bentuk entri Quotation.
+- [x] **Step 3: Implementasi entri katalog `supplier_quotation` di `aios_v1/lib/desktop_modules.py`.** Tulis entri dengan nilai yang dipin di atas, mengikuti persis bentuk entri Quotation.
 
-- [ ] **Step 4: Penempatan bidang + kartu KPI.** Di `aios_v1/lib/desktop_domains.py`, tambah `"supplier_quotation"` ke modul bidang `purchasing` (setelah `"purchase_receipt"`) dan tambah 2 kartu SQ seperti dipin di atas.
+- [x] **Step 4: Penempatan bidang + kartu KPI.** Di `aios_v1/lib/desktop_domains.py`, tambah `"supplier_quotation"` ke modul bidang `purchasing` (setelah `"purchase_receipt"`) dan tambah 2 kartu SQ seperti dipin di atas.
 
-- [ ] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` purchasing `module_count` 2 → 3; cabang purchasing di `fetchDomain` tambah `{ key: 'supplier_quotation', label: 'Supplier Quotation', icon: 'file', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"Supplier Quotation"` ke `CATALOG_DOCTYPES`.
+- [x] **Step 5: Sinkron mock + konstanta tes anti-hardcode.** Di `frontend/src/api/mock/modules.ts`: `MOCK_DOMAINS` purchasing `module_count` 2 → 3; cabang purchasing di `fetchDomain` tambah `{ key: 'supplier_quotation', label: 'Supplier Quotation', icon: 'file', row_count: 0 }`. Di `test_frontend_no_hardcode.py`: tambah `"Supplier Quotation"` ke `CATALOG_DOCTYPES`.
 
-- [ ] **Step 6: Jalankan tes untuk memastikan lolos.**
+- [x] **Step 6: Jalankan tes untuk memastikan lolos.**
 
 Run: `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_modules` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_desktop_domains` dan `bench --site aios-v16.localhost run-tests --module aios_v1.tests.test_frontend_no_hardcode`
 Expected: PASS — ketiga modul hijau, termasuk `test_catalog_fields_are_valid_for_every_doctype` dan `test_module_endpoints_run_read_only_queries_for_catalog`.
 
-- [ ] **Step 7: Verifikasi live via browser.** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bidang Purchasing menampilkan 6 kartu KPI dengan nilai yang cocok dengan hitung langsung Task 1 Step 0; buka modul Supplier Quotation — list menampilkan penawaran submitted di company aktif; search dengan nama supplier menemukan nomornya; filter Status mempersempit list. Verifikasi AKHIR Batch 1: bootstrap 17 modul + 4 bidang aktif; Sales/Finance/Accounting tidak berubah.
+- [x] **Step 7: Verifikasi live via browser.** Buka Ekasa Desk di bench PC (`aios-client1.localhost:5173`, restart bench dulu bila kode baru belum ter-load): bidang Purchasing menampilkan 6 kartu KPI dengan nilai yang cocok dengan hitung langsung Task 1 Step 0; buka modul Supplier Quotation — list menampilkan penawaran submitted di company aktif; search dengan nama supplier menemukan nomornya; filter Status mempersempit list. Verifikasi AKHIR Batch 1: bootstrap 17 modul + 4 bidang aktif; Sales/Finance/Accounting tidak berubah.
 
-- [ ] **Step 8: Commit.**
+- [x] **Step 8: Commit.**
 
 ```bash
 git add aios_v1/lib/desktop_modules.py aios_v1/lib/desktop_domains.py aios_v1/tests/test_desktop_modules.py aios_v1/tests/test_desktop_domains.py aios_v1/tests/test_frontend_no_hardcode.py frontend/src/api/mock/modules.ts
