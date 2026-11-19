@@ -159,6 +159,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 "Account",
                 "Company",
                 "Purchase Order",
+                "Purchase Receipt",
             )
         }
 
@@ -261,7 +262,7 @@ class TestDesktopDomains(IntegrationTestCase):
     def test_domain_sales_and_finance_shape_kpi_and_no_mutation(self):
         before = self._snapshot_counts()
 
-        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 4), ("purchasing", 2)):
+        for domain_key, expected_cards in (("sales", 4), ("finance", 4), ("accounting", 4), ("purchasing", 4)):
             with self.subTest(domain=domain_key):
                 definition = get_domain_definition(domain_key)
                 result = frappe.call(desktop_api.domain, domain=domain_key)
@@ -312,7 +313,7 @@ class TestDesktopDomains(IntegrationTestCase):
                 elif domain_key == "purchasing":
                     self.assertEqual(
                         [m["key"] for m in result["modules"]],
-                        ["purchase_order"],
+                        ["purchase_order", "purchase_receipt"],
                     )
                 for mod_out in result["modules"]:
                     self.assertEqual(set(mod_out.keys()), {"key", "label", "icon", "row_count"})

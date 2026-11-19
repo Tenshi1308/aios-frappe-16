@@ -216,7 +216,7 @@ _DOMAINS = (
         "icon": "cart",
         "color_token": "domain-purchasing",
         "status": "active",
-        "modules": ("purchase_order",),
+        "modules": ("purchase_order", "purchase_receipt"),
         "cards": (
             {
                 "key": "po_count",
@@ -232,6 +232,24 @@ _DOMAINS = (
                 "label": "Total order pembelian",
                 "aggregate": "sum",
                 "doctype": "Purchase Order",
+                "field": "base_grand_total",
+                "format": "currency",
+                "filters": {"docstatus": 1},
+            },
+            {
+                "key": "pr_count",
+                "label": "Tanda terima terbit",
+                "aggregate": "count",
+                "doctype": "Purchase Receipt",
+                "field": "name",
+                "format": "number",
+                "filters": {"docstatus": 1},
+            },
+            {
+                "key": "pr_total",
+                "label": "Total tanda terima",
+                "aggregate": "sum",
+                "doctype": "Purchase Receipt",
                 "field": "base_grand_total",
                 "format": "currency",
                 "filters": {"docstatus": 1},

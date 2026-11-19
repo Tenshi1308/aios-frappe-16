@@ -684,6 +684,60 @@ _MODULES = (
             },
         ),
     },
+    {
+        "key": "purchase_receipt",
+        "label": "Purchase Receipt",
+        "group": "Purchasing",
+        "icon": "file",
+        "doctype": "Purchase Receipt",
+        "columns": (
+            {"key": "name", "label": "Nomor", "field": "name", "format": "text"},
+            {"key": "date", "label": "Tanggal", "field": "posting_date", "format": "date"},
+            {"key": "party", "label": "Supplier", "field": "supplier_name", "format": "text"},
+            {"key": "status", "label": "Status", "field": "status", "format": "text"},
+            {
+                "key": "amount",
+                "label": "Total",
+                "field": "base_grand_total",
+                "format": "currency",
+            },
+        ),
+        "filters": (
+            {"key": "date_from", "label": "Dari tanggal", "type": "date"},
+            {"key": "date_to", "label": "Sampai tanggal", "type": "date"},
+            {"key": "status", "label": "Status", "type": "text"},
+            {"key": "party", "label": "Supplier", "type": "text"},
+        ),
+        "filter_fields": {
+            "date_from": {"field": "posting_date", "operator": ">="},
+            "date_to": {"field": "posting_date", "operator": "<="},
+            "status": {"field": "status", "operator": "="},
+            "party": {"field": "supplier", "operator": "like"},
+        },
+        "search_fields": ("name", "supplier", "supplier_name"),
+        "order_field": "posting_date",
+        "base_filters": {"docstatus": 1},
+        "cards": (
+            {
+                "key": "count",
+                "label": "Tanda terima terbit",
+                "aggregate": "count",
+                "field": "name",
+                "format": "number",
+                "scope": "company",
+                "filters": {"docstatus": 1},
+            },
+            {
+                "key": "total",
+                "label": "Total tanda terima",
+                "aggregate": "sum",
+                "field": "base_grand_total",
+                "format": "currency",
+                "scope": "company",
+                "filters": {"docstatus": 1},
+            },
+        ),
+    },
 )
 
 _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}

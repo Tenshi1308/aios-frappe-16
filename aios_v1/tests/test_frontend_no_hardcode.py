@@ -60,6 +60,7 @@ CATALOG_DOCTYPES = (
     "Account",
     "Company",
     "Purchase Order",
+    "Purchase Receipt",
 )
 
 DOCTYPE_LITERAL_RE = re.compile(

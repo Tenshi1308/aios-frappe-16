@@ -206,6 +206,7 @@ class TestDesktopModules(IntegrationTestCase):
                 "account",
                 "company",
                 "purchase_order",
+                "purchase_receipt",
             },
         )
         self.assertNotIn("Request for Quotation", {module["doctype"] for module in modules})
@@ -224,7 +225,7 @@ class TestDesktopModules(IntegrationTestCase):
         )
         self.assertEqual(
             {module["key"] for module in modules if module["group"] == "Purchasing"},
-            {"purchase_order"},
+            {"purchase_order", "purchase_receipt"},
         )
 
     def test_catalog_fields_are_valid_for_every_doctype(self):
@@ -548,7 +549,15 @@ class TestDesktopModules(IntegrationTestCase):
             {card["field"] for card in payment["cards"] if card["aggregate"] == "sum"},
             {"base_paid_amount", "base_received_amount"},
         )
-        for key in ("sales_invoice", "sales_order", "quotation", "delivery_note", "purchase_invoice", "purchase_order"):
+        for key in (
+            "sales_invoice",
+            "sales_order",
+            "quotation",
+            "delivery_note",
+            "purchase_invoice",
+            "purchase_order",
+            "purchase_receipt",
+        ):
             module = get_module_definition(key)
             amount = next(card for card in module["cards"] if card["aggregate"] == "sum")
             self.assertEqual(amount["field"], "base_grand_total")
@@ -652,6 +661,171 @@ class TestDesktopModules(IntegrationTestCase):
             [item["name"] for item in searched_party["results"] if item["type"] == "document"],
             ["PUR-ORD-2026-00001"],
         )
+
+    def test_purchase_receipt_list_and_search_return_submitted_company_scoped_rows(self):
+        rows = [
+            {
+                "name": "MAT-PRE-2026-00001",
+                "posting_date": "2026-11-19",
+                "supplier": "SUP-PR-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "To Bill",
+                "base_grand_total": 1800000.0,
+                "company": self.company,
+                "docstatus": 1,
+                "is_return": 0,
+            },
+            {
+                "name": "MAT-PRE-2026-99999",
+                "posting_date": "2026-11-19",
+                "supplier": "SUP-PR-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "Draft",
+                "base_grand_total": 400000.0,
+                "company": self.company,
+                "docstatus": 0,
+                "is_return": 0,
+            },
+            {
+                "name": "MAT-PRE-OTHER-00001",
+                "posting_date": "2026-11-19",
+                "supplier": "SUP-PR-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "To Bill",
+                "base_grand_total": 999999.0,
+                "company": "_Test Other Company",
+                "docstatus": 1,
+                "is_return": 0,
+            },
+        ]
+        list_calls = []
+
+        def fake_get_list(doctype, fields=None, filters=None, or_filters=None, **kwargs):
+            filters = dict(filters or {})
+            list_calls.append((doctype, fields, filters, or_filters, kwargs))
+            if doctype != "Purchase Receipt":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [
+                r
+                for r in rows
+                if r["company"] == filters.get("company") and r["docstatus"] == filters.get("docstatus")
+            ]
+            if "supplier" in filters and isinstance(filters["supplier"], list):
+                needle = filters["supplier"][1].strip("%").casefold()
+                selected = [r for r in selected if needle in r["supplier"].casefold()]
+            if or_filters:
+                matched = []
+                for r in selected:
+                    if any(
+                        cond[1] == "like"
+                        and cond[2].strip("%").casefold() in str(r.get(cond[0], "")).casefold()
+                        for cond in or_filters
+                    ):
+                        matched.append(r)
+                selected = matched
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            listed = frappe.call(
+                desktop_api.list,
+                module="purchase_receipt",
+                doctype="Purchase Receipt",
+                filters={"party": "SUP-PR-001"},
+            )
+            searched_num = frappe.call(desktop_api.search, q="MAT-PRE-2026-00001")
+            searched_party = frappe.call(desktop_api.search, q="Tenshi Supplier")
+
+        self.assertEqual([r["name"] for r in listed["rows"]], ["MAT-PRE-2026-00001"])
+        self.assertEqual(listed["rows"][0]["base_grand_total"], 1800000.0)
+        self.assertEqual(
+            {c["key"]: c["value"] for c in listed["cards"]},
+            {"count": 1, "total": 1800000.0},
+        )
+        pr_row_call = next(
+            c for c in list_calls if c[0] == "Purchase Receipt" and c[1] and not isinstance(c[1][0], dict)
+        )
+        self.assertEqual(pr_row_call[2]["supplier"], ["like", "%SUP-PR-001%"])
+        self.assertEqual(
+            [item["name"] for item in searched_num["results"] if item["type"] == "document"],
+            ["MAT-PRE-2026-00001"],
+        )
+        self.assertEqual(
+            [item["name"] for item in searched_party["results"] if item["type"] == "document"],
+            ["MAT-PRE-2026-00001"],
+        )
+
+    def test_purchase_receipt_list_keeps_return_rows_in_phase_2(self):
+        rows = [
+            {
+                "name": "MAT-PRE-2026-00001",
+                "posting_date": "2026-11-19",
+                "supplier": "SUP-PR-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "To Bill",
+                "base_grand_total": 1500000.0,
+                "company": self.company,
+                "docstatus": 1,
+                "is_return": 0,
+            },
+            {
+                "name": "MAT-PR-RET-2026-00001",
+                "posting_date": "2026-11-19",
+                "supplier": "SUP-PR-001",
+                "supplier_name": "Tenshi Supplier",
+                "status": "Return",
+                "base_grand_total": -300000.0,
+                "company": self.company,
+                "docstatus": 1,
+                "is_return": 1,
+            },
+        ]
+        list_calls = []
+
+        def fake_get_list(doctype, fields=None, filters=None, **kwargs):
+            filters = dict(filters or {})
+            list_calls.append((doctype, fields, filters, kwargs))
+            if doctype != "Purchase Receipt":
+                return [{"total": 0, "value": 0}] if fields and isinstance(fields[0], dict) else []
+            selected = [
+                r
+                for r in rows
+                if r["company"] == filters.get("company") and r["docstatus"] == filters.get("docstatus")
+            ]
+            if "is_return" in filters:
+                selected = [r for r in selected if r.get("is_return") == filters["is_return"]]
+            if fields and isinstance(fields[0], dict):
+                if "COUNT" in fields[0]:
+                    return [{"total": len(selected), "value": len(selected)}]
+                if "SUM" in fields[0]:
+                    field_name = fields[0]["SUM"]
+                    return [{"value": sum(r.get(field_name, 0) for r in selected)}]
+            return [{f: r.get(f) for f in fields} for r in selected]
+
+        with patch("aios_v1.api.desktop.frappe.get_list", side_effect=fake_get_list):
+            listed = frappe.call(
+                desktop_api.list,
+                module="purchase_receipt",
+                doctype="Purchase Receipt",
+            )
+
+        self.assertEqual(
+            {r["name"] for r in listed["rows"]},
+            {"MAT-PRE-2026-00001", "MAT-PR-RET-2026-00001"},
+        )
+        self.assertEqual(
+            {c["key"]: c["value"] for c in listed["cards"]},
+            {"count": 2, "total": 1200000.0},
+        )
+        pr_row_call = next(
+            c for c in list_calls if c[0] == "Purchase Receipt" and c[1] and not isinstance(c[1][0], dict)
+        )
+        self.assertNotIn("is_return", pr_row_call[2])
 
     def test_quotation_list_and_search_return_submitted_company_scoped_rows(self):
         rows = [
