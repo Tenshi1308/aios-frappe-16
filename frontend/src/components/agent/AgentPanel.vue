@@ -959,54 +959,56 @@ async function onFilesPicked(e: Event) {
             @input="resizeInput"
             @keydown.enter.exact.prevent="send()"
           />
-          <button
-            class="icon-btn"
-            :class="{ listening }"
-            type="button"
-            :disabled="!voiceSupported || streaming"
-            :aria-label="
-              voiceSupported
-                ? listening
-                  ? 'Hentikan dikte suara'
-                  : 'Dikte suara'
-                : 'Dikte suara tidak didukung di browser ini'
-            "
-            :title="
-              voiceSupported
-                ? listening
-                  ? 'Hentikan dikte suara'
-                  : 'Dikte suara'
-                : 'Dikte suara tidak didukung di browser ini'
-            "
-            @click="toggleVoiceDictation"
-          >
-            <AppIcon :name="voiceSupported ? 'mic' : 'mic-off'" :size="17" />
-          </button>
-          <button class="icon-btn" type="button" aria-label="Lampirkan berkas" :disabled="uploading" @click="pickFiles">
-            <AppIcon name="paperclip" :size="17" />
-          </button>
-          <input
-            ref="fileInput"
-            type="file"
-            :accept="UPLOAD_EXTENSIONS.map((e) => '.' + e).join(',')"
-            multiple
-            hidden
-            aria-hidden="true"
-            @change="onFilesPicked"
-          />
-          <button
-            v-if="streaming"
-            class="send stop"
-            type="button"
-            aria-label="Hentikan jawaban"
-            title="Hentikan jawaban"
-            @click="chat.stopStreaming(branchKey)"
-          >
-            <AppIcon name="stop" :size="16" />
-          </button>
-          <button v-else class="send" type="submit" :disabled="!canSend" aria-label="Kirim">
-            <AppIcon name="send" :size="16" />
-          </button>
+          <div class="ap-input-actions">
+            <button
+              class="icon-btn"
+              :class="{ listening }"
+              type="button"
+              :disabled="!voiceSupported || streaming"
+              :aria-label="
+                voiceSupported
+                  ? listening
+                    ? 'Hentikan dikte suara'
+                    : 'Dikte suara'
+                  : 'Dikte suara tidak didukung di browser ini'
+              "
+              :title="
+                voiceSupported
+                  ? listening
+                    ? 'Hentikan dikte suara'
+                    : 'Dikte suara'
+                  : 'Dikte suara tidak didukung di browser ini'
+              "
+              @click="toggleVoiceDictation"
+            >
+              <AppIcon :name="voiceSupported ? 'mic' : 'mic-off'" :size="17" />
+            </button>
+            <button class="icon-btn" type="button" aria-label="Lampirkan berkas" :disabled="uploading" @click="pickFiles">
+              <AppIcon name="paperclip" :size="17" />
+            </button>
+            <input
+              ref="fileInput"
+              type="file"
+              :accept="UPLOAD_EXTENSIONS.map((e) => '.' + e).join(',')"
+              multiple
+              hidden
+              aria-hidden="true"
+              @change="onFilesPicked"
+            />
+            <button
+              v-if="streaming"
+              class="send stop"
+              type="button"
+              aria-label="Hentikan jawaban"
+              title="Hentikan jawaban"
+              @click="chat.stopStreaming(branchKey)"
+            >
+              <AppIcon name="stop" :size="16" />
+            </button>
+            <button v-else class="send" type="submit" :disabled="!canSend" aria-label="Kirim">
+              <AppIcon name="send" :size="16" />
+            </button>
+          </div>
         </form>
         <div class="ap-foot">
           <span class="ap-foot-note">AIOS dapat keliru, periksa kembali info penting.</span>
