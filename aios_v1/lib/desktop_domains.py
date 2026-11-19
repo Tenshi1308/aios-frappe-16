@@ -216,7 +216,7 @@ _DOMAINS = (
         "icon": "cart",
         "color_token": "domain-purchasing",
         "status": "active",
-        "modules": ("purchase_order", "purchase_receipt"),
+        "modules": ("purchase_order", "purchase_receipt", "supplier_quotation"),
         "cards": (
             {
                 "key": "po_count",
@@ -250,6 +250,24 @@ _DOMAINS = (
                 "label": "Total tanda terima",
                 "aggregate": "sum",
                 "doctype": "Purchase Receipt",
+                "field": "base_grand_total",
+                "format": "currency",
+                "filters": {"docstatus": 1},
+            },
+            {
+                "key": "sq_count",
+                "label": "Penawaran supplier terbit",
+                "aggregate": "count",
+                "doctype": "Supplier Quotation",
+                "field": "name",
+                "format": "number",
+                "filters": {"docstatus": 1},
+            },
+            {
+                "key": "sq_total",
+                "label": "Total penawaran supplier",
+                "aggregate": "sum",
+                "doctype": "Supplier Quotation",
                 "field": "base_grand_total",
                 "format": "currency",
                 "filters": {"docstatus": 1},

@@ -52,7 +52,7 @@ const MOCK_DOMAINS: DomainMeta[] = [
     label: 'Purchasing',
     icon: 'cart',
     color_token: 'domain-purchasing',
-    module_count: 2,
+    module_count: 3,
   },
 ];
 
@@ -143,6 +143,8 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
               { key: 'po_total', label: 'Total order pembelian', value: 0, format: 'currency', currency: 'IDR' },
               { key: 'pr_count', label: 'Tanda terima terbit', value: 0, format: 'number' },
               { key: 'pr_total', label: 'Total tanda terima', value: 0, format: 'currency', currency: 'IDR' },
+              { key: 'sq_count', label: 'Penawaran supplier terbit', value: 0, format: 'number' },
+              { key: 'sq_total', label: 'Total penawaran supplier', value: 0, format: 'currency', currency: 'IDR' },
             ]
           : [
               { key: 'invoice_month', label: 'Invoice bulan ini', value: 363000, format: 'currency', currency: 'IDR' },
@@ -167,6 +169,7 @@ export async function fetchDomain(key: string): Promise<DomainDetailData> {
           ? [
               { key: 'purchase_order', label: 'Purchase Order', icon: 'file', row_count: 0 },
               { key: 'purchase_receipt', label: 'Purchase Receipt', icon: 'file', row_count: 0 },
+              { key: 'supplier_quotation', label: 'Supplier Quotation', icon: 'file', row_count: 0 },
             ]
           : [
             { key: 'sales_invoice', label: 'Sales Invoice', icon: 'file', row_count: 5 },
