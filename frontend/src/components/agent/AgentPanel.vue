@@ -96,6 +96,7 @@ const files = computed(() => chat.files(branchKey.value));
 const uploadPercent = computed(() => chat.uploadProgress[branchKey.value]);
 const suggestions = computed(() => branches.suggestions(branchKey.value));
 const conversations = computed(() => chat.conversations[branchKey.value] ?? []);
+const historyError = computed(() => chat.historyError[branchKey.value] ?? '');
 const isArchivedView = computed(() => !!chat.historyArchived[branchKey.value]);
 const historySort = computed(() => chat.historySort[branchKey.value] ?? 'desc');
 const legacyFiles = computed(() => {
@@ -301,21 +302,13 @@ function toggleVoiceDictation() {
 async function toggleArchivedList() {
   historyMenuOpen.value = false;
   if (!branchKey.value) return;
-  try {
-    await chat.setHistoryArchived(branchKey.value, !isArchivedView.value);
-  } catch (err) {
-    ui.toast(err instanceof Error ? err.message : 'Gagal memuat daftar percakapan.');
-  }
+  await chat.setHistoryArchived(branchKey.value, !isArchivedView.value);
 }
 
 async function changeSort(order: 'asc' | 'desc') {
   historyMenuOpen.value = false;
   if (!branchKey.value) return;
-  try {
-    await chat.setHistorySort(branchKey.value, order);
-  } catch (err) {
-    ui.toast(err instanceof Error ? err.message : 'Gagal mengurutkan percakapan.');
-  }
+  await chat.setHistorySort(branchKey.value, order);
 }
 
 function toggleConvMenu(convId: string) {
@@ -747,7 +740,21 @@ async function onFilesPicked(e: Event) {
             </template>
           </div>
 
-          <div v-if="!chat.historyLoading[branchKey] && !conversations.length" class="empty-note">
+          <div v-if="chat.historyLoading[branchKey]" class="empty-note">
+            Memuat riwayat…
+          </div>
+          <div v-else-if="historyError" class="ap-history-error" role="alert">
+            <span>{{ historyError }}</span>
+            <button
+              type="button"
+              class="btn ghost"
+              :disabled="chat.historyLoading[branchKey]"
+              @click="chat.loadConversations(branchKey)"
+            >
+              Coba lagi
+            </button>
+          </div>
+          <div v-else-if="!conversations.length" class="empty-note">
             {{ isArchivedView ? 'Tidak ada percakapan diarsipkan.' : 'Belum ada percakapan di cabang ini.' }}
           </div>
         </div>

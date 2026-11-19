@@ -58,6 +58,7 @@ export const useChatStore = defineStore('chat', {
     streaming: {} as Record<string, boolean>,
     historyOpen: {} as Record<string, boolean>,
     historyLoading: {} as Record<string, boolean>,
+    historyError: {} as Record<string, string>,
     historyArchived: {} as Record<string, boolean>,
     historySort: {} as Record<string, 'asc' | 'desc'>,
     pendingDrafts: [] as PendingDraft[],
@@ -198,12 +199,30 @@ export const useChatStore = defineStore('chat', {
       return await confirmDraftCashPayment(draftId, session.csrfToken);
     },
     async loadConversations(branch: string) {
+      const session = useSessionStore();
       this.historyLoading[branch] = true;
+      this.historyError[branch] = '';
       try {
         this.conversations[branch] = await fetchConversations(branch, {
           archived: !!this.historyArchived[branch],
           sort: this.historySort[branch] ?? 'desc',
         });
+      } catch (err) {
+        this.conversations[branch] = [];
+        this.historyError[branch] = 'Riwayat percakapan tidak bisa dimuat. Coba lagi.';
+        const msg =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Riwayat percakapan tidak bisa dimuat.';
+        console.error('[loadConversations]', err);
+        void reportClientError(
+          {
+            message: msg,
+            context: 'loadConversations',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
       } finally {
         this.historyLoading[branch] = false;
       }
@@ -218,20 +237,59 @@ export const useChatStore = defineStore('chat', {
     },
     async renameConversation(branch: string, conversationId: string, title: string) {
       const session = useSessionStore();
-      const updated = await renameConversationApi(conversationId, title, session.csrfToken);
-      const list = this.conversations[branch] ?? [];
-      this.conversations[branch] = list.map((c) =>
-        c.id === conversationId ? { ...c, title: updated.title } : c,
-      );
+      try {
+        const updated = await renameConversationApi(conversationId, title, session.csrfToken);
+        const list = this.conversations[branch] ?? [];
+        this.conversations[branch] = list.map((c) =>
+          c.id === conversationId ? { ...c, title: updated.title } : c,
+        );
+      } catch (err) {
+        console.error('[renameConversation]', err);
+        void reportClientError(
+          {
+            message: err instanceof Error && err.message.trim() ? err.message : 'Gagal mengganti nama percakapan.',
+            context: 'renameConversation',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
+        throw new Error('Gagal mengganti nama percakapan.');
+      }
     },
     async togglePinConversation(branch: string, conversationId: string, pinned: boolean) {
       const session = useSessionStore();
-      await setConversationPinApi(conversationId, pinned, session.csrfToken);
+      try {
+        await setConversationPinApi(conversationId, pinned, session.csrfToken);
+      } catch (err) {
+        console.error('[togglePinConversation]', err);
+        void reportClientError(
+          {
+            message: err instanceof Error && err.message.trim() ? err.message : 'Gagal menyematkan percakapan.',
+            context: 'togglePinConversation',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
+        throw new Error('Gagal menyematkan percakapan.');
+      }
       await this.loadConversations(branch);
     },
     async toggleArchiveConversation(branch: string, conversationId: string, archived: boolean) {
       const session = useSessionStore();
-      await setConversationArchiveApi(conversationId, archived, session.csrfToken);
+      try {
+        await setConversationArchiveApi(conversationId, archived, session.csrfToken);
+      } catch (err) {
+        console.error('[toggleArchiveConversation]', err);
+        void reportClientError(
+          {
+            message: err instanceof Error && err.message.trim() ? err.message : 'Gagal mengarsipkan percakapan.',
+            context: 'toggleArchiveConversation',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
+        throw new Error('Gagal mengarsipkan percakapan.');
+      }
       if (archived && this.currentConversation[branch] === conversationId) {
         this.newConversation(branch);
       }
@@ -239,7 +297,20 @@ export const useChatStore = defineStore('chat', {
     },
     async deleteConversation(branch: string, conversationId: string) {
       const session = useSessionStore();
-      await deleteConversationApi(conversationId, session.csrfToken);
+      try {
+        await deleteConversationApi(conversationId, session.csrfToken);
+      } catch (err) {
+        console.error('[deleteConversation]', err);
+        void reportClientError(
+          {
+            message: err instanceof Error && err.message.trim() ? err.message : 'Gagal menghapus percakapan.',
+            context: 'deleteConversation',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
+        throw new Error('Gagal menghapus percakapan.');
+      }
       delete this.threads[conversationId];
       delete this.legacyFiles[conversationId];
       delete this.contextUsage[conversationId];

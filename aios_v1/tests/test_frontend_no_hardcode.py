@@ -267,6 +267,29 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIn("pendingDraftsError", text)
         self.assertIn("pendingDraftsLoading", text)
 
+    def test_no_silent_conversation_load_error_in_chat_store(self):
+        self.assertTrue(CHAT_STORE.exists(), "frontend/src/stores/chat.ts belum ada")
+        text = CHAT_STORE.read_text(encoding="utf-8")
+        silent_pattern = re.compile(
+            r"catch\s*(?:\([^)]*\))?\s*\{(?![^}]*historyError)[^}]*conversations\[branch\]\s*=\s*\[\][^}]*\}"
+        )
+        self.assertIsNone(
+            silent_pattern.search(text),
+            "loadConversations di chat.ts masih menelan error tanpa menetapkan historyError",
+        )
+        load_match = re.search(
+            r"async\s+loadConversations\s*\([^)]*\)\s*\{([\s\S]*?)\n\s*\},",
+            text,
+        )
+        self.assertIsNotNone(load_match, "loadConversations tidak ditemukan di chat.ts")
+        self.assertIn("catch", load_match.group(1))
+        self.assertIn("historyError", load_match.group(1))
+        self.assertIn("historyError", text)
+        self.assertIn("historyLoading", text)
+        ap_src = AGENT_PANEL.read_text(encoding="utf-8")
+        self.assertIn("historyError", ap_src)
+        self.assertIn("Coba lagi", ap_src)
+
     def test_regex_detectors_catch_synthetic_violations(self):
         self.assertIsNotNone(COLOR_LITERAL_RE.search("color: #1a2b3c;"))
         self.assertIsNotNone(COLOR_LITERAL_RE.search("background: rgba(20, 30, 40, 0.5);"))
