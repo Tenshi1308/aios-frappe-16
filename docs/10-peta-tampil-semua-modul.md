@@ -11,7 +11,7 @@
 
 ## 0. Ringkasan eksekutif
 
-1. **Yang tampil hari ini:** 3 bidang aktif (Sales, Finance, Accounting), 14 modul. (Di screenshot Pak Oscar 16 Nov: 2 bidang, 8 modul.)
+1. **Yang tampil hari ini:** 4 bidang aktif (Sales, Finance, Accounting, Purchasing), 15 modul. (Di screenshot Pak Oscar 16 Nov: 2 bidang, 8 modul.)
 2. **"Semua" itu tiga lapis, bukan satu:** (a) 6 DocType yang dulu diizinkan tapi belum ditampilkan — sudah ditampilkan di Lapis A (18 Nov 2026); (b) 8 bidang "planned" yang sudah disiapkan kodenya tapi kosong — ini kerjaan menengah per modul; (c) HRIS + Penggajian — ini TIDAK BISA tanpa pasang aplikasi HRMS baru.
 3. **Klaim "fiturnya sudah ada semua" tidak sepenuhnya benar.** Yang sudah ada: izin baca 14 DocType + 8 laporan keuangan (sisi agen) + 8 bidang planned kosong. Yang belum ada: halaman detail dokumen, draf/aksi untuk modul selain Sales Order/Quotation, dan seluruh DocType payroll (tidak ada di site).
 4. **Menampilkan modul ≠ sekadar toggle tampil.** Per modul (preseden Quotation, commit `d8ab5aa`): entri katalog + daftar bidang + (bila DocType baru) izin + migrate + update tes + verifikasi live. Dan satu kopling penting: **DocType yang masuk `ERP_CLIENT_DOCTYPES` otomatis bisa dibaca agen** (Sales & Finance) — tampil di Desk dan bisa dibaca agen itu satu paket, tidak bisa dipisah.
@@ -39,24 +39,25 @@
 | 12 | `gl_entry` | GL Entry | Accounting |
 | 13 | `account` | Account | Accounting |
 | 14 | `company` | Company | Accounting |
+| 15 | `purchase_order` | Purchase Order | Purchasing |
 
-Semua modul read-only (list + kartu hitung + filter + search). Tidak ada halaman detail dokumen (lihat §5). Enam modul (Delivery Note, Item Price, Journal Entry, GL Entry, Account, Company) ditambahkan di Lapis A (Task 1–6, 18 Nov 2026).
+Semua modul read-only (list + kartu hitung + filter + search). Tidak ada halaman detail dokumen (lihat §5). Enam modul (Delivery Note, Item Price, Journal Entry, GL Entry, Account, Company) ditambahkan di Lapis A (Task 1–6, 18 Nov 2026). Purchase Order ditambahkan di Lapis B Task 1 (19 Nov 2026, commit 6af2318).
 
 ### 1b. Bidang (domain) — `aios_v1/lib/desktop_domains.py` (11 bidang)
 
-Aktif (3):
+Aktif (4):
 
 | Bidang | Modul | Kartu KPI |
 |---|---|---|
 | `sales` — Sales | 7 modul di atas | Invoice bulan ini, Order terbuka, Piutang outstanding, Customer aktif |
 | `finance` — Finance | 3 modul di atas | Hutang outstanding, Total pembayaran, Jurnal tercatat, Supplier aktif |
 | `accounting` — Accounting | 4 modul (Journal Entry, GL Entry, Account, Company) | Total debit jurnal, Entri GL tercatat, Total debit, Total kredit |
+| `purchasing` — Purchasing | 1 modul (Purchase Order) | Order pembelian terbit, Total order pembelian |
 
-Planned — sudah ada key, ikon, dan `color_token`, tapi modul dan kartu KOSONG (8):
+Planned — sudah ada key, ikon, dan `color_token`, tapi modul dan kartu KOSONG (7):
 
 | Bidang | Keterangan |
 |---|---|
-| `purchasing` — Purchasing | kosong |
 | `inventory` — Inventory | kosong |
 | `manufacturing` — Manufacturing | kosong |
 | `projects` — Projects | kosong |
@@ -67,13 +68,13 @@ Planned — sudah ada key, ikon, dan `color_token`, tapi modul dan kartu KOSONG 
 
 Catatan: **tidak ada bidang HR** — bahkan sebagai "planned" pun tidak ada. "Akuntansi & HRIS" dari log booting tidak punya wadah di katalog bidang saat ini.
 
-### 1c. Izin baca yang SUDAH ada — `aios_v1/permissions.py`, `ERP_CLIENT_DOCTYPES` (14 DocType)
+### 1c. Izin baca yang SUDAH ada — `aios_v1/permissions.py`, `ERP_CLIENT_DOCTYPES` (17 DocType)
 
-Quotation, Sales Order, Sales Invoice, Purchase Invoice, Delivery Note, Payment Entry, Journal Entry, GL Entry, Customer, Supplier, Item, Item Price, Company, Account.
+Quotation, Sales Order, Sales Invoice, Purchase Invoice, Delivery Note, Payment Entry, Journal Entry, GL Entry, Customer, Supplier, Item, Item Price, Company, Account, Purchase Order, Purchase Receipt, Supplier Quotation.
 
 Peran `AIOS Client`: read + report saja (`ERP_CLIENT_PERMS`), di-scope ke company aktif lewat `permission_query_conditions` / `has_permission`. `ensure_aios_permissions()` memasang Custom DocPerm saat install/migrate.
 
-**Dari 14 ini, 0 belum tampil sebagai modul:** keenam DocType (Delivery Note, Journal Entry, GL Entry, Item Price, Account, Company) sudah tampil semua di Lapis A (Task 1–6).
+**Dari 17 ini, 2 belum tampil sebagai modul:** Purchase Receipt + Supplier Quotation (Task 2–3 Lapis B). Purchase Order sudah tampil (Task 1, 19 Nov 2026).
 
 ### 1d. Sisi agen (yang ikut kebuka kalau modul ditambah)
 
@@ -110,7 +111,7 @@ Setiap bidang planned diisi modul dari DocType ERPNext yang memang ada di site (
 
 | Bidang planned | Kandidat modul (DocType ERPNext yang tersedia) | Catatan |
 |---|---|---|
-| purchasing | Purchase Order, Purchase Receipt, Supplier Quotation, Request for Quotation | Supplier sudah ada di Finance; Purchase Order secara eksplisit DITOLAK di tes katalog saat ini (`test_desktop_modules.py` — `assertNotIn("Purchase Order")`) — menambahkannya berarti membalik keputusan tes itu |
+| purchasing | Purchase Order, Purchase Receipt, Supplier Quotation, Request for Quotation | Supplier sudah ada di Finance; Purchase Order SUDAH ditampilkan (Task 1, 19 Nov 2026, commit 6af2318) — keputusan tes dibalik atas persetujuan Ten (19 Nov 10:38); Purchase Receipt + Supplier Quotation masih menunggu (Task 2–3) |
 | inventory | Stock Entry, Warehouse, Material Request, Stock Reconciliation, Delivery Note, Item (sudah ada di Sales) | Stock punya 79 DocType; pilih yang transaksional utama saja |
 | manufacturing | BOM, Work Order, Production Plan, Job Card | 50 DocType di modul manufacturing |
 | projects | Project, Task, Timesheet | 17 DocType |
@@ -145,7 +146,7 @@ Per SATU modul baru:
 | 7 | Sinkron mock frontend (dev parity) | `frontend/src/api/mock/modules.ts` | Bukan fungsional, tapi dijaga tes `test_frontend_no_hardcode` |
 | 8 | Verifikasi: `bench run-tests` modul terkait + cek live via browser (bootstrap, list, search, kartu) | — | Cara resmi; verifikasi live dilakukan Ten sendiri lewat Chrome + screenshot (preseden Task 1–3) |
 
-Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal 1 modul + kartu KPI (bisa 0 kartu, tapi bidang tanpa kartu tampil kosong) + update tes hitung planned (saat ini `get_planned_domain_count() == 8`, `len(_DOMAINS) == 11`).
+Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal 1 modul + kartu KPI (bisa 0 kartu, tapi bidang tanpa kartu tampil kosong) + update tes hitung planned (saat ini `get_planned_domain_count() == 7`, `len(_DOMAINS) == 11`).
 
 **Validasi penjaga (akan gagal bila salah):** `desktop_modules.py:383` (modul di luar allowlist → `RuntimeError`); `desktop_domains.py:211–214` (kartu bidang di luar allowlist → `RuntimeError`); `_validate_domain_catalog` (key/token duplikat, modul tak dikenal, status invalid).
 
@@ -227,7 +228,7 @@ Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal
 1. **Plan Superpowers Lapis B ditulis dari riset mendalam** (SSH read-only repo HEAD `5af2a28` + field JSON ERPNext 16.34.2 terpasang + jangkar kode), bukan dari draf mentah 18 Nov. File: `~/workspace/aios/rencana-lapis-b-superpowers.md`. Disetujui Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset.
 2. **Scope Fase 2: 3 modul** — Purchase Order, Purchase Receipt, Supplier Quotation (read-only, 1 modul = 1 task = 1 commit). Branding Finto OS/Fino sebagai Batch 2: riset + usulan pemetaan dulu (Task B1), implementasi sesudah Ten memilih pemetaannya (Task B2).
 3. **Request for Quotation TIDAK masuk Fase 2.** Alasan terverifikasi: tidak punya field `supplier_name`, tidak punya total/mata uang, pihaknya tabel multi-supplier (`suppliers`) — pola katalog (kolom pihak + kolom total + search nama tampilan) tidak berlaku. RFQ butuh plan tersendiri bila mau ditampilkan.
-4. **Allowlist + migrate jadi syarat baru.** Ketiga DocType belum ada di `ERP_CLIENT_DOCTYPES` (`permissions.py:49-64`) — Task 1 menambahkannya + migrate site dev. Migrate site client hanya atas izin eksplisit Ten saat verifikasi live.
+4. **Allowlist + migrate jadi syarat baru.** Ketiga DocType belum ada di `ERP_CLIENT_DOCTYPES` (`permissions.py:49-64`) — Task 1 SUDAH menambahkannya + migrate site dev (commit 6af2318, 19 Nov 2026); migrate site client SELESAI 19 Nov 11:20 WIB atas izin Ten + verifikasi live 5/5 lolos 11:26 WIB.
 5. **Yang tetap sama:** modul baru read-only, aksi hanya Sales + Finance; agen ikut terbuka otomatis via allowlist, cabang agen tetap Sales + Finance + Accounting; laporan keuangan sebagai modul Desk dan HRIS/Payroll tetap di luar Fase 2.
 
 ## Lampiran — file yang dibaca
