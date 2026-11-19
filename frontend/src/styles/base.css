@@ -1400,6 +1400,15 @@ textarea {
 .ap-head-sidebar-btn {
   flex: none;
 }
+
+.agent-panel.wide .ap-title {
+  flex: none;
+  width: calc(260px - var(--space-16));
+}
+
+.agent-panel.wide .ap-head-menu-wrap {
+  margin-left: auto;
+}
 .ap-head-menu-wrap {
   position: relative;
   flex: none;
@@ -1863,12 +1872,6 @@ textarea {
   flex: none;
   border-right: 1px solid var(--line);
   background: var(--surface-2);
-}
-.ap-sidebar-top {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: var(--space-8) var(--space-10) 0;
 }
 .ap-tabs-sidebar {
   display: grid;

@@ -521,21 +521,20 @@ async function onFilesPicked(e: Event) {
 
     <header class="ap-head">
       <div class="ap-title">
-        <button
-          v-if="!sidebarVisible"
-          type="button"
-          class="icon-btn ap-head-sidebar-btn"
-          aria-label="Tampilkan sidebar"
-          title="Tampilkan sidebar"
-          @click="toggleSidebarOrHistory"
-        >
-          <AppIcon name="sidebar" :size="17" />
-        </button>
         <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="lg" />
         <div v-if="branch">
           <b :title="branch.name">{{ branch.name }}</b>
         </div>
         <div v-else><b>AI Agents</b><small>Memuat agent dari backend…</small></div>
+        <button
+          type="button"
+          class="icon-btn ap-head-sidebar-btn"
+          :aria-label="sidebarVisible ? 'Sembunyikan sidebar' : 'Tampilkan sidebar'"
+          :title="sidebarVisible ? 'Sembunyikan sidebar' : 'Tampilkan sidebar'"
+          @click="toggleSidebarOrHistory"
+        >
+          <AppIcon name="sidebar" :size="17" />
+        </button>
       </div>
       <div class="ap-head-menu-wrap">
         <button
@@ -624,17 +623,6 @@ async function onFilesPicked(e: Event) {
         :class="{ sidebar: isWideMode }"
         aria-label="Sidebar riwayat percakapan"
       >
-        <div class="ap-sidebar-top">
-          <button
-            type="button"
-            class="icon-btn ap-head-sidebar-btn"
-            aria-label="Sembunyikan sidebar"
-            title="Sembunyikan sidebar"
-            @click="toggleSidebarOrHistory"
-          >
-            <AppIcon name="sidebar" :size="17" />
-          </button>
-        </div>
         <div v-if="isWideMode" class="ap-tabs ap-tabs-sidebar" aria-label="Daftar agent">
           <button
             v-for="b in branches.branches"
