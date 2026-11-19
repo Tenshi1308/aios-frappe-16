@@ -49,12 +49,14 @@ const modules = useModulesStore();
 const ui = useUiStore();
 
 const draft = ref('');
+const inputEl = ref<HTMLTextAreaElement | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const threadEl = ref<HTMLElement | null>(null);
 const panelEl = ref<HTMLElement | null>(null);
 const uploading = ref(false);
 const traceOpenId = ref<string | null>(null);
 const contextOpen = ref(false);
+const headerMenuOpen = ref(false);
 
 // Menu tiga titik riwayat & aksi per percakapan
 const historyMenuOpen = ref(false);
@@ -146,6 +148,9 @@ function onDocumentClick(e: MouseEvent) {
   if (contextOpen.value && !target?.closest('.ap-context-wrap')) {
     contextOpen.value = false;
   }
+  if (headerMenuOpen.value && !target?.closest('.ap-head-menu-wrap')) {
+    headerMenuOpen.value = false;
+  }
   if (historyMenuOpen.value && !target?.closest('.ap-history-menu-wrap')) {
     historyMenuOpen.value = false;
   }
@@ -181,8 +186,26 @@ function summaryText(m: ChatMessage) {
 // Tick 1 detik untuk durasi live (header Working for + durasi item berjalan).
 const tick = ref(0);
 let tickTimer: ReturnType<typeof setInterval> | null = null;
+function resizeInput() {
+  const el = inputEl.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  const cs = window.getComputedStyle(el);
+  const lineH = parseFloat(cs.lineHeight) || 19;
+  const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const maxH = Math.ceil(lineH * 5 + padY);
+  const nextH = Math.min(el.scrollHeight, maxH);
+  el.style.height = `${nextH}px`;
+  el.style.overflowY = el.scrollHeight > maxH ? 'auto' : 'hidden';
+}
+
+watch(draft, () => {
+  void nextTick(resizeInput);
+});
+
 onMounted(() => {
   window.addEventListener('click', onDocumentClick);
+  resizeInput();
   tickTimer = setInterval(() => {
     tick.value += 1;
   }, 1000);
@@ -505,39 +528,59 @@ async function onFilesPicked(e: Event) {
       <div class="ap-title">
         <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="lg" />
         <div v-if="branch">
-          <b>{{ branch.name }}</b>
-          <small>{{ branch.description || branch.tagline }}</small>
+          <b :title="branch.name">{{ branch.name }}</b>
         </div>
         <div v-else><b>AI Agents</b><small>Memuat agent dari backend…</small></div>
       </div>
-      <button
-        class="icon-btn approvals"
-        :aria-label="
-          chat.pendingDrafts.length
-            ? `Persetujuan tertunda: ${chat.pendingDrafts.length}`
-            : chat.pendingDraftsError
-              ? 'Gagal memuat persetujuan tertunda'
-              : 'Daftar & riwayat draft'
-        "
-        :title="
-          chat.pendingDrafts.length
-            ? `Persetujuan tertunda (${chat.pendingDrafts.length})`
-            : 'Daftar & riwayat draft'
-        "
-        @click="openPendingDrafts"
-      >
-        <AppIcon name="file" :size="18" />
-        <span v-if="chat.pendingDrafts.length" class="badge">{{ chat.pendingDrafts.length }}</span>
-        <span v-else-if="chat.pendingDraftsError" class="badge">!</span>
-      </button>
-      <button
-        class="icon-btn"
-        aria-label="Riwayat percakapan"
-        title="Riwayat percakapan"
-        @click="toggleSidebarOrHistory"
-      >
-        <AppIcon name="list" :size="18" />
-      </button>
+      <div class="ap-head-menu-wrap">
+        <button
+          type="button"
+          class="icon-btn approvals"
+          :aria-label="
+            chat.pendingDrafts.length
+              ? `Persetujuan tertunda: ${chat.pendingDrafts.length}`
+              : chat.pendingDraftsError
+                ? 'Gagal memuat persetujuan tertunda'
+                : 'Menu panel'
+          "
+          :title="
+            chat.pendingDrafts.length
+              ? `Persetujuan tertunda (${chat.pendingDrafts.length})`
+              : chat.pendingDraftsError
+                ? 'Gagal memuat persetujuan tertunda'
+                : 'Menu panel'
+          "
+          @click.stop="headerMenuOpen = !headerMenuOpen"
+        >
+          <AppIcon name="more-vertical" :size="18" />
+          <span v-if="chat.pendingDrafts.length" class="badge">{{ chat.pendingDrafts.length }}</span>
+          <span v-else-if="chat.pendingDraftsError" class="badge">!</span>
+        </button>
+        <div v-if="headerMenuOpen" class="ap-popover-menu ap-head-menu" @click.stop>
+          <button
+            type="button"
+            @click="
+              headerMenuOpen = false;
+              toggleSidebarOrHistory();
+            "
+          >
+            <AppIcon name="list" :size="14" />
+            <span>Riwayat percakapan</span>
+          </button>
+          <button
+            type="button"
+            @click="
+              headerMenuOpen = false;
+              openPendingDrafts();
+            "
+          >
+            <AppIcon name="file" :size="14" />
+            <span>Daftar dan riwayat draft</span>
+            <span v-if="chat.pendingDrafts.length" class="ap-menu-count">{{ chat.pendingDrafts.length }}</span>
+            <span v-else-if="chat.pendingDraftsError" class="ap-menu-count warn">!</span>
+          </button>
+        </div>
+      </div>
       <button
         class="icon-btn"
         :aria-label="ui.agentFullscreen ? 'Kembalikan ukuran' : 'Layar penuh'"
@@ -556,6 +599,7 @@ async function onFilesPicked(e: Event) {
         v-for="b in branches.branches"
         :key="b.key"
         :class="{ on: b.key === branchKey }"
+        :title="b.description || b.tagline || b.name"
         @click="switchBranch(b.key)"
       >
         <AgentAvatar :branch-key="b.key" :name="b.name" size="xs" />
@@ -575,6 +619,7 @@ async function onFilesPicked(e: Event) {
             v-for="b in branches.branches"
             :key="b.key"
             :class="{ on: b.key === branchKey }"
+            :title="b.description || b.tagline || b.name"
             @click="switchBranch(b.key)"
           >
             <AgentAvatar :branch-key="b.key" :name="b.name" size="xs" />
@@ -887,10 +932,12 @@ async function onFilesPicked(e: Event) {
         <form class="ap-input" @submit.prevent="send()">
           <textarea
             id="agent-input"
+            ref="inputEl"
             v-model="draft"
             rows="1"
             :placeholder="'Kirim pesan ke ' + (branch?.name ?? 'agent')"
             aria-label="Pesan"
+            @input="resizeInput"
             @keydown.enter.exact.prevent="send()"
           />
           <button
