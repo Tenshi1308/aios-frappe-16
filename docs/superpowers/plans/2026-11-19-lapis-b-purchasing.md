@@ -78,7 +78,7 @@ Lima mode kegagalan yang paling mungkin menggigit pengguna, yang tidak ditangkap
 
 ## Scope Check
 
-Spec (peta) mencakup beberapa subsistem independen: Lapis A (6 modul, selesai), Lapis B (9 bidang planned — plan ini hanya Purchasing), Lapis C (HRIS/Payroll), laporan keuangan sebagai modul Desk, dan branding. Plan ini hanya mencakup DUA subsistem — Purchasing (3 modul, Batch 1) dan branding (Batch 2) — dan tiap batch menghasilkan perangkat lunak yang bekerja dan bisa dites sendiri (17 modul, 4 bidang aktif; lalu shell ber-branding Finto OS/Fino). Lapis C, laporan keuangan, dan bidang planned lain masing-masing mendapat plan sendiri belakangan.
+Spec (peta) mencakup beberapa subsistem independen: Lapis A (6 modul, selesai), Lapis B (7 bidang planned tersisa setelah Accounting & Purchasing aktif — plan ini hanya Purchasing), Lapis C (HRIS/Payroll), laporan keuangan sebagai modul Desk, dan branding. Plan ini hanya mencakup DUA subsistem — Purchasing (3 modul, Batch 1) dan branding (Batch 2) — dan tiap batch menghasilkan perangkat lunak yang bekerja dan bisa dites sendiri (17 modul, 4 bidang aktif; lalu shell ber-branding Finto OS/Fino). Lapis C, laporan keuangan, dan bidang planned lain masing-masing mendapat plan sendiri belakangan.
 
 ## File Structure
 
@@ -327,37 +327,36 @@ git commit -m "docs: sinkronisasi dokumentasi Lapis B (Purchasing)"
 
 ## Batch 2 — Branding Finto OS / Fino
 
-### Task B1: Riset + usulan pemetaan branding (investigasi saja — TANPA ubah tampilan)
+### Task B1: Riset + usulan pemetaan branding (investigasi saja — TANPA ubah tampilan) — SELESAI ✅
 
 **Files:**
 - Read-only: `frontend/src/styles/tokens.css`, `frontend/src/utils/theme.ts`, `frontend/src/components/base/EkasaMark.vue` (logo dirender komponen ini, dipakai 7 tempat — lihat draf investigasi B1), `frontend/src/components/shell/StartMenu.vue`, `frontend/src/components/domain/DomainWindow.vue`, `frontend/src/views/DesktopView.vue`, `frontend/src/components/shell/BootScreen.vue`, `frontend/src/stores/session.ts`, `frontend/src/api/session.ts`, `docs/branding-finto-os/README.md` + `logo/` + `mascot/` + `referensi-asli/referensi UI finto-os/02_SPESIFIKASI_TAMPILAN_FINTO_OS.md`
-- Create: usulan pemetaan (dokumen, di workspace Muse dulu — bukan di repo)
+- Create: usulan pemetaan (`lapis-b-task-b1-branding-finto-investigasi-laporan-gemini.md` & `lapis-b-task-b1-branding-finto-usulan-pemetaan-gemini.md`)
 
 **Interfaces:**
 - Consumes: palet Finto OS (navy `#0B1F3B`, biru `#0E63FF`, cyan `#00D4C8`, lime `#A7F432`, violet `#8B5CF6`, terang `#F3F7FB`); aset logo + maskot Fino yang SUDAH ada di `docs/branding-finto-os/`; fakta bahwa token `--domain-purchasing` sudah ada (tidak perlu dibuat).
 - Produces: daftar file shell/tema yang akan disentuh + pemetaan permukaan → nilai Finto → file (untuk Ten pilih) — dipakai Task B2.
 
-- [ ] **Step 1: Verifikasi titik sentuh tema/shell.** Di repo/frontend: di mana tema/warna didefinisikan (`tokens.css`, `utils/theme.ts` — `ALLOWED_THEMES` saat ini hanya Automatic/Light/Dark, belum ada tema Finto)? Di mana logo dirender (StartMenu, session, PendingView — verifikasi cara rendernya, bukan asumsi)? Di mana maskot bisa tampil (layar sambutan / empty state / boot — verifikasi komponennya ada atau tidak)? Apakah ada aset logo/maskot Fino di frontend (bila belum ada, laporkan kosong — jangan buat aset)?
-- [ ] **Step 2: Tulis usulan pemetaan.** Tabel permukaan → nilai Finto → file yang disentuh, untuk: (a) palet shell (variabel CSS apa diganti/ditambah), (b) logo (di permukaan mana, aset file mana), (c) maskot Fino (di permukaan mana, aset file mana), (d) boot screen (dipakai/tidak — ingat video referensi adalah boot SPI, bukan AIOS). Bila satu permukaan punya 2–3 pemetaan yang masuk akal, sajikan ketiganya dengan tradeoff, jangan pilih diam-diam.
-- [ ] **Step 3: Berhenti dan tunggu Ten.** Deliverable: dokumen usulan pemetaan. JANGAN lanjut ke Task B2 sebelum Ten memilih pemetaannya — pilihan Ten dicatat sebagai amendemen plan ini.
+- [x] **Step 1: Verifikasi titik sentuh tema/shell.**
+- [x] **Step 2: Tulis usulan pemetaan.**
+- [x] **Step 3: Berhenti dan tunggu Ten.** Ten memilih pemetaan 19 Nov 2026: `0C`, `A3` (revisi 16:57: taskbar ikut Mode Warna), `B3`, `C1`, `D2`, Finto DEFAULT, wordmark `Finto Desk/OS`, layout sama persis.
 
-### Task B2: Implementasi branding sesuai pilihan Ten (TERKUNCI sampai B1 dipilih)
+### Task B2: Implementasi branding sesuai pilihan Ten — SELESAI ✅ (`08084cd`, `82805fb`, `87237c6`, `cc5b48c`)
 
 **Files:** Ditentukan pemetaan B1 yang Ten pilih (amendemen plan ini sesudah B1).
 
 **Interfaces:**
 - Consumes: pemetaan B1 yang Ten pilih + aset `docs/branding-finto-os/`.
-- Produces: shell Ekasa Desk ber-branding Finto OS/Fino sesuai pemetaan yang dipilih.
+- Produces: shell Finto Desk/OS (default) dan Ekasa Desk (klasik) ber-branding Finto OS/Fino sesuai pemetaan yang dipilih.
 
-- [ ] **Step 1: Tulis langkah implementasi dari pemetaan yang dipilih.** Satu permukaan = satu langkah dengan hasil yang bisa dicek (file + nilai persis dari pemetaan B1). Bila pemetaan butuh tes (mis. tema baru di `ALLOWED_THEMES`), tulis tes gagal dulu mengikuti pola TDD plan ini.
-- [ ] **Step 2: Implementasi minimal per permukaan.** Hanya permukaan yang Ten pilih — jangan tambah permukaan lain.
-- [ ] **Step 3: Verifikasi visual via browser.** Buka Ekasa Desk di bench PC: tiap permukaan yang diubah dicek tampilannya (logo, warna, maskot) + modul/bidang tidak berubah (bootstrap tetap 17 modul, 4 bidang aktif).
-- [ ] **Step 4: Commit.**
+- [x] **Step 1: Tulis langkah implementasi dari pemetaan yang dipilih.**
+- [x] **Step 2: Implementasi minimal per permukaan.** (`08084cd`, revisi `82805fb`, favicon `87237c6`, taskbar Mode Warna `cc5b48c`).
+- [x] **Step 3: Verifikasi visual via browser.**
+- [x] **Step 4: Commit.**
 
-```bash
-git add <file-file dari pemetaan B1 yang Ten pilih>
-git commit -m "feat(desk): terapkan branding Finto OS/Fino di Ekasa Desk"
-```
+### Agent Purchasing (Opsi A, pasca-B2) — SELESAI ✅ (`61f6139`)
+
+- [x] Branch `purchasing` + worker `purchasing-manager` baca-saja (`registry.py:1045-1102`, `_PRIORITY_BRANCHES` 4 cabang `:1104`), 8 tool baca-saja, opsi persona `purchasing`, migrate dev & client (6 baris scope purchasing, 15 tools), plus perbaikan ikon desktop pindah kolom (`base.css:720-731`).
 
 ---
 

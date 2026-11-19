@@ -1,11 +1,11 @@
 # Peta: Tampilkan Semua Modul di Ekasa Desk
 
 **Dibuat:** 16 Nov 2026 (malam)
-**Terakhir diperbarui:** 19 Nov 2026
+**Terakhir diperbarui:** 19 Nov 2026 (sinkronisasi pasca B2 & Agent Purchasing, HEAD `61f6139`)
 **Instruksi atasan (Pak Oscar, WhatsApp 19:34):** "sam, ini kok baru ada sales finance? terakhir yang aq bilang km, ditampilin aja semua yang kita bisa. kan fiturnya sudah ada semua"
 **Fokus seminggu ke depan (Ten, 19:58):** kerjakan yang dibilang Pak Oscar — branding Finto OS/Fino + tampilkan semua modul.
 **Sifat dokumen ini:** investigasi saja. Tidak ada kode yang diubah, tidak ada tes yang dijalankan.
-**Repo yang dibaca (read-only via SSH):** `~/mybench-v16/apps/aios_v1`, branch `feat/plugin-mcp-manager`, HEAD `30d9e5e`. ERPNext 16.34.2. App terpasang: frappe, erpnext, aios_v1, ekasa_logbook.
+**Basis repo (read-only):** `~/mybench-v16/apps/aios_v1`, branch `feat/plugin-mcp-manager`, HEAD `61f6139` (investigasi awal 16 Nov di `30d9e5e`). ERPNext 16.34.2. App terpasang: frappe, erpnext, aios_v1, ekasa_logbook.
 
 ---
 
@@ -82,7 +82,7 @@ Peran `AIOS Client`: read + report saja (`ERP_CLIENT_PERMS`), di-scope ke compan
 
 ### 1d. Sisi agen (yang ikut kebuka kalau modul ditambah)
 
-- Agen di aplikasi (bootstrap `agents`): 3 cabang aktif — Sales, Finance & Accounting. Registry (`aios_v1/plugin_manager/registry.py`) mendefinisikan 9 cabang (planning, finance, hr, logistics, maintenance, sales, quality, material, manufacturing), tapi `_PRIORITY_BRANCHES = {"finance", "sales", "accounting"}` (`registry.py:1043`) mematikan 6 lainnya.
+- Agen di aplikasi (bootstrap `agents`): **4 cabang aktif** — Sales, Finance, Accounting & Purchasing. Registry (`aios_v1/plugin_manager/registry.py`) mendefinisikan 9 cabang (planning, finance, hr, logistics, maintenance, sales, quality, material, manufacturing) plus `accounting` dan `purchasing`, tapi `_PRIORITY_BRANCHES = {"finance", "sales", "accounting", "purchasing"}` (`registry.py:1104`) mematikan cabang lainnya. `accounting-manager` dan `purchasing-manager` beroperasi sebagai worker tunggal baca-saja (Opsi A).
 - Konsultasi antar-cabang (`aios_v1/lib/branch_handlers.py`): `sales_consultation` + `finance_consultation` (per cabang) + `llm_branch_consultation` (umum, lintas cabang aktif mana pun — jalur konsultasi hand-off Opsi B), semuanya read-only.
 - Tool baca agen (`aios_v1/lib/erpnext_core_data.py`): `erpnext_doc_list` / `erpnext_doc_get` / `erpnext_doctype_schema` dijaga oleh **satu allowlist global** `ERP_CLIENT_DOCTYPES` — tidak ada pembatasan per cabang. Tamu terpisah: hanya Item + Item Price (`GUEST_ALLOWED_DOCTYPES`).
 - Laporan keuangan yang sudah diizinkan untuk agen (`aios_v1/lib/erpnext_financial_reports.py`, `ALLOWED_REPORTS`, 8 laporan): General Ledger, Accounts Receivable, Accounts Payable, Trial Balance, Profit and Loss Statement, Balance Sheet, Cash Flow, Sales Analytics. Ini sisi agen saja, bukan modul Desk.
@@ -109,7 +109,7 @@ Kandidat penempatan bidang:
 - Journal Entry + GL Entry + Account + Company → Accounting (bidang sudah aktif sejak Task 3; keempatnya sudah tampil — Task 3–6) atau Finance.
 - Item Price → Sales (katalog harga; juga sudah bisa dibaca tamu).
 
-### Lapis B — Bidang planned (8 bidang) + Accounting + DocType ERPNext baru
+### Lapis B — Bidang planned (7 bidang `planned` tersisa + Purchasing & Accounting aktif) + DocType ERPNext baru
 
 Setiap bidang planned diisi modul dari DocType ERPNext yang memang ada di site (ERPNext 16.34.2). Kolam kandidat per bidang (DocType utama; angka = jumlah DocType di modul ERPNext):
 
@@ -175,10 +175,10 @@ Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal
 |---|---|
 | Semua fitur sudah ada | 17 modul tampil + 7 bidang planned kosong. Keenam DocType yang diizinkan sudah tampil semua di Lapis A (Task 1–6). Payroll tidak ada DocType-nya. |
 | Modul tampil = fitur lengkap | **Tidak ada halaman detail dokumen sama sekali** — backend tidak punya endpoint detail, frontend hanya `ModuleWindow` list. Setiap modul baru = list-only. Detail adalah scope terpisah (dicatat sebagai follow-up Quotation). |
-| Approval bisa dipakai untuk semua modul | Kartu approval tidak menampilkan harga (Harga Satuan + Subtotal "—"); notifikasi approval ke tamu hanya untuk Sales Order (`draft_manager.py:991`); draf CREATE hanya SO/Quotation. |
+| Approval bisa dipakai untuk semua modul | Kartu approval tidak menampilkan harga (Harga Satuan + Subtotal "—"); notifikasi approval ke tamu hanya untuk Sales Order (`draft_manager.py:1023`, belum `Quotation`); draf CREATE hanya SO/Quotation. |
 | HRIS & Penggajian tinggal tampilkan | HRMS tidak terpasang; DocType payroll tidak ada di site. |
 | Menu referensi = daftar modul AIOS | Menu referensi adalah produk sekolah (SPI): PPDB, Murid, Akademik, SPP, Honor — produk lain, bukan modul AIOS. |
-| Finto OS sudah jadi platform | Finto OS masih rencana (`01_RENCANA_TEKNIS_FINTO_OS.md`, tahap 0–6, status "belum dikerjakan"). Yang ada: snapshot frontend SPI + rencana arsitektur. AIOS memakai shell frontend sendiri, bukan kit Finto OS. |
+| Finto OS sudah jadi platform | **Branding Finto OS / Fino (B2) SELESAI 19 Nov 2026** (`08084cd`, `82805fb`, `87237c6`, `cc5b48c`): desain default `Finto Desk / Finto OS` + opsi klasik `Ekasa Desk` (`0C/A3/B3/C1/D2`, taskbar & wallpaper ikut Mode Warna, glass login/register/pending, favicon Finto OS, avatar Fino outfit per bidang). |
 | Laporan keuangan tampil di Desk | 8 laporan (GL, AR, AP, Trial Balance, P&L, Balance Sheet, Cash Flow, Sales Analytics) hanya tersedia lewat agen, bukan modul Desk. |
 
 ---
@@ -195,8 +195,8 @@ Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal
 
 ## 7. Usulan urutan (bukan keputusan — untuk Ten/atasan)
 
-1. **Lapis A dulu (6 modul, tanpa migrate):** Delivery Note → Sales; Journal Entry + GL Entry + Account + Company → aktifkan bidang Accounting; Item Price → Sales. Ini jawaban tercepat untuk "kok baru ada sales finance" — bidang menjadi 3 (Sales, Finance, Accounting).
-2. **Lalu 1 bidang planned sebagai pola:** Purchasing (Purchase Order + Purchase Receipt + Supplier Quotation) — paling dekat dengan alur Sales yang sudah stabil. Membalik `assertNotIn("Purchase Order")` perlu dicatat sebagai keputusan.
+1. **Lapis A dulu (6 modul, tanpa migrate) — SELESAI 18 Nov 2026:** Delivery Note → Sales; Journal Entry + GL Entry + Account + Company → bidang Accounting aktif; Item Price → Sales.
+2. **Lalu 1 bidang planned sebagai pola — SELESAI 19 Nov 2026:** Purchasing (Purchase Order + Purchase Receipt + Supplier Quotation). Membalik `assertNotIn("Purchase Order")` sudah dicatat sebagai keputusan.
 3. **Baru bidang lain** sesuai prioritas atasan (Inventory / Manufacturing / Projects / CRM / Assets / Support / Quality).
 4. **HRIS/Payroll diputuskan terpisah:** pasang HRMS atau tunda — jangan dicampur ke gelombang modul biasa.
 5. **Detail dokumen + harga di kartu approval** tetap sebagai follow-up terpisah (sudah dicatat di daftar kekurangan Ekasa Desk — file follow-up, masih di workspace Muse).
@@ -230,12 +230,12 @@ Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal
 ## 10. Keputusan Fase 2 — Purchasing (19 Nov 2026)
 
 1. **Plan Superpowers Lapis B ditulis dari riset mendalam** (SSH read-only repo HEAD `5af2a28` + field JSON ERPNext 16.34.2 terpasang + jangkar kode), bukan dari draf mentah 18 Nov. File: `~/workspace/aios/rencana-lapis-b-superpowers.md`. Disetujui Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset.
-2. **Scope Fase 2: 3 modul** — Purchase Order, Purchase Receipt, Supplier Quotation (read-only, 1 modul = 1 task = 1 commit). Branding Finto OS/Fino sebagai Batch 2: riset + usulan pemetaan dulu (Task B1), implementasi sesudah Ten memilih pemetaannya (Task B2).
+2. **Scope Fase 2: 3 modul** — Purchase Order, Purchase Receipt, Supplier Quotation (read-only, 1 modul = 1 task = 1 commit). Branding Finto OS/Fino sebagai Batch 2 (**Task B1 & B2 SELESAI 19 Nov 2026**: `08084cd`, `82805fb`, `87237c6`, `cc5b48c` — keputusan `0C`, `A3` taskbar ikut Mode Warna, `B3`, `C1`, `D2`, `Finto` default, glass login/register/pending, favicon Finto OS), disusul **Agent Purchasing Opsi A SELESAI 19 Nov 18:01 (`61f6139`)**.
 3. **Request for Quotation TIDAK masuk Fase 2.** Alasan terverifikasi: tidak punya field `supplier_name`, tidak punya total/mata uang, pihaknya tabel multi-supplier (`suppliers`) — pola katalog (kolom pihak + kolom total + search nama tampilan) tidak berlaku. RFQ butuh plan tersendiri bila mau ditampilkan.
 4. **Allowlist + migrate jadi syarat baru.** Ketiga DocType belum ada di `ERP_CLIENT_DOCTYPES` (`permissions.py:49-64`) — Task 1 SUDAH menambahkannya + migrate site dev (commit 6af2318, 19 Nov 2026); migrate site client SELESAI 19 Nov 11:20 WIB atas izin Ten + verifikasi live 5/5 lolos 11:26 WIB. Task 2 (Purchase Receipt, 19 Nov 2026, commit 9831991) tidak butuh migrate — Custom DocPerm sudah terpasang sejak Task 1; verifikasi live 5/5 lolos 12:18 WIB. Task 3 (Supplier Quotation, 19 Nov 2026, commit 53974a6) tidak butuh migrate — Custom DocPerm sudah terpasang sejak Task 1; verifikasi live 5/5 lolos 13:20 WIB.
-5. **Yang tetap sama:** modul baru read-only, aksi hanya Sales + Finance; agen ikut terbuka otomatis via allowlist, cabang agen tetap Sales + Finance + Accounting; laporan keuangan sebagai modul Desk dan HRIS/Payroll tetap di luar Fase 2.
+5. **Yang tetap sama:** modul baru read-only, aksi hanya Sales + Finance; agen ikut terbuka otomatis via allowlist, cabang agen kini **4 aktif** (Sales + Finance + Accounting + Purchasing, `registry.py:1104`); laporan keuangan sebagai modul Desk dan HRIS/Payroll tetap di luar Fase 2.
 
-## Lampiran — file yang dibaca
+## Lampiran — file yang dibaca *(Snapshot investigasi 16 Nov 2026)*
 
 - `docs/branding-finto-os/referensi-asli/referensi UI finto-os/01_RENCANA_TEKNIS_FINTO_OS.md`
 - `.../02_SPESIFIKASI_TAMPILAN_FINTO_OS.md`, `03_INVENTARIS_FILE.md`, `04_SELISIH_FRONTEND_FINTO_EDU_VS_SPI.md`

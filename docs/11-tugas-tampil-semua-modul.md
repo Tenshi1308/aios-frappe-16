@@ -3,7 +3,7 @@
 Daftar tugas gaya Superpowers — menandai posisi kita sekarang. Peta analisis/keputusan ada di `peta-tampil-semua-modul.md` (dokumen acuan, stabil); file ini yang hidup (dicentang tiap selesai). Detail tiap tugas (nilai yang dipin, langkah 1–8) ada di plan (`rencana-lapis-a-superpowers.md`); file ini cermin checklist-nya supaya alur tiap fase kelihatan dari A sampai Z.
 
 ## 📍 POSISI SEKARANG
-Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit 362b51a (sudah push 18 Nov 16:34)). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit 5381790 (sudah push 18 Nov 16:34); dokumentasi disinkronisasi, commit 46a08a5).** Lapis A SELESAI PENUH 18 Nov 2026 (Task 5 Account + Task 6 Company, follow-up tombol tutup draf + persona Accounting + allowlist + perbaiki 4 tes + hand-off Opsi B, push 18 Nov 16:34 WIB, branch sinkron 0 tertinggal). **Plan Superpowers Fase 2 (Lapis B: Purchasing + branding Finto OS/Fino) ditulis Muse 19 Nov 2026 dari riset mendalam (SSH read-only repo HEAD 5af2a28 + field JSON ERPNext 16.34.2 terpasang) dan DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset.** File plan: `~/workspace/aios/rencana-lapis-b-superpowers.md` (masuk ke `docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md` lewat Task 4 plan). **Task 1 Lapis B (Purchase Order) SELESAI PENUH + terverifikasi live 19 Nov 11:26 WIB (commit 6af2318, lokal, belum push). Task 2 Lapis B (Purchase Receipt) SELESAI PENUH + terverifikasi live 19 Nov 12:18 WIB (commit 9831991, lokal, belum push). Task 3 Lapis B (Supplier Quotation) SELESAI PENUH + terverifikasi live 19 Nov 13:20 WIB (commit 53974a6, lokal, belum push). Task 4 Lapis B (sinkronisasi dokumentasi Batch 1) SELESAI PENUH 19 Nov 2026.** Berikutnya: Batch 2 Branding (Task B1 riset + mapping dulu), satu-satu, setelah Ten bilang lanjut.
+Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit 362b51a (sudah push 18 Nov 16:34)). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit 5381790 (sudah push 18 Nov 16:34); dokumentasi disinkronisasi, commit 46a08a5).** Lapis A SELESAI PENUH 18 Nov 2026 (Task 5 Account + Task 6 Company, follow-up tombol tutup draf + persona Accounting + allowlist + perbaiki 4 tes + hand-off Opsi B, push 18 Nov 16:34 WIB, branch sinkron 0 tertinggal). **Plan Superpowers Fase 2 (Lapis B: Purchasing + branding Finto OS/Fino) ditulis Muse 19 Nov 2026 dari riset mendalam (SSH read-only repo HEAD 5af2a28 + field JSON ERPNext 16.34.2 terpasang) dan DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset.** File plan: `docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md`. **Task 1 Lapis B (Purchase Order) SELESAI PENUH + terverifikasi live 19 Nov 11:26 WIB (commit 6af2318, lokal, belum push). Task 2 Lapis B (Purchase Receipt) SELESAI PENUH + terverifikasi live 19 Nov 12:18 WIB (commit 9831991, lokal, belum push). Task 3 Lapis B (Supplier Quotation) SELESAI PENUH + terverifikasi live 19 Nov 13:20 WIB (commit 53974a6, lokal, belum push). Task 4 Lapis B (sinkronisasi dokumentasi Batch 1) SELESAI PENUH 19 Nov 2026.** **Batch 2 Branding Finto OS/Fino (Task B1 + B2 + revisi + favicon + taskbar Mode Warna) SELESAI 19 Nov 2026 (commit `08084cd`, `82805fb`, `87237c6`, `cc5b48c`).** **Agent Purchasing (Opsi A) + perbaikan ikon desktop pindah kolom SELESAI + TERVERIFIKASI 19 Nov 18:01 WIB (commit `61f6139`, lokal, belum push).** Berikutnya: penutup hari 19 Nov — sinkronisasi dokumentasi (`docs/00`–`11`, `README`).
 
 ## Fase 0 — Investigasi & peta (SELESAI)
 - [x] Peta tampil-semua-modul (`peta-tampil-semua-modul.md`)
@@ -103,18 +103,18 @@ Tiap tugas: draf investigasi → investigasi + crosscheck → draf implementasi 
 - [x] Perbaiki 4 tes gagal — SELESAI PENUH 18 Nov 12:19 WIB, commit d675ddf (4 file tes, +18/−4, sudah push 18 Nov 16:34). Muse crosscheck: commit + 4 perubahan cocok, set_user baru = 0, keempat modul hijau dijalankan ulang sendiri (30+6+5+11 = 52 tes, OK). Tes 4 pakai parameter user="Administrator" (tanpa sentuh sesi); Tes 1 delivery_date + patch _resolve_sales_tax_template; Tes 3 patch; Tes 2 lambda user=None. Laporan: `~/workspace/aios/perbaiki-4-tes-gagal-laporan-gemini.md`. Verifikasi penuh dijalankan ulang Muse di background (konfirmasi klaim 19 error semua tabError Log pra-ada).
 - Catatan: keputusan Ten "tambah tombol tutup saja" (bukan sembunyikan otomatis); temuan awal Muse (SSH read-only 18 Nov) SEBAGIAN KOREKSI oleh investigasi Gemini: jalur tampilan Desk = draft_manager.py (endpoint whitelisted), BUKAN erpnext_action_drafts.py (itu jalur tool agent percakapan chat); list UI tanpa flag expired; badge "Kedaluwarsa" hanya di kartu persetujuan. Yang tetap benar: DRF-2026-11-00082 masih PENDING_APPROVAL + kedaluwarsa; approve kedaluwarsa diblokir; PendingDraftsWindow.vue tanpa tombol tutup per baris, hanya muat ulang.
 
-## Fase 2 — 1 bidang planned sebagai pola: Purchasing (PLAN DISETUJUI 19 Nov 2026, BELUM DIEKSEKUSI)
+## Fase 2 — 1 bidang planned sebagai pola: Purchasing (SELESAI PENUH 19 Nov 2026)
 
 Riset mendalam + plan Superpowers untuk fase ini dibuat SETELAH Fase 1 selesai (keputusan Ten 20:24) — begitu juga fase-fase berikutnya, satu per satu, bukan sekaligus di awal. **Branding Finto OS / Fino dibarengin Fase 2 ini (Ten, 18 Nov 16:37 WIB).**
 - [x] Riset mendalam selesai 19 Nov 2026 (SSH read-only repo HEAD `5af2a28` + field keempat DocType Purchasing dari JSON ERPNext 16.34.2 terpasang + jangkar kode + titik sentuh branding)
-- [x] Plan Superpowers ditulis 19 Nov 2026 (`~/workspace/aios/rencana-lapis-b-superpowers.md`) + self-review lawan spec — DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset
+- [x] Plan Superpowers ditulis 19 Nov 2026 (`docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md`) + self-review lawan spec — DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset
 - [x] Task 1: Purchase Order → Purchasing (aktivasi bidang + allowlist + migrate dev) — SELESAI PENUH 19 Nov 2026 ✅
 - [x] Task 2: Purchase Receipt → Purchasing — SELESAI PENUH 19 Nov 2026 ✅
 - [x] Task 3: Supplier Quotation → Purchasing — SELESAI PENUH 19 Nov 2026 ✅
 - [x] Task 4: Sinkronisasi dokumentasi Batch 1 — SELESAI PENUH 19 Nov 2026 ✅
-- [ ] Task B1: Riset + usulan pemetaan branding (investigasi saja, tanpa ubah tampilan)
-- [ ] Task B2: Implementasi branding sesuai pilihan Ten (terkunci sampai B1 dipilih Ten)
-- [ ] Agent Purchasing → Purchasing (task tersendiri mengikuti pola Opsi A Accounting, sesudah Batch 2 Branding — Ten, 19 Nov 2026)
+- [x] Task B1: Riset + usulan pemetaan branding — SELESAI 19 Nov 2026 ✅ (`lapis-b-task-b1-branding-finto-*.md`)
+- [x] Task B2: Implementasi branding sesuai pilihan Ten — SELESAI 19 Nov 2026 ✅ (`08084cd`, `82805fb`, `87237c6`, `cc5b48c`: `0C`, `A3` taskbar ikut Mode Warna, `B3`, `C1`, `D2`, `Finto` default, glass login/register/pending, favicon)
+- [x] Agent Purchasing → Purchasing (Opsi A, sesudah Batch 2 Branding) — SELESAI & TERVERIFIKASI 19 Nov 18:01 WIB ✅ (`61f6139`: branch `purchasing` + `purchasing-manager` baca-saja, `_PRIORITY_BRANCHES` 4 cabang, opsi persona `purchasing`, migrate dev & client 6 baris scope purchasing / 15 tools, ikon desktop pindah kolom)
 - Keputusan dicatat: membalik `assertNotIn("Purchase Order")` di tes katalog + ubah tes penolak modul tak dikenal (`:344`); **Request for Quotation TIDAK masuk Fase 2** — tidak punya `supplier_name`/total/mata uang, pihaknya tabel multi-supplier, pola katalog tidak berlaku (temuan riset 19 Nov, dipin di plan); allowlist + migrate jadi syarat baru (beda dari Lapis A); migrate site client hanya atas izin eksplisit Ten saat verifikasi live
 
 ### Task 1: Purchase Order → Purchasing — SELESAI PENUH ✅
@@ -150,9 +150,13 @@ Riset mendalam + plan Superpowers untuk fase ini dibuat SETELAH Fase 1 selesai (
 ## Fase 3 — Bidang planned lain (BELUM DIMULAI)
 - [ ] Inventory, Manufacturing, Projects, CRM, Assets, Support, Quality (sesuai prioritas atasan)
 
-## Branding Finto OS / Fino (BARENG FASE 2 — Purchasing; Ten, 18 Nov 16:37 WIB)
-- [ ] Palet + logo + maskot Fino diterapkan ke shell
-- [ ] Urutan vs modul: bersamaan — diputuskan Ten 20:11 (supaya frontend tidak ditulis 2x)
+## Branding Finto OS / Fino (SELESAI 19 Nov 2026 — `08084cd`, `82805fb`, `87237c6`, `cc5b48c`)
+- [x] Palet + logo + maskot Fino + taskbar/wallpaper Mode Warna + glass + favicon diterapkan ke shell (`0C/A3/B3/C1/D2`)
+- [x] Urutan vs modul: bersamaan — diputuskan Ten 20:11 (supaya frontend tidak ditulis 2x)
+
+## Celah Terbuka & Status Verifikasi Server
+- [ ] Celah notifikasi approval `Quotation` ke tamu (`draft_manager.py:1023` baru mengirim untuk `Sales Order`).
+- [ ] Server testing Ekasa belum terverifikasi ulang sejak 16 Nov 2026.
 
 ## Ditunda
 - [ ] HRMS / HRIS + Penggajian (perlu pasang aplikasi HRMS — proyek tersendiri, bukan penambahan modul)

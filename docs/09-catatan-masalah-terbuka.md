@@ -2,11 +2,11 @@
 
 > **Status dokumen:** *catatan kerja* — bukan spesifikasi normatif, bukan roadmap, bukan kontrak scope PoC.
 > Isinya temuan yang **sudah dikonfirmasi** lewat pembacaan kode/docs/runtime, beserta keputusan yang sudah diambil.
-> Dokumen ini **telah disinkronkan** dengan implementasi kode dan runtime saat ini (2026-11-09; diperbarui 2026-11-12 dengan catatan Fase 1 — lihat §E.1).
+> Dokumen ini **telah disinkronkan** dengan implementasi kode dan runtime saat ini (2026-11-09; diperbarui 2026-11-12 dengan catatan Fase 1 — lihat §E.1; disinkronkan ulang 2026-11-19 pada HEAD `61f6139` — lihat §E.2).
 
 > **Aturan induk: Frappe resmi menang.** Bila isi dokumen ini, `docs/`, atau `AGENTS.md` berbeda dengan perilaku/dokumentasi resmi Frappe/ERPNext (docs.frappe.io, source `apps/frappe`, `apps/erpnext`), yang resmi menang. Jangan menebak: cari primitif resmi dulu. Lihat `AGENTS.md` §2 dan `docs/00` §6.
 
-Tanggal catat: 2026-10-29 (direvisi 2026-11-09). Repo pada `feat/plugin-mcp-manager`, commit HEAD `3b39d94`.
+Tanggal catat: 2026-10-29 (direvisi 2026-11-19). Repo pada `feat/plugin-mcp-manager`, commit HEAD `61f6139` (lokal, tanpa push).
 
 ## Flow Utama (acuan)
 
@@ -241,6 +241,22 @@ Memetakan **Flow Utama langkah 6** (`docs/00` §1.1: "Client memakai app" / Ekas
 - **Monitoring:** gate `_is_admin` (`aios_v1/permissions.py`) = Administrator + role `AIOS Admin`; **System Manager tidak lagi diizinkan** (pengetatan).
 - **CORS:** manual dihapus; produksi memakai `allow_cors` resmi di `site_config`. **Masih TERBUKA:** saat ini hanya origin DEV (`http://localhost:5173`, `http://aios-client1.localhost:5173`); **belum ada domain frontend produksi** dan `bench set-config` dijalankan Ten di environment writable. Domain produksi menyusul keputusan Ten — jangan mengarang domain.
 - **Bukti:** 1 commit lokal (lihat laporan Fase 1); tidak ada hash yang dicantumkan di sini.
+
+#### E.2 — Pembaruan & Masalah Terbuka Pasca-12 Nov (16–19 Nov 2026, HEAD `61f6139`)
+
+- **Sudah selesai:**
+  - **Lapis A (18 Nov, push `16:34`):** 6 modul baca-saja (`Delivery Note`, `Item Price`, `Journal Entry`, `GL Entry`, `Account`, `Company`), bidang & agent `Accounting` Opsi A (`accounting-manager`), serta **Hand-off Opsi B** (`handoff_to_branch`, commit `5af2a28`, mode `confirm`/`auto`).
+  - **Batch 1 Purchasing (19 Nov):** `Purchase Order` (`6af2318`), `Purchase Receipt` (`9831991`), `Supplier Quotation` (`53974a6`) → **17 modul**, **4 bidang aktif** (`Sales`, `Finance`, `Accounting`, `Purchasing`), **7 `planned`**.
+  - **Branding B2 Finto OS/Fino (19 Nov):** desain default `Finto Desk / Finto OS` + opsi klasik `Ekasa Desk` (`08084cd`, `82805fb`, `87237c6`, `cc5b48c` — `0C/A3/B3/C1/D2`, taskbar & wallpaper ikut Mode Warna, glass login/register/pending, favicon Finto OS, outfit Fino).
+  - **Agent Purchasing Opsi A & ikon desktop pindah kolom (19 Nov, `61f6139`):** `purchasing-manager` baca-saja, `_PRIORITY_BRANCHES` 4 cabang, opsi persona `purchasing`, `.desk-icons` flex-column wrap (`base.css:720-731`).
+- **Terbuka (follow-up):**
+  1. **Celah notifikasi approval `Quotation` ke tamu:** `draft_manager.py:1023` baru mengirim notifikasi approval ke tamu untuk `Sales Order`, belum `Quotation`.
+  2. **Pengaktifan cabang per client belum dibuat:** pengaktifan masih global via `_PRIORITY_BRANCHES` (`registry.py:1104`).
+  3. **Sisa detail B2 di kode (tugas susulan terpisah):**
+     - `frontend/index.html:8` masih bertitel `<title>Ekasa Desk</title>`.
+     - `frontend/src/components/windows/AboutWindow.vue:27` dan `frontend/src/views/LoginView.vue:51` masih memuat teks statis `Ekasa Desk`.
+     - `frontend/src/components/domain/DomainWindow.vue:143` dan `frontend/src/components/shell/SearchFlyout.vue:162` masih merender `.agent-dot` langsung alih-alih `AgentAvatar.vue`.
+  4. **Catatan kecil 18 Nov & server testing:** tombol *"Tanya agent"* pada modul `Journal Entry`, hasil `Ctrl+K` yang memunculkan `GL Entry`, serta kondisi server testing Ekasa (belum terverifikasi ulang sejak 16 Nov 2026).
 
 ---
 

@@ -1,6 +1,8 @@
 ### AIOS V1
 
-AIOS Plugin SaaS
+Business AI Harness SaaS di atas Frappe v16 + ERPNext dengan frontend Vue 3 (**Finto Desk / Finto OS** dan opsi klasik **Ekasa Desk**).
+
+Lihat indeks dokumentasi lengkap di [`docs/README.md`](./docs/README.md) dan kontrak acuan PoC di [`docs/00-poc-target.md`](./docs/00-poc-target.md).
 
 ### Installation
 

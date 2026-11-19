@@ -74,7 +74,7 @@ flowchart LR
 
 - `H1` — multi-provider & per-agent model routing. **Ditunda**; PoC cukup satu model. `docs/02` tetap target arsitektur jangka panjang, bukan syarat PoC.
 - Billing/tiering, domain/SSL per site, isolasi OS/container.
-- Kedalaman 9 divisi; PoC fokus **Sales + Finance (Order-to-Cash)**.
+- Kedalaman 9 divisi; kontrak PoC fokus **Sales + Finance (Order-to-Cash)**. *(Catatan ekspansi pasca-PoC, 18–19 Nov 2026: di atas kontrak PoC ini, gelombang produk berikutnya telah mengaktifkan bidang baca-saja & agent untuk `Accounting` dan `Purchasing` — total 4 bidang aktif, 17 modul, 7 `planned` — serta branding default **Finto Desk / Finto OS**; aksi tulis tetap fokus Sales + Finance dan definisi PoC tidak ditulis ulang.)*
 - Server MCP eksternal untuk ERPNext (skema tool boleh dipinjam, server tidak dipakai).
 - Frontend Next.js lama; akan diganti Vue.
 
@@ -170,6 +170,8 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | 2026-10-29 | Pendaftaran user ke-2 dst (C1), `max_users` (C2), dan pengisian `contact_email` dari `Lead` (A4) ditunda; di luar Flow Utama. |
 | 2026-11-06 | Refactor `owner_user`: hapus field `owner_user` dari `AIOS Telegram Setting`, `AIOS Channel Thread`, dan `AIOS Conversation Flag`; ganti dengan Role `AIOS Channel Receiver` (`AIOS Channel Receiver Profile`) dan `AIOS Client Owner` (`AIOS Client Owner Profile`), validasi 3 lapis (wajib `AIOS Client` aktif), helper `get_channel_recipients()` dengan fallback ke `AIOS Client Owner` aktif, dan akses draf kanal bagi penerima aktif (Opsi A). |
 | 2026-11-06 | Implementasi `AIOS Setting.max_users` (divalidasi di `User.before_insert` & `User.validate`) dan fitur mandiri pemilik klien (`AIOS Client Owner`) melalui 2 menu baru di Pengaturan Ekasa Desk: **Penerima Kanal** dan **Kelola Staf** (membuat staf `AIOS Client` aktif + tautan `/update-password?key=...` sekali pakai, suspend/re-activate staf, dan buat ulang tautan undangan). |
+| 2026-11-18 | **Lapis A + Hand-off Opsi B selesai:** 6 modul baru ditambahkan (`Delivery Note`, `Item Price`, `Journal Entry`, `GL Entry`, `Account`, `Company` — bidang `Accounting` aktif, baca-saja) + persona agent `Accounting` (Opsi A) + hand-off antar-bidang Opsi B (`handoff_to_branch`, mode `confirm`/`auto`). |
+| 2026-11-19 | **Batch 1 Purchasing + Branding Finto OS/Fino (B2) + Agent Purchasing selesai:** 3 modul Purchasing (`Purchase Order`, `Purchase Receipt`, `Supplier Quotation` — total 17 modul, 4 bidang aktif, 7 `planned`, modul baru baca-saja dan aksi tulis tetap Sales + Finance); tujuan utama AIOS ditegaskan sebagai **AI Agent (1 agent per bidang, modul Desk adalah tempat kerja agent)**; branding B2 (`0C` Desain & Mode Warna dipisah, `A3` taskbar ikut Mode Warna, `B3` lockup penuh, `C1` Fino kontekstual, `D2` boot penuh, `Finto` default, wordmark `Finto Desk/OS`, glass login/register/pending, favicon); Agent Purchasing Opsi A selesai (`purchasing-manager` baca-saja, `_PRIORITY_BRANCHES` 4 cabang). Kontrak PoC di §2.3/§3 tetap Sales + Finance; ekspansi di atas adalah gelombang produk di atas kontrak tersebut. |
 
 ---
 
@@ -185,6 +187,9 @@ Urutan tahap, item, dan status ada di [`docs/05.1` §1](./05.1-roadmap-perbaikan
 | ~~Tab "Pendaftar" + `signup_leads()` belum ada~~ | ✅ Diselesaikan di `aios_v1/api/control_plane.py` + `admin/`. |
 | ~~Hook `setup_wizard_complete` belum ada~~ | ✅ Diselesaikan (`aios_v1.setup.normalize_wizard_user`). |
 | ~~`activate_user` belum menerbitkan tautan `/update-password`~~ | ✅ Diselesaikan (`control.py::activate_user` menerbitkan `invitation_url` + memasang `AIOS Client Owner Profile`). |
+| Notifikasi approval `Quotation` ke tamu belum terkirim | `draft_manager.py:1023` hanya mengirim notifikasi approval ke tamu untuk `Sales Order`, belum `Quotation`. |
+| Pengaktifan cabang per client belum dibuat | Cabang aktif masih global via `_PRIORITY_BRANCHES` (`registry.py:1104`); pengelolaan per client menyusul dari sisi admin. |
+| Server testing Ekasa belum terverifikasi ulang | Kondisi runtime/migrate di server testing belum diverifikasi ulang sejak 16 Nov 2026. |
 
 ---
 

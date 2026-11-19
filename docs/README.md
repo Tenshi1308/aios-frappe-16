@@ -1,6 +1,6 @@
 # Dokumentasi Proyek AIOS V1 (Enterprise Business AI Harness)
 
-Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Site-Level Multi-Tenancy* (`1 Client = 1 Site`), alur kerja *end-to-end*, roadmap eksekusi berurutan, serta referensi pasar/kompetitor untuk **AIOS V1** di atas **Frappe 16 + ERPNext** dengan frontend **Vue 3 (Ekasa Desk)**.
+Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Site-Level Multi-Tenancy* (`1 Client = 1 Site`), alur kerja *end-to-end*, roadmap eksekusi berurutan, serta referensi pasar/kompetitor untuk **AIOS V1** di atas **Frappe 16 + ERPNext** dengan frontend **Vue 3** (desain default **Finto Desk / Finto OS** dan opsi klasik **Ekasa Desk**).
 
 > **Mulai dari [`00 — Target PoC`](./00-poc-target.md).** Dokumen itu yang menjawab “PoC selesai bila apa” dan “apa yang masuk/keluar PoC”. Dokumen lain adalah detail.
 
@@ -19,15 +19,15 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
 
 1. **[01 — Profil dan Visi Produk](./01-profil-dan-visi-produk.md)** — *spesifikasi normatif*
    - Esensi AIOS sebagai *Business AI Harness* (bukan chatbot tanya-jawab biasa dan bukan coding harness).
-   - Strategi *Depth over Breadth*: fokus kedalaman penuh pada divisi **Finance** dan **Sales** (*Order-to-Cash* & pelaporan akuntansi) sebagai fondasi pembuktian produk.
+   - Strategi *Depth over Breadth* & tujuan utama AI Agent (satu agent per bidang; modul Desk adalah tempat kerja agent): 4 bidang aktif (**Sales**, **Finance** dengan aksi tulis; **Accounting**, **Purchasing** baca-saja) + 7 bidang `planned`.
    - Struktur organisasi agen bisnis (Orchestrator / AI Manager & Sub-Agents spesialis) yang bekerja layaknya perusahaan mandiri.
    - Model SaaS **1 Client = 1 Site** dengan **Developer Control Plane** (site developer, role `AIOS Admin`) + **Ekasa Desk** (site klien, role `AIOS Client`, antarmuka desktop OS — `docs/08`).
 
 2. **[02 — Arsitektur Harness, Model Routing, Plugin/MCP, & Kontrak Trace](./02-arsitektur-harness-dan-plugin.md)** — *spesifikasi normatif*
    - Konfigurasi Provider LLM & pemetaan model per Orchestrator/Sub-Agent berbasis UI & DocType (`AIOS LLM Provider` & `AIOS Agent Model Route` dengan `route_key` unik dan validasi ke `registry.py`, *Zero Hardcode*). **UI dan sumber kebenaran di Developer Control Plane; konfigurasi disalin ke tiap site klien.**
-   - Arsitektur **Plugin & MCP Manager (`AIOS Plugin`)**: katalog 7 *Built-in Default Plugins* (didukung `Custom DocPerm` `read=1, report=1` untuk `AIOS Client`) dan dukungan External MCP Server.
+   - Arsitektur **Plugin & MCP Manager (`AIOS Plugin`)**: katalog 7 *Built-in Default Plugins* (didukung `Custom DocPerm` `read=1, report=1` untuk `AIOS Client` pada 17 DocType di `ERP_CLIENT_DOCTYPES`) dan dukungan External MCP Server.
    - **Batas Eksekusi Agen (§2.3):** agen tanpa shell, tanpa akses file server di luar `File` Frappe, tanpa jaringan bebas, identitas tak bisa dipalsukan; isolasi level OS sengaja ditunda.
-   - **Kontrak trace & artefak (§3):** 5 event SSE; system prompt internal tidak pernah ditampilkan.
+   - **Kontrak trace, hand-off & artefak (§3):** 5 event SSE, *hand-off* antar-bidang Opsi B (`handoff_to_branch`), serta catatan celah notifikasi approval `Quotation` ke tamu (`draft_manager.py:1023`).
    - **Plugin ERPNext = wrapper tipis** di atas API ERPNext; skema tool diadaptasi dari `@casys/mcp-erpnext` (MIT). Server MCP eksternal dievaluasi dan **tidak dipakai** (§2.3).
    - Desain **Live Agent Trace** (5 event SSE kanonik termasuk `trace_subagent_prompt`, batas rekursi `MAX_DELEGATION_DEPTH = 2`, tanpa emoji dekoratif).
    - Arsitektur **Isolated Workspace (Frappe Private `File`)**; artefak tampil sebagai berkas/jendela desktop (`docs/08`).
@@ -44,7 +44,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - **Alur 1:** *Self-Registration* calon klien (`Pending Provisioning`, `enabled = 0`, tanpa email reset password) & aktivasi `User` dari Developer Control Plane.
    - **Alur 2:** Pengelolaan Provider LLM, Model Routing per agen, Kuota Token `User`, dan Plugin/MCP oleh `AIOS Admin` — UI dan sumber kebenaran di control plane; konfigurasi disalin ke tiap site klien.
    - **Alur 3:** Autentikasi Frappe, guard 3 lapis `aios_status == "Active"`, bootstrap `csrf_token`, dan penentuan portal berbasis Role.
-   - **Alur 4:** Eksekusi tugas analitik, delegasi sub-agent (5 event SSE kanonik), kolaborasi lintas divisi (**Sales ↔ Finance**), dan pembuatan artefak sebagai berkas/jendela desktop.
+   - **Alur 4:** Eksekusi tugas analitik, delegasi sub-agent (5 event SSE kanonik), konsultasi & *hand-off* Opsi B antar-cabang aktif (`Sales`, `Finance`, `Accounting`, `Purchasing`), dan pembuatan artefak sebagai berkas/jendela desktop.
    - **Alur 5:** Eskalasi aksi tulis ke **Pending Action Draft** (*Human-in-the-Loop Approval*) hingga eksekusi ke ERPNext; jenis aksi `CREATE` / `UPDATE_DRAFT` / `CANCEL_AND_AMEND` dan batas **draft vs submitted**.
    - **Alur 6:** Provisioning klien lintas site (termasuk tombol **Buat Site**), undangan sekali pakai, dan monitoring dari Developer Control Plane.
    - **Alur 7:** Membuka modul dan membaca data ERPNext dari desktop (baca saja, `company` dipaksa server).
@@ -71,8 +71,8 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - Pola UI/UX yang layak ditiru dan yang harus dihindari.
    - Implikasi untuk AIOS: fokus **depth Sales & Finance** pada satu alur *Order-to-Cash* utuh, dengan 9 divisi sebagai peta kemampuan — bukan sembilan divisi yang dangkal.
 
-8. **[08 — Desain Ekasa Desk (Antarmuka Desktop OS)](./08-desain-ekasa-desk.md)** — *spesifikasi normatif*
-   - Konsep desktop OS: boot → sign-in → desktop, taskbar, flyout (`Ctrl+K`, `Ctrl+J`), panel agent.
+8. **[08 — Desain Finto Desk / Ekasa Desk (Antarmuka Desktop OS)](./08-desain-ekasa-desk.md)** — *spesifikasi normatif*
+   - Konsep desktop OS: boot → sign-in → desktop, taskbar, flyout (`Ctrl+K`, `Ctrl+J`), panel agent; mencakup branding default **Finto Desk / Finto OS** + maskot Fino (`0C/A3/B3/C1/D2`, taskbar & wallpaper Mode Warna, glass, favicon, ikon pindah kolom) dan opsi klasik **Ekasa Desk**.
    - **Live Agent Trace** di panel agent (langkah bisa dimekarkan) — instruksi tugas & argumen tool terlihat, *system prompt* internal tidak.
    - Artefak sebagai berkas/jendela desktop; modul sebagai jendela baca-saja.
    - **Zero hardcoded** untuk agent, modul, doctype, company, kuota; token CSS dua lapis (primitives → semantic); komponen dilarang menulis warna/font/shadow langsung.
@@ -82,13 +82,15 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - Temuan terkonfirmasi + keputusan + urutan kerja untuk menutup celah antara kode dan **Flow Utama** (`docs/00` §1.1). Bila berbeda dengan `00`–`04`, dokumen normatif yang menang; bila berbeda dengan Frappe resmi, Frappe yang menang.
 
 10. **[10 — Peta: Tampilkan Semua Modul di Ekasa Desk](./10-peta-tampil-semua-modul.md)** — *peta investigasi & keputusan*
-    - Pemetaan tiga lapis modul ERPNext (Lapis A: 6 DocType sudah diizinkan; Lapis B: 9 bidang `planned`; Lapis C: HRIS/Payroll) beserta implikasi izin, agen, dan keputusan Ten (§9).
+    - Pemetaan tiga lapis modul ERPNext (Lapis A: 6 DocType sudah ditampilkan 18 Nov; Lapis B: Purchasing selesai 19 Nov, tersisa 7 bidang `planned`; Lapis C: HRIS/Payroll ditunda) beserta implikasi izin, agen (4 cabang aktif), dan keputusan Ten (§9–§10).
 
 11. **[11 — Tugas: Tampilkan Semua Modul + Branding Finto OS](./11-tugas-tampil-semua-modul.md)** — *daftar tugas & status*
-    - Checklist eksekusi per tugas (Task 1–6 Lapis A, Fase 2–3, branding paralel) yang mencerminkan posisi pekerjaan terkini beserta nomor commit dan hasil verifikasi.
+    - Checklist eksekusi per tugas (Lapis A selesai + push 18 Nov 16:34, Batch 1 Purchasing selesai 19 Nov — 17 modul, Branding B2 Finto OS/Fino selesai, Agent Purchasing Opsi A selesai `61f6139`, serta celah notifikasi Quotation) beserta nomor commit dan hasil verifikasi.
 
 ### Rencana Implementasi (Superpowers Plans)
 
 - **[Plan Lapis A — Tampilkan 6 Modul di Ekasa Desk](./superpowers/plans/2026-11-16-lapis-a-tampil-semua-modul.md)** — *plan eksekusi*
   - Rincian langkah implementasi Task 1–6 (Delivery Note, Item Price, Journal Entry, GL Entry, Account, Company), nilai katalog yang dipin, pola tes, dan kriteria verifikasi live.
+- **[Plan Lapis B — Purchasing & Branding Finto OS/Fino](./superpowers/plans/2026-11-19-lapis-b-purchasing.md)** — *plan eksekusi*
+  - Rincian Batch 1 (Purchase Order, Purchase Receipt, Supplier Quotation) dan Batch 2 (Branding Finto OS/Fino) + Agent Purchasing Opsi A.
 

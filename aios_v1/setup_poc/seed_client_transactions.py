@@ -1,7 +1,7 @@
 """
 Skrip seeder 100+ transaksi ERPNext untuk site klien AIOS.
 
-Mencakup seluruh 12 DocType resmi (ERP_CLIENT_DOCTYPES):
+Mencakup 12 dari 17 DocType resmi (ERP_CLIENT_DOCTYPES):
 1. Company
 2. Account
 3. Customer

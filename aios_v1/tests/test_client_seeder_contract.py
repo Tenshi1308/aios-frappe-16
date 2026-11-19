@@ -29,7 +29,7 @@ class TestClientSeederContract(unittest.TestCase):
         self.assertIn("_resolve_context", functions)
 
     def test_references_all_12_client_doctypes(self):
-        """Seeder harus mencakup ke-12 DocType resmi ERP_CLIENT_DOCTYPES."""
+        """Seeder harus mencakup ke-12 dari 17 DocType resmi ERP_CLIENT_DOCTYPES."""
         expected_doctypes = [
             "Company",
             "Account",

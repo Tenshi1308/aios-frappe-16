@@ -52,7 +52,7 @@ Semua hal berikut sudah ada di beberapa pemain, jadi **bukan pembeda** bila AIOS
 2. **Tulis dengan approval yang benar-benar posting.**
    Draft transaksi → Approve → menjadi dokumen resmi di ERPNext. Odoo standar read-only; Microsoft/Oracle punya approval, tetapi jarang transparan sampai detail tool dan payload.
 
-3. **Instance sendiri + model bisa diganti.**
+3. **Instance sendiri + model bisa diganti.** *(Catatan status: pada tahap PoC, H1 *multi-provider & per-agent routing* masih **ditunda** — sistem memakai satu model di `AIOS Setting`; kemampuan ganti model per agen adalah target arsitektur H1.)*
    `1 Client = 1 Site`, provider/model bisa diganti per agen, plugin/MCP terbuka. Ini kombinasi yang sulit ditandingi pemain global untuk klien yang peduli data residency dan vendor lock-in.
 
    > **Batas yang perlu dipahami (bukan "user bebas pilih model"):** yang mengganti model adalah `AIOS Admin` (operator), bukan tiap user akhir. Pada tahap awal, pilihan model juga dibatasi kapasitas server — model besar belum tentu bisa dijalankan. Jadi klaim yang benar adalah **"tidak terkunci ke satu vendor"**, bukan **"bebas memilih model apa pun"**. Jangan menuliskan yang kedua di materi produk.
@@ -61,7 +61,7 @@ Semua hal berikut sudah ada di beberapa pemain, jadi **bukan pembeda** bila AIOS
    Kuota token, routing model per agen, dan log pemakaian. Enterprise butuh angka biaya yang bisa dipertanggungjawabkan.
 
 5. **Antarmuka desktop OS, bukan halaman web biasa.**
-   Ekasa Desk (`docs/08`): boot, sign-in, taskbar, jendela modul, panel agent, dan artefak yang muncul sebagai berkas. Pola ini membedakan AIOS dari copilot yang menempel di dalam form ERP. **Trace tetap terlihat** di panel agent — transparansi tidak dikorbankan demi tampilan.
+   **Finto Desk / Finto OS** (desain default dengan maskot Fino) serta **Ekasa Desk** (`docs/08`): boot, sign-in, taskbar, jendela modul, panel agent, dan artefak yang muncul sebagai berkas. Pola ini membedakan AIOS dari copilot yang menempel di dalam form ERP. **Trace tetap terlihat** di panel agent — transparansi tidak dikorbankan demi tampilan.
 
 ---
 
@@ -76,7 +76,7 @@ Semua hal berikut sudah ada di beberapa pemain, jadi **bukan pembeda** bila AIOS
 | **Workspace per peran** | Oracle Command Centers | Tampilan Finance vs Sales berbeda sesuai pekerjaan |
 | **Kartu proaktif** | HashMicro HMX | "Piutang jatuh tempo", "stok menipis", "approval menunggu" |
 | **Chat + chart inline** | HashMicro Hashy | Jawaban analitik langsung disertai visualisasi |
-| **Channel eksternal** | Keysoft WhatsApp | Kandidat channel setelah workspace web stabil |
+| **Channel eksternal** | Keysoft WhatsApp | **Kanal Telegram AIOS sudah aktif** (`docs/02` §2.4); WhatsApp/kanal lain menyusul |
 
 ---
 
@@ -102,7 +102,7 @@ Alur yang harus terlihat:
 5. Sales Order resmi terbentuk di ERPNext.
 6. Seluruh langkah terlihat di live trace.
 
-Sembilan divisi tetap ditampilkan sebagai **peta kemampuan**, tetapi kedalaman implementasi dan demo difokuskan pada Sales dan Finance.
+Sembilan divisi tetap ditampilkan sebagai **peta kemampuan**, sementara implementasi saat ini mencakup **4 bidang aktif** (`Sales`, `Finance`, `Accounting`, `Purchasing` — 17 modul, 7 `planned`) dengan **aksi tulis & approval difokuskan penuh pada Sales dan Finance** (bidang baru `Accounting` dan `Purchasing` dibuka baca-saja).
 
 **Positioning yang disarankan:** bukan "copilot yang menempel di ERP", tetapi **"tim agen yang bekerja di instance ERP Anda sendiri, dengan persetujuan manusia dan jejak audit."**
 

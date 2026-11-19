@@ -17,16 +17,16 @@ Berbeda dari asisten AI umum (yang hanya menjawab teks tanpa konteks operasional
 
 ---
 
-## 2. Strategi Fokus: *Depth over Breadth* (Finance & Sales)
+## 2. Strategi Fokus: *Depth over Breadth* & Organisasi Agen per Bidang
 
-Dalam arsitektur besar AIOS terdapat 9 cabang divisi ERP (`planning`, `finance`, `sales`, `procurement`, `material`, `production`, `project`, `hr`, `maintenance`) serta integrasi kanal eksternal (seperti Telegram yang saat ini disimpan dalam status *hidden/dormant* untuk pengembangan masa depan).
+Dalam arsitektur besar AIOS (`desktop_domains.py`), katalog Desk memuat **11 bidang ERP** (4 bidang aktif: `sales`, `finance`, `accounting`, `purchasing`; dan 7 bidang `planned`: `inventory`, `manufacturing`, `projects`, `crm`, `assets`, `support`, `quality`; HRIS/Payroll ditunda karena membutuhkan aplikasi HRMS terpisah), sedangkan registry agen (`registry.py`) mendefinisikan 9 cabang dengan **4 cabang agen aktif** di `_PRIORITY_BRANCHES` (`finance`, `sales`, `accounting`, `purchasing`). Integrasi kanal eksternal (Telegram) **sudah aktif** (`docs/02` §2.4).
 
-Namun, untuk membuktikan kemampuan AIOS secara maksimal dan kritis pada tahap ini, pengembangan difokuskan secara mendalam (**deep implementation**) pada **2 cabang inti yang menjadi jantung operasional perusahaan**:
+**Tujuan utama AIOS (keputusan 19 Nov 2026):** produk utama AIOS adalah **AI Agent — satu agent per bidang**, sementara modul yang tampil di Desktop OS (**Finto Desk / Ekasa Desk**) adalah **tempat kerja agent**, bukan produknya. Pengembangan tetap menjaga kedalaman (*Depth over Breadth*) pada **2 cabang inti transaksi** (**Sales** dan **Finance** untuk siklus *Order-to-Cash* serta aksi tulis/approval), sedangkan bidang baru (**Accounting** dan **Purchasing**) dibuka dengan mode **baca-saja**:
 
-1. **Divisi Sales & Distribution (`sales`)** — ujung tombak pemasukan dan relasi pelanggan.
-2. **Divisi Finance & Accounting (`finance`)** — penjaga arus kas, piutang/utang, anggaran, dan laporan keuangan.
-
-Kedua divisi ini membentuk siklus bisnis nyata **Order-to-Cash (O2C)** yang utuh dan saling bergantung layaknya dua departemen di perusahaan sungguhan.
+1. **Divisi Sales & Distribution (`sales`)** — ujung tombak pemasukan, penawaran, dan relasi pelanggan (aksi tulis & approval aktif).
+2. **Divisi Finance (`finance`)** — penjaga arus kas, piutang/utang, pembayaran, dan laporan keuangan (aksi tulis & approval aktif).
+3. **Divisi Accounting (`accounting`)** — pengelola buku besar, jurnal umum, bagan akun, dan entitas perusahaan (**baca-saja**).
+4. **Divisi Purchasing (`purchasing`)** — pengelola pesanan pembelian, tanda terima barang, dan penawaran pemasok (**baca-saja**).
 
 ### 2.1. Organisasi Agen Divisi Sales (`sales`)
 Dipimpin oleh **Sales AI Manager (Orchestrator)** yang mengoordinasikan 4 Sub-Agents spesialis:
@@ -43,6 +43,12 @@ Dipimpin oleh **Finance AI Manager (Orchestrator)** yang mengoordinasikan 5 Sub-
 - **Financial Analyst (`financial-analyst`):** Melakukan analisis kuantitatif laporan keuangan (*Profit & Loss*, *Balance Sheet*, *General Ledger*), margin profitabilitas, serta rasio pertumbuhan antar-periode.
 - **CFO (`cfo`):** Menyintesis temuan dari seluruh staf Finance (likuiditas dari *Treasurer*, variansi dari *Budgeting*, tren dari *Financial Analyst*) menjadi ringkasan eksekutif, peringatan risiko strategis, dan rekomendasi keputusan bagi pimpinan perusahaan.
 
+### 2.3. Organisasi Agen Divisi Accounting (`accounting`) — Baca-Saja
+Dipimpin oleh **Accounting Manager (`accounting-manager`)** sebagai worker tunggal baca-saja (tanpa sub-agent): menangani analisis `Journal Entry`, `GL Entry`, `Account`, dan `Company` serta laporan buku besar/neraca (`General Ledger`, `Trial Balance`). Kebutuhan aksi tulis dialihkan ke cabang aktif terkait melalui *hand-off*.
+
+### 2.4. Organisasi Agen Divisi Purchasing (`purchasing`) — Baca-Saja
+Dipimpin oleh **Purchasing Manager (`purchasing-manager`)** sebagai worker tunggal baca-saja (tanpa sub-agent): menangani pembacaan `Purchase Order`, `Purchase Receipt`, `Supplier Quotation`, `Supplier`, dan `Item` serta ringkasan utang pemasok (`Accounts Payable`). Kebutuhan aksi tulis atau bidang lain dialihkan melalui *hand-off* (`handoff_to_branch`).
+
 ---
 
 ## 3. Kolaborasi Agen Nyata (Intra-Divisi & Lintas-Divisi)
@@ -52,8 +58,9 @@ Target utama AIOS adalah setiap cabang bekerja **seperti perusahaan mandiri yang
 1. **Delegasi Nyata di Dalam Divisi (Orchestrator → Sub-Agent):**
    - Ketika pengguna bertanya kepada **Finance AI Manager**, Orchestrator dapat memecah masalah dan memanggil Sub-Agent spesifik (misalnya meminta *Treasurer* menarik data piutang jatuh tempo sekaligus meminta *Financial Analyst* menghitung margin bulan berjalan).
    - Setiap panggilan delegasi benar-benar menjalankan *agent execution loop* milik Sub-Agent tersebut beserta tool-nya, lalu mengembalikan hasilnya ke Orchestrator untuk disintesis.
-2. **Konsultasi Lintas Divisi (Sales ↔ Finance via Swarm Router):**
-   - Sebelum **Sales Representative / Sales Manager** menerbitkan draf *Sales Order* bernilai besar untuk seorang pelanggan, divisi Sales secara otonom berkonsultasi ke divisi **Finance** (*Treasurer*) untuk memverifikasi sisa plafon kredit (*credit limit*) dan memastikan pelanggan tersebut tidak memiliki tagihan *overdue* yang macet.
+2. **Konsultasi & Hand-off Lintas Divisi (Swarm Router & Hand-off Opsi B):**
+   - **Konsultasi satu kali (`cross_branch_consultation`):** sebelum **Sales Representative / Sales Manager** menerbitkan draf *Sales Order* bernilai besar, divisi Sales berkonsultasi ke divisi **Finance** (*Treasurer*) secara baca-saja untuk memverifikasi kredit dan piutang *overdue*; `llm_branch_consultation` juga melayani konsultasi fakta baca-saja antar-cabang aktif.
+   - **Hand-off Pindah Tab Opsi B (`handoff_to_branch`):** bila permintaan membutuhkan interaksi multi-giliran, eksplorasi mendalam bidang lain, atau wewenang draf di cabang aktif lain (misalnya dari `Accounting`/`Purchasing` ke `Sales`), AI Manager mengalihkan percakapan ke tab cabang tujuan (mode konfirmasi atau otomatis sesuai preferensi user).
 3. **Transparansi Visual Penuh di UI (*Live Agent Trace*):**
    - Seluruh proses delegasi dan komunikasi antar-agen **tidak terjadi secara diam-diam di belakang layar**.
    - UI menampilkan panel/kartu jejak komunikasi agen secara *real-time* (menggunakan tipografi dan ikon vektor minimalis tanpa emoji dekoratif), sehingga pengguna dapat membuka dan melihat:
@@ -72,12 +79,12 @@ AIOS V1 menerapkan arsitektur **Site-Level Multi-Tenancy (`1 Client = 1 Site`)**
 
 Pengguna berinteraksi melalui dua permukaan aplikasi (pengguna klien tidak pernah diarahkan ke halaman Frappe Desk):
 
-| Karakteristik | Developer Control Plane (site developer) | Ekasa Desk (site klien) |
+| Karakteristik | Developer Control Plane (site developer) | Finto Desk / Ekasa Desk (site klien) |
 |---|---|---|
-| **Bentuk** | Dashboard operasional berbasis halaman | **Desktop OS** — boot, sign-in, taskbar, jendela, panel agent (`docs/08`) |
+| **Bentuk** | Dashboard operasional berbasis halaman | **Desktop OS** — desain default **Finto Desk / Finto OS** (maskot Fino) dan opsi klasik **Ekasa Desk** (`docs/08`) |
 | **Target Pengguna** | `AIOS Admin` — operator AIOS (bukan `Administrator`) | Pebisnis / Direktur / Staf Perusahaan Klien |
 | **Role & Tipe User Frappe** | Role `AIOS Admin` (`AIOS Admin Profile`, target `desk_access = 0`); hanya ada di site developer | Role `AIOS Client` (`AIOS Client Profile`, tipe `Website User` dengan `desk_access = 0`); tidak ada role `AIOS Admin` di site klien |
-| **Kewenangan Utama** | • Mendaftarkan & mem-provision *site* klien baru (registry `AIOS Managed Site`)<br>• Menyetujui pendaftaran mandiri & menerbitkan undangan pengguna (tautan set-password sekali pakai)<br>• Mengelola status (`aios_status`) `User` lintas site<br>• Memonitor pemakaian token & kesehatan site klien<br>• UI pengaturan Provider LLM, Model Routing, dan Plugin/MCP — data tetap tersimpan di site klien | • Bekerja di desktop: membuka modul Finance & Sales, melihat daftar dokumen dan kartu angka dari ERPNext<br>• Berdialog dengan agent di panel samping, dan membuka **Live Agent Trace** untuk melihat langkah, tool, dan hasilnya<br>• Membuka artefak (laporan, grafik, spreadsheet) sebagai jendela di desktop<br>• Menyetujui (**Approve**) atau menolak (**Reject**) draf transaksi bisnis sebelum masuk ke ERPNext |
+| **Kewenangan Utama** | • Mendaftarkan & mem-provision *site* klien baru (registry `AIOS Managed Site`)<br>• Menyetujui pendaftaran mandiri & menerbitkan undangan pengguna (tautan set-password sekali pakai)<br>• Mengelola status (`aios_status`) `User` lintas site<br>• Memonitor pemakaian token & kesehatan site klien<br>• UI pengaturan Provider LLM, Model Routing, dan Plugin/MCP — data tetap tersimpan di site klien | • Bekerja di desktop: membuka 17 modul di 4 bidang aktif (`Sales`, `Finance`, `Accounting`, `Purchasing`), melihat daftar dokumen dan kartu angka dari ERPNext<br>• Berdialog dengan agent per bidang di panel samping, dan membuka **Live Agent Trace** untuk melihat langkah, tool, dan hasilnya<br>• Membuka artefak (laporan, grafik, spreadsheet) sebagai jendela di desktop<br>• Menyetujui (**Approve**) atau menolak (**Reject**) draf transaksi bisnis (aksi aktif di `Sales` & `Finance`) sebelum masuk ke ERPNext |
 
 > **Peran Khusus `Administrator` (Root Frappe) & Pendaftaran Skema via Hooks:**
 > Akun `Administrator` bawaan Frappe digunakan untuk administrasi tingkat sistem/bench dan **tidak pernah dimodifikasi atau dibatasi** — di luar itu seluruh operasi harian dijalankan `AIOS Admin` dari Developer Control Plane. Jalur programatik ke *site* klien memakai role layanan **`AIOS Control`** (bukan `AIOS Admin`, bukan `Administrator`). Seluruh ekstensi skema AIOS pada DocType inti `User` (seperti `aios_persona`, `aios_status`, `aios_tokens_used`) serta pembuatan Role & Role Profile di-script secara otomatis di Python pada hook **`after_install` dan `after_migrate`** di `hooks.py` menggunakan fungsi resmi `create_custom_fields`.
