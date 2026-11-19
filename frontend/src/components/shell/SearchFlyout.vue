@@ -5,6 +5,7 @@ import { useChatStore } from '../../stores/chat';
 import { useModulesStore } from '../../stores/modules';
 import { useUiStore } from '../../stores/ui';
 import type { SearchResult } from '../../types';
+import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 
 const branches = useBranchesStore();
@@ -159,7 +160,7 @@ function ask(text: string) {
         <div class="sr-group">
           <h5>Tanyakan agent</h5>
           <button class="sr-item first" @click="ask(query)">
-            <span v-if="suggestedBranch" class="agent-dot" :data-branch="suggestedBranch.key">{{ suggestedBranch.name.charAt(0).toUpperCase() }}</span>
+            <AgentAvatar v-if="suggestedBranch" :branch-key="suggestedBranch.key" :name="suggestedBranch.name" />
             <span class="t">Tanya {{ suggestedAgentName }}: “{{ query }}”</span>
             <small>Enter</small>
           </button>

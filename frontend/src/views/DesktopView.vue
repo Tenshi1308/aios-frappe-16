@@ -7,6 +7,7 @@ import { useUiStore } from '../stores/ui';
 import { setWindowBounds, useWindowManager } from '../composables/useWindowManager';
 import { currentBrand } from '../utils/theme';
 import AgentPanel from '../components/agent/AgentPanel.vue';
+import AgentAvatar from '../components/base/AgentAvatar.vue';
 import AppIcon from '../components/base/AppIcon.vue';
 import Toasts from '../components/base/Toasts.vue';
 import SearchFlyout from '../components/shell/SearchFlyout.vue';
@@ -46,6 +47,7 @@ interface DeskIcon {
   id: string;
   label: string;
   icon: string;
+  domainKey?: string;
   colorToken?: string;
   neutral?: boolean;
   run: () => void;
@@ -55,6 +57,7 @@ const desktopIcons = computed<DeskIcon[]>(() => {
     id: `domain:${d.key}`,
     label: d.label,
     icon: d.icon || 'tag',
+    domainKey: d.key,
     colorToken: d.color_token,
     run: () => {
       void modules.openDomain(d.key);
@@ -126,7 +129,13 @@ function onKey(e: KeyboardEvent) {
             :class="{ neutral: d.neutral }"
             :style="d.colorToken ? { background: `var(--${d.colorToken})` } : undefined"
           >
-            <AppIcon :name="d.icon" :size="24" />
+            <AgentAvatar
+              v-if="isFintoBrand && d.domainKey"
+              :branch-key="d.domainKey"
+              :name="d.label"
+              size="lg"
+            />
+            <AppIcon v-else :name="d.icon" :size="24" />
           </span>
           <span>{{ d.label }}</span>
         </button>

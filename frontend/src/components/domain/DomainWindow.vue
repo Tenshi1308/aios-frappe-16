@@ -8,6 +8,7 @@ import type { DomainCard } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/format';
 import { currentBrand } from '../../utils/theme';
 import fintoAnalyzeDataImg from '../../assets/branding/finto-analyze-data-transparent.png';
+import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 
 const isFintoBrand = computed(() => currentBrand.value === 'finto');
@@ -28,9 +29,6 @@ const cards = computed<DomainCard[]>(() => entry.value?.cards ?? []);
 const domainModules = computed(() => entry.value?.modules ?? []);
 const branch = computed(() => branches.byKey(props.domainKey));
 const branchName = computed(() => branch.value?.name ?? meta.value?.label ?? props.domainKey);
-const branchInitial = computed(() =>
-  (branch.value?.name ?? meta.value?.label ?? props.domainKey).charAt(0).toUpperCase(),
-);
 const branchSuggestions = computed(() =>
   branch.value ? branches.suggestions(branch.value.key, 2) : [],
 );
@@ -140,7 +138,7 @@ onMounted(() => {
       </div>
 
       <div class="domain-ask">
-        <span class="agent-dot" :data-branch="branch?.key">{{ branchInitial }}</span>
+        <AgentAvatar :branch-key="branch?.key ?? props.domainKey" :name="branchName" />
         <div class="domain-ask-text">
           <b>{{ branchName }}</b> memahami bidang ini.
         </div>

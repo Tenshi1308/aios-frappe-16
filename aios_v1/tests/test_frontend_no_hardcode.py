@@ -29,7 +29,9 @@ TOKENS_CSS = DESK_SRC / "styles" / "tokens.css"
 THEME_TS = DESK_SRC / "utils" / "theme.ts"
 TYPES_TS = DESK_SRC / "types" / "index.ts"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
+ABOUT_WINDOW = WINDOWS_DIR / "AboutWindow.vue"
 BOOT_SCREEN = SHELL_DIR / "BootScreen.vue"
+SEARCH_FLYOUT = SHELL_DIR / "SearchFlyout.vue"
 WINDOW_HOST = SHELL_DIR / "WindowHost.vue"
 DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
 START_MENU = SHELL_DIR / "StartMenu.vue"
@@ -38,6 +40,7 @@ DESKTOP_VIEW = DESK_SRC / "views" / "DesktopView.vue"
 LOGIN_VIEW = DESK_SRC / "views" / "LoginView.vue"
 REGISTER_VIEW = DESK_SRC / "views" / "RegisterView.vue"
 PENDING_VIEW = DESK_SRC / "views" / "PendingView.vue"
+INDEX_HTML = REPO_ROOT / "frontend" / "index.html"
 STORES_DIR = DESK_SRC / "stores"
 CHAT_STORE = STORES_DIR / "chat.ts"
 
@@ -539,6 +542,37 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertIn("boot-bar", boot_src)
         self.assertIn("boot-pct", boot_src)
         self.assertIn("boot-log", boot_src)
+
+    def test_finto_brand_followup_avatars_and_titles(self):
+        """Follow-up B2: title Finto Desk di index.html, identitas brand-conditional, dan AgentAvatar di DomainWindow/SearchFlyout/DesktopView."""
+        index_src = INDEX_HTML.read_text(encoding="utf-8")
+        self.assertIn("<title>Finto Desk</title>", index_src)
+        self.assertNotIn("<title>Ekasa Desk</title>", index_src)
+
+        about_src = ABOUT_WINDOW.read_text(encoding="utf-8")
+        self.assertIn('v-if="isFintoBrand"', about_src)
+        self.assertIn('alt="Finto OS"', about_src)
+        self.assertLess(about_src.index('alt="Finto OS"'), about_src.index("Ekasa Desk"))
+
+        login_src = LOGIN_VIEW.read_text(encoding="utf-8")
+        self.assertIn('v-if="isFintoBrand"', login_src)
+        self.assertIn('alt="Finto OS"', login_src)
+        self.assertLess(login_src.index('alt="Finto OS"'), login_src.index("Ekasa Desk"))
+
+        domain_src = DOMAIN_WINDOW.read_text(encoding="utf-8")
+        self.assertIn("AgentAvatar", domain_src)
+        self.assertIn("<AgentAvatar", domain_src)
+        self.assertNotIn('class="agent-dot"', domain_src)
+
+        search_src = SEARCH_FLYOUT.read_text(encoding="utf-8")
+        self.assertIn("AgentAvatar", search_src)
+        self.assertIn("<AgentAvatar", search_src)
+        self.assertNotIn('class="agent-dot"', search_src)
+
+        desk_src = DESKTOP_VIEW.read_text(encoding="utf-8")
+        self.assertIn("AgentAvatar", desk_src)
+        self.assertIn("<AgentAvatar", desk_src)
+        self.assertIn("domainKey", desk_src)
 
 
 if __name__ == "__main__":
