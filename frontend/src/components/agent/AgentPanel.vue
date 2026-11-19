@@ -60,6 +60,8 @@ const headerMenuOpen = ref(false);
 
 // Menu tiga titik riwayat & aksi per percakapan
 const historyMenuOpen = ref(false);
+const sortMenuOpen = ref(false);
+const historyListCollapsed = ref(false);
 const activeConvMenuId = ref<string | null>(null);
 const renamingConvId = ref<string | null>(null);
 const renameDraft = ref('');
@@ -153,6 +155,9 @@ function onDocumentClick(e: MouseEvent) {
   }
   if (historyMenuOpen.value && !target?.closest('.ap-history-menu-wrap')) {
     historyMenuOpen.value = false;
+  }
+  if (sortMenuOpen.value && !target?.closest('.ap-sort-wrap')) {
+    sortMenuOpen.value = false;
   }
   if (activeConvMenuId.value && !target?.closest('.ap-conv-menu-wrap')) {
     activeConvMenuId.value = null;
@@ -330,6 +335,7 @@ async function toggleArchivedList() {
 
 async function changeSort(order: 'asc' | 'desc') {
   historyMenuOpen.value = false;
+  sortMenuOpen.value = false;
   if (!branchKey.value) return;
   await chat.setHistorySort(branchKey.value, order);
 }
@@ -628,53 +634,96 @@ async function onFilesPicked(e: Event) {
         </div>
 
         <div class="ap-history-head">
-          <b>{{ isArchivedView ? 'Percakapan diarsipkan' : 'Riwayat percakapan' }}</b>
-          <div class="ap-history-menu-wrap">
+          <div class="ap-history-sort-group">
+            <div class="ap-sort-wrap">
+              <button
+                type="button"
+                class="ap-sort-enum"
+                aria-label="Urutan percakapan"
+                :aria-expanded="sortMenuOpen"
+                @click.stop="sortMenuOpen = !sortMenuOpen"
+              >
+                <span>{{ historySort === 'asc' ? 'Terlama' : 'Terbaru' }}</span>
+                <AppIcon name="chevron-down" :size="13" />
+              </button>
+              <div v-if="sortMenuOpen" class="ap-popover-menu ap-sort-menu" @click.stop>
+                <button
+                  type="button"
+                  :class="{ active: historySort === 'desc' }"
+                  @click="changeSort('desc')"
+                >
+                  <span>Terbaru</span>
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: historySort === 'asc' }"
+                  @click="changeSort('asc')"
+                >
+                  <span>Terlama</span>
+                </button>
+              </div>
+            </div>
+            <button
+              type="button"
+              class="icon-btn ap-collapse-btn"
+              :aria-expanded="!historyListCollapsed"
+              :aria-label="historyListCollapsed ? 'Tampilkan daftar percakapan' : 'Lipat daftar percakapan'"
+              :title="historyListCollapsed ? 'Tampilkan daftar percakapan' : 'Lipat daftar percakapan'"
+              @click="historyListCollapsed = !historyListCollapsed"
+            >
+              <AppIcon :name="historyListCollapsed ? 'chevron-right' : 'chevron-down'" :size="14" />
+            </button>
+            <span v-if="isArchivedView" class="ap-archived-pill">Arsip</span>
+          </div>
+
+          <div class="ap-history-head-actions">
+            <div class="ap-history-menu-wrap" :class="{ open: historyMenuOpen }">
+              <button
+                type="button"
+                class="icon-btn ap-history-more-btn"
+                aria-label="Opsi daftar percakapan"
+                title="Opsi daftar percakapan"
+                @click.stop="historyMenuOpen = !historyMenuOpen"
+              >
+                <AppIcon name="more-vertical" :size="16" />
+              </button>
+              <div v-if="historyMenuOpen" class="ap-popover-menu" @click.stop>
+                <button
+                  type="button"
+                  :class="{ active: historySort === 'desc' }"
+                  @click="changeSort('desc')"
+                >
+                  <AppIcon name="arrow-up-down" :size="14" />
+                  <span>Terbaru</span>
+                </button>
+                <button
+                  type="button"
+                  :class="{ active: historySort === 'asc' }"
+                  @click="changeSort('asc')"
+                >
+                  <AppIcon name="arrow-up-down" :size="14" />
+                  <span>Terlama</span>
+                </button>
+                <div class="ap-menu-sep" />
+                <button type="button" @click="toggleArchivedList">
+                  <AppIcon name="archive" :size="14" />
+                  <span>{{ isArchivedView ? 'Kembali ke aktif' : 'Archived' }}</span>
+                </button>
+              </div>
+            </div>
             <button
               type="button"
               class="icon-btn"
-              aria-label="Opsi daftar percakapan"
-              title="Opsi daftar percakapan"
-              @click.stop="historyMenuOpen = !historyMenuOpen"
+              aria-label="Sembunyikan sidebar"
+              title="Sembunyikan sidebar"
+              @click="closeSidebarOrHistory"
             >
-              <AppIcon name="more-vertical" :size="16" />
+              <AppIcon name="sidebar" :size="16" />
             </button>
-            <div v-if="historyMenuOpen" class="ap-popover-menu" @click.stop>
-              <button type="button" @click="toggleArchivedList">
-                <AppIcon name="archive" :size="14" />
-                <span>{{ isArchivedView ? 'Kembali ke aktif' : 'Archived' }}</span>
-              </button>
-              <div class="ap-menu-sep" />
-              <button
-                type="button"
-                :class="{ active: historySort === 'desc' }"
-                @click="changeSort('desc')"
-              >
-                <AppIcon name="arrow-up-down" :size="14" />
-                <span>Urutkan: Terbaru</span>
-              </button>
-              <button
-                type="button"
-                :class="{ active: historySort === 'asc' }"
-                @click="changeSort('asc')"
-              >
-                <AppIcon name="arrow-up-down" :size="14" />
-                <span>Urutkan: Terlama</span>
-              </button>
-            </div>
           </div>
-          <button
-            type="button"
-            class="icon-btn"
-            aria-label="Tutup riwayat"
-            title="Tutup riwayat"
-            @click="closeSidebarOrHistory"
-          >
-            <AppIcon name="x" :size="16" />
-          </button>
         </div>
 
-        <div class="ap-history-list">
+        <div v-if="!historyListCollapsed" class="ap-history-list">
           <button
             v-if="!isArchivedView"
             type="button"

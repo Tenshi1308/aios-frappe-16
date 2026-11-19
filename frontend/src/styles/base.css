@@ -1855,19 +1855,80 @@ textarea {
   background: var(--surface-2);
 }
 .ap-tabs-sidebar {
-  flex-wrap: wrap;
-  padding: var(--space-10) var(--space-10) var(--space-8);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  padding: var(--space-10) var(--space-10) var(--space-12);
+  border-bottom: none;
+}
+.ap-tabs-sidebar button {
+  min-width: 0;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ap-history-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-6);
-  padding: var(--space-12) var(--space-10) var(--space-8) var(--space-14);
+  padding: var(--space-8) var(--space-10) var(--space-6) var(--space-12);
 }
-.ap-history-head b {
-  flex: 1;
+.ap-history-sort-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
   min-width: 0;
-  font-size: var(--fs-13-5);
+}
+.ap-sort-wrap {
+  position: relative;
+}
+.ap-sort-enum {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-6);
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-600);
+  color: var(--fg);
+}
+.ap-sort-enum:hover {
+  background: var(--hover);
+}
+.ap-sort-menu {
+  left: 0;
+  right: auto;
+  min-width: 124px;
+}
+.ap-collapse-btn {
+  width: 24px;
+  height: 24px;
+}
+.ap-archived-pill {
+  padding: var(--space-1) var(--space-6);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-size: var(--fs-10);
+  font-weight: var(--fw-600);
+}
+.ap-history-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.ap-history-more-btn {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-12) ease;
+}
+.ap-history-head:hover .ap-history-more-btn,
+.ap-history-head:focus-within .ap-history-more-btn,
+.ap-history-menu-wrap.open .ap-history-more-btn {
+  opacity: 1;
+  pointer-events: auto;
 }
 .ap-history-menu-wrap,
 .ap-conv-menu-wrap {
