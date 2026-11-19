@@ -250,14 +250,6 @@ function toggleSidebarOrHistory() {
   }
 }
 
-function closeSidebarOrHistory() {
-  if (isWideMode.value) {
-    ui.setAgentSidebarOpen(false);
-  } else if (branchKey.value) {
-    chat.historyOpen[branchKey.value] = false;
-  }
-}
-
 function startResize(e: PointerEvent) {
   if (ui.agentFullscreen || e.button !== 0) return;
   const el = e.currentTarget as HTMLElement;
@@ -530,12 +522,12 @@ async function onFilesPicked(e: Event) {
     <header class="ap-head">
       <div class="ap-title">
         <button
-          v-if="sidebarVisible"
+          v-if="!sidebarVisible"
           type="button"
           class="icon-btn ap-head-sidebar-btn"
-          aria-label="Sembunyikan sidebar"
-          title="Sembunyikan sidebar"
-          @click="closeSidebarOrHistory"
+          aria-label="Tampilkan sidebar"
+          title="Tampilkan sidebar"
+          @click="toggleSidebarOrHistory"
         >
           <AppIcon name="sidebar" :size="17" />
         </button>
@@ -632,6 +624,17 @@ async function onFilesPicked(e: Event) {
         :class="{ sidebar: isWideMode }"
         aria-label="Sidebar riwayat percakapan"
       >
+        <div class="ap-sidebar-top">
+          <button
+            type="button"
+            class="icon-btn ap-head-sidebar-btn"
+            aria-label="Sembunyikan sidebar"
+            title="Sembunyikan sidebar"
+            @click="toggleSidebarOrHistory"
+          >
+            <AppIcon name="sidebar" :size="17" />
+          </button>
+        </div>
         <div v-if="isWideMode" class="ap-tabs ap-tabs-sidebar" aria-label="Daftar agent">
           <button
             v-for="b in branches.branches"
