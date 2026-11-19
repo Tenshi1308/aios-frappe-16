@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { computed, watch } from 'vue';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { useChatStore } from '../../stores/chat';
+import { currentBrand } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
 import ApprovalCardWindow from '../windows/ApprovalCardWindow.vue';
@@ -18,6 +20,12 @@ const props = defineProps<{ narrow: boolean }>();
 const wm = useWindowManager();
 const chat = useChatStore();
 const activeId = wm.activeId;
+const aboutTitle = computed(() => (currentBrand.value === 'finto' ? 'Tentang Finto OS' : 'Tentang AIOS'));
+
+watch(aboutTitle, (nextTitle) => {
+  const aboutWin = wm.windows.find((w) => w.id === 'about');
+  if (aboutWin) aboutWin.title = nextTitle;
+});
 
 function artifactFileUrl(windowId: string) {
   const artifact = chat.artifactWindows[windowId.slice(9)];
@@ -25,7 +33,7 @@ function artifactFileUrl(windowId: string) {
 }
 
 function openAbout() {
-  wm.open('about', 'Tentang AIOS');
+  wm.open('about', aboutTitle.value);
 }
 
 defineExpose({ openAbout });

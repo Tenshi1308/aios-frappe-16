@@ -5,6 +5,7 @@ import { useModulesStore } from '../stores/modules';
 import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
 import { setWindowBounds, useWindowManager } from '../composables/useWindowManager';
+import { currentBrand } from '../utils/theme';
 import AgentPanel from '../components/agent/AgentPanel.vue';
 import AppIcon from '../components/base/AppIcon.vue';
 import Toasts from '../components/base/Toasts.vue';
@@ -40,6 +41,7 @@ function bounds() {
 }
 
 const selectedIcon = ref<string | null>(null);
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 interface DeskIcon {
   id: string;
   label: string;
@@ -63,7 +65,7 @@ const desktopIcons = computed<DeskIcon[]>(() => {
     { id: 'files', label: 'Files', icon: 'folder', neutral: true, run: () => wm.open('files', 'Files') },
     {
       id: 'about',
-      label: 'Tentang AIOS',
+      label: isFintoBrand.value ? 'Tentang Finto OS' : 'Tentang AIOS',
       icon: 'desk',
       neutral: true,
       run: () => windowHost.value?.openAbout(),

@@ -415,10 +415,10 @@ textarea {
   border-radius: var(--radius-20);
   background: var(--lock-card-bg, var(--glass));
   color: var(--lock-card-fg, var(--fg));
-  backdrop-filter: var(--glass-blur-sm);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
+  backdrop-filter: var(--lock-card-blur, var(--glass-blur-sm));
+  -webkit-backdrop-filter: var(--lock-card-blur, var(--glass-blur-sm));
   border: 1px solid var(--lock-card-line, var(--glass-line));
-  box-shadow: var(--shadow);
+  box-shadow: var(--lock-card-shadow, var(--shadow));
 }
 .lock-lockup {
   height: 48px;
@@ -454,6 +454,7 @@ textarea {
   background: var(--lock-field-bg, var(--surface));
   border: 1px solid var(--lock-field-line, var(--line));
   border-radius: var(--radius-10);
+  box-shadow: var(--lock-field-shadow, none);
   overflow: hidden;
 }
 .lock-field input,
@@ -465,6 +466,10 @@ textarea {
   padding: var(--space-11) var(--space-12);
   font: inherit;
   color: var(--lock-card-fg, var(--fg));
+}
+.lock-field input::placeholder {
+  color: var(--lock-card-muted, var(--muted));
+  opacity: 1;
 }
 .lock-field input:focus,
 .lock-field select:focus {
@@ -738,8 +743,8 @@ textarea {
   text-shadow: 0 1px 2px var(--desk-text-shadow, var(--glass));
 }
 .desk-icon:hover {
-  background: var(--tb-hover, var(--glass));
-  border-color: var(--tb-line, var(--glass-line));
+  background: var(--glass);
+  border-color: var(--glass-line);
 }
 .desk-icon.sel {
   background: var(--accent-soft);
@@ -890,13 +895,6 @@ textarea {
   height: 54px;
   object-fit: contain;
   margin-bottom: var(--space-6);
-}
-.ap-welcome-mascot {
-  width: 72px;
-  height: 72px;
-  object-fit: contain;
-  align-self: flex-start;
-  margin-bottom: var(--space-4);
 }
 .about-word {
   font-weight: var(--fw-800);
@@ -1182,6 +1180,16 @@ textarea {
   background: var(--hover);
   border-radius: var(--radius-window-foot);
   margin-top: var(--space-8);
+}
+.start-foot .tb-btn {
+  color: var(--fg);
+}
+.start-foot .tb-btn:hover,
+.start-foot .tb-btn.on {
+  background: var(--hover);
+}
+.start-foot .tb-btn:active {
+  background: var(--press);
 }
 .me {
   display: flex;

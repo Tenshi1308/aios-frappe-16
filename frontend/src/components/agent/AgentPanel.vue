@@ -8,15 +8,11 @@ import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { formatDurationMs, formatTokenCount } from '../../utils/format';
-import { currentBrand } from '../../utils/theme';
-import fintoWelcomeImg from '../../assets/branding/finto-welcome-transparent.png';
 import type { ArtifactEvent, ChatMessage, FileEntry } from '../../types';
 import AgentStep from './AgentStep.vue';
 import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
-
-const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
 const session = useSessionStore();
 const branches = useBranchesStore();
@@ -334,7 +330,6 @@ async function onFilesPicked(e: Event) {
         </details>
       </div>
       <div v-if="showGreeting" class="msg agent">
-        <img v-if="isFintoBrand" class="ap-welcome-mascot" :src="fintoWelcomeImg" alt="Fino" />
         <div class="msg-who">
           <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
           {{ branch?.name ?? 'Agent' }}

@@ -29,9 +29,14 @@ TOKENS_CSS = DESK_SRC / "styles" / "tokens.css"
 THEME_TS = DESK_SRC / "utils" / "theme.ts"
 TYPES_TS = DESK_SRC / "types" / "index.ts"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
+WINDOW_HOST = SHELL_DIR / "WindowHost.vue"
 DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
 START_MENU = SHELL_DIR / "StartMenu.vue"
+AGENT_PANEL = AGENT_DIR / "AgentPanel.vue"
 DESKTOP_VIEW = DESK_SRC / "views" / "DesktopView.vue"
+LOGIN_VIEW = DESK_SRC / "views" / "LoginView.vue"
+REGISTER_VIEW = DESK_SRC / "views" / "RegisterView.vue"
+PENDING_VIEW = DESK_SRC / "views" / "PendingView.vue"
 STORES_DIR = DESK_SRC / "stores"
 CHAT_STORE = STORES_DIR / "chat.ts"
 
@@ -115,6 +120,23 @@ def _extract_vue_template(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     match = re.search(r"<template>(.*)</template>", text, re.DOTALL)
     return match.group(1) if match else text
+
+
+def _extract_css_block(text: str, selector: str) -> str | None:
+    pattern = re.compile(re.escape(selector) + r"\s*\{")
+    match = pattern.search(text)
+    if not match:
+        return None
+    start = match.end() - 1
+    depth = 0
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[match.start() : i + 1]
+    return text[match.start() :]
 
 
 @unittest.skipUnless(DESK_SRC.exists(), "frontend/src belum tersedia")
@@ -346,6 +368,91 @@ class TestFrontendNoHardcode(unittest.TestCase):
         settings_src = SETTINGS_WINDOW.read_text(encoding="utf-8")
         self.assertIn("'Finto Desk'", settings_src)
         self.assertIn("'Ekasa Desk'", settings_src)
+
+    def test_finto_desktop_wallpaper_follows_color_mode(self):
+        """Wallpaper desktop Finto mengikuti Mode Warna (Light pastel, Dark navy), taskbar tetap navy."""
+        tokens_src = TOKENS_CSS.read_text(encoding="utf-8")
+        light_block = _extract_css_block(tokens_src, ":root[data-brand='finto']")
+        auto_dark_block = _extract_css_block(tokens_src, ":root[data-brand='finto']:not([data-theme='light'])")
+        dark_block = _extract_css_block(tokens_src, ":root[data-brand='finto'][data-theme='dark']")
+        self.assertIsNotNone(light_block)
+        self.assertIsNotNone(auto_dark_block)
+        self.assertIsNotNone(dark_block)
+
+        # Light Mode: desktop wallpaper pastel + teks desktop gelap, taskbar tetap navy
+        self.assertIn("--desk-wall-base: #e8f0fa;", light_block)
+        self.assertIn("--desk-fg: #0b1f3b;", light_block)
+        self.assertIn("--desk-muted: #64708a;", light_block)
+        self.assertIn("--tb-bg: rgba(11, 31, 59, 0.92);", light_block)
+        self.assertIn("--tb-fg: #f3f7fb;", light_block)
+
+        # Dark Mode (auto & explicit): desktop wallpaper navy + teks desktop terang
+        for block in (auto_dark_block, dark_block):
+            self.assertIn("--desk-wall-base: #06111f;", block)
+            self.assertIn("--desk-fg: #f3f7fb;", block)
+            self.assertIn("--desk-muted: #9fb3c8;", block)
+
+        # Token Ekasa tetap utuh
+        ekasa_root = _extract_css_block(tokens_src, ":root")
+        self.assertIsNotNone(ekasa_root)
+        self.assertIn("--wall-base: #dce6ea;", ekasa_root)
+
+    def test_lock_register_pending_use_liquid_glass_tokens(self):
+        """Kartu lock, register, dan pending memakai kelas & token Liquid Glass adaptif Light/Dark."""
+        for view_path in (LOGIN_VIEW, REGISTER_VIEW, PENDING_VIEW):
+            src = view_path.read_text(encoding="utf-8")
+            self.assertIn('class="lock wall"', src)
+            self.assertIn('class="lock-card"', src)
+
+        base_src = BASE_CSS.read_text(encoding="utf-8")
+        lock_card_css = _extract_css_block(base_src, ".lock-card")
+        self.assertIsNotNone(lock_card_css)
+        self.assertIn("var(--lock-card-bg", lock_card_css)
+        self.assertIn("var(--lock-card-line", lock_card_css)
+        self.assertIn("var(--lock-card-shadow", lock_card_css)
+        self.assertIn("backdrop-filter: var(--lock-card-blur", lock_card_css)
+
+        tokens_src = TOKENS_CSS.read_text(encoding="utf-8")
+        light_block = _extract_css_block(tokens_src, ":root[data-brand='finto']")
+        auto_dark_block = _extract_css_block(tokens_src, ":root[data-brand='finto']:not([data-theme='light'])")
+        dark_block = _extract_css_block(tokens_src, ":root[data-brand='finto'][data-theme='dark']")
+
+        # Tidak lagi kartu putih solid (0.94 / 0.95) maupun field putih solid (#ffffff)
+        for block in (light_block, auto_dark_block, dark_block):
+            self.assertNotIn("rgba(255, 255, 255, 0.94)", block)
+            self.assertNotIn("rgba(255, 255, 255, 0.95)", block)
+            self.assertNotIn("--lock-field-bg: #ffffff;", block)
+
+        # Light Mode kartu & field kaca terang, teks gelap
+        self.assertIn("--lock-card-fg: #0b1f3b;", light_block)
+        # Dark Mode kartu & field kaca gelap, teks terang
+        for block in (auto_dark_block, dark_block):
+            self.assertIn("--lock-card-fg: #f3f7fb;", block)
+            self.assertIn("--lock-card-bg:", block)
+            self.assertIn("--lock-field-bg:", block)
+
+    def test_about_title_and_desktop_icon_use_finto_os(self):
+        """Judul jendela Tentang dan ikon desktop memakai Tentang Finto OS saat brand finto."""
+        host_src = WINDOW_HOST.read_text(encoding="utf-8")
+        desk_src = DESKTOP_VIEW.read_text(encoding="utf-8")
+        self.assertIn("'Tentang Finto OS'", host_src)
+        self.assertIn("'Tentang Finto OS'", desk_src)
+
+    def test_agent_panel_greeting_uses_outfit_avatar_without_welcome_mascot(self):
+        """Sapaan AgentPanel memakai AgentAvatar outfit tanpa gambar finto-welcome-transparent.png."""
+        ap_src = AGENT_PANEL.read_text(encoding="utf-8")
+        self.assertNotIn("finto-welcome-transparent.png", ap_src)
+        self.assertNotIn("ap-welcome-mascot", ap_src)
+        self.assertIn("<AgentAvatar", ap_src)
+
+    def test_start_menu_footer_buttons_follow_color_mode(self):
+        """Ikon gear dan power di footer StartMenu mengikuti --fg, bukan putih tetap --tb-fg."""
+        start_src = START_MENU.read_text(encoding="utf-8")
+        base_src = BASE_CSS.read_text(encoding="utf-8")
+        self.assertIn("start-foot", start_src)
+        foot_btn_css = _extract_css_block(base_src, ".start-foot .tb-btn")
+        self.assertIsNotNone(foot_btn_css)
+        self.assertIn("color: var(--fg);", foot_btn_css)
 
 
 if __name__ == "__main__":
