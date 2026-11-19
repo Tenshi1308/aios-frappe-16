@@ -3,7 +3,7 @@
 Daftar tugas gaya Superpowers — menandai posisi kita sekarang. Peta analisis/keputusan ada di `peta-tampil-semua-modul.md` (dokumen acuan, stabil); file ini yang hidup (dicentang tiap selesai). Detail tiap tugas (nilai yang dipin, langkah 1–8) ada di plan (`rencana-lapis-a-superpowers.md`); file ini cermin checklist-nya supaya alur tiap fase kelihatan dari A sampai Z.
 
 ## 📍 POSISI SEKARANG
-Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit 362b51a (sudah push 18 Nov 16:34)). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit 5381790 (sudah push 18 Nov 16:34); dokumentasi disinkronisasi, commit 46a08a5).** Lapis A SELESAI PENUH 18 Nov 2026 (Task 5 Account + Task 6 Company, follow-up tombol tutup draf + persona Accounting + allowlist + perbaiki 4 tes + hand-off Opsi B, push 18 Nov 16:34 WIB, branch sinkron 0 tertinggal). **Plan Superpowers Fase 2 (Lapis B: Purchasing + branding Finto OS/Fino) ditulis Muse 19 Nov 2026 dari riset mendalam (SSH read-only repo HEAD 5af2a28 + field JSON ERPNext 16.34.2 terpasang) dan DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset.** File plan: `~/workspace/aios/rencana-lapis-b-superpowers.md` (masuk ke `docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md` lewat Task 4 plan). **Task 1 Lapis B (Purchase Order) SELESAI PENUH + terverifikasi live 19 Nov 11:26 WIB (commit 6af2318, lokal, belum push).** Berikutnya: Task 2 Purchase Receipt, satu-satu, setelah Ten bilang lanjut.
+Plan Superpowers Fase 1 DISETUJUI Ten (20:44). **Task 1 (Delivery Note) SELESAI PENUH + terverifikasi live oleh Ten (17 Nov 10:35 WIB, commit 7fbf92c, sudah push 17 Nov 12:54). Task 2 (Item Price) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:18 WIB, commit a17b0f1, sudah push). Task 3 (Journal Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 08:46 WIB, commit 362b51a (sudah push 18 Nov 16:34)). Task 4 (GL Entry) SELESAI PENUH + terverifikasi live oleh Ten (18 Nov 09:45 WIB, commit 5381790 (sudah push 18 Nov 16:34); dokumentasi disinkronisasi, commit 46a08a5).** Lapis A SELESAI PENUH 18 Nov 2026 (Task 5 Account + Task 6 Company, follow-up tombol tutup draf + persona Accounting + allowlist + perbaiki 4 tes + hand-off Opsi B, push 18 Nov 16:34 WIB, branch sinkron 0 tertinggal). **Plan Superpowers Fase 2 (Lapis B: Purchasing + branding Finto OS/Fino) ditulis Muse 19 Nov 2026 dari riset mendalam (SSH read-only repo HEAD 5af2a28 + field JSON ERPNext 16.34.2 terpasang) dan DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset.** File plan: `~/workspace/aios/rencana-lapis-b-superpowers.md` (masuk ke `docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md` lewat Task 4 plan). **Task 1 Lapis B (Purchase Order) SELESAI PENUH + terverifikasi live 19 Nov 11:26 WIB (commit 6af2318, lokal, belum push). Task 2 Lapis B (Purchase Receipt) SELESAI PENUH + terverifikasi live 19 Nov 12:18 WIB (commit 9831991, lokal, belum push).** Berikutnya: Task 3 Supplier Quotation, satu-satu, setelah Ten bilang lanjut.
 
 ## Fase 0 — Investigasi & peta (SELESAI)
 - [x] Peta tampil-semua-modul (`peta-tampil-semua-modul.md`)
@@ -109,7 +109,7 @@ Riset mendalam + plan Superpowers untuk fase ini dibuat SETELAH Fase 1 selesai (
 - [x] Riset mendalam selesai 19 Nov 2026 (SSH read-only repo HEAD `5af2a28` + field keempat DocType Purchasing dari JSON ERPNext 16.34.2 terpasang + jangkar kode + titik sentuh branding)
 - [x] Plan Superpowers ditulis 19 Nov 2026 (`~/workspace/aios/rencana-lapis-b-superpowers.md`) + self-review lawan spec — DISETUJUI Ten 19 Nov 08:46 WIB ("Oke baguss") sesudah disesuaikan dengan riset
 - [x] Task 1: Purchase Order → Purchasing (aktivasi bidang + allowlist + migrate dev) — SELESAI PENUH 19 Nov 2026 ✅
-- [ ] Task 2: Purchase Receipt → Purchasing
+- [x] Task 2: Purchase Receipt → Purchasing — SELESAI PENUH 19 Nov 2026 ✅
 - [ ] Task 3: Supplier Quotation → Purchasing
 - [ ] Task 4: Sinkronisasi dokumentasi Batch 1 (plan → `docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md`)
 - [ ] Task B1: Riset + usulan pemetaan branding (investigasi saja, tanpa ubah tampilan)
@@ -125,6 +125,16 @@ Riset mendalam + plan Superpowers untuk fase ini dibuat SETELAH Fase 1 selesai (
 - [x] Verifikasi live oleh Muse via browser Chrome Ten 19 Nov 11:26 WIB (4 bidang aktif urutan Sales, Finance, Accounting, Purchasing; kartu 0 / Rp 0; list PO kosong 0 baris; search "Tenshi" kosong)
 - [x] Commit 6af2318, lokal (belum push)
 - Catatan: migrate client1 disetujui Ten 11:19 WIB ("Boleh, sekarang aja"); bench restart 11:21 (Desk 200); browser device TIDAK bisa navigasi ke localhost sendiri (invalid_request) — Ten bukain tab-nya sendiri, kayak 18 Nov.
+
+### Task 2: Purchase Receipt → Purchasing — SELESAI PENUH ✅
+- [x] Draf investigasi ditulis Muse → dibaca Ten → dikirim ke Gemini (conversation 5f6aeb04, Hydrogen High)
+- [x] Investigasi Gemini + crosscheck Muse (19 Nov 11:44; hitung langsung client1: PO 0, PR 0, SQ 0; TEMUAN: assertion test_desktop_domains.py:312-316 + paritas cards mock belum disebut plan — dilipat ke draf implementasi)
+- [x] Draf implementasi ditulis Muse → dibaca Ten → dikirim ke Gemini (sesi yang sama 5f6aeb04, Hydrogen High, foreground)
+- [x] Implementasi Gemini + crosscheck Muse (commit 9831991; 6 file, +257/−6; 0 set_user baru; tes dijalankan ulang Muse 33/33, 8/8, 13/13 + full suite exit 0)
+- [x] Tes hijau (33/33, 8/8, 13/13 — Muse jalankan ulang sendiri; full suite terverifikasi Muse: exit 0, 202 OK, 2 skip)
+- [x] Verifikasi live oleh Muse via browser Chrome Ten 19 Nov 12:18 WIB (Purchasing 4 kartu KPI 0 / Rp 0; 2 modul; list PR kosong 0 baris; search "Tenshi" kosong)
+- [x] Commit 9831991, lokal (belum push)
+- Catatan: tanpa migrate di Task 2 (Custom DocPerm sudah terpasang sejak Task 1); bench restart 12:17 (Desk 200); tab lama masih terbuka, tidak perlu tab baru.
 
 ## Fase 3 — Bidang planned lain (BELUM DIMULAI)
 - [ ] Inventory, Manufacturing, Projects, CRM, Assets, Support, Quality (sesuai prioritas atasan)
