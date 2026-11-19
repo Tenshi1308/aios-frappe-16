@@ -506,7 +506,7 @@ async function onFilesPicked(e: Event) {
   <aside
     ref="panelEl"
     class="agent-panel"
-    :class="{ wide: isWideMode, fullscreen: ui.agentFullscreen }"
+    :class="{ wide: isWideMode, fullscreen: ui.agentFullscreen, 'sidebar-open': sidebarVisible }"
     :style="panelStyle"
     aria-label="AI agents"
   >

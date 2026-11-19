@@ -1401,9 +1401,13 @@ textarea {
   flex: none;
 }
 
-.agent-panel.wide .ap-title {
+.agent-panel.wide.sidebar-open .ap-title {
   flex: none;
   width: calc(260px - var(--space-16));
+}
+.agent-panel.wide:not(.sidebar-open) .ap-title,
+.agent-panel.wide:not(.sidebar-open) .ap-title > div {
+  flex: 0 1 auto;
 }
 
 .agent-panel.wide .ap-head-menu-wrap {
