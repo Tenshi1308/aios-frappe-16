@@ -4,6 +4,7 @@ import { useBranchesStore } from '../../stores/branches';
 import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
+import { currentBrand } from '../../utils/theme';
 import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 
@@ -17,6 +18,7 @@ onMounted(() => {
 });
 
 const powerOpen = ref(false);
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 const siteLabel = computed(() => session.context?.aios_company_name || 'AIOS');
 const roleLabel = computed(() => {
   const roles = session.context?.roles ?? [];
@@ -63,7 +65,13 @@ function openSettings() {
           @click="openDomain(d.key)"
         >
           <span class="tile lg" :style="{ background: `var(--${d.color_token})` }">
-            <AppIcon :name="d.icon || 'tag'" :size="20" />
+            <AgentAvatar
+              v-if="isFintoBrand && d.key"
+              :branch-key="d.key"
+              :name="d.label"
+              size="lg"
+            />
+            <AppIcon v-else :name="d.icon || 'tag'" :size="20" />
           </span>
           <span>{{ d.label }}</span>
         </button>
