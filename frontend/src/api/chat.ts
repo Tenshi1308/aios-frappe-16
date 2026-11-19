@@ -8,6 +8,7 @@ import type {
   ConversationReferral,
   DraftActionResult,
   DraftDetail,
+  DraftListStatus,
   FileEntry,
   FileArtifact,
   HandoffEvent,
@@ -35,7 +36,13 @@ export interface StreamHandlers {
 }
 
 interface RawConversationList {
-  conversations?: { id?: unknown; title?: unknown; updatedAt?: unknown }[];
+  conversations?: {
+    id?: unknown;
+    title?: unknown;
+    updatedAt?: unknown;
+    isPinned?: unknown;
+    isArchived?: unknown;
+  }[];
 }
 
 interface RawConversationDetail {
@@ -61,9 +68,15 @@ interface RawFileEntry {
   creation?: unknown;
 }
 
-export async function fetchConversations(branch: string): Promise<ConversationItem[]> {
+export async function fetchConversations(
+  branch: string,
+  opts: { archived?: boolean; sort?: 'asc' | 'desc' } = {},
+): Promise<ConversationItem[]> {
+  const params = new URLSearchParams({ branch });
+  if (opts.archived) params.set('archived', '1');
+  if (opts.sort) params.set('sort', opts.sort);
   const raw = unwrapMessage<RawConversationList>(
-    await apiFetch(`${CHAT_API}.list_conversations?branch=${encodeURIComponent(branch)}`),
+    await apiFetch(`${CHAT_API}.list_conversations?${params.toString()}`),
   );
   const list = raw?.conversations ?? [];
   return list
@@ -72,7 +85,76 @@ export async function fetchConversations(branch: string): Promise<ConversationIt
       id: String(c.id),
       title: typeof c.title === 'string' && c.title ? c.title : 'Percakapan',
       updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : '',
+      isPinned: Boolean(c.isPinned),
+      isArchived: Boolean(c.isArchived),
     }));
+}
+
+export async function renameConversation(
+  conversationId: string,
+  title: string,
+  csrfToken: string,
+): Promise<{ id: string; title: string }> {
+  const raw = unwrapMessage<{ id?: string; title?: string }>(
+    await apiFetch(`${CHAT_API}.rename_conversation`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ conversation_id: conversationId, title }),
+    }),
+  );
+  return { id: String(raw?.id ?? conversationId), title: String(raw?.title ?? title) };
+}
+
+export async function setConversationPin(
+  conversationId: string,
+  pinned: boolean,
+  csrfToken: string,
+): Promise<{ id: string; isPinned: boolean }> {
+  const raw = unwrapMessage<{ id?: string; isPinned?: boolean }>(
+    await apiFetch(`${CHAT_API}.set_conversation_pin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ conversation_id: conversationId, pinned }),
+    }),
+  );
+  return { id: String(raw?.id ?? conversationId), isPinned: Boolean(raw?.isPinned ?? pinned) };
+}
+
+export async function setConversationArchive(
+  conversationId: string,
+  archived: boolean,
+  csrfToken: string,
+): Promise<{ id: string; isArchived: boolean }> {
+  const raw = unwrapMessage<{ id?: string; isArchived?: boolean }>(
+    await apiFetch(`${CHAT_API}.set_conversation_archive`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+      body: JSON.stringify({ conversation_id: conversationId, archived }),
+    }),
+  );
+  return { id: String(raw?.id ?? conversationId), isArchived: Boolean(raw?.isArchived ?? archived) };
+}
+
+export async function deleteConversation(
+  conversationId: string,
+  csrfToken: string,
+): Promise<void> {
+  await apiFetch(`${CHAT_API}.delete_conversation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
+}
+
+export async function stopStream(
+  conversationId: string,
+  csrfToken: string,
+): Promise<void> {
+  await apiFetch(`${CHAT_API}.stop_stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+    body: JSON.stringify({ conversation_id: conversationId }),
+  });
 }
 
 function toFileEntry(row: RawFileEntry): FileEntry | null {
@@ -254,6 +336,7 @@ export async function streamChat(
   },
   csrfToken: string,
   handlers: StreamHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   let res: Response;
   try {
@@ -264,8 +347,15 @@ export async function streamChat(
       // `branch` ikut di body: `frappe.app.make_form_dict` untuk body JSON
       // tidak menggabungkan query string (frappe/app.py:363-382).
       body: JSON.stringify({ ...payload, branch }),
+      signal,
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err;
+    }
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
     throw new ApiError('Tidak dapat menghubungi server. Periksa koneksi.');
   }
   if (!res.ok) {
@@ -339,7 +429,7 @@ const DRAFT_API = '/api/method/aios_v1.lib.draft_manager';
 
 export async function fetchPendingDrafts(
   csrfToken: string,
-  status: 'PENDING_APPROVAL' | 'EXPIRED' = 'PENDING_APPROVAL',
+  status: DraftListStatus = 'PENDING_APPROVAL',
 ): Promise<PendingDraft[]> {
   const raw = unwrapMessage<PendingDraft[]>(
     await apiFetch(`${DRAFT_API}.list_pending_drafts?status=${encodeURIComponent(status)}`, {

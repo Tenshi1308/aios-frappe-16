@@ -4,15 +4,43 @@ import { useBranchesStore } from '../../stores/branches';
 import { useChatStore } from '../../stores/chat';
 import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
-import { useUiStore } from '../../stores/ui';
+import {
+  AGENT_PANEL_MAX_W,
+  AGENT_PANEL_MIN_W,
+  useUiStore,
+} from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { formatDurationMs, formatTokenCount } from '../../utils/format';
-import type { ArtifactEvent, ChatMessage, FileEntry } from '../../types';
+import type { ArtifactEvent, ChatMessage, ConversationItem, FileEntry } from '../../types';
 import AgentStep from './AgentStep.vue';
 import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
+
+interface SpeechRecognitionAlternativeLike {
+  transcript: string;
+}
+interface SpeechRecognitionResultLike {
+  isFinal: boolean;
+  0: SpeechRecognitionAlternativeLike;
+}
+interface SpeechRecognitionEventLike {
+  resultIndex: number;
+  results: ArrayLike<SpeechRecognitionResultLike>;
+}
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((ev: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((ev: { error?: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+const WIDE_SIDEBAR_BREAKPOINT = 640;
 
 const session = useSessionStore();
 const branches = useBranchesStore();
@@ -23,9 +51,37 @@ const ui = useUiStore();
 const draft = ref('');
 const fileInput = ref<HTMLInputElement | null>(null);
 const threadEl = ref<HTMLElement | null>(null);
+const panelEl = ref<HTMLElement | null>(null);
 const uploading = ref(false);
 const traceOpenId = ref<string | null>(null);
 const contextOpen = ref(false);
+
+// Menu tiga titik riwayat & aksi per percakapan
+const historyMenuOpen = ref(false);
+const activeConvMenuId = ref<string | null>(null);
+const renamingConvId = ref<string | null>(null);
+const renameDraft = ref('');
+const confirmingDeleteId = ref<string | null>(null);
+const convActionBusy = ref(false);
+
+// Dikte suara (Web Speech API)
+const listening = ref(false);
+let recognition: SpeechRecognitionLike | null = null;
+const SpeechRecognitionCtor =
+  typeof window !== 'undefined'
+    ? ((
+        window as unknown as {
+          SpeechRecognition?: new () => SpeechRecognitionLike;
+          webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+        }
+      ).SpeechRecognition ??
+      (
+        window as unknown as {
+          webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+        }
+      ).webkitSpeechRecognition)
+    : undefined;
+const voiceSupported = Boolean(SpeechRecognitionCtor);
 
 void branches.load();
 void chat.loadPendingDrafts();
@@ -40,10 +96,33 @@ const files = computed(() => chat.files(branchKey.value));
 const uploadPercent = computed(() => chat.uploadProgress[branchKey.value]);
 const suggestions = computed(() => branches.suggestions(branchKey.value));
 const conversations = computed(() => chat.conversations[branchKey.value] ?? []);
+const isArchivedView = computed(() => !!chat.historyArchived[branchKey.value]);
+const historySort = computed(() => chat.historySort[branchKey.value] ?? 'desc');
 const legacyFiles = computed(() => {
   const conversationId = chat.currentConversation[branchKey.value];
   return conversationId ? chat.legacyFiles[conversationId] ?? [] : [];
 });
+
+const isWideMode = computed(
+  () => ui.agentFullscreen || ui.agentWidth >= WIDE_SIDEBAR_BREAKPOINT,
+);
+const sidebarVisible = computed(() =>
+  isWideMode.value ? ui.agentSidebarOpen : !!chat.historyOpen[branchKey.value],
+);
+const panelStyle = computed(() => {
+  if (ui.agentFullscreen) return {};
+  return { width: `min(${ui.agentWidth}px, calc(100% - 20px))` };
+});
+
+watch(
+  () => [isWideMode.value, ui.agentSidebarOpen, branchKey.value] as const,
+  ([wide, open, key]) => {
+    if (wide && open && key && !chat.conversations[key] && !chat.historyLoading[key]) {
+      void chat.loadConversations(key);
+    }
+  },
+  { immediate: true },
+);
 
 const firstName = computed(() => session.firstName);
 const currentContext = computed(() => chat.contextFor(branchKey.value));
@@ -62,11 +141,16 @@ const segMessages = computed(() => {
 });
 
 function onDocumentClick(e: MouseEvent) {
-  if (contextOpen.value) {
-    const target = e.target as HTMLElement | null;
-    if (!target?.closest('.ap-context-wrap')) {
-      contextOpen.value = false;
-    }
+  const target = e.target as HTMLElement | null;
+  if (contextOpen.value && !target?.closest('.ap-context-wrap')) {
+    contextOpen.value = false;
+  }
+  if (historyMenuOpen.value && !target?.closest('.ap-history-menu-wrap')) {
+    historyMenuOpen.value = false;
+  }
+  if (activeConvMenuId.value && !target?.closest('.ap-conv-menu-wrap')) {
+    activeConvMenuId.value = null;
+    confirmingDeleteId.value = null;
   }
 }
 
@@ -87,18 +171,11 @@ function shortName(name: string) {
   return name.split(/\s+/)[0] ?? name;
 }
 
-function hasSummary(m: ChatMessage) {
-  return !!(m.steps?.length || m.tokens || m.durationMs);
-}
-
 function summaryText(m: ChatMessage) {
   const parts = [`${m.steps?.length ?? 0} langkah`, `${m.tokens ?? 0} token`];
   if (m.durationMs) parts.push(formatDurationMs(m.durationMs));
   return parts.join(' · ');
 }
-
-const lastStepsLength = computed(() => messages.value[messages.value.length - 1]?.steps?.length ?? 0);
-const lastArtifactsLength = computed(() => messages.value[messages.value.length - 1]?.artifacts?.length ?? 0);
 
 // Tick 1 detik untuk durasi live (header Working for + durasi item berjalan).
 const tick = ref(0);
@@ -112,6 +189,9 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('click', onDocumentClick);
   if (tickTimer) clearInterval(tickTimer);
+  if (recognition && listening.value) {
+    recognition.stop();
+  }
 });
 
 function stepDurationText(m: ChatMessage, i: number): string {
@@ -132,8 +212,184 @@ function openPendingDrafts() {
   useWindowManager().open('pending-drafts', 'Persetujuan Tertunda');
 }
 
-function openConversationSettings() {
-  void modules.openSettings('conversation');
+function toggleSidebarOrHistory() {
+  if (isWideMode.value) {
+    ui.toggleAgentSidebar();
+    if (ui.agentSidebarOpen && branchKey.value && !chat.conversations[branchKey.value]) {
+      void chat.loadConversations(branchKey.value);
+    }
+  } else {
+    chat.toggleHistory(branchKey.value);
+  }
+}
+
+function closeSidebarOrHistory() {
+  if (isWideMode.value) {
+    ui.setAgentSidebarOpen(false);
+  } else if (branchKey.value) {
+    chat.historyOpen[branchKey.value] = false;
+  }
+}
+
+function startResize(e: PointerEvent) {
+  if (ui.agentFullscreen || e.button !== 0) return;
+  const el = e.currentTarget as HTMLElement;
+  const startX = e.clientX;
+  const startW = panelEl.value?.getBoundingClientRect().width ?? ui.agentWidth;
+  const deskMax = panelEl.value?.parentElement
+    ? Math.max(AGENT_PANEL_MIN_W, panelEl.value.parentElement.clientWidth - 20)
+    : AGENT_PANEL_MAX_W;
+  const maxW = Math.min(AGENT_PANEL_MAX_W, deskMax);
+  el.setPointerCapture(e.pointerId);
+  const onMove = (ev: PointerEvent) => {
+    const nextW = Math.max(AGENT_PANEL_MIN_W, Math.min(maxW, startW - (ev.clientX - startX)));
+    ui.setAgentWidth(nextW);
+  };
+  const onUp = () => {
+    el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onUp);
+  };
+  el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+}
+
+function toggleVoiceDictation() {
+  if (!SpeechRecognitionCtor || streaming.value) return;
+  if (listening.value && recognition) {
+    recognition.stop();
+    listening.value = false;
+    return;
+  }
+  const rec = new SpeechRecognitionCtor();
+  rec.lang = 'id-ID';
+  rec.interimResults = false;
+  rec.continuous = false;
+  rec.onresult = (ev) => {
+    const chunks: string[] = [];
+    for (let i = ev.resultIndex; i < ev.results.length; i += 1) {
+      const res = ev.results[i];
+      if (res.isFinal && res[0]?.transcript) {
+        chunks.push(res[0].transcript.trim());
+      }
+    }
+    const spoken = chunks.join(' ').trim();
+    if (spoken) {
+      draft.value = draft.value.trim() ? `${draft.value.trimEnd()} ${spoken}` : spoken;
+    }
+  };
+  rec.onerror = (ev) => {
+    listening.value = false;
+    if (ev.error && ev.error !== 'aborted' && ev.error !== 'no-speech') {
+      ui.toast('Dikte suara gagal atau izin mikrofon ditolak.');
+    }
+  };
+  rec.onend = () => {
+    listening.value = false;
+  };
+  recognition = rec;
+  try {
+    rec.start();
+    listening.value = true;
+  } catch {
+    listening.value = false;
+    ui.toast('Tidak dapat memulai mikrofon.');
+  }
+}
+
+async function toggleArchivedList() {
+  historyMenuOpen.value = false;
+  if (!branchKey.value) return;
+  try {
+    await chat.setHistoryArchived(branchKey.value, !isArchivedView.value);
+  } catch (err) {
+    ui.toast(err instanceof Error ? err.message : 'Gagal memuat daftar percakapan.');
+  }
+}
+
+async function changeSort(order: 'asc' | 'desc') {
+  historyMenuOpen.value = false;
+  if (!branchKey.value) return;
+  try {
+    await chat.setHistorySort(branchKey.value, order);
+  } catch (err) {
+    ui.toast(err instanceof Error ? err.message : 'Gagal mengurutkan percakapan.');
+  }
+}
+
+function toggleConvMenu(convId: string) {
+  confirmingDeleteId.value = null;
+  activeConvMenuId.value = activeConvMenuId.value === convId ? null : convId;
+}
+
+function startRename(c: ConversationItem) {
+  activeConvMenuId.value = null;
+  renamingConvId.value = c.id;
+  renameDraft.value = c.title;
+}
+
+async function submitRename(convId: string) {
+  const nextTitle = renameDraft.value.trim();
+  if (!nextTitle || !branchKey.value || convActionBusy.value) return;
+  convActionBusy.value = true;
+  try {
+    await chat.renameConversation(branchKey.value, convId, nextTitle);
+    renamingConvId.value = null;
+  } catch (err) {
+    ui.toast(err instanceof Error ? err.message : 'Gagal mengganti nama percakapan.');
+  } finally {
+    convActionBusy.value = false;
+  }
+}
+
+async function togglePin(c: ConversationItem) {
+  activeConvMenuId.value = null;
+  if (!branchKey.value || convActionBusy.value) return;
+  convActionBusy.value = true;
+  try {
+    await chat.togglePinConversation(branchKey.value, c.id, !c.isPinned);
+  } catch (err) {
+    ui.toast(err instanceof Error ? err.message : 'Gagal menyematkan percakapan.');
+  } finally {
+    convActionBusy.value = false;
+  }
+}
+
+async function toggleArchive(c: ConversationItem) {
+  activeConvMenuId.value = null;
+  if (!branchKey.value || convActionBusy.value) return;
+  convActionBusy.value = true;
+  try {
+    await chat.toggleArchiveConversation(branchKey.value, c.id, !c.isArchived);
+  } catch (err) {
+    ui.toast(err instanceof Error ? err.message : 'Gagal mengarsipkan percakapan.');
+  } finally {
+    convActionBusy.value = false;
+  }
+}
+
+async function confirmDelete(convId: string) {
+  if (!branchKey.value || convActionBusy.value) return;
+  convActionBusy.value = true;
+  try {
+    await chat.deleteConversation(branchKey.value, convId);
+    confirmingDeleteId.value = null;
+    activeConvMenuId.value = null;
+  } catch (err) {
+    ui.toast(err instanceof Error ? err.message : 'Gagal menghapus percakapan.');
+  } finally {
+    convActionBusy.value = false;
+  }
+}
+
+function selectConversation(convId: string) {
+  if (!branchKey.value) return;
+  void chat.openConversation(branchKey.value, convId);
+  if (isWideMode.value) {
+    // Tetap biarkan sidebar terbuka di mode lebar agar navigasi cepat.
+    chat.historyOpen[branchKey.value] = false;
+  }
 }
 
 function confirmHandoff(m: ChatMessage) {
@@ -187,6 +443,9 @@ watch(
 function switchBranch(key: string) {
   branches.selectBranch(key);
   chat.historyOpen[key] = false;
+  if (isWideMode.value && ui.agentSidebarOpen && !chat.conversations[key]) {
+    void chat.loadConversations(key);
+  }
   void nextTick(() => {
     const el = threadEl.value;
     if (el) el.scrollTop = el.scrollHeight;
@@ -233,7 +492,22 @@ async function onFilesPicked(e: Event) {
 </script>
 
 <template>
-  <aside class="agent-panel" aria-label="AI agents">
+  <aside
+    ref="panelEl"
+    class="agent-panel"
+    :class="{ wide: isWideMode, fullscreen: ui.agentFullscreen }"
+    :style="panelStyle"
+    aria-label="AI agents"
+  >
+    <div
+      v-if="!ui.agentFullscreen"
+      class="ap-resize-handle"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Ubah lebar panel chat"
+      @pointerdown.stop="startResize"
+    />
+
     <header class="ap-head">
       <div class="ap-title">
         <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="lg" />
@@ -244,41 +518,47 @@ async function onFilesPicked(e: Event) {
         <div v-else><b>AI Agents</b><small>Memuat agent dari backend…</small></div>
       </div>
       <button
-        v-if="chat.pendingDrafts.length"
         class="icon-btn approvals"
-        :aria-label="`Persetujuan tertunda: ${chat.pendingDrafts.length}`"
-        title="Persetujuan tertunda"
+        :aria-label="
+          chat.pendingDrafts.length
+            ? `Persetujuan tertunda: ${chat.pendingDrafts.length}`
+            : chat.pendingDraftsError
+              ? 'Gagal memuat persetujuan tertunda'
+              : 'Daftar & riwayat draft'
+        "
+        :title="
+          chat.pendingDrafts.length
+            ? `Persetujuan tertunda (${chat.pendingDrafts.length})`
+            : 'Daftar & riwayat draft'
+        "
         @click="openPendingDrafts"
       >
         <AppIcon name="file" :size="18" />
-        <span class="badge">{{ chat.pendingDrafts.length }}</span>
-      </button>
-      <button
-        v-else-if="chat.pendingDraftsError"
-        class="icon-btn approvals"
-        aria-label="Gagal memuat persetujuan tertunda"
-        title="Gagal memuat persetujuan tertunda — klik untuk memeriksa"
-        @click="openPendingDrafts"
-      >
-        <AppIcon name="file" :size="18" />
-        <span class="badge">!</span>
-      </button>
-      <button class="icon-btn" aria-label="Riwayat percakapan" @click="chat.toggleHistory(branchKey)">
-        <AppIcon name="history" :size="18" />
+        <span v-if="chat.pendingDrafts.length" class="badge">{{ chat.pendingDrafts.length }}</span>
+        <span v-else-if="chat.pendingDraftsError" class="badge">!</span>
       </button>
       <button
         class="icon-btn"
-        aria-label="Pengaturan percakapan"
-        title="Pengaturan percakapan"
-        @click="openConversationSettings"
+        aria-label="Riwayat percakapan"
+        title="Riwayat percakapan"
+        @click="toggleSidebarOrHistory"
       >
-        <AppIcon name="gear" :size="18" />
+        <AppIcon name="list" :size="18" />
+      </button>
+      <button
+        class="icon-btn"
+        :aria-label="ui.agentFullscreen ? 'Kembalikan ukuran' : 'Layar penuh'"
+        :title="ui.agentFullscreen ? 'Kembalikan ukuran' : 'Layar penuh'"
+        @click="ui.toggleAgentFullscreen()"
+      >
+        <AppIcon :name="ui.agentFullscreen ? 'restore' : 'square'" :size="17" />
       </button>
       <button class="icon-btn" aria-label="Tutup panel agent" @click="ui.closeAgent()">
         <AppIcon name="x" :size="18" />
       </button>
     </header>
-    <nav class="ap-tabs" aria-label="Daftar agent">
+
+    <nav v-if="!isWideMode" class="ap-tabs" aria-label="Daftar agent">
       <button
         v-for="b in branches.branches"
         :key="b.key"
@@ -290,230 +570,423 @@ async function onFilesPicked(e: Event) {
       </button>
     </nav>
 
-    <div class="ap-history" v-if="chat.historyOpen[branchKey]">
-      <div class="ap-history-head">
-        <b>Riwayat percakapan</b>
-        <button class="icon-btn" aria-label="Tutup riwayat" @click="chat.toggleHistory(branchKey)">
-          <AppIcon name="x" :size="16" />
-        </button>
-      </div>
-      <div class="ap-history-list">
-        <button class="btn ghost wide" @click="chat.newConversation(branchKey)">
-          <AppIcon name="plus" :size="15" /> Percakapan baru
-        </button>
-        <button
-          v-for="c in conversations"
-          :key="c.id"
-          class="ap-history-item"
-          :class="{ on: c.id === chat.currentConversation[branchKey] }"
-          @click="chat.openConversation(branchKey, c.id)"
-        >
-          <b>{{ c.title }}</b>
-          <small>{{ fmtDate(c.updatedAt) }}</small>
-        </button>
-        <div v-if="!chat.historyLoading[branchKey] && !conversations.length" class="empty-note">
-          Belum ada percakapan di cabang ini.
-        </div>
-      </div>
-    </div>
-
-    <div ref="threadEl" class="ap-thread">
-      <div v-if="referral" class="ap-referral-banner" role="status">
-        <div class="ap-referral-head">
-          <AppIcon name="arrow-right" :size="13" />
-          <b>Dialihkan dari {{ referral.fromBranchName }}</b>
-        </div>
-        <small v-if="referral.reason">{{ referral.reason }}</small>
-        <details v-if="referral.summary" class="ap-referral-details">
-          <summary>Ringkasan konteks &amp; lampiran</summary>
-          <pre>{{ referral.summary }}</pre>
-        </details>
-      </div>
-      <div v-if="showGreeting" class="msg agent">
-        <div class="msg-who">
-          <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
-          {{ branch?.name ?? 'Agent' }}
-        </div>
-        <div class="bubble"><RichText :text="greeting" /></div>
-      </div>
-      <template v-for="m in messages" :key="m.id">
-        <div class="msg" :class="m.role">
-          <div v-if="m.role === 'agent'" class="msg-who">
-            <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
-            {{ branch?.name ?? 'Agent' }}
-          </div>
-          <div v-if="m.role === 'agent' && m.steps?.length" class="trace-block" :class="{ live: m.live }">
-            <button class="trace-head" @click="traceOpenId = traceOpenId === m.id ? null : m.id">
-              <span v-if="m.live" class="trace-live-dot" aria-hidden="true" />
-              <b v-if="m.live">{{ workingText(m) }}</b>
-              <template v-else>
-                <b>Langkah agent · {{ m.steps.length }}</b>
-                <span class="trace-summary">{{ summaryText(m) }}</span>
-              </template>
-              <span class="trace-toggle">{{ traceOpenId === m.id ? 'Sembunyikan' : 'Lihat detail' }}</span>
-            </button>
-            <div v-if="traceOpenId === m.id || m.live" class="trace-steps">
-              <AgentStep
-                v-for="(step, si) in m.steps"
-                :key="si"
-                :step="step"
-                :default-open="!!m.live && si === (m.steps?.length ?? 0) - 1"
-                :running="!!m.live && si === (m.steps?.length ?? 0) - 1"
-                :duration-text="stepDurationText(m, si)"
-              />
-            </div>
-          </div>
-          <div class="bubble"><RichText :text="m.text" /></div>
-          <div v-if="m.handoff" class="ap-handoff-card">
-            <div class="ap-handoff-info">
-              <b>Rujukan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</b>
-              <small v-if="m.handoff.reason">{{ m.handoff.reason }}</small>
-            </div>
-            <button
-              v-if="!m.handoffAccepted"
-              type="button"
-              class="ap-handoff-btn"
-              @click="confirmHandoff(m)"
-            >
-              <AppIcon name="arrow-right" :size="13" />
-              <span>Pindahkan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</span>
-            </button>
-            <span v-else class="ap-handoff-done">
-              <AppIcon name="check" :size="13" />
-              <span>Dialihkan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</span>
-            </span>
-          </div>
-          <div v-if="m.artifacts?.length" class="msg-artifacts">
-            <button
-              v-for="a in m.artifacts"
-              :key="a.type === 'FILE' ? (a.file_id || a.file_url) : a.draft_id"
-              class="msg-artifact"
-              type="button"
-              @click="openArtifactChip(a)"
-            >
-              <template v-if="a.type === 'FILE'">
-                <AppIcon name="file" :size="12" />
-                <span>{{ a.file_name }}</span>
-              </template>
-              <template v-else>{{ `Persetujuan ${a.action_type}` }}</template>
-            </button>
-          </div>
-        </div>
-      </template>
-      <div v-if="legacyFiles.length" class="msg legacy-files-entry">
-        <div class="legacy-files-heading">File lama dari percakapan ini; pesan asal tidak tercatat.</div>
-        <div class="legacy-file-list">
+    <div class="ap-body">
+      <aside
+        v-if="sidebarVisible"
+        class="ap-history"
+        :class="{ sidebar: isWideMode }"
+        aria-label="Sidebar riwayat percakapan"
+      >
+        <div v-if="isWideMode" class="ap-tabs ap-tabs-sidebar" aria-label="Daftar agent">
           <button
-            v-for="file in legacyFiles"
-            :key="file.file_id || file.file_url"
-            class="msg-artifact"
-            type="button"
-            @click="openConversationFile(file)"
+            v-for="b in branches.branches"
+            :key="b.key"
+            :class="{ on: b.key === branchKey }"
+            @click="switchBranch(b.key)"
           >
-            <AppIcon name="file" :size="12" />
-            <span>{{ file.file_name }}</span>
+            <AgentAvatar :branch-key="b.key" :name="b.name" size="xs" />
+            {{ shortName(b.name) }}
           </button>
         </div>
-      </div>
-      <div v-if="showTyping" class="msg agent">
-        <div class="bubble typing"><i /><i /><i /></div>
-      </div>
-    </div>
 
-    <div v-if="showGreeting && !streaming" class="ap-prompts">
-      <button v-for="p in suggestions" :key="p" class="chip" @click="send(p)">{{ p }}</button>
-    </div>
-
-    <div v-if="files.length || uploadPercent !== undefined" class="ap-files">
-      <div v-if="uploadPercent !== undefined" class="ap-file">
-        <AppIcon name="paperclip" :size="13" />
-        <span>Mengunggah… {{ uploadPercent }}%</span>
-        <span class="bar"><i :style="{ width: uploadPercent + '%' }" /></span>
-      </div>
-      <div v-for="f in files" :key="f.id" class="ap-file">
-        <AppIcon name="file" :size="13" />
-        <span>{{ f.file_name }}</span>
-        <button class="icon-btn" style="width: 20px; height: 20px" aria-label="Hapus lampiran" @click="chat.removeFile(branchKey, f.id)">
-          <AppIcon name="x" :size="12" />
-        </button>
-      </div>
-    </div>
-
-    <form class="ap-input" @submit.prevent="send()">
-      <textarea
-        id="agent-input"
-        v-model="draft"
-        rows="1"
-        :placeholder="'Kirim pesan ke ' + (branch?.name ?? 'agent')"
-        aria-label="Pesan"
-        @keydown.enter.exact.prevent="send()"
-      />
-      <button class="icon-btn" type="button" aria-label="Lampirkan berkas" :disabled="uploading" @click="pickFiles">
-        <AppIcon name="paperclip" :size="17" />
-      </button>
-      <input
-        ref="fileInput"
-        type="file"
-        :accept="UPLOAD_EXTENSIONS.map((e) => '.' + e).join(',')"
-        multiple
-        hidden
-        aria-hidden="true"
-        @change="onFilesPicked"
-      />
-      <button class="send" type="submit" :disabled="!canSend" aria-label="Kirim">
-        <AppIcon name="send" :size="16" />
-      </button>
-    </form>
-    <div class="ap-foot">
-      <span class="ap-foot-note">AIOS dapat keliru, periksa kembali info penting.</span>
-      <div v-if="currentContext" class="ap-context-wrap">
-        <button
-          type="button"
-          class="ap-context-pill"
-          :class="{
-            compacted: currentContext.compacted,
-            warn: currentContext.percent >= 75,
-          }"
-          :title="`Context: ${currentContext.percent}% (~${formatTokenCount(currentContext.total)} / ${formatTokenCount(currentContext.limit)})`"
-          :aria-expanded="contextOpen"
-          aria-label="Rincian penggunaan konteks AI Agent"
-          @click.stop="contextOpen = !contextOpen"
-        >
-          <span class="cp-ring" aria-hidden="true" />
-          <span class="cp-percent">{{ currentContext.percent }}%</span>
-          <span v-if="currentContext.compacted" class="cp-pill-tag">Compacted</span>
-        </button>
-
-        <div v-if="contextOpen" class="ap-context-popover" @click.stop>
-          <div class="cp-head">
-            <span class="cp-title">{{ currentContext.percent }}% of context used</span>
-            <span class="cp-ratio">~{{ formatTokenCount(currentContext.total) }} / {{ formatTokenCount(currentContext.limit) }}</span>
-          </div>
-          <div class="cp-bar" role="progressbar" :aria-valuenow="currentContext.percent" aria-valuemin="0" aria-valuemax="100">
-            <span class="seg seg-system" :style="{ width: `${segSystem}%` }" :title="`System: ~${formatTokenCount(currentContext.system)}`" />
-            <span class="seg seg-tools" :style="{ width: `${segTools}%` }" :title="`Tools: ~${formatTokenCount(currentContext.tools)}`" />
-            <span class="seg seg-messages" :style="{ width: `${segMessages}%` }" :title="`Messages: ~${formatTokenCount(currentContext.messages)}`" />
-          </div>
-          <div class="cp-breakdown">
-            <div class="cp-row">
-              <span class="cp-dot dot-system">■</span>
-              <span class="cp-label">System prompt</span>
-              <span class="cp-val">~{{ formatTokenCount(currentContext.system) }}</span>
-            </div>
-            <div class="cp-row">
-              <span class="cp-dot dot-tools">■</span>
-              <span class="cp-label">Tool definitions</span>
-              <span class="cp-val">~{{ formatTokenCount(currentContext.tools) }}</span>
-            </div>
-            <div class="cp-row">
-              <span class="cp-dot dot-messages">■</span>
-              <span class="cp-label">Messages</span>
-              <span class="cp-val">~{{ formatTokenCount(currentContext.messages) }}</span>
+        <div class="ap-history-head">
+          <b>{{ isArchivedView ? 'Percakapan diarsipkan' : 'Riwayat percakapan' }}</b>
+          <div class="ap-history-menu-wrap">
+            <button
+              type="button"
+              class="icon-btn"
+              aria-label="Opsi daftar percakapan"
+              title="Opsi daftar percakapan"
+              @click.stop="historyMenuOpen = !historyMenuOpen"
+            >
+              <AppIcon name="more-vertical" :size="16" />
+            </button>
+            <div v-if="historyMenuOpen" class="ap-popover-menu" @click.stop>
+              <button type="button" @click="toggleArchivedList">
+                <AppIcon name="archive" :size="14" />
+                <span>{{ isArchivedView ? 'Kembali ke aktif' : 'Archived' }}</span>
+              </button>
+              <div class="ap-menu-sep" />
+              <button
+                type="button"
+                :class="{ active: historySort === 'desc' }"
+                @click="changeSort('desc')"
+              >
+                <AppIcon name="arrow-up-down" :size="14" />
+                <span>Urutkan: Terbaru</span>
+              </button>
+              <button
+                type="button"
+                :class="{ active: historySort === 'asc' }"
+                @click="changeSort('asc')"
+              >
+                <AppIcon name="arrow-up-down" :size="14" />
+                <span>Urutkan: Terlama</span>
+              </button>
             </div>
           </div>
-          <div v-if="currentContext.compacted" class="cp-compacted-note">
-            <span class="cp-compacted-badge">Compacted</span>
-            <span>Memori bergulir aktif</span>
+          <button
+            type="button"
+            class="icon-btn"
+            aria-label="Tutup riwayat"
+            title="Tutup riwayat"
+            @click="closeSidebarOrHistory"
+          >
+            <AppIcon name="x" :size="16" />
+          </button>
+        </div>
+
+        <div class="ap-history-list">
+          <button
+            v-if="!isArchivedView"
+            type="button"
+            class="btn ghost wide"
+            @click="chat.newConversation(branchKey)"
+          >
+            <AppIcon name="plus" :size="15" /> Percakapan baru
+          </button>
+          <button
+            v-else
+            type="button"
+            class="btn ghost wide"
+            @click="toggleArchivedList"
+          >
+            <AppIcon name="chevron-left" :size="15" /> Kembali ke daftar aktif
+          </button>
+
+          <div
+            v-for="c in conversations"
+            :key="c.id"
+            class="ap-history-row"
+            :class="{ on: c.id === chat.currentConversation[branchKey] }"
+          >
+            <form
+              v-if="renamingConvId === c.id"
+              class="ap-rename-form"
+              @submit.prevent="submitRename(c.id)"
+            >
+              <input
+                v-model="renameDraft"
+                type="text"
+                class="ap-rename-input"
+                aria-label="Judul percakapan baru"
+                autofocus
+                @keydown.escape.prevent="renamingConvId = null"
+              />
+              <button type="submit" class="icon-btn" aria-label="Simpan nama" :disabled="convActionBusy">
+                <AppIcon name="check" :size="14" />
+              </button>
+              <button type="button" class="icon-btn" aria-label="Batal" @click="renamingConvId = null">
+                <AppIcon name="x" :size="14" />
+              </button>
+            </form>
+            <template v-else>
+              <button
+                type="button"
+                class="ap-history-item"
+                :class="{ on: c.id === chat.currentConversation[branchKey] }"
+                @click="selectConversation(c.id)"
+              >
+                <span class="ap-history-title-row">
+                  <AppIcon v-if="c.isPinned" name="pin" :size="12" class="ap-pin-icon" />
+                  <b>{{ c.title }}</b>
+                </span>
+                <small>{{ fmtDate(c.updatedAt) }}</small>
+              </button>
+              <div class="ap-conv-menu-wrap">
+                <button
+                  type="button"
+                  class="icon-btn ap-conv-more"
+                  aria-label="Menu percakapan"
+                  @click.stop="toggleConvMenu(c.id)"
+                >
+                  <AppIcon name="more-vertical" :size="14" />
+                </button>
+                <div v-if="activeConvMenuId === c.id" class="ap-popover-menu" @click.stop>
+                  <template v-if="confirmingDeleteId === c.id">
+                    <div class="ap-confirm-text">Hapus permanen?</div>
+                    <button
+                      type="button"
+                      class="danger"
+                      :disabled="convActionBusy"
+                      @click="confirmDelete(c.id)"
+                    >
+                      <AppIcon name="trash" :size="14" />
+                      <span>Konfirmasi Hapus</span>
+                    </button>
+                    <button type="button" @click="confirmingDeleteId = null">
+                      <AppIcon name="x" :size="14" />
+                      <span>Batal</span>
+                    </button>
+                  </template>
+                  <template v-else>
+                    <button type="button" :disabled="convActionBusy" @click="togglePin(c)">
+                      <AppIcon name="pin" :size="14" />
+                      <span>{{ c.isPinned ? 'Unpin' : 'Pin' }}</span>
+                    </button>
+                    <button type="button" :disabled="convActionBusy" @click="startRename(c)">
+                      <AppIcon name="edit" :size="14" />
+                      <span>Rename</span>
+                    </button>
+                    <button type="button" :disabled="convActionBusy" @click="toggleArchive(c)">
+                      <AppIcon name="archive" :size="14" />
+                      <span>{{ c.isArchived ? 'Unarchive' : 'Archive' }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="danger"
+                      :disabled="convActionBusy"
+                      @click="confirmingDeleteId = c.id"
+                    >
+                      <AppIcon name="trash" :size="14" />
+                      <span>Delete</span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <div v-if="!chat.historyLoading[branchKey] && !conversations.length" class="empty-note">
+            {{ isArchivedView ? 'Tidak ada percakapan diarsipkan.' : 'Belum ada percakapan di cabang ini.' }}
+          </div>
+        </div>
+      </aside>
+
+      <div class="ap-main">
+        <div ref="threadEl" class="ap-thread">
+          <div v-if="referral" class="ap-referral-banner" role="status">
+            <div class="ap-referral-head">
+              <AppIcon name="arrow-right" :size="13" />
+              <b>Dialihkan dari {{ referral.fromBranchName }}</b>
+            </div>
+            <small v-if="referral.reason">{{ referral.reason }}</small>
+            <details v-if="referral.summary" class="ap-referral-details">
+              <summary>Ringkasan konteks &amp; lampiran</summary>
+              <pre>{{ referral.summary }}</pre>
+            </details>
+          </div>
+          <div v-if="showGreeting" class="msg agent">
+            <div class="msg-who">
+              <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
+              {{ branch?.name ?? 'Agent' }}
+            </div>
+            <div class="bubble"><RichText :text="greeting" /></div>
+          </div>
+          <template v-for="m in messages" :key="m.id">
+            <div class="msg" :class="m.role">
+              <div v-if="m.role === 'agent'" class="msg-who">
+                <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
+                {{ branch?.name ?? 'Agent' }}
+              </div>
+              <div v-if="m.role === 'agent' && m.steps?.length" class="trace-block" :class="{ live: m.live }">
+                <button class="trace-head" @click="traceOpenId = traceOpenId === m.id ? null : m.id">
+                  <span v-if="m.live" class="trace-live-dot" aria-hidden="true" />
+                  <b v-if="m.live">{{ workingText(m) }}</b>
+                  <template v-else>
+                    <b>Langkah agent · {{ m.steps.length }}</b>
+                    <span class="trace-summary">{{ summaryText(m) }}</span>
+                  </template>
+                  <span class="trace-toggle">{{ traceOpenId === m.id ? 'Sembunyikan' : 'Lihat detail' }}</span>
+                </button>
+                <div v-if="traceOpenId === m.id || m.live" class="trace-steps">
+                  <AgentStep
+                    v-for="(step, si) in m.steps"
+                    :key="si"
+                    :step="step"
+                    :default-open="!!m.live && si === (m.steps?.length ?? 0) - 1"
+                    :running="!!m.live && si === (m.steps?.length ?? 0) - 1"
+                    :duration-text="stepDurationText(m, si)"
+                  />
+                </div>
+              </div>
+              <div class="bubble"><RichText :text="m.text || (m.stopped ? '[Respons dihentikan oleh pengguna]' : '')" /></div>
+              <div v-if="m.stopped" class="msg-stopped-tag">Dihentikan oleh pengguna</div>
+              <div v-if="m.handoff" class="ap-handoff-card">
+                <div class="ap-handoff-info">
+                  <b>Rujukan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</b>
+                  <small v-if="m.handoff.reason">{{ m.handoff.reason }}</small>
+                </div>
+                <button
+                  v-if="!m.handoffAccepted"
+                  type="button"
+                  class="ap-handoff-btn"
+                  @click="confirmHandoff(m)"
+                >
+                  <AppIcon name="arrow-right" :size="13" />
+                  <span>Pindahkan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</span>
+                </button>
+                <span v-else class="ap-handoff-done">
+                  <AppIcon name="check" :size="13" />
+                  <span>Dialihkan ke {{ m.handoff.to_branch_name || m.handoff.to_branch }}</span>
+                </span>
+              </div>
+              <div v-if="m.artifacts?.length" class="msg-artifacts">
+                <button
+                  v-for="a in m.artifacts"
+                  :key="a.type === 'FILE' ? (a.file_id || a.file_url) : a.draft_id"
+                  class="msg-artifact"
+                  type="button"
+                  @click="openArtifactChip(a)"
+                >
+                  <template v-if="a.type === 'FILE'">
+                    <AppIcon name="file" :size="12" />
+                    <span>{{ a.file_name }}</span>
+                  </template>
+                  <template v-else>{{ `Persetujuan ${a.action_type}` }}</template>
+                </button>
+              </div>
+            </div>
+          </template>
+          <div v-if="legacyFiles.length" class="msg legacy-files-entry">
+            <div class="legacy-files-heading">File lama dari percakapan ini; pesan asal tidak tercatat.</div>
+            <div class="legacy-file-list">
+              <button
+                v-for="file in legacyFiles"
+                :key="file.file_id || file.file_url"
+                class="msg-artifact"
+                type="button"
+                @click="openConversationFile(file)"
+              >
+                <AppIcon name="file" :size="12" />
+                <span>{{ file.file_name }}</span>
+              </button>
+            </div>
+          </div>
+          <div v-if="showTyping" class="msg agent">
+            <div class="bubble typing"><i /><i /><i /></div>
+          </div>
+        </div>
+
+        <div v-if="showGreeting && !streaming" class="ap-prompts">
+          <button v-for="p in suggestions" :key="p" class="chip" @click="send(p)">{{ p }}</button>
+        </div>
+
+        <div v-if="files.length || uploadPercent !== undefined" class="ap-files">
+          <div v-if="uploadPercent !== undefined" class="ap-file">
+            <AppIcon name="paperclip" :size="13" />
+            <span>Mengunggah… {{ uploadPercent }}%</span>
+            <span class="bar"><i :style="{ width: uploadPercent + '%' }" /></span>
+          </div>
+          <div v-for="f in files" :key="f.id" class="ap-file">
+            <AppIcon name="file" :size="13" />
+            <span>{{ f.file_name }}</span>
+            <button class="icon-btn" style="width: 20px; height: 20px" aria-label="Hapus lampiran" @click="chat.removeFile(branchKey, f.id)">
+              <AppIcon name="x" :size="12" />
+            </button>
+          </div>
+        </div>
+
+        <form class="ap-input" @submit.prevent="send()">
+          <textarea
+            id="agent-input"
+            v-model="draft"
+            rows="1"
+            :placeholder="'Kirim pesan ke ' + (branch?.name ?? 'agent')"
+            aria-label="Pesan"
+            @keydown.enter.exact.prevent="send()"
+          />
+          <button
+            class="icon-btn"
+            :class="{ listening }"
+            type="button"
+            :disabled="!voiceSupported || streaming"
+            :aria-label="
+              voiceSupported
+                ? listening
+                  ? 'Hentikan dikte suara'
+                  : 'Dikte suara'
+                : 'Dikte suara tidak didukung di browser ini'
+            "
+            :title="
+              voiceSupported
+                ? listening
+                  ? 'Hentikan dikte suara'
+                  : 'Dikte suara'
+                : 'Dikte suara tidak didukung di browser ini'
+            "
+            @click="toggleVoiceDictation"
+          >
+            <AppIcon :name="voiceSupported ? 'mic' : 'mic-off'" :size="17" />
+          </button>
+          <button class="icon-btn" type="button" aria-label="Lampirkan berkas" :disabled="uploading" @click="pickFiles">
+            <AppIcon name="paperclip" :size="17" />
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            :accept="UPLOAD_EXTENSIONS.map((e) => '.' + e).join(',')"
+            multiple
+            hidden
+            aria-hidden="true"
+            @change="onFilesPicked"
+          />
+          <button
+            v-if="streaming"
+            class="send stop"
+            type="button"
+            aria-label="Hentikan jawaban"
+            title="Hentikan jawaban"
+            @click="chat.stopStreaming(branchKey)"
+          >
+            <AppIcon name="stop" :size="16" />
+          </button>
+          <button v-else class="send" type="submit" :disabled="!canSend" aria-label="Kirim">
+            <AppIcon name="send" :size="16" />
+          </button>
+        </form>
+        <div class="ap-foot">
+          <span class="ap-foot-note">AIOS dapat keliru, periksa kembali info penting.</span>
+          <div v-if="currentContext" class="ap-context-wrap">
+            <button
+              type="button"
+              class="ap-context-pill"
+              :class="{
+                compacted: currentContext.compacted,
+                warn: currentContext.percent >= 75,
+              }"
+              :title="`Context: ${currentContext.percent}% (~${formatTokenCount(currentContext.total)} / ${formatTokenCount(currentContext.limit)})`"
+              :aria-expanded="contextOpen"
+              aria-label="Rincian penggunaan konteks AI Agent"
+              @click.stop="contextOpen = !contextOpen"
+            >
+              <span class="cp-ring" aria-hidden="true" />
+              <span class="cp-percent">{{ currentContext.percent }}%</span>
+              <span v-if="currentContext.compacted" class="cp-pill-tag">Compacted</span>
+            </button>
+
+            <div v-if="contextOpen" class="ap-context-popover" @click.stop>
+              <div class="cp-head">
+                <span class="cp-title">{{ currentContext.percent }}% of context used</span>
+                <span class="cp-ratio">~{{ formatTokenCount(currentContext.total) }} / {{ formatTokenCount(currentContext.limit) }}</span>
+              </div>
+              <div class="cp-bar" role="progressbar" :aria-valuenow="currentContext.percent" aria-valuemin="0" aria-valuemax="100">
+                <span class="seg seg-system" :style="{ width: `${segSystem}%` }" :title="`System: ~${formatTokenCount(currentContext.system)}`" />
+                <span class="seg seg-tools" :style="{ width: `${segTools}%` }" :title="`Tools: ~${formatTokenCount(currentContext.tools)}`" />
+                <span class="seg seg-messages" :style="{ width: `${segMessages}%` }" :title="`Messages: ~${formatTokenCount(currentContext.messages)}`" />
+              </div>
+              <div class="cp-breakdown">
+                <div class="cp-row">
+                  <span class="cp-dot dot-system">■</span>
+                  <span class="cp-label">System prompt</span>
+                  <span class="cp-val">~{{ formatTokenCount(currentContext.system) }}</span>
+                </div>
+                <div class="cp-row">
+                  <span class="cp-dot dot-tools">■</span>
+                  <span class="cp-label">Tool definitions</span>
+                  <span class="cp-val">~{{ formatTokenCount(currentContext.tools) }}</span>
+                </div>
+                <div class="cp-row">
+                  <span class="cp-dot dot-messages">■</span>
+                  <span class="cp-label">Messages</span>
+                  <span class="cp-val">~{{ formatTokenCount(currentContext.messages) }}</span>
+                </div>
+              </div>
+              <div v-if="currentContext.compacted" class="cp-compacted-note">
+                <span class="cp-compacted-badge">Compacted</span>
+                <span>Memori bergulir aktif</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

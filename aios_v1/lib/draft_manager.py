@@ -870,12 +870,22 @@ def list_pending_drafts(limit: int = 50, status: str | None = None) -> list:
     """Daftar draft milik pemanggil (owner-scoped), default status PENDING_APPROVAL, terbaru dulu.
 
     Detail isi draf diambil UI lewat `get_draft` — doctype/aksi ada di dalam
-    `payload` dan tidak di-expose di sini.
+    `payload` dan tidak di-expose di sini. Untuk status EXECUTED / HISTORY, hanya
+    `document_doctype` dan `document_name` hasil eksekusi yang diproyeksikan.
     """
-    allowed_statuses = {"PENDING_APPROVAL", "EXPIRED"}
+    allowed_statuses = {
+        "PENDING_APPROVAL",
+        "EXPIRED",
+        "APPROVED",
+        "EXECUTED",
+        "REJECTED",
+        "HISTORY",
+    }
     resolved_status = (status or "PENDING_APPROVAL").strip().upper()
     if resolved_status not in allowed_statuses:
-        frappe.throw("Status daftar draf hanya mendukung PENDING_APPROVAL atau EXPIRED.")
+        frappe.throw(
+            "Status daftar draf hanya mendukung PENDING_APPROVAL, EXPIRED, APPROVED, EXECUTED, REJECTED, atau HISTORY."
+        )
 
     try:
         limit = int(limit)
@@ -883,10 +893,16 @@ def list_pending_drafts(limit: int = 50, status: str | None = None) -> list:
         log_exception("AIOS Draft List Limit", exc=exc)
         limit = 50
     limit = max(1, min(limit, 100))
+
+    status_filter = (
+        ["in", ["APPROVED", "EXECUTED", "REJECTED"]]
+        if resolved_status == "HISTORY"
+        else resolved_status
+    )
     rows = frappe.get_all(
         "Pending Action Draft",
-        filters={"user": frappe.session.user, "status": resolved_status},
-        fields=["name", "type", "branch", "status", "expires_at", "creation"],
+        filters={"user": frappe.session.user, "status": status_filter},
+        fields=["name", "type", "branch", "status", "expires_at", "creation", "modified", "payload"],
         order_by="creation desc",
         limit_page_length=limit,
     )
@@ -894,6 +910,21 @@ def list_pending_drafts(limit: int = 50, status: str | None = None) -> list:
     for row in rows:
         expires_dt = get_datetime(row.get("expires_at")) if row.get("expires_at") else None
         row["expired"] = bool(expires_dt and expires_dt < now_dt)
+        raw_payload = row.pop("payload", None)
+        if row.get("status") == "EXECUTED" and isinstance(raw_payload, str) and raw_payload.strip():
+            try:
+                parsed = json.loads(raw_payload)
+            except (TypeError, ValueError) as exc:
+                log_exception("AIOS Draft List Result Payload", exc=exc)
+                parsed = None
+            result_obj = parsed.get("result") if isinstance(parsed, dict) else None
+            if isinstance(result_obj, dict):
+                doc_doctype = result_obj.get("doctype")
+                doc_name = result_obj.get("document") or result_obj.get("name") or result_obj.get("new_name")
+                if isinstance(doc_doctype, str) and doc_doctype:
+                    row["document_doctype"] = doc_doctype
+                if isinstance(doc_name, str) and doc_name:
+                    row["document_name"] = doc_name
     return rows
 
 

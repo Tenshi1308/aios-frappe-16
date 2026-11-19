@@ -1327,6 +1327,41 @@ textarea {
   animation: slideIn var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1);
   overflow: hidden;
 }
+.agent-panel.fullscreen {
+  top: 0;
+  right: 0;
+  left: 0;
+  bottom: 0;
+  width: auto;
+  border-radius: 0;
+  border-width: 0;
+}
+.ap-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: var(--z-raised);
+}
+.ap-resize-handle:hover {
+  background: var(--accent-soft);
+}
+.ap-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
+.ap-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
 @keyframes slideIn {
   from {
     opacity: 0;
@@ -1789,36 +1824,75 @@ textarea {
   backdrop-filter: var(--glass-blur-sm);
   -webkit-backdrop-filter: var(--glass-blur-sm);
 }
+.ap-history.sidebar {
+  position: static;
+  width: 260px;
+  flex: none;
+  border-right: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.ap-tabs-sidebar {
+  flex-wrap: wrap;
+  padding: var(--space-10) var(--space-10) var(--space-8);
+}
 .ap-history-head {
   display: flex;
   align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-14) var(--space-12) var(--space-10) var(--space-16);
+  gap: var(--space-6);
+  padding: var(--space-12) var(--space-10) var(--space-8) var(--space-14);
 }
 .ap-history-head b {
   flex: 1;
-  font-size: var(--fs-14);
+  min-width: 0;
+  font-size: var(--fs-13-5);
+}
+.ap-history-menu-wrap,
+.ap-conv-menu-wrap {
+  position: relative;
+  flex: none;
 }
 .ap-history-list {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-4) var(--space-12) var(--space-12);
+  padding: var(--space-4) var(--space-10) var(--space-12);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
+.ap-history-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border-radius: var(--radius-10);
+  border: 1px solid transparent;
+  padding-right: var(--space-4);
+}
+.ap-history-row:hover,
+.ap-history-row.on {
+  background: var(--hover);
+  border-color: var(--line);
+}
 .ap-history-item {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-9) var(--space-11);
+  padding: var(--space-8) var(--space-10);
   border-radius: var(--radius-10);
   text-align: left;
-  border: 1px solid transparent;
+  border: none;
+  background: transparent;
 }
-.ap-history-item:hover {
-  background: var(--hover);
-  border-color: var(--line);
+.ap-history-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.ap-pin-icon {
+  flex: none;
+  color: var(--accent);
 }
 .ap-history-item b {
   font-size: var(--fs-13);
@@ -1830,6 +1904,89 @@ textarea {
 .ap-history-item small {
   font-size: var(--fs-11-5);
   color: var(--muted);
+}
+.ap-conv-more {
+  width: 26px;
+  height: 26px;
+}
+.ap-popover-menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: var(--space-4);
+  min-width: 168px;
+  padding: var(--space-4);
+  border-radius: var(--radius-10);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  z-index: var(--z-flyout);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.ap-popover-menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-10);
+  border-radius: var(--radius-6);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-500);
+  text-align: left;
+  color: var(--fg);
+}
+.ap-popover-menu button:hover {
+  background: var(--hover);
+}
+.ap-popover-menu button.active {
+  background: var(--accent-soft);
+  font-weight: var(--fw-600);
+}
+.ap-popover-menu button.danger {
+  color: var(--bad);
+}
+.ap-menu-sep {
+  height: 1px;
+  background: var(--line);
+  margin: var(--space-2) 0;
+}
+.ap-confirm-text {
+  padding: var(--space-4) var(--space-10);
+  font-size: var(--fs-11-5);
+  font-weight: var(--fw-600);
+  color: var(--bad);
+}
+.ap-rename-form {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+}
+.ap-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-6);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: var(--fs-12);
+}
+.msg-stopped-tag {
+  font-size: var(--fs-11);
+  color: var(--muted);
+  font-style: italic;
+}
+.send.stop {
+  background: var(--bad);
+  color: var(--surface);
+}
+.icon-btn.listening {
+  background: var(--bad-soft);
+  color: var(--bad);
 }
 
 /* ---------- TOASTS ---------- */

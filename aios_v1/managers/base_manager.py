@@ -768,14 +768,30 @@ class BaseManager:
         usage_records = []
         created_file_ids = []
         failed = False
+        stopped = False
         last_finish_reason = ""
         tool_schemas = get_tools_schema_for_worker(self.branch.get("key"), worker_key or "manager", user=user)
+        stop_cache_key = f"aios:stream_stop:{user}:{conversation_id}"
+        try:
+            frappe.cache.delete_value(stop_cache_key)
+        except Exception as exc:
+            log_exception("AIOS Stream Stop Cache Clear", exc=exc)
+
+        def _is_stopped() -> bool:
+            try:
+                return bool(frappe.cache.get_value(stop_cache_key))
+            except Exception as exc:
+                log_exception("AIOS Stream Stop Cache Read", exc=exc)
+                return False
 
         def stream_llm_turn():
-            nonlocal full_reply, failed, last_finish_reason
+            nonlocal full_reply, failed, stopped, last_finish_reason
             turn_usage = {}
             turn_tool_calls = []
             for delta in chat_stream(llm_messages, usage=turn_usage, tools=tool_schemas, tool_calls=turn_tool_calls):
+                if _is_stopped():
+                    stopped = True
+                    break
                 full_reply += delta
                 yield f"data: {json.dumps({'type': 'delta', 'text': delta})}\n\n"
             failed = failed or bool(turn_usage.get("failed"))
@@ -792,159 +808,215 @@ class BaseManager:
             return turn_tool_calls
 
         context_limit, _ = get_context_window_settings()
-        for tool_round in range(MAX_TOOL_ROUNDS):
-            if tool_round >= 4:
-                llm_messages = prune_intra_turn_tool_results(llm_messages, context_limit)
-            tool_calls = yield from stream_llm_turn()
-            if failed or not tool_calls:
-                break
-            llm_messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
-            for call in tool_calls:
-                call_id = call.get("id") or ""
-                function = call.get("function") or {}
-                try:
-                    tool_name = function.get("name", "")
-                    if tool_name == "orchestrator_delegate_to_subagent":
-                        try:
-                            args = json.loads(function.get("arguments", "{}"))
-                        except (TypeError, ValueError) as exc:
-                            log_exception("AIOS Delegation Arguments", exc=exc)
-                            args = None
-                        if not isinstance(args, dict):
-                            result = json.dumps(safe_error("Argumen delegasi tidak valid.", "DELEGATION_INVALID"))
-                            llm_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-                            continue
-                        target_branch = args.get("branch")
-                        target_worker = args.get("worker_key")
-                        instruction = args.get("task_instruction")
-                        if (worker_def is not None or target_branch != self.branch.get("key")
-                                or not isinstance(instruction, str) or not instruction.strip()
-                                or not isinstance(args.get("context_data") or {}, dict)):
-                            result = json.dumps(safe_error("Delegasi tidak valid.", "DELEGATION_FORBIDDEN"))
-                        elif not is_branch_enabled(target_branch):
-                            result = json.dumps(safe_error("Cabang ini belum tersedia.", "BRANCH_DISABLED"))
-                        else:
-                            target_def = get_worker(target_branch, target_worker)
-                            if not target_def:
-                                # Worker tidak dikenal: kembalikan daftar worker valid agar
-                                # model bisa mengoreksi key, tanpa menjalankan runner yang
-                                # pasti gagal sebagai SUBAGENT_UNAVAILABLE.
-                                valid_workers = ", ".join(
-                                    worker["key"] for worker in self.branch.get("workers", [])
-                                )
-                                log_exception(
-                                    "AIOS Delegation Unknown Worker",
-                                    context=f"branch={target_branch}; worker={target_worker}",
-                                )
-                                result = json.dumps(safe_error(
-                                    f"Sub-agent '{target_worker}' tidak dikenal di cabang ini. "
-                                    f"Worker yang tersedia: {valid_workers}.",
-                                    "DELEGATION_INVALID",
-                                ))
-                            else:
-                                yield "data: " + json.dumps(trace_delegate_start(
-                                    target_branch, target_def["jobRole"], instruction[:500])) + "\n\n"
-                                result_holder = []
-                                runner = self._run_subagent(
-                                    target_def["key"], instruction, args.get("context_data") or {}, user,
-                                    usage_records, result_holder, conversation_id=conversation_id,
-                                    created_file_ids=created_file_ids)
-                                for trace_event in runner:
-                                    yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
-                                result = result_holder[0]
-                    else:
-                        # Trace tool Orchestrator (fase 2a, D1): pakai ulang
-                        # trace_subagent_tool dengan agent="Orchestrator";
-                        # cross_branch_consultation dikecualikan (sudah punya
-                        # trace_cross_branch sendiri).
-                        try:
-                            trace_args = json.loads(function.get("arguments") or "{}")
-                        except (TypeError, ValueError) as exc:
-                            log_exception("AIOS Orchestrator Trace Arguments", exc=exc)
-                            trace_args = {}
-                        if not isinstance(trace_args, dict):
-                            trace_args = {}
-                        if tool_name not in {"cross_branch_consultation", "handoff_to_branch", "open_module", "open_domain"}:
-                            yield "data: " + json.dumps(trace_subagent_tool(
-                                self.branch.get("key", ""), "Orchestrator", tool_name, trace_args,
-                            ), ensure_ascii=False) + "\n\n"
-                        tool_exec_context = {
-                            "user": user,
-                            "branch": self.branch.get("key"),
-                            "worker_key": worker_key or "manager",
-                            "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
-                            "conversation_id": str(conversation_id),
-                            "_created_file_ids": created_file_ids,
-                        }
-                        if tool_name == "cross_branch_consultation":
-                            tool_exec_context["_usage_records"] = usage_records
-                        result = execute_tool(
-                            tool_name,
-                            function.get("arguments", "{}"),
-                            context=tool_exec_context,
-                        )
-                        card_event = _approval_card_event(tool_name, result, self.branch.get("key", ""))
-                        if card_event is not None:
-                            yield "data: " + json.dumps(card_event, ensure_ascii=False) + "\n\n"
-                        open_module_event = _open_module_event(tool_name, result)
-                        if open_module_event is not None:
-                            yield "data: " + json.dumps(open_module_event, ensure_ascii=False) + "\n\n"
-                        open_domain_event = _open_domain_event(tool_name, result)
-                        if open_domain_event is not None:
-                            yield "data: " + json.dumps(open_domain_event, ensure_ascii=False) + "\n\n"
-                        handoff_event = _handoff_event(
-                            tool_name,
-                            result,
-                            user_message=user_message,
-                            user=user,
-                            conversation_id=conversation_id,
-                            attachments=attachments,
-                        )
-                        if handoff_event is not None:
-                            yield "data: " + json.dumps(handoff_event, ensure_ascii=False) + "\n\n"
-                        if worker_def is None and tool_name == "cross_branch_consultation":
+        try:
+            for tool_round in range(MAX_TOOL_ROUNDS):
+                if _is_stopped():
+                    stopped = True
+                    break
+                if tool_round >= 4:
+                    llm_messages = prune_intra_turn_tool_results(llm_messages, context_limit)
+                tool_calls = yield from stream_llm_turn()
+                if stopped or _is_stopped():
+                    stopped = True
+                    break
+                if failed or not tool_calls:
+                    break
+                llm_messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+                for call in tool_calls:
+                    if _is_stopped():
+                        stopped = True
+                        break
+                    call_id = call.get("id") or ""
+                    function = call.get("function") or {}
+                    try:
+                        tool_name = function.get("name", "")
+                        if tool_name == "orchestrator_delegate_to_subagent":
                             try:
-                                trace_args = json.loads(function.get("arguments", "{}"))
+                                args = json.loads(function.get("arguments", "{}"))
                             except (TypeError, ValueError) as exc:
-                                log_exception("AIOS Cross-Branch Trace Arguments", exc=exc)
+                                log_exception("AIOS Delegation Arguments", exc=exc)
+                                args = None
+                            if not isinstance(args, dict):
+                                result = json.dumps(safe_error("Argumen delegasi tidak valid.", "DELEGATION_INVALID"))
+                                llm_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                                continue
+                            target_branch = args.get("branch")
+                            target_worker = args.get("worker_key")
+                            instruction = args.get("task_instruction")
+                            if (worker_def is not None or target_branch != self.branch.get("key")
+                                    or not isinstance(instruction, str) or not instruction.strip()
+                                    or not isinstance(args.get("context_data") or {}, dict)):
+                                result = json.dumps(safe_error("Delegasi tidak valid.", "DELEGATION_FORBIDDEN"))
+                            elif not is_branch_enabled(target_branch):
+                                result = json.dumps(safe_error("Cabang ini belum tersedia.", "BRANCH_DISABLED"))
+                            else:
+                                target_def = get_worker(target_branch, target_worker)
+                                if not target_def:
+                                    # Worker tidak dikenal: kembalikan daftar worker valid agar
+                                    # model bisa mengoreksi key, tanpa menjalankan runner yang
+                                    # pasti gagal sebagai SUBAGENT_UNAVAILABLE.
+                                    valid_workers = ", ".join(
+                                        worker["key"] for worker in self.branch.get("workers", [])
+                                    )
+                                    log_exception(
+                                        "AIOS Delegation Unknown Worker",
+                                        context=f"branch={target_branch}; worker={target_worker}",
+                                    )
+                                    result = json.dumps(safe_error(
+                                        f"Sub-agent '{target_worker}' tidak dikenal di cabang ini. "
+                                        f"Worker yang tersedia: {valid_workers}.",
+                                        "DELEGATION_INVALID",
+                                    ))
+                                else:
+                                    yield "data: " + json.dumps(trace_delegate_start(
+                                        target_branch, target_def["jobRole"], instruction[:500])) + "\n\n"
+                                    result_holder = []
+                                    runner = self._run_subagent(
+                                        target_def["key"], instruction, args.get("context_data") or {}, user,
+                                        usage_records, result_holder, conversation_id=conversation_id,
+                                        created_file_ids=created_file_ids)
+                                    for trace_event in runner:
+                                        if _is_stopped():
+                                            stopped = True
+                                            break
+                                        yield "data: " + json.dumps(trace_event, ensure_ascii=False) + "\n\n"
+                                    if stopped or _is_stopped():
+                                        stopped = True
+                                        break
+                                    result = result_holder[0]
+                        else:
+                            # Trace tool Orchestrator (fase 2a, D1): pakai ulang
+                            # trace_subagent_tool dengan agent="Orchestrator";
+                            # cross_branch_consultation dikecualikan (sudah punya
+                            # trace_cross_branch sendiri).
+                            try:
+                                trace_args = json.loads(function.get("arguments") or "{}")
+                            except (TypeError, ValueError) as exc:
+                                log_exception("AIOS Orchestrator Trace Arguments", exc=exc)
                                 trace_args = {}
                             if not isinstance(trace_args, dict):
-                                log_exception("AIOS Cross-Branch Trace Arguments", context="JSON args bukan object.")
                                 trace_args = {}
-                            try:
-                                trace_result = json.loads(result)
-                            except (TypeError, ValueError) as exc:
-                                log_exception("AIOS Cross-Branch Trace Result", exc=exc)
-                                trace_result = {"status": "failed", "message": "Hasil konsultasi tidak valid."}
-                            if not isinstance(trace_result, dict):
-                                log_exception("AIOS Cross-Branch Trace Result", context="JSON result bukan object.")
-                                trace_result = {"status": "failed", "message": "Hasil konsultasi tidak valid."}
-                            event = trace_cross_branch(
-                                from_branch=self.branch.get("key"),
-                                to_branch=trace_args.get("to_branch", ""),
-                                payload=trace_args.get("payload", {}),
-                                result=trace_result,
+                            if tool_name not in {"cross_branch_consultation", "handoff_to_branch", "open_module", "open_domain"}:
+                                yield "data: " + json.dumps(trace_subagent_tool(
+                                    self.branch.get("key", ""), "Orchestrator", tool_name, trace_args,
+                                ), ensure_ascii=False) + "\n\n"
+                            tool_exec_context = {
+                                "user": user,
+                                "branch": self.branch.get("key"),
+                                "worker_key": worker_key or "manager",
+                                "delegation_depth": MAX_DELEGATION_DEPTH - 2 if worker_def is None else MAX_DELEGATION_DEPTH - 1,
+                                "conversation_id": str(conversation_id),
+                                "_created_file_ids": created_file_ids,
+                            }
+                            if tool_name == "cross_branch_consultation":
+                                tool_exec_context["_usage_records"] = usage_records
+                            result = execute_tool(
+                                tool_name,
+                                function.get("arguments", "{}"),
+                                context=tool_exec_context,
                             )
-                            yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
-                        file_event = _workspace_artifact_event(tool_name, result)
-                        if file_event is not None:
-                            yield "data: " + json.dumps(file_event, ensure_ascii=False) + "\n\n"
-                except ToolContextError as exc:
-                    log_exception("AIOS Tool Context", exc=exc)
-                    error = safe_error(TOOL_CONTEXT_ERROR_MESSAGE, "TOOL_CONTEXT_INVALID")
-                    message = error["error"]
-                    full_reply += message
-                    yield f"data: {json.dumps({'type': 'delta', 'text': message})}\n\n"
-                    failed = True
+                            # Tool call yang sedang berjalan selesai satu itu saja, lalu hasilnya dibuang bila distop.
+                            if _is_stopped():
+                                stopped = True
+                                break
+                            card_event = _approval_card_event(tool_name, result, self.branch.get("key", ""))
+                            if card_event is not None:
+                                yield "data: " + json.dumps(card_event, ensure_ascii=False) + "\n\n"
+                            open_module_event = _open_module_event(tool_name, result)
+                            if open_module_event is not None:
+                                yield "data: " + json.dumps(open_module_event, ensure_ascii=False) + "\n\n"
+                            open_domain_event = _open_domain_event(tool_name, result)
+                            if open_domain_event is not None:
+                                yield "data: " + json.dumps(open_domain_event, ensure_ascii=False) + "\n\n"
+                            handoff_event = _handoff_event(
+                                tool_name,
+                                result,
+                                user_message=user_message,
+                                user=user,
+                                conversation_id=conversation_id,
+                                attachments=attachments,
+                            )
+                            if handoff_event is not None:
+                                yield "data: " + json.dumps(handoff_event, ensure_ascii=False) + "\n\n"
+                            if worker_def is None and tool_name == "cross_branch_consultation":
+                                try:
+                                    trace_args = json.loads(function.get("arguments", "{}"))
+                                except (TypeError, ValueError) as exc:
+                                    log_exception("AIOS Cross-Branch Trace Arguments", exc=exc)
+                                    trace_args = {}
+                                if not isinstance(trace_args, dict):
+                                    log_exception("AIOS Cross-Branch Trace Arguments", context="JSON args bukan object.")
+                                    trace_args = {}
+                                try:
+                                    trace_result = json.loads(result)
+                                except (TypeError, ValueError) as exc:
+                                    log_exception("AIOS Cross-Branch Trace Result", exc=exc)
+                                    trace_result = {"status": "failed", "message": "Hasil konsultasi tidak valid."}
+                                if not isinstance(trace_result, dict):
+                                    log_exception("AIOS Cross-Branch Trace Result", context="JSON result bukan object.")
+                                    trace_result = {"status": "failed", "message": "Hasil konsultasi tidak valid."}
+                                event = trace_cross_branch(
+                                    from_branch=self.branch.get("key"),
+                                    to_branch=trace_args.get("to_branch", ""),
+                                    payload=trace_args.get("payload", {}),
+                                    result=trace_result,
+                                )
+                                yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
+                            file_event = _workspace_artifact_event(tool_name, result)
+                            if file_event is not None:
+                                yield "data: " + json.dumps(file_event, ensure_ascii=False) + "\n\n"
+                    except ToolContextError as exc:
+                        log_exception("AIOS Tool Context", exc=exc)
+                        error = safe_error(TOOL_CONTEXT_ERROR_MESSAGE, "TOOL_CONTEXT_INVALID")
+                        message = error["error"]
+                        full_reply += message
+                        yield f"data: {json.dumps({'type': 'delta', 'text': message})}\n\n"
+                        failed = True
+                        break
+                    llm_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+                if stopped or failed:
                     break
-                llm_messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
-            if failed:
-                break
-            if tool_round == MAX_TOOL_ROUNDS - 1:
-                log_exception("AIOS Tool Loop Limit", context=f"Batas {MAX_TOOL_ROUNDS} putaran tool tercapai.")
-                full_reply += MAX_TOOL_ROUNDS_MESSAGE
-                yield f"data: {json.dumps({'type': 'delta', 'text': MAX_TOOL_ROUNDS_MESSAGE})}\n\n"
-                break
+                if tool_round == MAX_TOOL_ROUNDS - 1:
+                    log_exception("AIOS Tool Loop Limit", context=f"Batas {MAX_TOOL_ROUNDS} putaran tool tercapai.")
+                    full_reply += MAX_TOOL_ROUNDS_MESSAGE
+                    yield f"data: {json.dumps({'type': 'delta', 'text': MAX_TOOL_ROUNDS_MESSAGE})}\n\n"
+                    break
+        except GeneratorExit:
+            log_exception("AIOS Stream Client Disconnected", context=f"conversation={conversation_id}")
+            stopped = True
+        finally:
+            try:
+                frappe.cache.delete_value(stop_cache_key)
+            except Exception as exc:
+                log_exception("AIOS Stream Stop Cache Cleanup", exc=exc)
+
+        if stopped:
+            stopped_reply = (
+                f"{full_reply.rstrip()}\n\n[Dihentikan oleh pengguna]"
+                if full_reply.strip()
+                else "[Respons dihentikan oleh pengguna]"
+            )
+            est_output_tokens = max(1, int(len(stopped_reply) / 3.8))
+            input_tokens = int(accumulated_usage["prompt_tokens"] or est_input_tokens)
+            output_tokens = int(accumulated_usage["completion_tokens"] or est_output_tokens)
+            total_tokens = int(accumulated_usage["total_tokens"] or input_tokens + output_tokens)
+            asst_msg_doc = frappe.new_doc("AIOS Message")
+            asst_msg_doc.conversation = str(conversation_id)
+            asst_msg_doc.role = "manager" if not worker_def else "worker"
+            asst_msg_doc.worker_key = worker_key or "manager"
+            asst_msg_doc.content = stopped_reply
+            asst_msg_doc.output_tokens = output_tokens
+            asst_msg_doc.insert(ignore_permissions=True)
+            usage_records.append({
+                "provider": accumulated_usage.get("provider") or "",
+                "model": accumulated_usage.get("model") or "",
+                "branch": self.branch.get("key") or "",
+                "agent": worker_key or "manager", "input_tokens": input_tokens,
+                "output_tokens": output_tokens, "total_tokens": total_tokens,
+            })
+            record_token_usage_batch(user, usage_records)
+            frappe.db.commit()
+            return
 
         # Penanda jujur bila jawaban akhir berhenti karena batas output model,
         # bukan karena model selesai (finish_reason == "length" pada turn terakhir).

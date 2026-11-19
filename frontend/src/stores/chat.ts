@@ -3,11 +3,16 @@ import {
   approveDraft,
   closeDraft,
   confirmDraftCashPayment,
+  deleteConversation as deleteConversationApi,
   fetchConversationMessages,
   fetchConversations,
   fetchMyFiles,
   fetchPendingDrafts,
   rejectDraft,
+  renameConversation as renameConversationApi,
+  setConversationArchive as setConversationArchiveApi,
+  setConversationPin as setConversationPinApi,
+  stopStream as stopStreamApi,
   streamChat,
   uploadAttachment,
 } from '../api/chat';
@@ -30,6 +35,9 @@ import type {
 } from '../types';
 import { useWindowManager } from '../composables/useWindowManager';
 
+const streamControllers = new Map<string, AbortController>();
+const stoppedBranches = new Set<string>();
+
 function newMessageId(): string {
   const rnd = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : '';
   return rnd || `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -50,12 +58,17 @@ export const useChatStore = defineStore('chat', {
     streaming: {} as Record<string, boolean>,
     historyOpen: {} as Record<string, boolean>,
     historyLoading: {} as Record<string, boolean>,
+    historyArchived: {} as Record<string, boolean>,
+    historySort: {} as Record<string, 'asc' | 'desc'>,
     pendingDrafts: [] as PendingDraft[],
     pendingDraftsLoading: false,
     pendingDraftsError: '',
     expiredDrafts: [] as PendingDraft[],
     expiredDraftsLoading: false,
     expiredDraftsError: '',
+    historyDrafts: [] as PendingDraft[],
+    historyDraftsLoading: false,
+    historyDraftsError: '',
     contextUsage: {} as Record<string, ContextUsageStats | null>,
     referrals: {} as Record<string, ConversationReferral | null>,
     /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
@@ -88,6 +101,31 @@ export const useChatStore = defineStore('chat', {
     },
     async loadPendingDrafts(status: DraftListStatus = 'PENDING_APPROVAL') {
       const session = useSessionStore();
+      if (status === 'HISTORY') {
+        this.historyDraftsLoading = true;
+        this.historyDraftsError = '';
+        try {
+          this.historyDrafts = await fetchPendingDrafts(session.csrfToken, 'HISTORY');
+        } catch (err) {
+          this.historyDrafts = [];
+          this.historyDraftsError = 'Daftar riwayat draft tidak dapat dimuat.';
+          const msg =
+            err instanceof Error && err.message.trim()
+              ? err.message
+              : 'Daftar riwayat draft tidak dapat dimuat.';
+          void reportClientError(
+            {
+              message: msg,
+              context: 'loadPendingDrafts:HISTORY',
+              stack: err instanceof Error ? (err.stack ?? '') : '',
+            },
+            session.csrfToken,
+          );
+        } finally {
+          this.historyDraftsLoading = false;
+        }
+        return;
+      }
       if (status === 'EXPIRED') {
         this.expiredDraftsLoading = true;
         this.expiredDraftsError = '';
@@ -162,10 +200,74 @@ export const useChatStore = defineStore('chat', {
     async loadConversations(branch: string) {
       this.historyLoading[branch] = true;
       try {
-        this.conversations[branch] = await fetchConversations(branch);
+        this.conversations[branch] = await fetchConversations(branch, {
+          archived: !!this.historyArchived[branch],
+          sort: this.historySort[branch] ?? 'desc',
+        });
       } finally {
         this.historyLoading[branch] = false;
       }
+    },
+    async setHistoryArchived(branch: string, archived: boolean) {
+      this.historyArchived[branch] = archived;
+      await this.loadConversations(branch);
+    },
+    async setHistorySort(branch: string, sort: 'asc' | 'desc') {
+      this.historySort[branch] = sort;
+      await this.loadConversations(branch);
+    },
+    async renameConversation(branch: string, conversationId: string, title: string) {
+      const session = useSessionStore();
+      const updated = await renameConversationApi(conversationId, title, session.csrfToken);
+      const list = this.conversations[branch] ?? [];
+      this.conversations[branch] = list.map((c) =>
+        c.id === conversationId ? { ...c, title: updated.title } : c,
+      );
+    },
+    async togglePinConversation(branch: string, conversationId: string, pinned: boolean) {
+      const session = useSessionStore();
+      await setConversationPinApi(conversationId, pinned, session.csrfToken);
+      await this.loadConversations(branch);
+    },
+    async toggleArchiveConversation(branch: string, conversationId: string, archived: boolean) {
+      const session = useSessionStore();
+      await setConversationArchiveApi(conversationId, archived, session.csrfToken);
+      if (archived && this.currentConversation[branch] === conversationId) {
+        this.newConversation(branch);
+      }
+      await this.loadConversations(branch);
+    },
+    async deleteConversation(branch: string, conversationId: string) {
+      const session = useSessionStore();
+      await deleteConversationApi(conversationId, session.csrfToken);
+      delete this.threads[conversationId];
+      delete this.legacyFiles[conversationId];
+      delete this.contextUsage[conversationId];
+      delete this.referrals[conversationId];
+      if (this.currentConversation[branch] === conversationId) {
+        this.newConversation(branch);
+      }
+      await this.loadConversations(branch);
+    },
+    stopStreaming(branch: string) {
+      const session = useSessionStore();
+      const controller = streamControllers.get(branch);
+      if (!controller) return;
+      stoppedBranches.add(branch);
+      const conversationId = this.currentConversation[branch];
+      if (conversationId) {
+        void stopStreamApi(conversationId, session.csrfToken).catch((err) => {
+          void reportClientError(
+            {
+              message: err instanceof Error ? err.message : 'Gagal mengirim sinyal stop stream.',
+              context: 'stopStreaming',
+              stack: err instanceof Error ? (err.stack ?? '') : '',
+            },
+            session.csrfToken,
+          );
+        });
+      }
+      controller.abort();
     },
     async loadMyFiles() {
       this.myFilesLoading = true;
@@ -352,6 +454,10 @@ export const useChatStore = defineStore('chat', {
           turnDraftIds.push(artifact.draft_id);
         }
       };
+      const controller = new AbortController();
+      streamControllers.set(branch, controller);
+      stoppedBranches.delete(branch);
+      let wasStopped = false;
       try {
         await streamChat(
           branch,
@@ -442,28 +548,47 @@ export const useChatStore = defineStore('chat', {
               }
             },
           },
+          controller.signal,
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Pesan gagal terkirim.';
-        const list = this.threads[threadKey];
-        if (list && list[index] && !list[index].text) {
-          list[index] = { ...list[index], live: false, text: message };
+        const isAbort =
+          stoppedBranches.has(branch) ||
+          (err instanceof DOMException && err.name === 'AbortError') ||
+          (err instanceof Error && err.name === 'AbortError');
+        if (isAbort) {
+          wasStopped = true;
+          const list = this.threads[threadKey];
+          if (list && list[index]) {
+            list[index] = { ...list[index], live: false, stopped: true };
+          }
         } else {
-          this.threads[threadKey] = [...(list ?? []), { id: newMessageId(), role: 'agent', text: message }];
+          const message = err instanceof Error ? err.message : 'Pesan gagal terkirim.';
+          const list = this.threads[threadKey];
+          if (list && list[index] && !list[index].text) {
+            list[index] = { ...list[index], live: false, text: message };
+          } else {
+            this.threads[threadKey] = [...(list ?? []), { id: newMessageId(), role: 'agent', text: message }];
+          }
         }
       } finally {
+        streamControllers.delete(branch);
+        stoppedBranches.delete(branch);
         // Stream selesai tanpa satu pun delta: jangan biarkan bubble kosong
-        // senyap — tampilkan pesan aman yang jujur.
+        // senyap — tampilkan pesan aman yang jujur (kecuali dihentikan user).
         const list = this.threads[threadKey];
         const finalHandoff = handoffHolder.event;
-        if (list && list[index] && !list[index].text) {
+        if (list && list[index] && !list[index].text && !wasStopped) {
           const fallbackText = finalHandoff
             ? `Permintaan dialihkan ke ${finalHandoff.to_branch_name || finalHandoff.to_branch}.`
             : 'Jawaban tidak dapat ditampilkan. Silakan coba lagi.';
           list[index] = { ...list[index], live: false, text: fallbackText };
         }
         if (list && list[index]) {
-          list[index] = { ...list[index], live: false };
+          list[index] = {
+            ...list[index],
+            live: false,
+            stopped: wasStopped || list[index].stopped,
+          };
         }
         this.streaming[branch] = false;
         if (finalHandoff) {

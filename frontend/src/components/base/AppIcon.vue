@@ -100,11 +100,49 @@ const ICONS: Record<string, string[]> = {
     'M2 2l20 20',
   ],
   'external-link': ['M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6', 'M15 3h6v6', 'M10 14L21 3'],
+  sidebar: ['M3 4h18v16H3z', 'M9 4v16'],
+  list: ['M8 6h13', 'M8 12h13', 'M8 18h13', 'M3 6h.01', 'M3 12h.01', 'M3 18h.01'],
+  'more-vertical': [],
+  pin: [
+    'M12 17v5',
+    'M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z',
+  ],
+  edit: [
+    'M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7',
+    'M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z',
+  ],
+  archive: ['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4'],
+  trash: [
+    'M3 6h18',
+    'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+  ],
+  mic: [
+    'M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z',
+    'M19 10v2a7 7 0 0 1-14 0v-2',
+    'M12 19v4',
+    'M8 23h8',
+  ],
+  'mic-off': [
+    'M1 1l22 22',
+    'M9 9v3a3 3 0 0 0 5.12 2.12',
+    'M15 9.34V4a3 3 0 0 0-5.94-.6',
+    'M17 16.95A7 7 0 0 1 5 12v-2',
+    'M19 10v2a7 7 0 0 1-.11 1.23',
+    'M12 19v4',
+    'M8 23h8',
+  ],
+  stop: ['M6 6h12v12H6z'],
+  'arrow-up-down': ['M7 15l5 5 5-5', 'M7 9l5-5 5 5'],
 };
 
 const ICON_CIRCLES: Record<string, Array<{ cx: number; cy: number; r: number }>> = {
   'user-round-check': [{ cx: 10, cy: 8, r: 5 }],
   telegram: [{ cx: 12, cy: 12, r: 10 }],
+  'more-vertical': [
+    { cx: 12, cy: 5, r: 1 },
+    { cx: 12, cy: 12, r: 1 },
+    { cx: 12, cy: 19, r: 1 },
+  ],
 };
 
 const props = withDefaults(defineProps<{ name: string; size?: number | string }>(), { size: 18 });

@@ -236,13 +236,16 @@ def upload_file() -> dict:
 # GET /api/method/aios_v1.api.chat.list_conversations
 # ---------------------------------------------------------------------------
 @frappe.whitelist(methods=["GET"])
-def list_conversations(branch: str) -> dict:
+def list_conversations(branch: str, archived: str | int | bool = False, sort: str = "desc") -> dict:
     """Daftar conversation milik user pada cabang tertentu (maks. 20)."""
     user = _current_user()
+    show_archived = _parse_bool_flag(archived)
+    sort_asc = str(sort or "").strip().lower() == "asc"
+    archived_filter = 1 if show_archived else ["!=", 1]
     convs = frappe.get_list(
         "AIOS Conversation",
-        filters={"user": user, "branch": branch},
-        fields=["name as id", "title", "modified as modified_at"],
+        filters={"user": user, "branch": branch, "is_archived": archived_filter},
+        fields=["name as id", "title", "modified as modified_at", "is_pinned", "is_archived"],
         order_by="modified desc",
         limit_page_length=0,
     )
@@ -263,9 +266,98 @@ def list_conversations(branch: str) -> dict:
                 last_at[key] = row["creation"]
     for c in convs:
         c["updatedAt"] = last_at.get(str(c["id"])) or c["modified_at"]
+        c["isPinned"] = bool(c.pop("is_pinned", 0))
+        c["isArchived"] = bool(c.pop("is_archived", 0))
         del c["modified_at"]
-    convs.sort(key=lambda c: c["updatedAt"], reverse=True)
+    convs.sort(key=lambda c: c["updatedAt"], reverse=not sort_asc)
+    convs.sort(key=lambda c: c["isPinned"], reverse=True)
     return {"conversations": convs[:20]}
+
+
+def _require_owned_conversation(conversation_id: str, user: str):
+    if not conversation_id or not frappe.db.exists("AIOS Conversation", conversation_id):
+        frappe.throw("Percakapan tidak ditemukan", frappe.DoesNotExistError)
+    conv = frappe.get_doc("AIOS Conversation", conversation_id)
+    if conv.user != user and not frappe.has_permission("AIOS Conversation", "write", doc=conv):
+        frappe.throw("Percakapan tidak ditemukan", frappe.DoesNotExistError)
+    return conv
+
+
+def _read_json_body() -> dict:
+    request = getattr(frappe.local, "request", None)
+    body = request.get_json(force=True, silent=True) if request is not None else {}
+    return body if isinstance(body, dict) else {}
+
+
+@frappe.whitelist(methods=["POST"])
+def rename_conversation(conversation_id: str = "", title: str = "") -> dict:
+    """Ubah judul percakapan milik user."""
+    user = _current_user()
+    body = _read_json_body()
+    conv_id = str(conversation_id or body.get("conversation_id") or "").strip()
+    new_title = str(title or body.get("title") or "").strip()
+    if not new_title:
+        _raise_safe(400, "TITLE_REQUIRED", "Judul percakapan tidak boleh kosong.")
+    conv = _require_owned_conversation(conv_id, user)
+    conv.title = new_title[:140]
+    conv.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"id": conv.name, "title": conv.title}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_conversation_pin(conversation_id: str = "", pinned: str | int | bool = True) -> dict:
+    """Sematkan atau lepas sematan percakapan milik user."""
+    user = _current_user()
+    body = _read_json_body()
+    conv_id = str(conversation_id or body.get("conversation_id") or "").strip()
+    raw_pinned = body["pinned"] if "pinned" in body else pinned
+    is_pinned = 1 if _parse_bool_flag(raw_pinned) else 0
+    conv = _require_owned_conversation(conv_id, user)
+    conv.is_pinned = is_pinned
+    conv.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"id": conv.name, "isPinned": bool(is_pinned)}
+
+
+@frappe.whitelist(methods=["POST"])
+def set_conversation_archive(conversation_id: str = "", archived: str | int | bool = True) -> dict:
+    """Arsipkan atau pulihkan percakapan milik user."""
+    user = _current_user()
+    body = _read_json_body()
+    conv_id = str(conversation_id or body.get("conversation_id") or "").strip()
+    raw_archived = body["archived"] if "archived" in body else archived
+    is_archived = 1 if _parse_bool_flag(raw_archived) else 0
+    conv = _require_owned_conversation(conv_id, user)
+    conv.is_archived = is_archived
+    conv.save(ignore_permissions=True)
+    frappe.db.commit()
+    return {"id": conv.name, "isArchived": bool(is_archived)}
+
+
+@frappe.whitelist(methods=["POST"])
+def delete_conversation(conversation_id: str = "") -> dict:
+    """Hapus permanen percakapan milik user beserta pesannya."""
+    user = _current_user()
+    body = _read_json_body()
+    conv_id = str(conversation_id or body.get("conversation_id") or "").strip()
+    conv = _require_owned_conversation(conv_id, user)
+    frappe.db.delete("AIOS Message", {"conversation": conv.name})
+    frappe.delete_doc("AIOS Conversation", conv.name, ignore_permissions=True)
+    frappe.db.commit()
+    return {"deleted": True, "id": conv_id}
+
+
+@frappe.whitelist(methods=["POST"])
+def stop_stream(conversation_id: str = "") -> dict:
+    """Tandai stream percakapan untuk dihentikan pada iterasi berikutnya."""
+    user = _current_user()
+    body = _read_json_body()
+    conv_id = str(conversation_id or body.get("conversation_id") or "").strip()
+    if conv_id:
+        _require_owned_conversation(conv_id, user)
+        frappe.cache.set_value(f"aios:stream_stop:{user}:{conv_id}", "1", expires_in_sec=300)
+    return {"stopped": True, "conversation_id": conv_id}
 
 
 # ---------------------------------------------------------------------------

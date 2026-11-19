@@ -37,6 +37,8 @@ export interface ConversationItem {
   id: string;
   title: string;
   updatedAt: string;
+  isPinned?: boolean;
+  isArchived?: boolean;
 }
 
 export interface FileEntry {
@@ -88,6 +90,8 @@ export interface ChatMessage {
   text: string;
   /** True saat jawaban masih di-stream; blok trace tampil live di atas bubble. */
   live?: boolean;
+  /** True saat jawaban dihentikan oleh pengguna sebelum selesai. */
+  stopped?: boolean;
   steps?: TraceEvent[];
   /** performance.now() saat tiap event trace diterima klien (durasi per item). */
   stepTimes?: number[];
@@ -148,7 +152,13 @@ export interface FileArtifact {
 
 export type ArtifactEvent = ApprovalCardArtifact | FileArtifact;
 
-export type DraftListStatus = 'PENDING_APPROVAL' | 'EXPIRED';
+export type DraftListStatus =
+  | 'PENDING_APPROVAL'
+  | 'EXPIRED'
+  | 'HISTORY'
+  | 'APPROVED'
+  | 'EXECUTED'
+  | 'REJECTED';
 
 export interface PendingDraft {
   name: string;
@@ -157,7 +167,10 @@ export interface PendingDraft {
   status: string;
   expires_at: string;
   creation: string;
+  modified?: string;
   expired?: boolean;
+  document_doctype?: string;
+  document_name?: string;
 }
 
 /** Hasil `get_draft` — `payload` adalah string JSON yang di-parse UI. */

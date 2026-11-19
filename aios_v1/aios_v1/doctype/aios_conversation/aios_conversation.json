@@ -11,6 +11,8 @@
   "user",
   "branch",
   "title",
+  "is_pinned",
+  "is_archived",
   "session_summary",
   "compacted_message_count"
  ],
@@ -36,6 +38,18 @@
    "fieldname": "title",
    "fieldtype": "Data",
    "label": "Title"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_pinned",
+   "fieldtype": "Check",
+   "label": "Pinned"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_archived",
+   "fieldtype": "Check",
+   "label": "Archived"
   },
   {
    "fieldname": "session_summary",
