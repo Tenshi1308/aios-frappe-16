@@ -223,22 +223,23 @@ textarea {
     transform: scale(1.06);
   }
 }
-.boot-lockup {
+.boot-finto-mark {
   position: relative;
   z-index: 1;
-  height: 76px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
+  display: block;
   animation:
     bootLogoIn 0.9s cubic-bezier(0.2, 0.9, 0.25, 1.15) both,
     bootLogoGlow var(--dur-240) ease-in-out 1.2s infinite;
 }
-
-.boot-lockup.light-lockup {
-  background: var(--fos-light);
-  padding: var(--space-8) var(--space-18);
-  border-radius: var(--radius-pill);
+.boot-finto-name {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: var(--fs-30);
+  font-weight: var(--fw-300);
+  letter-spacing: 0.45em;
+  padding-left: 0.45em;
+  color: var(--boot-fg);
+  text-shadow: var(--boot-word-shadow);
+  text-align: center;
 }
 @keyframes bootLogoIn {
   from {
@@ -362,7 +363,7 @@ textarea {
   .boot-grid,
   .boot-scanline::after,
   .boot-halo,
-  .boot-lockup,
+  .boot-finto-mark,
   .boot-cursor {
     animation: none;
   }

@@ -103,6 +103,7 @@
   --fs-24: 24px;
   --fs-30: 30px;
 
+  --fw-300: 300;
   --fw-400: 400;
   --fw-500: 500;
   --fw-600: 600;
@@ -381,6 +382,7 @@
   --boot-halo: radial-gradient(circle, rgba(0, 212, 200, 0.36) 0%, rgba(14, 99, 255, 0.2) 48%, transparent 72%);
   --boot-logo-shadow-1: drop-shadow(0 0 14px rgba(0, 212, 200, 0.55));
   --boot-logo-shadow-2: drop-shadow(0 0 20px rgba(167, 244, 50, 0.5));
+  --boot-word-shadow: 0 0 12px rgba(0, 212, 200, 0.6), 0 0 28px rgba(14, 99, 255, 0.5);
 }
 
 @media (prefers-color-scheme: dark) {

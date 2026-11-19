@@ -29,6 +29,7 @@ TOKENS_CSS = DESK_SRC / "styles" / "tokens.css"
 THEME_TS = DESK_SRC / "utils" / "theme.ts"
 TYPES_TS = DESK_SRC / "types" / "index.ts"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
+BOOT_SCREEN = SHELL_DIR / "BootScreen.vue"
 WINDOW_HOST = SHELL_DIR / "WindowHost.vue"
 DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
 START_MENU = SHELL_DIR / "StartMenu.vue"
@@ -512,6 +513,32 @@ class TestFrontendNoHardcode(unittest.TestCase):
 
         settings_src = SETTINGS_WINDOW.read_text(encoding="utf-8")
         self.assertIn("{ value: 'purchasing', label: 'Purchasing' }", settings_src)
+
+    def test_boot_screen_uses_finto_mark_and_wordmark_without_pill_lockups(self):
+        """Layar boot Finto memakai mark F (<FintoMark>) + FINTO OS tanpa pill/lockup horizontal maupun versi SPI."""
+        self.assertTrue(BOOT_SCREEN.exists(), "frontend/src/components/shell/BootScreen.vue belum ada")
+        boot_src = BOOT_SCREEN.read_text(encoding="utf-8")
+
+        self.assertIn("FintoMark", boot_src)
+        self.assertIn("<FintoMark", boot_src)
+        self.assertIn("FINTO OS", boot_src)
+
+        for forbidden in (
+            "finto-logo-pill-blue.png",
+            "finto-logo-utama-nobg.png",
+            "boot-lockup",
+            "light-lockup",
+            "v1.0",
+            "build 2026.11",
+        ):
+            self.assertNotIn(forbidden, boot_src, f"BootScreen.vue masih mengandung {forbidden!r}")
+
+        self.assertIn('@click="skip"', boot_src)
+        self.assertIn('@keydown="skip"', boot_src)
+        self.assertIn("Tekan sembarang tombol atau klik untuk melewati", boot_src)
+        self.assertIn("boot-bar", boot_src)
+        self.assertIn("boot-pct", boot_src)
+        self.assertIn("boot-log", boot_src)
 
 
 if __name__ == "__main__":

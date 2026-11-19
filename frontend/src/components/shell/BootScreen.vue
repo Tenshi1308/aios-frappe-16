@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useSessionStore } from '../../stores/session';
-import { currentBrand, isDarkEffective } from '../../utils/theme';
-import lockupPillImg from '../../assets/branding/finto-logo-pill-blue.png';
-import lockupLightImg from '../../assets/branding/finto-logo-utama-nobg.png';
+import { currentBrand } from '../../utils/theme';
 import EkasaMark from '../base/EkasaMark.vue';
+import FintoMark from '../base/FintoMark.vue';
 
 const session = useSessionStore();
 const isFintoBrand = computed(() => currentBrand.value === 'finto');
-const isDark = computed(() => isDarkEffective());
-const lockupSrc = computed(() => (isDark.value ? lockupPillImg : lockupLightImg));
 const status = computed(
   () =>
     session.bootLog[session.bootLog.length - 1] ??
@@ -32,8 +29,9 @@ function skip() {
       <template v-if="isFintoBrand">
         <div class="boot-logo-wrap">
           <span class="boot-halo" aria-hidden="true" />
-          <img class="boot-lockup" :class="{ 'light-lockup': !isDark }" :src="lockupSrc" alt="Finto OS" />
+          <FintoMark :size="112" class="boot-finto-mark" />
         </div>
+        <div class="boot-finto-name">FINTO OS</div>
       </template>
       <template v-else>
         <EkasaMark :size="64" class="boot-mark" />
