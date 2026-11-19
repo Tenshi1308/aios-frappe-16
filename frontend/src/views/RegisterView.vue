@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { useSessionStore } from '../stores/session';
+import { currentBrand, isDarkEffective } from '../utils/theme';
+import lockupLightImg from '../assets/branding/finto-logo-utama-nobg.png';
+import lockupDarkImg from '../assets/branding/finto-logo-pill-blue.png';
 import EkasaMark from '../components/base/EkasaMark.vue';
 
 const session = useSessionStore();
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
+const lockupSrc = computed(() => (isDarkEffective() ? lockupDarkImg : lockupLightImg));
 const form = reactive({ full_name: '', email: '', company_name: '' });
 
 async function submit() {
@@ -22,8 +27,14 @@ async function submit() {
       <div class="d">Pendaftaran mandiri</div>
     </div>
     <form class="lock-card" @submit.prevent="submit">
-      <div class="avatar xl"><EkasaMark :size="34" accent="var(--on-accent)" /></div>
-      <div class="lock-name">Buat akun AIOS</div>
+      <template v-if="isFintoBrand">
+        <img class="lock-lockup" :src="lockupSrc" alt="Finto OS" />
+        <div class="lock-name">Buat akun AIOS</div>
+      </template>
+      <template v-else>
+        <div class="avatar xl"><EkasaMark :size="34" accent="var(--on-accent)" /></div>
+        <div class="lock-name">Buat akun AIOS</div>
+      </template>
       <div class="lock-mail">Akun baru menunggu persetujuan administrator</div>
       <div class="lock-fields">
         <div class="lock-field">

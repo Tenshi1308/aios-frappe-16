@@ -1,5 +1,6 @@
 import type {
   BootstrapData,
+  BrandSettingsData,
   ClientStaffAndRecipientsData,
   ClientStaffUser,
   ConversationSettingsData,
@@ -16,12 +17,14 @@ import type {
   ModulesApi,
   RegenerateStaffInviteResponse,
   SearchResult,
+  SettingsBrand,
   SettingsData,
   SettingsTheme,
 } from '../../types';
-import { ALLOWED_THEMES, normalizeTheme } from '../../utils/theme';
+import { ALLOWED_BRANDS, ALLOWED_THEMES, normalizeBrand, normalizeTheme } from '../../utils/theme';
 
 let mockThemeValue: SettingsTheme = 'Automatic';
+let mockBrandValue: SettingsBrand = 'finto';
 let mockCompanyPersona = '';
 let mockHandoffMode: HandoffMode = 'confirm';
 
@@ -283,6 +286,23 @@ export async function saveTheme(theme: SettingsTheme, _csrfToken: string): Promi
   mockThemeValue = normalizeTheme(theme);
 }
 
+export async function fetchBrandSettings(): Promise<BrandSettingsData> {
+  return {
+    brand: {
+      value: mockBrandValue,
+      options: [...ALLOWED_BRANDS],
+    },
+  };
+}
+
+export async function saveBrandSettings(
+  brand: SettingsBrand,
+  _csrfToken: string,
+): Promise<SettingsBrand> {
+  mockBrandValue = normalizeBrand(brand);
+  return mockBrandValue;
+}
+
 export async function fetchConversationSettings(): Promise<ConversationSettingsData> {
   return {
     handoff_mode: {
@@ -420,6 +440,8 @@ export const modulesApi = {
   fetchList,
   search,
   fetchSettings,
+  fetchBrandSettings,
+  saveBrandSettings,
   fetchConversationSettings,
   saveConversationSettings,
   saveTheme,

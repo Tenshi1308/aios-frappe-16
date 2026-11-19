@@ -2,12 +2,12 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
-import type { ClientStaffUser, HandoffMode, SettingsTheme } from '../../types';
+import type { ClientStaffUser, HandoffMode, SettingsBrand, SettingsTheme } from '../../types';
 import { formatNumber } from '../../utils/format';
-import { resolveTheme } from '../../utils/theme';
+import { currentBrand, resolveTheme } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
 
-type TabId = 'general' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff';
+type TabId = 'general' | 'design' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff';
 
 interface MenuTab {
   id: TabId;
@@ -17,6 +17,7 @@ interface MenuTab {
 
 const BASE_TABS: MenuTab[] = [
   { id: 'general', label: 'Umum', icon: 'gear' },
+  { id: 'design', label: 'Desain', icon: 'desk' },
   { id: 'conversation', label: 'Percakapan', icon: 'arrow-right' },
   { id: 'connector', label: 'Konektor', icon: 'link' },
   { id: 'personalization', label: 'Personalisasi', icon: 'sparkle' },
@@ -82,6 +83,28 @@ const HANDOFF_MODE_OPTIONS: Array<{ value: HandoffMode; label: string; descripti
     description: 'Langsung alihkan tab ke cabang tujuan dan kirim ulang pertanyaan asli Anda.',
   },
 ];
+
+const BRAND_OPTIONS: Array<{ value: SettingsBrand; label: string; description: string }> = [
+  {
+    value: 'finto',
+    label: 'Finto Desk',
+    description: 'Shell dan taskbar navy Finto OS, maskot Fino, serta jendela mengikuti Mode Warna.',
+  },
+  {
+    value: 'ekasa',
+    label: 'Ekasa Desk',
+    description: 'Desain klasik Ekasa dengan aksen emas hangat dan mark geometris.',
+  },
+];
+
+const currentBrandValue = computed<SettingsBrand>(
+  () => modules.brandSettings?.brand.value ?? currentBrand.value,
+);
+
+function selectBrand(brand: SettingsBrand) {
+  if (modules.brandSettingsSaving || currentBrandValue.value === brand) return;
+  void modules.setBrand(brand);
+}
 
 const currentHandoffMode = computed<HandoffMode>(
   () => modules.conversationSettings?.handoff_mode.value ?? 'confirm',
@@ -180,6 +203,7 @@ onMounted(() => {
   if (!data.value && !loading.value) {
     void modules.loadSettings(true);
   }
+  void modules.loadBrandSettings(true);
   void modules.loadConversationSettings(true);
   void modules.loadTelegramStatus();
   if (isClientOwner.value) {
@@ -233,6 +257,7 @@ const countdownText = computed(() => {
 
 function refresh() {
   void modules.loadSettings(true);
+  void modules.loadBrandSettings(true);
   void modules.loadConversationSettings(true);
   void modules.loadTelegramStatus();
   if (isClientOwner.value) {
@@ -583,6 +608,50 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
               <b>{{ countdownText }}</b>
               <span v-if="data.reset.at_label" class="reset-time">pukul {{ data.reset.at_label }}</span>
             </div>
+          </section>
+        </div>
+
+        <!-- Halaman DESAIN -->
+        <div v-else-if="activeTab === 'design'" class="settings-sections">
+          <section class="settings-card" aria-label="Pilihan desain tampilan">
+            <div class="card-head">
+              <div class="card-title-wrap">
+                <AppIcon name="desk" :size="16" />
+                <h5>Desain tampilan</h5>
+              </div>
+              <span v-if="modules.brandSettingsSaving" class="save-status-pill">Menyimpan…</span>
+              <span v-else class="status-pill">
+                {{ currentBrandValue === 'finto' ? 'Finto Desk' : 'Ekasa Desk' }}
+              </span>
+            </div>
+
+            <p class="tg-info-text">
+              Pilih identitas visual desktop. Mode Warna (Otomatis, Terang, atau Gelap) tetap diatur terpisah pada halaman Umum.
+            </p>
+
+            <div class="handoff-options" role="radiogroup" aria-label="Pilihan desain tampilan">
+              <button
+                v-for="opt in BRAND_OPTIONS"
+                :key="opt.value"
+                type="button"
+                role="radio"
+                class="handoff-opt-btn"
+                :class="{ active: currentBrandValue === opt.value }"
+                :aria-checked="currentBrandValue === opt.value"
+                :disabled="modules.brandSettingsSaving || modules.brandSettingsLoading"
+                @click="selectBrand(opt.value)"
+              >
+                <span class="handoff-opt-head">
+                  <b>{{ opt.label }}</b>
+                  <AppIcon v-if="currentBrandValue === opt.value" name="check" :size="14" />
+                </span>
+                <small>{{ opt.description }}</small>
+              </button>
+            </div>
+
+            <p v-if="modules.brandSettingsError" class="tg-error" role="alert">
+              {{ modules.brandSettingsError }}
+            </p>
           </section>
         </div>
 

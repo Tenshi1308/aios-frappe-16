@@ -4,6 +4,7 @@ import { useBranchesStore } from '../../stores/branches';
 import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
+import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 
 const session = useSessionStore();
@@ -77,7 +78,7 @@ function openSettings() {
       </div>
       <div class="agent-row">
         <button v-for="b in branches.branches" :key="b.key" class="agent-pill" @click="openAgent(b.key)">
-          <span class="agent-dot" :data-branch="b.key">{{ b.name.charAt(0).toUpperCase() }}</span>
+          <AgentAvatar :branch-key="b.key" :name="b.name" />
           {{ b.name }}
         </button>
         <span v-if="!branches.branches.length" class="empty-note">Belum ada agent aktif.</span>

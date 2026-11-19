@@ -342,6 +342,14 @@ export interface BootstrapData {
 
 export type SettingsResetSource = 'scheduled' | 'unknown';
 export type SettingsTheme = 'Automatic' | 'Light' | 'Dark';
+export type SettingsBrand = 'ekasa' | 'finto';
+
+export interface BrandSettingsData {
+  brand: {
+    value: SettingsBrand;
+    options: SettingsBrand[];
+  };
+}
 
 export interface SettingsData {
   profile: {
@@ -428,6 +436,8 @@ export interface ModulesApi {
   ): Promise<ModuleListData>;
   search(q: string, limit?: number): Promise<SearchResult[]>;
   fetchSettings(): Promise<SettingsData>;
+  fetchBrandSettings(): Promise<BrandSettingsData>;
+  saveBrandSettings(brand: SettingsBrand, csrfToken: string): Promise<SettingsBrand>;
   fetchConversationSettings(): Promise<ConversationSettingsData>;
   saveConversationSettings(handoffMode: HandoffMode, csrfToken: string): Promise<HandoffMode>;
   saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void>;

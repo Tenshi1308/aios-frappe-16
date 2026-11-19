@@ -9,7 +9,7 @@ import RegisterView from './views/RegisterView.vue';
 import { routeForPhase } from './router';
 import { useModulesStore } from './stores/modules';
 import { useSessionStore } from './stores/session';
-import { applyTheme } from './utils/theme';
+import { applyBrand, applyTheme, systemPrefersDark } from './utils/theme';
 
 const session = useSessionStore();
 const modules = useModulesStore();
@@ -21,6 +21,7 @@ const onMq = (e: MediaQueryListEvent) => (narrow.value = e.matches);
 
 const colorSchemeMq = window.matchMedia('(prefers-color-scheme: dark)');
 const onColorSchemeChange = () => {
+  systemPrefersDark.value = colorSchemeMq.matches;
   const current = modules.settings?.theme.value;
   if (!current || current === 'Automatic') {
     applyTheme('Automatic');
@@ -53,6 +54,9 @@ watch(
     if (phase === 'desktop' && !modules.settings && !modules.settingsLoading) {
       void modules.loadSettings();
     }
+    if (phase === 'desktop' && !modules.brandSettings && !modules.brandSettingsLoading) {
+      void modules.loadBrandSettings();
+    }
   },
   { immediate: true },
 );
@@ -61,6 +65,14 @@ watch(
   () => modules.settings?.theme.value,
   (themeValue) => {
     if (themeValue) applyTheme(themeValue);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => modules.brandSettings?.brand.value,
+  (brandValue) => {
+    if (brandValue) applyBrand(brandValue);
   },
   { immediate: true },
 );

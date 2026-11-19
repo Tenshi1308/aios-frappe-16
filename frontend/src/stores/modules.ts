@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia';
 import {
   fetchBootstrap,
+  fetchBrandSettings,
   fetchConversationSettings,
   fetchDomain,
   fetchList,
   fetchModule,
   fetchSettings,
+  saveBrandSettings,
   saveConversationSettings,
   saveTheme,
   saveCompanyPersona,
@@ -26,6 +28,7 @@ import {
   type TelegramLinkStatus,
 } from '../api/connector';
 import type {
+  BrandSettingsData,
   ClientStaffAndRecipientsData,
   ConversationSettingsData,
   CreateClientStaffResponse,
@@ -37,10 +40,11 @@ import type {
   ModuleMeta,
   RegenerateStaffInviteResponse,
   SearchResult,
+  SettingsBrand,
   SettingsData,
   SettingsTheme,
 } from '../types';
-import { applyTheme } from '../utils/theme';
+import { applyBrand, applyTheme } from '../utils/theme';
 
 export interface ModuleEntryState extends ModuleDetailData {
   filters: ModuleFilters;
@@ -65,7 +69,18 @@ export const useModulesStore = defineStore('modules', {
     settings: null as SettingsData | null,
     settingsLoading: false,
     settingsError: '',
-    settingsTab: 'general' as 'general' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff',
+    settingsTab: 'general' as
+      | 'general'
+      | 'design'
+      | 'conversation'
+      | 'connector'
+      | 'personalization'
+      | 'receivers'
+      | 'staff',
+    brandSettings: null as BrandSettingsData | null,
+    brandSettingsLoading: false,
+    brandSettingsSaving: false,
+    brandSettingsError: '',
     conversationSettings: null as ConversationSettingsData | null,
     conversationSettingsLoading: false,
     conversationSettingsSaving: false,
@@ -370,13 +385,59 @@ export const useModulesStore = defineStore('modules', {
     },
 
     async openSettings(
-      tab?: 'general' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff',
+      tab?: 'general' | 'design' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff',
     ) {
       if (tab) {
         this.settingsTab = tab;
       }
       useWindowManager().open('settings', 'Pengaturan');
-      await Promise.all([this.loadSettings(true), this.loadConversationSettings(true)]);
+      await Promise.all([
+        this.loadSettings(true),
+        this.loadBrandSettings(true),
+        this.loadConversationSettings(true),
+      ]);
+    },
+
+    async loadBrandSettings(force = false) {
+      if (this.brandSettingsLoading || (this.brandSettings && !force)) return;
+      this.brandSettingsLoading = true;
+      this.brandSettingsError = '';
+      try {
+        const res = await fetchBrandSettings();
+        this.brandSettings = res;
+        applyBrand(res.brand.value);
+      } catch (err) {
+        this.brandSettingsError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Pengaturan desain tampilan tidak dapat dimuat.';
+      } finally {
+        this.brandSettingsLoading = false;
+      }
+    },
+
+    async setBrand(brand: SettingsBrand) {
+      if (this.brandSettingsSaving) return;
+      this.brandSettingsSaving = true;
+      this.brandSettingsError = '';
+      try {
+        const session = useSessionStore();
+        const saved = await saveBrandSettings(brand, session.csrfToken);
+        applyBrand(saved);
+        this.brandSettings = {
+          brand: {
+            value: saved,
+            options: this.brandSettings?.brand.options ?? ['finto', 'ekasa'],
+          },
+        };
+      } catch (err) {
+        this.brandSettingsError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Desain tampilan tidak dapat disimpan.';
+      } finally {
+        this.brandSettingsSaving = false;
+      }
     },
 
     async loadConversationSettings(force = false) {

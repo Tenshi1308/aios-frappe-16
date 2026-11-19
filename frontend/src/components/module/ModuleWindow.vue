@@ -10,7 +10,11 @@ import type {
   ModuleRow,
 } from '../../types';
 import { formatCurrency, formatNumber, formatShortDate } from '../../utils/format';
+import { currentBrand } from '../../utils/theme';
+import fintoAnalyzeDataImg from '../../assets/branding/finto-analyze-data-transparent.png';
 import AppIcon from '../base/AppIcon.vue';
+
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
 const props = defineProps<{ moduleKey: string }>();
 
@@ -255,7 +259,8 @@ async function onNextPage() {
       </form>
 
       <div v-if="!rows.length" class="mod-state">
-        Belum ada dokumen yang sesuai pada modul ini.
+        <img v-if="isFintoBrand" class="empty-mascot" :src="fintoAnalyzeDataImg" alt="Fino" />
+        <span>Belum ada dokumen yang sesuai pada modul ini.</span>
       </div>
 
       <div v-else class="mod-table-wrap">

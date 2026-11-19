@@ -17,11 +17,17 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DESK_SRC = REPO_ROOT / "frontend" / "src"
 ADMIN_SRC = REPO_ROOT / "admin" / "src"
+BASE_DIR = DESK_SRC / "components" / "base"
+AGENT_DIR = DESK_SRC / "components" / "agent"
+VIEWS_DIR = DESK_SRC / "views"
 MODULE_DIR = DESK_SRC / "components" / "module"
 DOMAIN_DIR = DESK_SRC / "components" / "domain"
 SHELL_DIR = DESK_SRC / "components" / "shell"
 WINDOWS_DIR = DESK_SRC / "components" / "windows"
 BASE_CSS = DESK_SRC / "styles" / "base.css"
+TOKENS_CSS = DESK_SRC / "styles" / "tokens.css"
+THEME_TS = DESK_SRC / "utils" / "theme.ts"
+TYPES_TS = DESK_SRC / "types" / "index.ts"
 SETTINGS_WINDOW = WINDOWS_DIR / "SettingsWindow.vue"
 DOMAIN_WINDOW = DOMAIN_DIR / "DomainWindow.vue"
 START_MENU = SHELL_DIR / "StartMenu.vue"
@@ -121,6 +127,9 @@ class TestFrontendNoHardcode(unittest.TestCase):
         self.assertTrue(BASE_CSS.exists(), "frontend/src/styles/base.css belum ada")
         offenders = []
         paths = [
+            *(_iter_source_files(BASE_DIR)),
+            *(_iter_source_files(AGENT_DIR)),
+            *(_iter_source_files(VIEWS_DIR)),
             *(_iter_source_files(MODULE_DIR)),
             *(_iter_source_files(DOMAIN_DIR)),
             *(_iter_source_files(SHELL_DIR)),
@@ -309,6 +318,34 @@ class TestFrontendNoHardcode(unittest.TestCase):
         source = env_example.read_text(encoding="utf-8")
         for key in ("VITE_BACKEND_TARGET", "VITE_DEV_PORT", "VITE_DESKTOP_ADAPTER"):
             self.assertIn(key, source, f".env.example tidak mendokumentasikan {key}")
+
+    def test_brand_dimension_0c_contract_in_frontend(self):
+        """Dimensi desain 0C (SettingsBrand, tokens.css Finto, halaman Desain Settings) terpenuhi."""
+        types_src = TYPES_TS.read_text(encoding="utf-8")
+        self.assertRegex(types_src, r"export\s+type\s+SettingsBrand\s*=.*'ekasa'")
+        self.assertRegex(types_src, r"export\s+type\s+SettingsBrand\s*=.*'finto'")
+
+        theme_src = THEME_TS.read_text(encoding="utf-8")
+        self.assertIn("BRAND_STORAGE_KEY = 'aios.desk.brand'", theme_src)
+        self.assertIn("DEFAULT_BRAND: SettingsBrand = 'finto'", theme_src)
+        self.assertIn("ALLOWED_BRANDS", theme_src)
+        self.assertIn("dataset.brand", theme_src)
+
+        tokens_src = TOKENS_CSS.read_text(encoding="utf-8")
+        for token in (
+            "--fos-navy:",
+            "--fos-blue:",
+            "--fos-cyan:",
+            "--fos-lime:",
+            "--fos-violet:",
+            "--fos-light:",
+            "[data-brand='finto']",
+        ):
+            self.assertIn(token, tokens_src, f"tokens.css belum mendefinisikan {token}")
+
+        settings_src = SETTINGS_WINDOW.read_text(encoding="utf-8")
+        self.assertIn("'Finto Desk'", settings_src)
+        self.assertIn("'Ekasa Desk'", settings_src)
 
 
 if __name__ == "__main__":

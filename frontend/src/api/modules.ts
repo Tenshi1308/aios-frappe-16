@@ -1,6 +1,7 @@
 import { ApiError, apiFetch, unwrapMessage } from './client';
 import type {
   BootstrapData,
+  BrandSettingsData,
   Branch,
   BranchWorker,
   ClientStaffAndRecipientsData,
@@ -33,11 +34,19 @@ import type {
   Pagination,
   RegenerateStaffInviteResponse,
   SearchResult,
+  SettingsBrand,
   SettingsData,
   SettingsResetSource,
   SettingsTheme,
 } from '../types';
-import { ALLOWED_THEMES, isSettingsTheme, normalizeTheme } from '../utils/theme';
+import {
+  ALLOWED_BRANDS,
+  ALLOWED_THEMES,
+  isSettingsBrand,
+  isSettingsTheme,
+  normalizeBrand,
+  normalizeTheme,
+} from '../utils/theme';
 
 const DESKTOP_API = '/api/method/aios_v1.api.desktop';
 const SWITCH_THEME_API = '/api/method/frappe.core.doctype.user.user.switch_theme';
@@ -558,6 +567,43 @@ export async function saveTheme(theme: SettingsTheme, csrfToken: string): Promis
   });
 }
 
+export async function fetchBrandSettings(): Promise<BrandSettingsData> {
+  const raw = unwrapMessage<unknown>(await apiFetch(`${DESKTOP_API}.brand_settings`));
+  if (!isRecord(raw) || !isRecord(raw.brand)) {
+    throw new ApiError('Pengaturan desain tampilan tidak valid.');
+  }
+  const value = normalizeBrand(raw.brand.value);
+  const options = Array.isArray(raw.brand.options)
+    ? raw.brand.options.filter(isSettingsBrand)
+    : [];
+  return {
+    brand: {
+      value,
+      options: options.length > 0 ? options : [...ALLOWED_BRANDS],
+    },
+  };
+}
+
+export async function saveBrandSettings(
+  brand: SettingsBrand,
+  csrfToken: string,
+): Promise<SettingsBrand> {
+  const raw = unwrapMessage<unknown>(
+    await apiFetch(`${DESKTOP_API}.save_brand_settings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Frappe-CSRF-Token': csrfToken,
+      },
+      body: JSON.stringify({ brand }),
+    }),
+  );
+  if (isRecord(raw) && isSettingsBrand(raw.brand)) {
+    return raw.brand;
+  }
+  return normalizeBrand(brand);
+}
+
 function normalizeHandoffMode(value: unknown): HandoffMode {
   return value === 'auto' ? 'auto' : 'confirm';
 }
@@ -768,6 +814,8 @@ export const modulesApi = {
   fetchList,
   search,
   fetchSettings,
+  fetchBrandSettings,
+  saveBrandSettings,
   fetchConversationSettings,
   saveConversationSettings,
   saveTheme,

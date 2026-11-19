@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <linearGradient id="crestGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00D4C8" />
+      <stop offset="100%" stop-color="#0E63FF" />
+    </linearGradient>
+    <linearGradient id="bodyBlue" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1472FF" />
+      <stop offset="100%" stop-color="#0B3785" />
+    </linearGradient>
+    <linearGradient id="limeFeather" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A7F432" />
+      <stop offset="100%" stop-color="#00D4C8" />
+    </linearGradient>
+    <linearGradient id="capeGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0B1F3B" />
+      <stop offset="100%" stop-color="#050C17" />
+    </linearGradient>
+    <linearGradient id="goldBeak" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFDE43" />
+      <stop offset="100%" stop-color="#F59E0B" />
+    </linearGradient>
+    <linearGradient id="goldBrooch" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE566" />
+      <stop offset="60%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#B45309" />
+    </linearGradient>
+    <linearGradient id="lgTop" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#18C8EE" />
+      <stop offset="1" stop-color="#1E7BF5" />
+    </linearGradient>
+    <linearGradient id="lgStem" x1="0.2" y1="0" x2="0.5" y2="1">
+      <stop offset="0" stop-color="#1B8AF2" />
+      <stop offset="1" stop-color="#1068F5" />
+    </linearGradient>
+    <linearGradient id="lgLime" x1="0.9" y1="0" x2="0.1" y2="1">
+      <stop offset="0" stop-color="#B5E81A" />
+      <stop offset="1" stop-color="#5BD65A" />
+    </linearGradient>
+  </defs>
+
+  <!-- Cape Base -->
+  <path d="M 48 190 C 38 220 54 246 80 248 C 114 250 142 250 176 248 C 202 246 218 220 208 190 C 196 155 174 140 128 140 C 82 140 60 155 48 190 Z" fill="url(#capeGrad)" />
+
+  <!-- Outer Crown Feathers (Blue & Lime Crest) -->
+  <!-- Left Side Feathers -->
+  <path d="M 128 35 C 90 20 62 48 46 84 C 36 108 44 126 58 132 C 60 112 76 92 100 82 Z" fill="#0E63FF" />
+  <path d="M 52 70 C 40 85 36 108 44 120 C 48 106 58 92 72 82 Z" fill="url(#limeFeather)" />
+  <path d="M 40 102 C 28 116 26 138 34 148 C 40 136 50 126 62 120 Z" fill="url(#limeFeather)" />
+
+  <!-- Right Side Feathers -->
+  <path d="M 128 35 C 166 20 194 48 210 84 C 220 108 212 126 198 132 C 196 112 180 92 156 82 Z" fill="#0E63FF" />
+  <path d="M 204 70 C 216 85 220 108 212 120 C 208 106 198 92 184 82 Z" fill="url(#limeFeather)" />
+  <path d="M 216 102 C 228 116 230 138 222 148 C 216 136 206 126 194 120 Z" fill="url(#limeFeather)" />
+
+  <!-- Top Center Crest -->
+  <path d="M 128 18 C 112 40 104 68 112 90 C 122 72 134 72 144 90 C 152 68 144 40 128 18 Z" fill="url(#limeFeather)" />
+  <path d="M 128 12 L 133 26 L 146 30 L 133 34 L 128 48 L 123 34 L 110 30 L 123 26 Z" fill="#FFDE43" />
+
+  <!-- Main Head Face Shape -->
+  <path d="M 128 48 C 78 48 66 94 66 142 C 66 178 88 196 128 196 C 168 196 190 178 190 142 C 190 94 178 48 128 48 Z" fill="url(#crestGrad)" />
+
+  <!-- Inner Face Plumage (Cyan/Light Blue) -->
+  <path d="M 128 72 C 92 72 82 108 82 144 C 82 172 100 186 128 186 C 156 186 174 172 174 144 C 174 108 164 72 128 72 Z" fill="#00D4C8" opacity="0.9" />
+
+  <!-- Brow Feathers / Cheeks -->
+  <path d="M 74 116 C 88 110 106 114 116 122 C 104 126 90 128 76 132 Z" fill="#0B3785" />
+  <path d="M 182 116 C 168 110 150 114 140 122 C 152 126 166 128 180 132 Z" fill="#0B3785" />
+
+  <!-- Eyes - Left -->
+  <ellipse cx="104" cy="128" rx="14" ry="17" fill="#FFFFFF" />
+  <ellipse cx="104" cy="128" rx="10" ry="12" fill="#D97706" />
+  <circle cx="103" cy="128" r="6" fill="#0B1F3B" />
+  <circle cx="106" cy="124" r="3" fill="#FFFFFF" />
+
+  <!-- Eyes - Right -->
+  <ellipse cx="152" cy="128" rx="14" ry="17" fill="#FFFFFF" />
+  <ellipse cx="152" cy="128" rx="10" ry="12" fill="#D97706" />
+  <circle cx="153" cy="128" r="6" fill="#0B1F3B" />
+  <circle cx="155" cy="124" r="3" fill="#FFFFFF" />
+
+  <!-- Center Forehead Star Feather -->
+  <polygon points="128,68 132,84 146,88 132,92 128,108 124,92 110,88 124,84" fill="#FFDE43" />
+
+  <!-- Eagle Beak -->
+  <path d="M 112 136 C 112 136 122 130 128 130 C 134 130 144 136 144 136 C 146 150 144 168 128 174 C 112 168 110 150 112 136 Z" fill="url(#goldBeak)" />
+  <path d="M 128 130 L 128 174" stroke="#D97706" stroke-width="1.5" opacity="0.6" />
+  <!-- Beak highlight -->
+  <path d="M 122 138 C 125 135 128 134 131 135 C 129 146 128 156 128 166 C 125 158 123 148 122 138 Z" fill="#FFFBEB" opacity="0.5" />
+
+  <!-- Gold Cape Brooch with 'F' -->
+  <g transform="translate(128, 198)">
+    <circle cx="0" cy="0" r="24" fill="url(#goldBrooch)" stroke="#FFE566" stroke-width="2.5" />
+    <circle cx="0" cy="0" r="19" fill="#0B1F3B" />
+    <!-- Finto logo (replaces mini F) -->
+    <g transform="translate(-13.5 -13.5) scale(0.0787)">
+      <path d="M15 158 C15 120 50 60 85 32 C100 16 120 8 145 8 L300 8 C325 8 338 24 330 46 L305 80 C297 88 288 91 275 91 L170 91 C160 91 153 96 148 105 L128 168 C126 174 128 177 134 177 L34 177 C20 177 15 170 15 158 Z" fill="url(#lgTop)" />
+      <path d="M126 170 L196 170 C192 200 180 250 160 290 C150 315 135 333 112 335 L90 335 C65 335 52 318 58 296 C70 255 108 205 126 170 Z" fill="url(#lgStem)" />
+      <path d="M222 137 C228 133 240 132 255 132 L292 132 C312 132 322 143 314 160 C298 195 278 230 262 243 C250 254 235 258 215 258 L178 258 C170 258 166 252 170 244 C182 220 192 190 200 165 C205 150 212 141 222 137 Z" fill="url(#lgLime)" />
+    </g>
+  </g>
+</svg>

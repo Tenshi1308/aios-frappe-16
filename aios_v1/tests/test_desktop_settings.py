@@ -850,3 +850,97 @@ class TestStaffPersonaAllowlist(IntegrationTestCase):
         self.assertIsNotNone(meta_field)
         meta_options = [opt for opt in (meta_field.options or "").splitlines() if opt]
         self.assertIn("accounting", meta_options)
+
+
+class TestDesktopBrandSettings(IntegrationTestCase):
+    """Kontrak dimensi desain 0C (aios_desk_brand) terpisah dari desk_theme Frappe."""
+
+    USER = "_test.desktop.brand@example.com"
+    NON_CLIENT_USER = "_test.desktop.brand.nonclient@example.com"
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+        self._ensure_user(self.USER, roles=["AIOS Client"])
+        self._ensure_user(self.NON_CLIENT_USER, roles=[])
+        frappe.local.session_obj = object()
+
+    def _ensure_user(self, email: str, roles: list[str]):
+        if frappe.db.exists("User", email):
+            doc = frappe.get_doc("User", email)
+        else:
+            doc = frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": email,
+                    "first_name": "_Test Brand",
+                    "enabled": 1,
+                    "send_welcome_email": 0,
+                    "user_type": "Website User",
+                    "aios_persona": "sales",
+                    "aios_status": "Active",
+                    "roles": [{"role": r} for r in roles],
+                }
+            ).insert(ignore_permissions=True)
+        doc.aios_status = "Active"
+        doc.enabled = 1
+        doc.set("roles", [{"role": r} for r in roles])
+        doc.save(ignore_permissions=True)
+        return doc
+
+    def _restore_and_rollback(self):
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
+    def test_brand_settings_defaults_to_finto_and_persists_per_user(self):
+        from types import SimpleNamespace
+
+        get_fn = getattr(desktop_api, "brand_settings", None)
+        save_fn = getattr(desktop_api, "save_brand_settings", None)
+        self.assertTrue(callable(get_fn), "desktop.brand_settings belum tersedia")
+        self.assertTrue(callable(save_fn), "desktop.save_brand_settings belum tersedia")
+        self.assertIn(get_fn, frappe.whitelisted)
+        self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[get_fn], ["GET"])
+        self.assertIn(save_fn, frappe.whitelisted)
+        self.assertEqual(frappe.allowed_http_methods_for_whitelisted_func[save_fn], ["POST"])
+
+        self.assertEqual(getattr(desktop_api, "BRAND_DEFAULT", None), "finto")
+        self.assertEqual(getattr(desktop_api, "_BRAND_OPTIONS", None), ("finto", "ekasa"))
+        self.assertEqual(getattr(desktop_api, "_BRAND_DEFAULT_KEY", None), "aios_desk_brand")
+
+        frappe.defaults.clear_user_default("aios_desk_brand", user=self.USER)
+        with patch("aios_v1.api.desktop.frappe.session", SimpleNamespace(user=self.USER)):
+            default_cfg = get_fn()
+            self.assertEqual(default_cfg, {"brand": {"value": "finto", "options": ["finto", "ekasa"]}})
+
+            saved_ekasa = save_fn(brand="ekasa")
+            self.assertEqual(saved_ekasa, {"brand": "ekasa"})
+            self.assertEqual(frappe.defaults.get_user_default("aios_desk_brand", user=self.USER), "ekasa")
+            self.assertEqual(get_fn(), {"brand": {"value": "ekasa", "options": ["finto", "ekasa"]}})
+
+            saved_finto = save_fn(brand="finto")
+            self.assertEqual(saved_finto, {"brand": "finto"})
+            self.assertEqual(frappe.defaults.get_user_default("aios_desk_brand", user=self.USER), "finto")
+
+            with self.assertRaises(frappe.ValidationError):
+                save_fn(brand="neon")
+
+        with patch("aios_v1.api.desktop.frappe.session", SimpleNamespace(user="Guest")):
+            with self.assertRaises(frappe.AuthenticationError):
+                get_fn()
+            with self.assertRaises(frappe.AuthenticationError):
+                save_fn(brand="ekasa")
+
+        with patch("aios_v1.api.desktop.frappe.session", SimpleNamespace(user="Administrator")):
+            with self.assertRaises(frappe.PermissionError):
+                get_fn()
+            with self.assertRaises(frappe.PermissionError):
+                save_fn(brand="ekasa")
+
+        with patch("aios_v1.api.desktop.frappe.session", SimpleNamespace(user=self.NON_CLIENT_USER)):
+            with self.assertRaises(frappe.PermissionError):
+                get_fn()
+            with self.assertRaises(frappe.PermissionError):
+                save_fn(brand="ekasa")

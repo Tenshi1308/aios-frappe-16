@@ -36,6 +36,10 @@ HANDOFF_MODE_DEFAULT = "confirm"
 _HANDOFF_MODE_OPTIONS = ("confirm", "auto")
 _HANDOFF_MODE_ALLOWED = frozenset(_HANDOFF_MODE_OPTIONS)
 _HANDOFF_DEFAULT_KEY = "aios_handoff_mode"
+BRAND_DEFAULT = "finto"
+_BRAND_OPTIONS = ("finto", "ekasa")
+_BRAND_ALLOWED = frozenset(_BRAND_OPTIONS)
+_BRAND_DEFAULT_KEY = "aios_desk_brand"
 MAX_COMPANY_PERSONA_LENGTH = 2000
 
 
@@ -46,6 +50,15 @@ def get_user_handoff_mode(user: str | None = None) -> str:
         return HANDOFF_MODE_DEFAULT
     raw = frappe.defaults.get_user_default(_HANDOFF_DEFAULT_KEY, user=target)
     return raw if raw in _HANDOFF_MODE_ALLOWED else HANDOFF_MODE_DEFAULT
+
+
+def get_user_brand(user: str | None = None) -> str:
+    """Read per-user desk brand preference via Frappe Defaults; defaults to 'finto'."""
+    target = (user or getattr(frappe.session, "user", None) or "").strip()
+    if not target or target == "Guest":
+        return BRAND_DEFAULT
+    raw = frappe.defaults.get_user_default(_BRAND_DEFAULT_KEY, user=target)
+    return raw if raw in _BRAND_ALLOWED else BRAND_DEFAULT
 
 
 def _safe_api_errors(method_name: str):
@@ -669,6 +682,40 @@ def save_conversation_settings(handoff_mode: str = HANDOFF_MODE_DEFAULT):
             defer_insert=True,
         )
         frappe.throw("Gagal menyimpan pengaturan percakapan. Coba lagi nanti.", frappe.ValidationError)
+
+
+@_safe_api_errors("desktop.brand_settings")
+def brand_settings():
+    """Get per-user desk brand preferences ('finto' or 'ekasa')."""
+    user, _ = _require_active_client()
+    return {
+        "brand": {
+            "value": get_user_brand(user),
+            "options": [*_BRAND_OPTIONS],
+        }
+    }
+
+
+@frappe.whitelist(methods=["POST"])
+def save_brand_settings(brand: str = BRAND_DEFAULT):
+    """Save per-user desk brand preference via official Frappe Defaults."""
+    user, _ = _require_active_client()
+    try:
+        if not isinstance(brand, str) or brand.strip() not in _BRAND_ALLOWED:
+            frappe.throw("Pilihan desain tampilan tidak valid.", frappe.ValidationError)
+        cleaned = brand.strip()
+        frappe.defaults.set_user_default(_BRAND_DEFAULT_KEY, cleaned, user=user)
+        return {"brand": cleaned}
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception(
+            "AIOS Desktop API",
+            exc=exc,
+            context="desktop.save_brand_settings",
+            defer_insert=True,
+        )
+        frappe.throw("Gagal menyimpan pengaturan desain tampilan. Coba lagi nanti.", frappe.ValidationError)
 
 
 @frappe.whitelist(methods=["POST"])

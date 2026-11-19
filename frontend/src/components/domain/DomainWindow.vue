@@ -6,7 +6,11 @@ import { useModulesStore } from '../../stores/modules';
 import { useUiStore } from '../../stores/ui';
 import type { DomainCard } from '../../types';
 import { formatCurrency, formatNumber } from '../../utils/format';
+import { currentBrand } from '../../utils/theme';
+import fintoAnalyzeDataImg from '../../assets/branding/finto-analyze-data-transparent.png';
 import AppIcon from '../base/AppIcon.vue';
+
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
 const props = defineProps<{ domainKey: string }>();
 
@@ -111,7 +115,10 @@ onMounted(() => {
           <span class="domain-card-value">{{ formatCard(card) }}</span>
         </article>
       </section>
-      <div v-else class="empty-note">Belum ada kartu KPI.</div>
+      <div v-else class="empty-note">
+        <img v-if="isFintoBrand" class="empty-mascot-sm" :src="fintoAnalyzeDataImg" alt="Fino" />
+        <div>Belum ada kartu KPI.</div>
+      </div>
 
       <h3 class="sec">Shortcuts</h3>
       <div v-if="domainModules.length" class="domain-shortcuts">
@@ -127,7 +134,10 @@ onMounted(() => {
           <em>{{ formatNumber(m.row_count) }}</em>
         </button>
       </div>
-      <div v-else class="empty-note">Belum ada modul tersedia.</div>
+      <div v-else class="empty-note">
+        <img v-if="isFintoBrand" class="empty-mascot-sm" :src="fintoAnalyzeDataImg" alt="Fino" />
+        <div>Belum ada modul tersedia.</div>
+      </div>
 
       <div class="domain-ask">
         <span class="agent-dot" :data-branch="branch?.key">{{ branchInitial }}</span>

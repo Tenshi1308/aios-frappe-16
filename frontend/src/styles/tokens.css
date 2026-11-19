@@ -142,6 +142,23 @@
   --boot-log: var(--faint);
   --boot-log-ok: var(--ok);
   --boot-skip: var(--faint);
+
+  /* Palet primitif Finto OS */
+  --fos-navy: #0b1f3b;
+  --fos-blue: #0e63ff;
+  --fos-cyan: #00d4c8;
+  --fos-lime: #a7f432;
+  --fos-violet: #8b5cf6;
+  --fos-light: #f3f7fb;
+
+  --fos-logo-top-1: #0fd2ea;
+  --fos-logo-top-2: #0bbaef;
+  --fos-logo-top-3: #048efb;
+  --fos-logo-stem-1: #0eb5ea;
+  --fos-logo-stem-2: #0373fb;
+  --fos-logo-lime-1: #acf01f;
+  --fos-logo-lime-2: #a0e83c;
+  --fos-logo-lime-3: #8ce35e;
 }
 
 [data-branch='finance'] {
@@ -275,5 +292,185 @@
   --domain-support: #2e8f8f;
   --domain-quality: #5f8233;
   --domain-accounting: #2f6cb3;
+  color-scheme: light;
+}
+
+/* ---------- DESAIN FINTO OS (Palet A3 Hybrid + Wallpaper Layar Kunci + Boot D2) ---------- */
+:root[data-brand='finto'] {
+  /* Wallpaper layar kunci — pastel saat Mode Terang */
+  --wall-base: #e8f0fa;
+  --wall-1: rgba(14, 99, 255, 0.2);
+  --wall-2: rgba(0, 212, 200, 0.2);
+  --wall-3: rgba(139, 92, 246, 0.16);
+
+  /* Shell desktop & taskbar — selalu Navy (Palet A3) */
+  --desk-wall-base: #06111f;
+  --desk-wall-1: rgba(14, 99, 255, 0.32);
+  --desk-wall-2: rgba(0, 212, 200, 0.24);
+  --desk-wall-3: #12305a;
+  --desk-fg: #f3f7fb;
+  --desk-muted: #9fb3c8;
+  --desk-text-shadow: rgba(6, 17, 31, 0.72);
+  --tb-bg: rgba(11, 31, 59, 0.92);
+  --tb-fg: #f3f7fb;
+  --tb-muted: #9fb3c8;
+  --tb-line: rgba(0, 212, 200, 0.18);
+  --tb-hover: rgba(255, 255, 255, 0.08);
+  --tb-press: rgba(255, 255, 255, 0.14);
+  --tb-search-bg: rgba(16, 42, 78, 0.88);
+  --tb-accent: #00d4c8;
+
+  /* Jendela, flyout & panel — Terang saat Light Mode */
+  --glass: rgba(243, 247, 251, 0.82);
+  --glass-strong: rgba(243, 247, 251, 0.94);
+  --glass-line: rgba(11, 31, 59, 0.12);
+  --surface: #ffffff;
+  --surface-2: #f3f7fb;
+  --line: #dbe4f0;
+  --fg: #0b1f3b;
+  --muted: #64708a;
+  --faint: #8492a6;
+  --accent: #0e63ff;
+  --accent-strong: #0b4fd4;
+  --accent-soft: rgba(14, 99, 255, 0.12);
+  --on-accent: #f3f7fb;
+  --agent-accent-sales: var(--fos-blue);
+  --agent-accent-finance: var(--fos-cyan);
+  --agent-accent-accounting: var(--fos-violet);
+
+  /* Layar kunci — jam gelap di dinding pastel, kartu masuk tetap putih */
+  --lock-clock-fg: #0b1f3b;
+  --lock-clock-muted: #64708a;
+  --lock-card-bg: rgba(255, 255, 255, 0.94);
+  --lock-card-fg: #0b1f3b;
+  --lock-card-muted: #64708a;
+  --lock-card-line: rgba(11, 31, 59, 0.12);
+  --lock-field-bg: #ffffff;
+  --lock-field-line: #dbe4f0;
+
+  /* Boot D2 — visual spec Finto OS */
+  --boot-bg:
+    radial-gradient(ellipse at 50% 38%, rgba(14, 99, 255, 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 40%, #12305a 0%, #0b1f3b 55%, #06111f 100%);
+  --boot-fg: #f3f7fb;
+  --boot-bar: rgba(243, 247, 251, 0.14);
+  --boot-bar-fill: linear-gradient(90deg, #0e63ff 0%, #00d4c8 52%, #a7f432 100%);
+  --boot-bar-glow: 0 0 12px rgba(0, 212, 200, 0.55);
+  --boot-status: #00d4c8;
+  --boot-log: rgba(243, 247, 251, 0.82);
+  --boot-log-ok: #a7f432;
+  --boot-skip: rgba(243, 247, 251, 0.55);
+  --boot-grid-cyan: rgba(0, 212, 200, 0.2);
+  --boot-grid-blue: rgba(14, 99, 255, 0.22);
+  --boot-scanline: rgba(255, 255, 255, 0.025);
+  --boot-scanbeam: linear-gradient(180deg, transparent 0%, rgba(0, 212, 200, 0.12) 50%, transparent 100%);
+  --boot-vignette: inset 0 0 180px rgba(4, 12, 24, 0.85);
+  --boot-halo: radial-gradient(circle, rgba(0, 212, 200, 0.36) 0%, rgba(14, 99, 255, 0.2) 48%, transparent 72%);
+  --boot-logo-shadow-1: drop-shadow(0 0 14px rgba(0, 212, 200, 0.55));
+  --boot-logo-shadow-2: drop-shadow(0 0 20px rgba(167, 244, 50, 0.5));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-brand='finto']:not([data-theme='light']) {
+    /* Wallpaper layar kunci — Navy saat Mode Gelap */
+    --wall-base: #06111f;
+    --wall-1: rgba(14, 99, 255, 0.32);
+    --wall-2: rgba(0, 212, 200, 0.24);
+    --wall-3: #12305a;
+
+    /* Jam putih di dinding navy; kartu masuk tetap putih */
+    --lock-clock-fg: #f3f7fb;
+    --lock-clock-muted: #9fb3c8;
+    --lock-card-bg: rgba(255, 255, 255, 0.95);
+    --lock-card-fg: #0b1f3b;
+    --lock-card-muted: #64708a;
+    --lock-card-line: rgba(11, 31, 59, 0.12);
+    --lock-field-bg: #ffffff;
+    --lock-field-line: #dbe4f0;
+
+    /* Jendela, flyout & panel — Gelap Navy saat Dark Mode */
+    --glass: rgba(11, 31, 59, 0.78);
+    --glass-strong: rgba(11, 31, 59, 0.92);
+    --glass-line: rgba(0, 212, 200, 0.16);
+    --surface: #0b1f3b;
+    --surface-2: #102a4e;
+    --line: #1e3a63;
+    --fg: #f3f7fb;
+    --muted: #9fb3c8;
+    --faint: #6c84a3;
+    --accent: #0e63ff;
+    --accent-strong: #00d4c8;
+    --accent-soft: rgba(0, 212, 200, 0.16);
+    --on-accent: #f3f7fb;
+    --hover: rgba(255, 255, 255, 0.07);
+    --press: rgba(255, 255, 255, 0.12);
+    --boot-bg:
+      radial-gradient(ellipse at 50% 38%, rgba(14, 99, 255, 0.28) 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 40%, #12305a 0%, #0b1f3b 55%, #06111f 100%);
+    --boot-fg: #f3f7fb;
+    --boot-bar: rgba(243, 247, 251, 0.14);
+    --boot-status: #00d4c8;
+    --boot-log: rgba(243, 247, 251, 0.82);
+    --boot-log-ok: #a7f432;
+    --boot-skip: rgba(243, 247, 251, 0.55);
+    color-scheme: dark;
+  }
+}
+
+:root[data-brand='finto'][data-theme='dark'] {
+  /* Wallpaper layar kunci — Navy saat Mode Gelap */
+  --wall-base: #06111f;
+  --wall-1: rgba(14, 99, 255, 0.32);
+  --wall-2: rgba(0, 212, 200, 0.24);
+  --wall-3: #12305a;
+
+  /* Jam putih di dinding navy; kartu masuk tetap putih */
+  --lock-clock-fg: #f3f7fb;
+  --lock-clock-muted: #9fb3c8;
+  --lock-card-bg: rgba(255, 255, 255, 0.95);
+  --lock-card-fg: #0b1f3b;
+  --lock-card-muted: #64708a;
+  --lock-card-line: rgba(11, 31, 59, 0.12);
+  --lock-field-bg: #ffffff;
+  --lock-field-line: #dbe4f0;
+
+  /* Jendela, flyout & panel — Gelap Navy saat Dark Mode */
+  --glass: rgba(11, 31, 59, 0.78);
+  --glass-strong: rgba(11, 31, 59, 0.92);
+  --glass-line: rgba(0, 212, 200, 0.16);
+  --surface: #0b1f3b;
+  --surface-2: #102a4e;
+  --line: #1e3a63;
+  --fg: #f3f7fb;
+  --muted: #9fb3c8;
+  --faint: #6c84a3;
+  --accent: #0e63ff;
+  --accent-strong: #00d4c8;
+  --accent-soft: rgba(0, 212, 200, 0.16);
+  --on-accent: #f3f7fb;
+  --hover: rgba(255, 255, 255, 0.07);
+  --press: rgba(255, 255, 255, 0.12);
+  --boot-bg:
+    radial-gradient(ellipse at 50% 38%, rgba(14, 99, 255, 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 40%, #12305a 0%, #0b1f3b 55%, #06111f 100%);
+  --boot-fg: #f3f7fb;
+  --boot-bar: rgba(243, 247, 251, 0.14);
+  --boot-status: #00d4c8;
+  --boot-log: rgba(243, 247, 251, 0.82);
+  --boot-log-ok: #a7f432;
+  --boot-skip: rgba(243, 247, 251, 0.55);
+  color-scheme: dark;
+}
+
+:root[data-brand='finto'][data-theme='light'] {
+  --boot-bg:
+    radial-gradient(ellipse at 50% 38%, rgba(14, 99, 255, 0.28) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 40%, #12305a 0%, #0b1f3b 55%, #06111f 100%);
+  --boot-fg: #f3f7fb;
+  --boot-bar: rgba(243, 247, 251, 0.14);
+  --boot-status: #00d4c8;
+  --boot-log: rgba(243, 247, 251, 0.82);
+  --boot-log-ok: #a7f432;
+  --boot-skip: rgba(243, 247, 251, 0.55);
   color-scheme: light;
 }

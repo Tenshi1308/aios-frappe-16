@@ -8,10 +8,15 @@ import { useUiStore } from '../../stores/ui';
 import { MAX_UPLOAD_BYTES, UPLOAD_EXTENSIONS } from '../../api/chat';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { formatDurationMs, formatTokenCount } from '../../utils/format';
+import { currentBrand } from '../../utils/theme';
+import fintoWelcomeImg from '../../assets/branding/finto-welcome-transparent.png';
 import type { ArtifactEvent, ChatMessage, FileEntry } from '../../types';
 import AgentStep from './AgentStep.vue';
+import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 import RichText from '../base/RichText.vue';
+
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
 const session = useSessionStore();
 const branches = useBranchesStore();
@@ -235,7 +240,7 @@ async function onFilesPicked(e: Event) {
   <aside class="agent-panel" aria-label="AI agents">
     <header class="ap-head">
       <div class="ap-title">
-        <span v-if="branch" class="agent-dot lg" :data-branch="branch.key">{{ branch.name.charAt(0).toUpperCase() }}</span>
+        <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="lg" />
         <div v-if="branch">
           <b>{{ branch.name }}</b>
           <small>{{ branch.description || branch.tagline }}</small>
@@ -284,7 +289,7 @@ async function onFilesPicked(e: Event) {
         :class="{ on: b.key === branchKey }"
         @click="switchBranch(b.key)"
       >
-        <span class="agent-dot xs" :data-branch="b.key">{{ b.name.charAt(0).toUpperCase() }}</span>
+        <AgentAvatar :branch-key="b.key" :name="b.name" size="xs" />
         {{ shortName(b.name) }}
       </button>
     </nav>
@@ -329,8 +334,9 @@ async function onFilesPicked(e: Event) {
         </details>
       </div>
       <div v-if="showGreeting" class="msg agent">
+        <img v-if="isFintoBrand" class="ap-welcome-mascot" :src="fintoWelcomeImg" alt="Fino" />
         <div class="msg-who">
-          <span v-if="branch" class="agent-dot xs" :data-branch="branch.key">{{ branch.name.charAt(0).toUpperCase() }}</span>
+          <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
           {{ branch?.name ?? 'Agent' }}
         </div>
         <div class="bubble"><RichText :text="greeting" /></div>
@@ -338,7 +344,7 @@ async function onFilesPicked(e: Event) {
       <template v-for="m in messages" :key="m.id">
         <div class="msg" :class="m.role">
           <div v-if="m.role === 'agent'" class="msg-who">
-            <span v-if="branch" class="agent-dot xs" :data-branch="branch.key">{{ branch.name.charAt(0).toUpperCase() }}</span>
+            <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="xs" />
             {{ branch?.name ?? 'Agent' }}
           </div>
           <div v-if="m.role === 'agent' && m.steps?.length" class="trace-block" :class="{ live: m.live }">

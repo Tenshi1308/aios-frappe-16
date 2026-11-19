@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useSessionStore } from '../stores/session';
+import { currentBrand, isDarkEffective } from '../utils/theme';
+import lockupLightImg from '../assets/branding/finto-logo-utama-nobg.png';
+import lockupDarkImg from '../assets/branding/finto-logo-pill-blue.png';
 import AppIcon from '../components/base/AppIcon.vue';
 import EkasaMark from '../components/base/EkasaMark.vue';
 
 const session = useSessionStore();
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
+const lockupSrc = computed(() => (isDarkEffective() ? lockupDarkImg : lockupLightImg));
 const now = ref(new Date());
 let timer: number | undefined;
 onMounted(() => {
@@ -38,8 +43,13 @@ async function signIn() {
       <div class="d">{{ longDate }}</div>
     </div>
     <form class="lock-card" @submit.prevent="signIn">
-      <div class="avatar xl"><EkasaMark :size="34" accent="var(--on-accent)" /></div>
-      <div class="lock-name">Ekasa Desk</div>
+      <template v-if="isFintoBrand">
+        <img class="lock-lockup" :src="lockupSrc" alt="Finto OS" />
+      </template>
+      <template v-else>
+        <div class="avatar xl"><EkasaMark :size="34" accent="var(--on-accent)" /></div>
+        <div class="lock-name">Ekasa Desk</div>
+      </template>
       <div class="lock-mail">Masuk untuk melanjutkan ke desktop</div>
       <div class="lock-fields">
         <div class="lock-field">

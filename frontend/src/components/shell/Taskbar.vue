@@ -4,13 +4,16 @@ import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { useWindowManager } from '../../composables/useWindowManager';
 import { fetchFlags, fetchOrderNotifications } from '../../api/connector';
+import { currentBrand } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
+import FintoMark from '../base/FintoMark.vue';
 
 const session = useSessionStore();
 const ui = useUiStore();
 const wm = useWindowManager();
 const activeId = wm.activeId;
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 
 const now = ref(new Date());
 let timer: number | undefined;
@@ -59,6 +62,7 @@ onUnmounted(() => {
 const timeStr = computed(() => now.value.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 const shortDate = computed(() => now.value.toLocaleDateString('en-GB'));
 const siteName = computed(() => session.context?.aios_company_name || session.context?.company || 'AIOS');
+const productTag = computed(() => (isFintoBrand.value ? 'Finto OS' : 'AIOS'));
 </script>
 
 <template>
@@ -66,12 +70,13 @@ const siteName = computed(() => session.context?.aios_company_name || session.co
     <div class="tb-left">
       <button class="tb-site" :title="'Terhubung ke ' + siteName">
         <span class="dot ok" />
-        <span style="min-width: 0"><b>{{ siteName }}</b><small>AIOS · online</small></span>
+        <span style="min-width: 0"><b>{{ siteName }}</b><small>{{ productTag }} · online</small></span>
       </button>
     </div>
     <div class="tb-center">
       <button class="tb-btn start" :class="{ on: ui.flyout === 'start' }" aria-label="Menu mulai" @click="ui.toggleFlyout('start')">
-        <EkasaMark :size="22" />
+        <FintoMark v-if="isFintoBrand" :size="22" />
+        <EkasaMark v-else :size="22" />
       </button>
       <button class="tb-search" aria-label="Pencarian" @click="ui.openSearch()">
         <AppIcon name="search" :size="16" />
@@ -125,10 +130,10 @@ const siteName = computed(() => session.context?.aios_company_name || session.co
   border: 1px solid transparent;
   border-radius: var(--radius-6);
   background: transparent;
-  color: var(--fg);
+  color: var(--tb-fg, var(--fg));
 }
 .tray.bell:hover {
-  background: var(--hover);
+  background: var(--tb-hover, var(--hover));
 }
 .bell-badge {
   position: absolute;

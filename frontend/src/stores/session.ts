@@ -1,9 +1,31 @@
 import { defineStore } from 'pinia';
 import { fetchRegistrationStatus, fetchSessionContext, login as apiLogin, registerAccount } from '../api/session';
 import { apiFetch } from '../api/client';
+import { currentBrand } from '../utils/theme';
 import type { SessionContext } from '../types';
 
 export type SessionPhase = 'boot' | 'lock' | 'register' | 'pending' | 'desktop';
+
+let bootSkipResolve: (() => void) | null = null;
+let bootSeq = 0;
+
+function sleepBoot(ms: number, seq: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => {
+      if (bootSkipResolve === done) bootSkipResolve = null;
+      resolve();
+    }, ms);
+    const done = () => {
+      window.clearTimeout(timer);
+      if (bootSkipResolve === done) bootSkipResolve = null;
+      resolve();
+    };
+    if (seq === bootSeq) {
+      bootSkipResolve = done;
+    }
+  });
+}
 
 export const useSessionStore = defineStore('session', {
   state: () => ({
@@ -21,6 +43,7 @@ export const useSessionStore = defineStore('session', {
     siteRole: 'client',
     /** Pesan aman saat status akun memblokir akses desktop (fail-closed). */
     blockedMessage: '',
+    bootSkipped: false,
   }),
   getters: {
     csrfToken: (s) => s.context?.csrf_token ?? '',
@@ -46,8 +69,30 @@ export const useSessionStore = defineStore('session', {
     setProgress(value: number) {
       this.bootProgress = Math.max(this.bootProgress, Math.min(100, Math.round(value)));
     },
+    skipBoot() {
+      this.bootSkipped = true;
+      this.setProgress(100);
+      bootSkipResolve?.();
+    },
+    async waitBootStep(targetElapsedMs: number, startMs: number, seq: number) {
+      if (this.bootSkipped || seq !== bootSeq) return;
+      const isFinto = currentBrand.value === 'finto';
+      if (!isFinto) return;
+      const reduced =
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const scaledTarget = reduced ? Math.round(targetElapsedMs * 0.3) : targetElapsedMs;
+      const remaining = scaledTarget - (Date.now() - startMs);
+      if (remaining > 0) {
+        await sleepBoot(remaining, seq);
+      }
+    },
     async boot() {
+      const seq = ++bootSeq;
+      const startMs = Date.now();
       this.phase = 'boot';
+      this.bootSkipped = false;
       this.bootProgress = 0;
       this.bootLog = [];
       this.setProgress(10);
@@ -63,20 +108,36 @@ export const useSessionStore = defineStore('session', {
       }
       try {
         const ctx = await fetchSessionContext();
+        if (seq !== bootSeq) return;
+        await this.waitBootStep(1600, startMs, seq);
+        if (seq !== bootSeq) return;
         this.setProgress(55);
         this.pushBoot('Memulihkan sesi');
-        this.applyContext(ctx);
+        await this.waitBootStep(3200, startMs, seq);
+        if (seq !== bootSeq) return;
         this.setProgress(88);
         this.pushBoot('Menyiapkan desktop');
         this.online = true;
+        await this.waitBootStep(4600, startMs, seq);
+        if (seq !== bootSeq) return;
         this.setProgress(100);
+        await this.waitBootStep(5100, startMs, seq);
+        if (seq !== bootSeq) return;
+        this.applyContext(ctx);
       } catch (err) {
         console.warn('Boot session check failed or no active session:', err);
+        if (seq !== bootSeq) return;
+        await this.waitBootStep(1800, startMs, seq);
+        if (seq !== bootSeq) return;
         this.setProgress(55);
         this.pushBoot('Sesi tidak ditemukan — menyiapkan layar masuk');
         this.context = null;
         this.online = true;
+        await this.waitBootStep(4600, startMs, seq);
+        if (seq !== bootSeq) return;
         this.setProgress(100);
+        await this.waitBootStep(5100, startMs, seq);
+        if (seq !== bootSeq) return;
         this.phase = 'lock';
       }
     },

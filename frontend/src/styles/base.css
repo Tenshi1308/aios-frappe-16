@@ -121,21 +121,143 @@ textarea {
   position: absolute;
   inset: 0;
   background: var(--boot-bg);
-  color: var(--fg);
+  color: var(--boot-fg);
   display: grid;
   place-items: center;
   cursor: default;
   user-select: none;
+  overflow: hidden;
 }
-.boot {
-  color: var(--boot-fg);
+.boot-grid {
+  position: absolute;
+  left: -25%;
+  right: -25%;
+  bottom: -10%;
+  height: 60%;
+  background-image:
+    linear-gradient(to right, var(--boot-grid-cyan) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--boot-grid-blue) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(420px) rotateX(62deg);
+  transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, var(--boot-fg) 42%, var(--boot-fg) 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, var(--boot-fg) 42%, var(--boot-fg) 100%);
+  animation: bootGridMove 2.4s linear infinite;
+  pointer-events: none;
+}
+@keyframes bootGridMove {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 0 48px;
+  }
+}
+.boot-scanline {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 2px,
+    var(--boot-scanline) 2px,
+    var(--boot-scanline) 3px
+  );
+  pointer-events: none;
+}
+.boot-scanline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -120px;
+  height: 120px;
+  background: var(--boot-scanbeam);
+  animation: bootScanBeam 3.2s linear infinite;
+}
+@keyframes bootScanBeam {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(120vh);
+  }
+}
+.boot-vignette {
+  position: absolute;
+  inset: 0;
+  box-shadow: var(--boot-vignette);
+  pointer-events: none;
 }
 .boot-center {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--space-18);
+  width: min(440px, calc(100vw - 48px));
   transform: translateY(-4vh);
+}
+.boot-logo-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+.boot-halo {
+  position: absolute;
+  inset: -28px;
+  background: var(--boot-halo);
+  filter: blur(6px);
+  animation: bootHaloPulse var(--dur-240) ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes bootHaloPulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+.boot-lockup {
+  position: relative;
+  z-index: 1;
+  height: 76px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  animation:
+    bootLogoIn 0.9s cubic-bezier(0.2, 0.9, 0.25, 1.15) both,
+    bootLogoGlow var(--dur-240) ease-in-out 1.2s infinite;
+}
+
+.boot-lockup.light-lockup {
+  background: var(--fos-light);
+  padding: var(--space-8) var(--space-18);
+  border-radius: var(--radius-pill);
+}
+@keyframes bootLogoIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes bootLogoGlow {
+  0%,
+  100% {
+    filter: var(--boot-logo-shadow-1);
+  }
+  50% {
+    filter: var(--boot-logo-shadow-2);
+  }
 }
 .boot-mark {
   color: var(--boot-fg);
@@ -158,12 +280,33 @@ textarea {
   background: var(--boot-bar);
   overflow: hidden;
 }
+.boot-bar.finto-bar {
+  width: min(320px, 78vw);
+  height: 3px;
+}
 .boot-bar i {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, var(--accent), var(--accent-strong));
   border-radius: var(--radius-4);
   transition: width var(--dur-12) linear;
+}
+.boot-bar.finto-bar i {
+  background: var(--boot-bar-fill);
+  box-shadow: var(--boot-bar-glow);
+}
+.boot-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  width: min(320px, 78vw);
+}
+.boot-pct {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--boot-status);
 }
 .boot-status {
   font-family: var(--font-mono);
@@ -173,6 +316,7 @@ textarea {
 }
 .boot-log {
   position: absolute;
+  z-index: 1;
   left: max(16px, 4vw);
   bottom: 56px;
   margin: 0;
@@ -188,14 +332,40 @@ textarea {
   color: var(--boot-log-ok);
   font-weight: var(--fw-500);
 }
+.boot-cursor {
+  display: inline-block;
+  color: var(--boot-status);
+  font-weight: var(--fw-700);
+  animation: bootCursorBlink var(--dur-90) steps(2, end) infinite;
+}
+@keyframes bootCursorBlink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
 .boot-skip {
   position: absolute;
+  z-index: 1;
   bottom: 22px;
   left: 0;
   right: 0;
   text-align: center;
   font-size: var(--fs-12);
   color: var(--boot-skip);
+}
+@media (prefers-reduced-motion: reduce) {
+  .boot-grid,
+  .boot-scanline::after,
+  .boot-halo,
+  .boot-lockup,
+  .boot-cursor {
+    animation: none;
+  }
 }
 @keyframes breathe {
   0%,
@@ -220,6 +390,7 @@ textarea {
 }
 .lock-clock {
   text-align: center;
+  color: var(--lock-clock-fg, var(--fg));
 }
 .lock-clock .t {
   font-size: clamp(64px, 12vw, 112px);
@@ -232,7 +403,7 @@ textarea {
   font-size: var(--fs-18);
   font-weight: var(--fw-500);
   margin-top: var(--space-10);
-  color: var(--muted);
+  color: var(--lock-clock-muted, var(--muted));
 }
 .lock-card {
   width: min(340px, 100%);
@@ -242,11 +413,24 @@ textarea {
   gap: var(--space-6);
   padding: var(--space-28) var(--space-24) var(--space-20);
   border-radius: var(--radius-20);
-  background: var(--glass);
+  background: var(--lock-card-bg, var(--glass));
+  color: var(--lock-card-fg, var(--fg));
   backdrop-filter: var(--glass-blur-sm);
   -webkit-backdrop-filter: var(--glass-blur-sm);
-  border: 1px solid var(--glass-line);
+  border: 1px solid var(--lock-card-line, var(--glass-line));
   box-shadow: var(--shadow);
+}
+.lock-lockup {
+  height: 48px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  margin-bottom: var(--space-4);
+}
+.avatar-flat-fino {
+  width: 58px;
+  height: 58px;
+  object-fit: contain;
 }
 .lock-name {
   font-size: var(--fs-20);
@@ -255,7 +439,7 @@ textarea {
 }
 .lock-mail {
   font-size: var(--fs-13);
-  color: var(--muted);
+  color: var(--lock-card-muted, var(--muted));
   margin-bottom: var(--space-12);
 }
 .lock-fields {
@@ -267,8 +451,8 @@ textarea {
 .lock-field {
   display: flex;
   width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--lock-field-bg, var(--surface));
+  border: 1px solid var(--lock-field-line, var(--line));
   border-radius: var(--radius-10);
   overflow: hidden;
 }
@@ -280,7 +464,7 @@ textarea {
   background: transparent;
   padding: var(--space-11) var(--space-12);
   font: inherit;
-  color: var(--fg);
+  color: var(--lock-card-fg, var(--fg));
 }
 .lock-field input:focus,
 .lock-field select:focus {
@@ -320,18 +504,18 @@ textarea {
 }
 .lock-link {
   font-size: var(--fs-12-5);
-  color: var(--muted);
+  color: var(--lock-card-muted, var(--muted));
   text-align: center;
   padding: var(--space-6);
   border-radius: var(--radius-8);
 }
 .lock-link:hover {
   background: var(--hover);
-  color: var(--fg);
+  color: var(--lock-card-fg, var(--fg));
 }
 .lock-foot {
   font-size: var(--fs-12);
-  color: var(--muted);
+  color: var(--lock-clock-muted, var(--muted));
   display: flex;
   align-items: center;
   gap: var(--space-8);
@@ -417,6 +601,16 @@ textarea {
   width: 36px;
   height: 36px;
   font-size: var(--fs-15);
+}
+.agent-dot.fino-avatar {
+  background: var(--fos-light);
+  overflow: hidden;
+}
+.agent-dot.fino-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .chip {
   display: inline-flex;
@@ -507,6 +701,13 @@ textarea {
     opacity: 1;
   }
 }
+.desktop.wall {
+  background:
+    radial-gradient(60% 70% at 12% 92%, var(--desk-wall-1, var(--wall-1)) 0%, transparent 62%),
+    radial-gradient(55% 65% at 88% 12%, var(--desk-wall-2, var(--wall-2)) 0%, transparent 62%),
+    radial-gradient(70% 60% at 62% 95%, var(--desk-wall-3, var(--wall-3)) 0%, transparent 66%),
+    var(--desk-wall-base, var(--wall-base));
+}
 .desk-area {
   position: relative;
   overflow: hidden;
@@ -530,15 +731,15 @@ textarea {
   font-size: var(--fs-12);
   font-weight: var(--fw-600);
   text-align: center;
-  color: var(--fg);
+  color: var(--desk-fg, var(--fg));
   border: 1px solid transparent;
 }
 .desk-icon span:last-of-type {
-  text-shadow: 0 1px 2px var(--glass);
+  text-shadow: 0 1px 2px var(--desk-text-shadow, var(--glass));
 }
 .desk-icon:hover {
-  background: var(--glass);
-  border-color: var(--glass-line);
+  background: var(--tb-hover, var(--glass));
+  border-color: var(--tb-line, var(--glass-line));
 }
 .desk-icon.sel {
   background: var(--accent-soft);
@@ -549,7 +750,7 @@ textarea {
   right: 18px;
   bottom: 14px;
   font-size: var(--fs-12);
-  color: var(--muted);
+  color: var(--desk-muted, var(--muted));
   display: flex;
   gap: var(--space-14);
   flex-wrap: wrap;
@@ -667,6 +868,36 @@ textarea {
   text-align: center;
   padding-top: var(--space-12);
 }
+.about-lockup {
+  height: 44px;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+.about-mascot {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+}
+.empty-mascot {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  margin-bottom: var(--space-8);
+}
+.empty-mascot-sm {
+  width: 54px;
+  height: 54px;
+  object-fit: contain;
+  margin-bottom: var(--space-6);
+}
+.ap-welcome-mascot {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  align-self: flex-start;
+  margin-bottom: var(--space-4);
+}
 .about-word {
   font-weight: var(--fw-800);
   font-size: var(--fs-24);
@@ -711,10 +942,11 @@ textarea {
   align-items: center;
   gap: var(--space-8);
   padding: 0 var(--space-8);
-  background: var(--glass-strong);
+  background: var(--tb-bg, var(--glass-strong));
+  color: var(--tb-fg, var(--fg));
   backdrop-filter: var(--glass-blur-md);
   -webkit-backdrop-filter: var(--glass-blur-md);
-  border-top: 1px solid var(--glass-line);
+  border-top: 1px solid var(--tb-line, var(--glass-line));
 }
 .tb-left,
 .tb-right {
@@ -745,17 +977,17 @@ textarea {
   display: grid;
   place-items: center;
   flex: none;
-  color: var(--fg);
+  color: var(--tb-fg, var(--fg));
 }
 .tb-btn:hover,
 .tb-btn.on {
-  background: var(--hover);
+  background: var(--tb-hover, var(--hover));
 }
 .tb-btn:active {
-  background: var(--press);
+  background: var(--tb-press, var(--press));
 }
 .tb-btn.agent-btn {
-  color: var(--accent-strong);
+  color: var(--tb-accent, var(--accent-strong));
 }
 .tb-btn.app::after {
   content: '';
@@ -765,16 +997,16 @@ textarea {
   width: 0;
   height: 3px;
   border-radius: var(--radius-3);
-  background: var(--faint);
+  background: var(--tb-muted, var(--faint));
   transform: translateX(-50%);
   transition: width var(--dur-15);
 }
 .tb-btn.app.active::after {
   width: 16px;
-  background: var(--accent);
+  background: var(--tb-accent, var(--accent));
 }
 .tb-btn.app.active {
-  background: var(--hover);
+  background: var(--tb-hover, var(--hover));
 }
 .tb-search {
   display: flex;
@@ -784,20 +1016,20 @@ textarea {
   width: 240px;
   padding: 0 var(--space-12);
   border-radius: var(--radius-pill);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  color: var(--muted);
+  background: var(--tb-search-bg, var(--surface));
+  border: 1px solid var(--tb-line, var(--line));
+  color: var(--tb-muted, var(--muted));
   font-size: var(--fs-13);
   flex: none;
   margin: 0 var(--space-4);
 }
 .tb-search:hover {
-  border-color: var(--faint);
+  border-color: var(--tb-accent, var(--faint));
 }
 .tb-sep {
   width: 1px;
   height: 24px;
-  background: var(--line);
+  background: var(--tb-line, var(--line));
   margin: 0 var(--space-4);
   flex: none;
 }
@@ -810,9 +1042,10 @@ textarea {
   font-size: var(--fs-12);
   text-align: left;
   min-width: 0;
+  color: var(--tb-fg, var(--fg));
 }
 .tb-site:hover {
-  background: var(--hover);
+  background: var(--tb-hover, var(--hover));
 }
 .tb-site b {
   display: block;
@@ -821,7 +1054,7 @@ textarea {
 }
 .tb-site small {
   display: block;
-  color: var(--muted);
+  color: var(--tb-muted, var(--muted));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -833,11 +1066,11 @@ textarea {
   height: 42px;
   padding: 0 var(--space-10);
   border-radius: var(--radius-8);
-  color: var(--fg);
+  color: var(--tb-fg, var(--fg));
 }
 .tray:hover,
 .clock:hover {
-  background: var(--hover);
+  background: var(--tb-hover, var(--hover));
 }
 .clock {
   display: flex;
@@ -850,6 +1083,7 @@ textarea {
   font-size: var(--fs-12);
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
+  color: var(--tb-fg, var(--fg));
 }
 
 /* ---------- FLYOUTS ---------- */

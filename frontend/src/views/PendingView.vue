@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useSessionStore } from '../stores/session';
+import { currentBrand } from '../utils/theme';
+import fintoFlatLogoSvg from '../assets/branding/finto-flat-logo.svg';
 import EkasaMark from '../components/base/EkasaMark.vue';
 
 const session = useSessionStore();
+const isFintoBrand = computed(() => currentBrand.value === 'finto');
 const message = computed(
   () =>
     session.blockedMessage ||
@@ -17,7 +20,10 @@ const message = computed(
       <div class="d">Akses dibatasi</div>
     </div>
     <div class="lock-card">
-      <div class="avatar xl"><EkasaMark :size="34" accent="var(--on-accent)" /></div>
+      <div class="avatar xl">
+        <img v-if="isFintoBrand" class="avatar-flat-fino" :src="fintoFlatLogoSvg" alt="Fino" />
+        <EkasaMark v-else :size="34" accent="var(--on-accent)" />
+      </div>
       <div class="lock-name">Menunggu persetujuan</div>
       <div class="lock-mail">{{ message }}</div>
       <div class="lock-actions">
