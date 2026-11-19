@@ -18,6 +18,7 @@ const MIN_H = 320;
 function factory(bounds: () => { w: number; h: number }) {
   const windows = reactive<DeskWindow[]>([]);
   const activeId = ref<string | null>(null);
+  const interacting = ref(false);
   let z = 10;
   let seq = 0;
 
@@ -79,6 +80,7 @@ function factory(bounds: () => { w: number; h: number }) {
     // tanpa ini setPointerCapture menelan click tombol minimize/max/close.
     if (e.button !== 0 || win.max || narrow || (e.target as HTMLElement).closest('button')) return;
     focus(win);
+    interacting.value = true;
     const sx = e.clientX;
     const sy = e.clientY;
     const ox = win.x;
@@ -91,6 +93,7 @@ function factory(bounds: () => { w: number; h: number }) {
       win.y = Math.max(0, Math.min(oy + ev.clientY - sy, b.h - 40));
     };
     const onUp = () => {
+      interacting.value = false;
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
@@ -103,6 +106,7 @@ function factory(bounds: () => { w: number; h: number }) {
   function startResize(e: PointerEvent, win: DeskWindow, narrow: boolean) {
     if (win.max || narrow) return;
     focus(win);
+    interacting.value = true;
     const sx = e.clientX;
     const sy = e.clientY;
     const ow = win.w;
@@ -114,6 +118,7 @@ function factory(bounds: () => { w: number; h: number }) {
       win.h = Math.max(MIN_H, oh + ev.clientY - sy);
     };
     const onUp = () => {
+      interacting.value = false;
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
@@ -136,7 +141,7 @@ function factory(bounds: () => { w: number; h: number }) {
     }
   }
 
-  return { windows, activeId, open, focus, minimize, close, toggleMax, winStyle, startDrag, startResize, taskClick };
+  return { windows, activeId, interacting, open, focus, minimize, close, toggleMax, winStyle, startDrag, startResize, taskClick };
 }
 
 type WindowManager = ReturnType<typeof factory>;

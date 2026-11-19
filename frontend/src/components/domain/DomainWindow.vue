@@ -93,7 +93,7 @@ onMounted(() => {
         aria-label="Muat ulang bidang"
         @click="onRefresh"
       >
-        <AppIcon name="refresh" :size="14" />
+        <AppIcon name="refresh" :size="14" :class="{ spin: loading }" />
         <span>{{ loading ? 'Memuat…' : 'Refresh' }}</span>
       </button>
     </header>
@@ -107,7 +107,7 @@ onMounted(() => {
       @retry="onRefresh"
     />
 
-    <div v-if="loading && !entry" class="domain-state">Memuat data bidang…</div>
+    <div v-if="loading && !entry" class="domain-state is-loading">Memuat data bidang…</div>
 
     <template v-else-if="entry">
       <section v-if="cards.length" class="domain-cards" aria-label="Ringkasan bidang">

@@ -164,15 +164,15 @@ onUnmounted(() => window.clearInterval(timer));
       @retry="load()"
     />
 
-    <div v-else-if="loading && !totalCount" class="cf-empty">Memuat peringatan…</div>
+    <div v-else-if="loading && !totalCount" class="cf-empty is-loading">Memuat peringatan…</div>
     <div v-else-if="!totalCount" class="cf-empty">
       Tidak ada percakapan atau pesanan yang perlu ditinjau.
     </div>
 
     <template v-else>
-      <ul class="cf-list">
+      <TransitionGroup name="t-list" tag="ul" class="cf-list">
         <!-- Unread order draft notifications -->
-        <li v-for="order in orders" :key="order.name" class="cf-item cf-item-order">
+        <li v-for="order in orders" :key="`order:${order.name}`" class="cf-item cf-item-order">
           <div class="cf-row">
             <span class="cf-badge-order">{{ order.doctype }}</span>
             <b>{{ order.customer_name }}</b>
@@ -196,7 +196,7 @@ onUnmounted(() => window.clearInterval(timer));
         </li>
 
         <!-- Channel flags -->
-        <li v-for="flag in openFlags" :key="flag.name" class="cf-item" :data-severity="flag.severity">
+        <li v-for="flag in openFlags" :key="`flag:${flag.name}`" class="cf-item" :data-severity="flag.severity">
           <div class="cf-row">
             <span class="cf-sev">{{ flag.severity }}</span>
             <b>{{ flag.label || flag.rule_key }}</b>
@@ -216,7 +216,7 @@ onUnmounted(() => window.clearInterval(timer));
             </button>
           </div>
         </li>
-      </ul>
+      </TransitionGroup>
 
       <!-- Order pagination controls below order list -->
       <footer v-if="orderTotal > 0" class="cf-pagination">
@@ -272,6 +272,10 @@ onUnmounted(() => window.clearInterval(timer));
   color: var(--fg);
   font-size: var(--fs-12);
   cursor: pointer;
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.cf-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .cf-btn:hover:not(:disabled) {
   background: var(--hover);
@@ -287,10 +291,12 @@ onUnmounted(() => window.clearInterval(timer));
   background: var(--bad-soft);
   color: var(--bad);
   font-size: var(--fs-12);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .cf-empty {
   color: var(--muted);
   font-size: var(--fs-13);
+  animation: fade var(--dur-30) ease;
 }
 .cf-list {
   display: flex;
@@ -313,6 +319,7 @@ onUnmounted(() => window.clearInterval(timer));
   border-left: 3px solid var(--warn);
   border-radius: var(--radius-6);
   background: var(--surface-2);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .cf-item[data-severity='high'] {
   border-left-color: var(--bad);
@@ -364,9 +371,13 @@ onUnmounted(() => window.clearInterval(timer));
   color: var(--fg);
   font-size: var(--fs-12);
   cursor: pointer;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
 }
 .cf-btn-open:hover {
   background: var(--hover);
+}
+.cf-btn-open:active {
+  transform: scale(0.97);
 }
 .cf-excerpt,
 .cf-reason {
@@ -395,6 +406,20 @@ onUnmounted(() => window.clearInterval(timer));
   color: var(--fg);
   font-size: var(--fs-12);
   cursor: pointer;
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.cf-close:active:not(:disabled) {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-error {
+    animation: none;
+  }
+  .cf-btn:active,
+  .cf-btn-open:active,
+  .cf-close:active {
+    transform: none;
+  }
 }
 .cf-close:hover:not(:disabled) {
   background: var(--hover);

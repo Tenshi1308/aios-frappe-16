@@ -4,6 +4,7 @@ import { useBranchesStore } from '../../stores/branches';
 import { useChatStore } from '../../stores/chat';
 import type { FileEntry } from '../../types';
 import { formatBytes } from '../../utils/format';
+import AccordionTransition from '../base/AccordionTransition.vue';
 import AppIcon from '../base/AppIcon.vue';
 
 interface ConversationFolder {
@@ -116,7 +117,7 @@ onMounted(() => {
         </template>
       </nav>
       <button class="files-refresh" type="button" :disabled="chat.myFilesLoading" @click="refreshFiles">
-        <AppIcon name="refresh" :size="14" />
+        <AppIcon name="refresh" :size="14" :class="{ spin: chat.myFilesLoading }" />
         Refresh
       </button>
     </header>
@@ -124,7 +125,7 @@ onMounted(() => {
     <div class="files-layout">
       <aside class="files-sidebar" aria-label="Folder percakapan">
         <div class="files-sidebar-title">Folder</div>
-        <div v-if="chat.myFilesLoading && !branchFolders.length" class="files-sidebar-note">Memuat file…</div>
+        <div v-if="chat.myFilesLoading && !branchFolders.length" class="files-sidebar-note is-loading">Memuat file…</div>
         <div v-else-if="!branchFolders.length" class="files-sidebar-note">Belum ada file</div>
         <template v-for="branchFolder in branchFolders" :key="branchFolder.key">
           <button
@@ -136,24 +137,26 @@ onMounted(() => {
             <AppIcon name="folder" :size="16" />
             <span>{{ branches.byKey(branchFolder.key)?.name ?? branchFolder.key }}</span>
           </button>
-          <div v-if="expandedBranches.has(branchFolder.key)" class="files-tree-conversations">
-            <button
-              v-for="conversation in branchFolder.conversations"
-              :key="conversation.id"
-              class="files-tree-conversation"
-              :class="{ selected: conversation.id === selectedConversationId }"
-              type="button"
-              @click="selectConversation(conversation, branchFolder.key)"
-            >
-              <AppIcon name="folder" :size="14" />
-              <span>{{ conversation.title }}</span>
-            </button>
-          </div>
+          <AccordionTransition>
+            <div v-if="expandedBranches.has(branchFolder.key)" class="files-tree-conversations">
+              <button
+                v-for="conversation in branchFolder.conversations"
+                :key="conversation.id"
+                class="files-tree-conversation"
+                :class="{ selected: conversation.id === selectedConversationId }"
+                type="button"
+                @click="selectConversation(conversation, branchFolder.key)"
+              >
+                <AppIcon name="folder" :size="14" />
+                <span>{{ conversation.title }}</span>
+              </button>
+            </div>
+          </AccordionTransition>
         </template>
       </aside>
 
       <section class="files-content" aria-label="Isi percakapan">
-        <div v-if="chat.myFilesLoading && !chat.myFiles.length" class="files-empty">Memuat file…</div>
+        <div v-if="chat.myFilesLoading && !chat.myFiles.length" class="files-empty is-loading">Memuat file…</div>
         <div v-else-if="chat.myFilesError" class="files-empty files-error">{{ chat.myFilesError }}</div>
         <div v-else-if="!selectedFiles.length" class="files-empty">Belum ada file</div>
         <template v-else>
@@ -234,6 +237,10 @@ onMounted(() => {
   border-radius: var(--radius-6);
   background: var(--surface-2);
   font-size: var(--fs-11);
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.files-refresh:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .files-refresh:hover:not(:disabled),
 .files-row:hover {
@@ -271,6 +278,7 @@ onMounted(() => {
   padding: var(--space-18) var(--space-12);
   color: var(--muted);
   font-size: var(--fs-12);
+  animation: fade var(--dur-30) ease;
 }
 .files-tree-branch,
 .files-tree-conversation {
@@ -283,6 +291,7 @@ onMounted(() => {
   background: transparent;
   text-align: left;
   font-size: var(--fs-11);
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease;
 }
 .files-tree-branch span,
 .files-tree-conversation span {
@@ -313,6 +322,7 @@ onMounted(() => {
 }
 .files-error {
   color: var(--bad);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .files-list-head,
 .files-row {
@@ -337,6 +347,16 @@ onMounted(() => {
   border-bottom: 1px solid var(--line);
   background: transparent;
   font-size: var(--fs-11);
+  transition: background var(--dur-15) ease;
+  animation: fade var(--dur-20) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-error {
+    animation: none;
+  }
+  .files-refresh:active {
+    transform: none;
+  }
 }
 .files-row > span:not(.files-name) {
   overflow: hidden;

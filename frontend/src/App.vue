@@ -82,10 +82,12 @@ watch(
 <template>
   <main class="os" :class="{ narrow }">
     <GlassScrollbar />
-    <BootScreen v-if="session.phase === 'boot'" />
-    <DesktopView v-else-if="session.phase === 'desktop'" :narrow="narrow" />
-    <RegisterView v-else-if="session.phase === 'register' && session.canRegister" />
-    <PendingView v-else-if="session.phase === 'pending'" />
-    <LoginView v-else />
+    <Transition name="t-screen">
+      <BootScreen v-if="session.phase === 'boot'" />
+      <DesktopView v-else-if="session.phase === 'desktop'" :narrow="narrow" />
+      <RegisterView v-else-if="session.phase === 'register' && session.canRegister" />
+      <PendingView v-else-if="session.phase === 'pending'" />
+      <LoginView v-else />
+    </Transition>
   </main>
 </template>

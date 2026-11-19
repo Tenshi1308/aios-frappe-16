@@ -20,7 +20,7 @@ const message = computed(
       <div class="d">Akses dibatasi</div>
     </div>
     <div class="lock-card">
-      <div class="avatar xl">
+      <div class="avatar xl pending-avatar">
         <img v-if="isFintoBrand" class="avatar-flat-fino" :src="fintoFlatLogoSvg" alt="Fino" />
         <EkasaMark v-else :size="34" accent="var(--on-accent)" />
       </div>

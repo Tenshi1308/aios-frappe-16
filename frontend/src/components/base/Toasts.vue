@@ -5,7 +5,7 @@ const ui = useUiStore();
 </script>
 
 <template>
-  <div class="toasts">
+  <TransitionGroup name="t-toast" tag="div" class="toasts">
     <div v-for="t in ui.toasts" :key="t.id" class="toast">{{ t.text }}</div>
-  </div>
+  </TransitionGroup>
 </template>

@@ -95,22 +95,26 @@ const productTag = computed(() => (isFintoBrand.value ? 'Finto OS' : 'AIOS'));
         <AppIcon name="sparkle" :size="21" />
       </button>
       <span v-if="wm.windows.length" class="tb-sep" />
-      <button
-        v-for="w in wm.windows"
-        :key="w.id"
-        class="tb-btn app"
-        :class="{ active: w.id === activeId && !w.min }"
-        :title="w.title"
-        :aria-label="w.title"
-        @click="wm.taskClick(w.id)"
-      >
-        <span class="tile neutral"><AppIcon name="desk" :size="15" /></span>
-      </button>
+      <TransitionGroup name="t-tb-app">
+        <button
+          v-for="w in wm.windows"
+          :key="w.id"
+          class="tb-btn app"
+          :class="{ active: w.id === activeId && !w.min }"
+          :title="w.title"
+          :aria-label="w.title"
+          @click="wm.taskClick(w.id)"
+        >
+          <span class="tile neutral"><AppIcon name="desk" :size="15" /></span>
+        </button>
+      </TransitionGroup>
     </div>
     <div class="tb-right">
       <button class="tray bell" aria-label="Peringatan kanal" title="Peringatan kanal" @click="openFlags()">
         <AppIcon name="bell" :size="17" />
-        <span v-if="bellCount" class="bell-badge">{{ bellBadgeText }}</span>
+        <Transition name="t-pop">
+          <span v-if="bellCount" class="bell-badge">{{ bellBadgeText }}</span>
+        </Transition>
       </button>
       <div class="tray" aria-label="Status koneksi">
         <AppIcon name="wifi" :size="16" />
@@ -131,9 +135,18 @@ const productTag = computed(() => (isFintoBrand.value ? 'Finto OS' : 'AIOS'));
   border-radius: var(--radius-6);
   background: transparent;
   color: var(--tb-fg, var(--fg));
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
 }
 .tray.bell:hover {
   background: var(--tb-hover, var(--hover));
+}
+.tray.bell:active {
+  transform: scale(0.95);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tray.bell:active {
+    transform: none;
+  }
 }
 .bell-badge {
   position: absolute;

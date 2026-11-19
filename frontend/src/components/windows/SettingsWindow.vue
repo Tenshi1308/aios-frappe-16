@@ -427,7 +427,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
       @retry="refresh"
     />
 
-    <div v-if="loading && !data" class="settings-state">
+    <div v-if="loading && !data" class="settings-state is-loading">
       Memuat pengaturan site…
     </div>
 
@@ -482,8 +482,9 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         :aria-labelledby="'settings-tab-' + activeTab"
         tabindex="0"
       >
+        <Transition name="t-tab" mode="out-in">
         <!-- Halaman UMUM -->
-        <div v-if="activeTab === 'general'" class="settings-sections">
+        <div v-if="activeTab === 'general'" key="general" class="settings-sections">
           <!-- Profil Pengguna -->
           <section class="settings-card" aria-label="Profil pengguna">
             <div class="card-head">
@@ -611,7 +612,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         </div>
 
         <!-- Halaman DESAIN -->
-        <div v-else-if="activeTab === 'design'" class="settings-sections">
+        <div v-else-if="activeTab === 'design'" key="design" class="settings-sections">
           <section class="settings-card" aria-label="Pilihan desain tampilan">
             <div class="card-head">
               <div class="card-title-wrap">
@@ -655,7 +656,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         </div>
 
         <!-- Halaman PERCAKAPAN -->
-        <div v-else-if="activeTab === 'conversation'" class="settings-sections">
+        <div v-else-if="activeTab === 'conversation'" key="conversation" class="settings-sections">
           <section class="settings-card" aria-label="Pengaturan percakapan dan hand-off">
             <div class="card-head">
               <div class="card-title-wrap">
@@ -699,7 +700,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         </div>
 
         <!-- Halaman KONEKTOR -->
-        <div v-else-if="activeTab === 'connector'" class="settings-sections">
+        <div v-else-if="activeTab === 'connector'" key="connector" class="settings-sections">
           <section class="settings-card" aria-label="Integrasi Telegram">
             <div class="card-head">
               <div class="card-title-wrap">
@@ -709,7 +710,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
               <span v-if="modules.telegramStatus?.linked" class="badge-linked">Tersambung</span>
             </div>
 
-            <div v-if="modules.telegramLoading" class="tg-loading">
+            <div v-if="modules.telegramLoading" class="tg-loading is-loading">
               <span>Memproses…</span>
             </div>
 
@@ -784,7 +785,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         </div>
 
         <!-- Halaman PERSONALISASI -->
-        <div v-else-if="activeTab === 'personalization'" class="settings-sections">
+        <div v-else-if="activeTab === 'personalization'" key="personalization" class="settings-sections">
           <section class="settings-card" aria-label="Konteks Perusahaan">
             <div class="card-head">
               <div class="card-title-wrap">
@@ -840,7 +841,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         </div>
 
         <!-- Halaman PENERIMA KANAL (Khusus AIOS Client Owner) -->
-        <div v-else-if="activeTab === 'receivers' && isClientOwner" class="settings-sections">
+        <div v-else-if="activeTab === 'receivers' && isClientOwner" key="receivers" class="settings-sections">
           <section class="settings-card" aria-label="Penerima Notifikasi Kanal">
             <div class="card-head">
               <div class="card-title-wrap">
@@ -864,7 +865,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
               <b>Mode Cadangan Pemilik:</b> Belum ada penerima khusus yang dipilih. Notifikasi saat ini otomatis dikirim ke pemilik klien aktif.
             </div>
 
-            <div v-if="modules.staffLoading && !modules.staffData" class="tg-loading">
+            <div v-if="modules.staffLoading && !modules.staffData" class="tg-loading is-loading">
               <span>Memuat daftar pengguna…</span>
             </div>
 
@@ -902,7 +903,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
         </div>
 
         <!-- Halaman KELOLA STAF (Khusus AIOS Client Owner) -->
-        <div v-else-if="activeTab === 'staff' && isClientOwner" class="settings-sections">
+        <div v-else-if="activeTab === 'staff' && isClientOwner" key="staff" class="settings-sections">
           <!-- Plafon Pengguna -->
           <section class="settings-card" aria-label="Plafon pengguna aktif">
             <div class="card-head">
@@ -1065,6 +1066,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
             </div>
           </section>
         </div>
+        </Transition>
       </main>
     </div>
   </div>
@@ -1095,7 +1097,12 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   background: var(--surface);
   color: var(--fg);
   cursor: pointer;
-  transition: background var(--dur-15) ease;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.settings-refresh-btn:active:not(:disabled),
+.settings-retry-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .settings-refresh-btn:hover:not(:disabled),
@@ -1120,6 +1127,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   color: var(--bad);
   font-size: var(--fs-12-5);
   flex: none;
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 
 .settings-state {
@@ -1250,6 +1258,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   font-weight: var(--fw-600);
   background: var(--surface-2);
   color: var(--muted);
+  animation: winIn var(--dur-18) ease-out;
 }
 
 .save-status-pill.ok {
@@ -1281,7 +1290,12 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   transition:
     background var(--dur-15) ease,
     color var(--dur-15) ease,
-    border-color var(--dur-15) ease;
+    border-color var(--dur-15) ease,
+    transform var(--dur-12) ease;
+}
+
+.theme-opt-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .theme-opt-btn:hover:not(:disabled):not(.active) {
@@ -1322,7 +1336,12 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   cursor: pointer;
   transition:
     background var(--dur-15) ease,
-    border-color var(--dur-15) ease;
+    border-color var(--dur-15) ease,
+    transform var(--dur-12) ease;
+}
+
+.handoff-opt-btn:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .handoff-opt-btn:hover:not(:disabled):not(.active) {
@@ -1439,19 +1458,6 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   color: var(--muted);
 }
 
-.spin {
-  animation: settings-spin var(--dur-90) linear infinite;
-}
-
-@keyframes settings-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 .badge-linked {
   background: var(--ok-soft);
   color: var(--ok);
@@ -1459,12 +1465,13 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   border-radius: var(--radius-4);
   font-size: var(--fs-11);
   font-weight: var(--fw-600);
+  animation: winIn var(--dur-18) ease-out;
 }
 
 .tg-loading {
   font-size: var(--fs-12);
   color: var(--muted);
-  padding: var(--space-6) 0;
+  padding: var(--space-6) var(--space-8);
 }
 
 .tg-linked-box,
@@ -1494,7 +1501,11 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   background: var(--accent);
   color: var(--on-accent);
   cursor: pointer;
-  transition: opacity var(--dur-15) ease;
+  transition: opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.btn-primary-tg-icon:active {
+  transform: scale(0.95);
 }
 
 .btn-primary-tg-icon:hover {
@@ -1512,7 +1523,11 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   background: var(--surface-2);
   color: var(--fg);
   cursor: pointer;
-  transition: background var(--dur-15) ease;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.btn-secondary-copy-icon:active {
+  transform: scale(0.95);
 }
 
 .btn-secondary-copy-icon:hover {
@@ -1530,7 +1545,11 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   background: transparent;
   color: var(--bad);
   cursor: pointer;
-  transition: background var(--dur-15) ease;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.btn-danger-icon:active {
+  transform: scale(0.95);
 }
 
 .btn-danger-icon:hover {
@@ -1541,6 +1560,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   display: flex;
   flex-direction: column;
   gap: var(--space-10);
+  animation: rise2 var(--dur-20) ease-out;
 }
 
 .tg-warning-banner {
@@ -1551,6 +1571,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   border-radius: var(--radius-6);
   font-size: var(--fs-12);
   line-height: 1.4;
+  animation: rise2 var(--dur-20) ease-out;
 }
 
 .tg-buttons-dual {
@@ -1563,6 +1584,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   color: var(--bad);
   font-size: var(--fs-12);
   margin: var(--space-6) 0 0 0;
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 
 /* Personalisasi */
@@ -1585,6 +1607,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   resize: vertical;
   min-height: 140px;
   box-sizing: border-box;
+  transition: border-color var(--dur-15) ease, background var(--dur-15) ease;
 }
 
 .persona-textarea:focus {
@@ -1628,7 +1651,12 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   background: var(--surface);
   color: var(--fg);
   cursor: pointer;
-  transition: background var(--dur-15) ease;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.btn-save-icon:active:not(:disabled),
+.btn-cancel-icon:active:not(:disabled) {
+  transform: scale(0.95);
 }
 
 .btn-save-icon:hover:not(:disabled),
@@ -1646,6 +1674,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   margin: 0;
   color: var(--bad);
   font-size: var(--fs-12);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 
 /* Penerima Kanal & Kelola Staf */
@@ -1667,6 +1696,12 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   border-radius: var(--radius-8);
   border: 1px solid var(--line);
   background: var(--surface-2);
+  transition: background var(--dur-15) ease;
+  animation: rise2 var(--dur-20) ease-out;
+}
+
+.staff-row:hover {
+  background: var(--hover);
 }
 
 .staff-info {
@@ -1756,6 +1791,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   font-family: var(--font-ui);
   font-size: var(--fs-12-5);
   box-sizing: border-box;
+  transition: border-color var(--dur-15) ease, background var(--dur-15) ease;
 }
 
 .staff-input.mono {
@@ -1777,6 +1813,11 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   font-size: var(--fs-12-5);
   font-weight: var(--fw-600);
   cursor: pointer;
+  transition: opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.btn-primary-staff:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn-primary-staff:disabled {
@@ -1792,6 +1833,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   border-radius: var(--radius-8);
   border: 1px solid var(--ok);
   background: var(--ok-soft);
+  animation: rise2 var(--dur-20) ease-out;
 }
 
 .invite-banner-head {
@@ -1830,6 +1872,15 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   font-size: var(--fs-11-5);
   font-weight: var(--fw-600);
   cursor: pointer;
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+
+.btn-staff-secondary:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-staff-secondary:hover:not(:disabled) {
+  background: var(--hover);
 }
 
 .btn-staff-secondary.danger {
@@ -1840,6 +1891,27 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
 .btn-staff-secondary:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-error,
+  .tg-error,
+  .persona-error {
+    animation: none;
+  }
+  .settings-refresh-btn:active,
+  .settings-retry-btn:active,
+  .theme-opt-btn:active,
+  .handoff-opt-btn:active,
+  .btn-primary-tg-icon:active,
+  .btn-secondary-copy-icon:active,
+  .btn-danger-icon:active,
+  .btn-save-icon:active,
+  .btn-cancel-icon:active,
+  .btn-primary-staff:active,
+  .btn-staff-secondary:active {
+    transform: none;
+  }
 }
 
 @media (max-width: 560px) {

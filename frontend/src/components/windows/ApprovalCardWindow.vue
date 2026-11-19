@@ -550,7 +550,7 @@ onUnmounted(() => {
 
 <template>
   <div class="approval-card">
-    <div v-if="loading" class="ac-note">Memuat draft…</div>
+    <div v-if="loading" class="ac-note is-loading">Memuat draft…</div>
     <div v-else-if="error" class="ac-note">{{ error }}</div>
     <template v-else-if="draft">
       <div class="ac-meta">
@@ -674,14 +674,16 @@ onUnmounted(() => {
             {{ busy ? 'Memproses…' : 'Setujui & Eksekusi' }}
           </button>
         </div>
-        <button
-          v-if="confirmingReject"
-          class="btn ghost wide"
-          :disabled="busy"
-          @click="reject"
-        >
-          {{ busy ? 'Memproses…' : 'Konfirmasi Penolakan' }}
-        </button>
+        <Transition name="t-pop-up">
+          <button
+            v-if="confirmingReject"
+            class="btn ghost wide"
+            :disabled="busy"
+            @click="reject"
+          >
+            {{ busy ? 'Memproses…' : 'Konfirmasi Penolakan' }}
+          </button>
+        </Transition>
       </div>
       <div v-else-if="isExpired" class="ac-note ac-expired" role="status">
         <span>Draf sudah kedaluwarsa.</span>
@@ -726,6 +728,15 @@ onUnmounted(() => {
   color: var(--fg);
   font-size: var(--fs-12);
 }
+.ac-meta,
+.ac-json,
+.ac-section,
+.ac-fallback {
+  animation: rise2 var(--dur-20) ease-out;
+}
+.ac-note {
+  animation: fade var(--dur-30) ease;
+}
 .ac-meta {
   align-items: center;
 }
@@ -741,6 +752,7 @@ onUnmounted(() => {
   color: var(--bad);
   font-size: var(--fs-11);
   font-weight: var(--fw-600);
+  animation: winIn var(--dur-18) ease-out;
 }
 .ac-section {
   flex-direction: column;
@@ -813,6 +825,7 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--line);
   text-align: center;
   vertical-align: top;
+  transition: background var(--dur-15) ease;
 }
 .ac-table tbody tr:last-child td {
   border-bottom: none;
@@ -936,6 +949,7 @@ onUnmounted(() => {
 }
 .ac-result {
   align-items: center;
+  animation: rise2 var(--dur-20) ease-out;
 }
 .ac-result.ok {
   border-color: var(--ok);
@@ -944,6 +958,7 @@ onUnmounted(() => {
 .ac-result.fail {
   border-color: var(--bad);
   color: var(--bad);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .ac-code {
   font-family: var(--font-mono);
@@ -965,6 +980,12 @@ onUnmounted(() => {
   color: var(--fg);
   font: inherit;
   font-size: var(--fs-12);
+  transition: border-color var(--dur-15) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ac-result.fail {
+    animation: none;
+  }
 }
 .ac-btns {
   display: flex;

@@ -14,6 +14,7 @@ import { useWindowManager } from '../../composables/useWindowManager';
 import { formatDurationMs, formatTokenCount } from '../../utils/format';
 import type { ArtifactEvent, ChatMessage, ConversationItem, FileEntry } from '../../types';
 import AgentStep from './AgentStep.vue';
+import AccordionTransition from '../base/AccordionTransition.vue';
 import AgentAvatar from '../base/AgentAvatar.vue';
 import AppIcon from '../base/AppIcon.vue';
 import ErrorState from '../base/ErrorState.vue';
@@ -56,6 +57,7 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const threadEl = ref<HTMLElement | null>(null);
 const panelEl = ref<HTMLElement | null>(null);
 const uploading = ref(false);
+const resizing = ref(false);
 const traceOpenId = ref<string | null>(null);
 const contextOpen = ref(false);
 const headerMenuOpen = ref(false);
@@ -252,6 +254,7 @@ function toggleSidebarOrHistory() {
 
 function startResize(e: PointerEvent) {
   if (ui.agentFullscreen || e.button !== 0) return;
+  resizing.value = true;
   const el = e.currentTarget as HTMLElement;
   const startX = e.clientX;
   const startW = panelEl.value?.getBoundingClientRect().width ?? ui.agentWidth;
@@ -265,6 +268,7 @@ function startResize(e: PointerEvent) {
     ui.setAgentWidth(nextW);
   };
   const onUp = () => {
+    resizing.value = false;
     el.removeEventListener('pointermove', onMove);
     el.removeEventListener('pointerup', onUp);
     el.removeEventListener('pointercancel', onUp);
@@ -506,7 +510,12 @@ async function onFilesPicked(e: Event) {
   <aside
     ref="panelEl"
     class="agent-panel"
-    :class="{ wide: isWideMode, fullscreen: ui.agentFullscreen, 'sidebar-open': sidebarVisible }"
+    :class="{
+      wide: isWideMode,
+      fullscreen: ui.agentFullscreen,
+      'sidebar-open': sidebarVisible,
+      'ap-geo-anim': !resizing,
+    }"
     :style="panelStyle"
     aria-label="AI agents"
   >
@@ -617,12 +626,13 @@ async function onFilesPicked(e: Event) {
     </nav>
 
     <div class="ap-body">
-      <aside
-        v-if="sidebarVisible"
-        class="ap-history"
-        :class="{ sidebar: isWideMode }"
-        aria-label="Sidebar riwayat percakapan"
-      >
+      <Transition :name="isWideMode ? 't-sidebar-left' : 't-slide-left'">
+        <aside
+          v-if="sidebarVisible"
+          class="ap-history"
+          :class="{ sidebar: isWideMode }"
+          aria-label="Sidebar riwayat percakapan"
+        >
         <div v-if="isWideMode" class="ap-tabs ap-tabs-sidebar" aria-label="Daftar agent">
           <button
             v-for="b in branches.branches"
@@ -704,7 +714,8 @@ async function onFilesPicked(e: Event) {
           </div>
         </div>
 
-        <div v-if="!historyListCollapsed" class="ap-history-list">
+        <AccordionTransition>
+          <div v-if="!historyListCollapsed" class="ap-history-list">
           <div
             v-for="c in conversations"
             :key="c.id"
@@ -805,7 +816,7 @@ async function onFilesPicked(e: Event) {
             </template>
           </div>
 
-          <div v-if="chat.historyLoading[branchKey]" class="empty-note">
+          <div v-if="chat.historyLoading[branchKey]" class="empty-note is-loading">
             Memuat riwayat…
           </div>
           <ErrorState
@@ -820,7 +831,9 @@ async function onFilesPicked(e: Event) {
             {{ isArchivedView ? 'Tidak ada percakapan diarsipkan.' : 'Belum ada percakapan di cabang ini.' }}
           </div>
         </div>
+        </AccordionTransition>
       </aside>
+      </Transition>
 
       <div class="ap-main">
         <div ref="threadEl" class="ap-thread">
@@ -859,16 +872,18 @@ async function onFilesPicked(e: Event) {
                   </template>
                   <span class="trace-toggle">{{ traceOpenId === m.id ? 'Sembunyikan' : 'Lihat detail' }}</span>
                 </button>
-                <div v-if="traceOpenId === m.id || m.live" class="trace-steps">
-                  <AgentStep
-                    v-for="(step, si) in m.steps"
-                    :key="si"
-                    :step="step"
-                    :default-open="!!m.live && si === (m.steps?.length ?? 0) - 1"
-                    :running="!!m.live && si === (m.steps?.length ?? 0) - 1"
-                    :duration-text="stepDurationText(m, si)"
-                  />
-                </div>
+                <AccordionTransition>
+                  <div v-if="traceOpenId === m.id || m.live" class="trace-steps">
+                    <AgentStep
+                      v-for="(step, si) in m.steps"
+                      :key="si"
+                      :step="step"
+                      :default-open="!!m.live && si === (m.steps?.length ?? 0) - 1"
+                      :running="!!m.live && si === (m.steps?.length ?? 0) - 1"
+                      :duration-text="stepDurationText(m, si)"
+                    />
+                  </div>
+                </AccordionTransition>
               </div>
               <div class="bubble"><RichText :text="m.text || (m.stopped ? '[Respons dihentikan oleh pengguna]' : '')" /></div>
               <div v-if="m.stopped" class="msg-stopped-tag">Dihentikan oleh pengguna</div>
@@ -1030,38 +1045,40 @@ async function onFilesPicked(e: Event) {
               <span v-if="currentContext.compacted" class="cp-pill-tag">Compacted</span>
             </button>
 
-            <div v-if="contextOpen" class="ap-context-popover" @click.stop>
-              <div class="cp-head">
-                <span class="cp-title">{{ currentContext.percent }}% of context used</span>
-                <span class="cp-ratio">~{{ formatTokenCount(currentContext.total) }} / {{ formatTokenCount(currentContext.limit) }}</span>
-              </div>
-              <div class="cp-bar" role="progressbar" :aria-valuenow="currentContext.percent" aria-valuemin="0" aria-valuemax="100">
-                <span class="seg seg-system" :style="{ width: `${segSystem}%` }" :title="`System: ~${formatTokenCount(currentContext.system)}`" />
-                <span class="seg seg-tools" :style="{ width: `${segTools}%` }" :title="`Tools: ~${formatTokenCount(currentContext.tools)}`" />
-                <span class="seg seg-messages" :style="{ width: `${segMessages}%` }" :title="`Messages: ~${formatTokenCount(currentContext.messages)}`" />
-              </div>
-              <div class="cp-breakdown">
-                <div class="cp-row">
-                  <span class="cp-dot dot-system">■</span>
-                  <span class="cp-label">System prompt</span>
-                  <span class="cp-val">~{{ formatTokenCount(currentContext.system) }}</span>
+            <Transition name="t-pop-up">
+              <div v-if="contextOpen" class="ap-context-popover" @click.stop>
+                <div class="cp-head">
+                  <span class="cp-title">{{ currentContext.percent }}% of context used</span>
+                  <span class="cp-ratio">~{{ formatTokenCount(currentContext.total) }} / {{ formatTokenCount(currentContext.limit) }}</span>
                 </div>
-                <div class="cp-row">
-                  <span class="cp-dot dot-tools">■</span>
-                  <span class="cp-label">Tool definitions</span>
-                  <span class="cp-val">~{{ formatTokenCount(currentContext.tools) }}</span>
+                <div class="cp-bar" role="progressbar" :aria-valuenow="currentContext.percent" aria-valuemin="0" aria-valuemax="100">
+                  <span class="seg seg-system" :style="{ width: `${segSystem}%` }" :title="`System: ~${formatTokenCount(currentContext.system)}`" />
+                  <span class="seg seg-tools" :style="{ width: `${segTools}%` }" :title="`Tools: ~${formatTokenCount(currentContext.tools)}`" />
+                  <span class="seg seg-messages" :style="{ width: `${segMessages}%` }" :title="`Messages: ~${formatTokenCount(currentContext.messages)}`" />
                 </div>
-                <div class="cp-row">
-                  <span class="cp-dot dot-messages">■</span>
-                  <span class="cp-label">Messages</span>
-                  <span class="cp-val">~{{ formatTokenCount(currentContext.messages) }}</span>
+                <div class="cp-breakdown">
+                  <div class="cp-row">
+                    <span class="cp-dot dot-system">■</span>
+                    <span class="cp-label">System prompt</span>
+                    <span class="cp-val">~{{ formatTokenCount(currentContext.system) }}</span>
+                  </div>
+                  <div class="cp-row">
+                    <span class="cp-dot dot-tools">■</span>
+                    <span class="cp-label">Tool definitions</span>
+                    <span class="cp-val">~{{ formatTokenCount(currentContext.tools) }}</span>
+                  </div>
+                  <div class="cp-row">
+                    <span class="cp-dot dot-messages">■</span>
+                    <span class="cp-label">Messages</span>
+                    <span class="cp-val">~{{ formatTokenCount(currentContext.messages) }}</span>
+                  </div>
+                </div>
+                <div v-if="currentContext.compacted" class="cp-compacted-note">
+                  <span class="cp-compacted-badge">Compacted</span>
+                  <span>Memori bergulir aktif</span>
                 </div>
               </div>
-              <div v-if="currentContext.compacted" class="cp-compacted-note">
-                <span class="cp-compacted-badge">Compacted</span>
-                <span>Memori bergulir aktif</span>
-              </div>
-            </div>
+            </Transition>
           </div>
         </div>
       </div>

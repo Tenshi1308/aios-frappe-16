@@ -81,7 +81,7 @@ onMounted(loadPreview);
     <div v-else class="aw-note">Artefak tidak ditemukan.</div>
 
     <template v-if="artifact">
-      <div v-if="loading" class="aw-note">Memuat pratinjau…</div>
+      <div v-if="loading" class="aw-note is-loading">Memuat pratinjau…</div>
       <div v-else-if="error" class="aw-note aw-error">{{ error }}</div>
       <div v-else-if="mode === 'too-large'" class="aw-note">
         Terlalu besar untuk pratinjau — silakan unduh.
@@ -142,6 +142,7 @@ onMounted(loadPreview);
   background: var(--surface-2);
   color: var(--fg);
   font-size: var(--fs-12);
+  animation: fade var(--dur-30) ease;
 }
 .aw-meta b {
   overflow: hidden;
@@ -165,9 +166,11 @@ onMounted(loadPreview);
   background: var(--surface-2);
   color: var(--muted);
   font-size: var(--fs-12);
+  animation: fade var(--dur-30) ease;
 }
 .aw-error {
   color: var(--bad);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .aw-text {
   flex: 1;
@@ -190,6 +193,7 @@ onMounted(loadPreview);
   border: 1px solid var(--line);
   border-radius: var(--radius-6);
   background: var(--surface);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .aw-download {
   display: inline-flex;
@@ -203,9 +207,13 @@ onMounted(loadPreview);
   color: var(--fg);
   font-size: var(--fs-12);
   text-decoration: none;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
 }
 .aw-download:hover {
   background: var(--hover);
+}
+.aw-download:active {
+  transform: scale(0.97);
 }
 .aw-table-wrap {
   flex: 1;
@@ -213,6 +221,7 @@ onMounted(loadPreview);
   border: 1px solid var(--line);
   border-radius: var(--radius-6);
   background: var(--surface-2);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .aw-table {
   width: 100%;
@@ -243,5 +252,14 @@ onMounted(loadPreview);
   background: var(--surface-2);
   color: var(--fg);
   font-size: var(--fs-12);
+  animation: rise2 var(--dur-20) ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aw-error {
+    animation: none;
+  }
+  .aw-download:active {
+    transform: none;
+  }
 }
 </style>

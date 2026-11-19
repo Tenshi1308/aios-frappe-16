@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import type { TraceEvent } from '../../types';
 import { prettyJson, traceStepIcon, traceStepLabel, traceStepSubtext } from '../../utils/format';
+import AccordionTransition from '../base/AccordionTransition.vue';
 import AppIcon from '../base/AppIcon.vue';
 
 const props = defineProps<{
@@ -73,16 +74,20 @@ const subtext = computed(() => traceStepSubtext(props.step));
       <span v-else-if="props.durationText" class="as-meta">{{ props.durationText }}</span>
       <span class="as-chev">{{ open ? '−' : '+' }}</span>
     </button>
-    <div v-if="open" class="as-sub" >{{ subtext }}</div>
-    <div v-if="open" class="as-body">
-      <div v-for="(section, i) in sections" :key="i" class="as-section">
-        <span class="as-section-label">{{ section.label }}</span>
-        <pre>{{ section.text }}</pre>
+    <AccordionTransition>
+      <div v-if="open" class="as-collapse">
+        <div class="as-sub">{{ subtext }}</div>
+        <div class="as-body">
+          <div v-for="(section, i) in sections" :key="i" class="as-section">
+            <span class="as-section-label">{{ section.label }}</span>
+            <pre>{{ section.text }}</pre>
+          </div>
+          <div v-if="step.type === 'trace_subagent_result'" class="as-status" :data-status="step.status">
+            {{ step.status }}
+          </div>
+        </div>
       </div>
-      <div v-if="step.type === 'trace_subagent_result'" class="as-status" :data-status="step.status">
-        {{ step.status }}
-      </div>
-    </div>
+    </AccordionTransition>
   </div>
 </template>
 
@@ -110,6 +115,7 @@ const subtext = computed(() => traceStepSubtext(props.step));
   font-size: var(--fs-11);
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur-15) ease;
 }
 .as-head:hover {
   background: var(--hover);

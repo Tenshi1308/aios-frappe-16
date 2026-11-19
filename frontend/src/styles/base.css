@@ -240,6 +240,7 @@ textarea {
   color: var(--boot-fg);
   text-shadow: var(--boot-word-shadow);
   text-align: center;
+  animation: rise2 var(--dur-20) ease-out var(--dur-20) both;
 }
 @keyframes bootLogoIn {
   from {
@@ -268,6 +269,7 @@ textarea {
   font-weight: var(--fw-800);
   font-size: var(--fs-30);
   letter-spacing: -0.02em;
+  animation: rise2 var(--dur-20) ease-out var(--dur-15) both;
 }
 .boot-word span {
   font-weight: var(--fw-500);
@@ -280,6 +282,7 @@ textarea {
   border-radius: var(--radius-4);
   background: var(--boot-bar);
   overflow: hidden;
+  animation: fade var(--dur-45) ease;
 }
 .boot-bar.finto-bar {
   width: min(320px, 78vw);
@@ -302,6 +305,7 @@ textarea {
   justify-content: space-between;
   gap: var(--space-12);
   width: min(320px, 78vw);
+  animation: fade var(--dur-45) ease;
 }
 .boot-pct {
   font-family: var(--font-mono);
@@ -314,6 +318,7 @@ textarea {
   font-size: var(--fs-12);
   color: var(--boot-status);
   min-height: 16px;
+  animation: fade var(--dur-45) ease;
 }
 .boot-log {
   position: absolute;
@@ -328,6 +333,9 @@ textarea {
   line-height: 1.75;
   color: var(--boot-log);
   max-width: calc(100% - 32px);
+}
+.boot-log li {
+  animation: rise2 var(--dur-20) ease-out;
 }
 .boot-log b {
   color: var(--boot-log-ok);
@@ -358,12 +366,15 @@ textarea {
   text-align: center;
   font-size: var(--fs-12);
   color: var(--boot-skip);
+  animation: breathe var(--dur-240) ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
   .boot-grid,
   .boot-scanline::after,
   .boot-halo,
   .boot-finto-mark,
+  .boot-mark,
+  .boot-skip,
   .boot-cursor {
     animation: none;
   }
@@ -392,6 +403,7 @@ textarea {
 .lock-clock {
   text-align: center;
   color: var(--lock-clock-fg, var(--fg));
+  animation: rise2 var(--dur-20) ease-out;
 }
 .lock-clock .t {
   font-size: clamp(64px, 12vw, 112px);
@@ -420,6 +432,7 @@ textarea {
   -webkit-backdrop-filter: var(--lock-card-blur, var(--glass-blur-sm));
   border: 1px solid var(--lock-card-line, var(--glass-line));
   box-shadow: var(--lock-card-shadow, var(--shadow));
+  animation: winIn var(--dur-18) ease-out;
 }
 .lock-lockup {
   height: 48px;
@@ -432,6 +445,9 @@ textarea {
   width: 58px;
   height: 58px;
   object-fit: contain;
+}
+.pending-avatar {
+  animation: breathe var(--dur-240) ease-in-out infinite;
 }
 .lock-name {
   font-size: var(--fs-20);
@@ -457,6 +473,7 @@ textarea {
   border-radius: var(--radius-10);
   box-shadow: var(--lock-field-shadow, none);
   overflow: hidden;
+  transition: border-color var(--dur-15) ease, box-shadow var(--dur-15) ease;
 }
 .lock-field input,
 .lock-field select {
@@ -489,6 +506,10 @@ textarea {
   place-items: center;
   background: var(--accent);
   color: var(--on-accent);
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.lock-go:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .lock-hint {
   font-size: var(--fs-12);
@@ -500,6 +521,7 @@ textarea {
   color: var(--bad);
   margin-top: var(--space-6);
   text-align: center;
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .lock-actions {
   display: flex;
@@ -514,6 +536,7 @@ textarea {
   text-align: center;
   padding: var(--space-6);
   border-radius: var(--radius-8);
+  transition: background var(--dur-15) ease, color var(--dur-15) ease;
 }
 .lock-link:hover {
   background: var(--hover);
@@ -526,6 +549,7 @@ textarea {
   align-items: center;
   gap: var(--space-8);
   text-align: center;
+  animation: fade var(--dur-45) ease;
 }
 .dot {
   width: 8px;
@@ -537,6 +561,7 @@ textarea {
 .dot.ok {
   background: var(--ok);
   box-shadow: 0 0 0 3px var(--ok-soft);
+  animation: trace-pulse var(--dur-110) ease-in-out infinite;
 }
 
 /* ---------- AVATAR / TILES / CHIPS / BUTTON ---------- */
@@ -630,6 +655,10 @@ textarea {
   font-weight: var(--fw-500);
   color: var(--fg);
   text-align: left;
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease, color var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.chip:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .chip:hover {
   border-color: var(--accent);
@@ -653,6 +682,10 @@ textarea {
   border-radius: var(--radius-8);
   font-weight: var(--fw-600);
   font-size: var(--fs-13);
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease, color var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .btn.ghost {
   border: 1px solid var(--line);
@@ -685,6 +718,10 @@ textarea {
   display: grid;
   place-items: center;
   color: var(--muted);
+  transition: background var(--dur-15) ease, color var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.95);
 }
 .icon-btn:hover {
   background: var(--hover);
@@ -744,6 +781,10 @@ textarea {
   text-align: center;
   color: var(--desk-fg, var(--fg));
   border: 1px solid transparent;
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.desk-icon:active {
+  transform: scale(0.97);
 }
 .desk-icon span:last-of-type {
   text-shadow: 0 1px 2px var(--desk-text-shadow, var(--glass));
@@ -766,6 +807,7 @@ textarea {
   gap: var(--space-14);
   flex-wrap: wrap;
   justify-content: flex-end;
+  animation: fade var(--dur-45) ease;
 }
 .desk-hint span {
   display: flex;
@@ -780,6 +822,11 @@ textarea {
   z-index: var(--z-base);
   pointer-events: none;
 }
+.win-slot {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .win {
   pointer-events: auto;
   position: absolute;
@@ -790,7 +837,16 @@ textarea {
   border-radius: var(--radius-12);
   box-shadow: var(--shadow);
   overflow: hidden;
-  animation: winIn var(--dur-18) ease-out;
+  transition: box-shadow var(--dur-15) ease;
+}
+.win.win-geo-anim {
+  transition:
+    left var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1),
+    top var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1),
+    width var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1),
+    height var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-radius var(--dur-20) ease,
+    box-shadow var(--dur-15) ease;
 }
 .win:not(.active) {
   box-shadow: var(--shadow-sm);
@@ -821,6 +877,7 @@ textarea {
   touch-action: none;
   user-select: none;
   flex: none;
+  transition: color var(--dur-15) ease;
 }
 .win:not(.active) .win-title {
   color: var(--muted);
@@ -844,6 +901,7 @@ textarea {
   display: grid;
   place-items: center;
   color: var(--muted);
+  transition: background var(--dur-15) ease, color var(--dur-15) ease;
 }
 .win-ctrls button:hover {
   background: var(--hover);
@@ -885,34 +943,40 @@ textarea {
   width: auto;
   max-width: 100%;
   object-fit: contain;
+  animation: rise2 var(--dur-20) ease-out;
 }
 .about-mascot {
   width: 96px;
   height: 96px;
   object-fit: contain;
+  animation: rise2 var(--dur-20) ease-out;
 }
 .empty-mascot {
   width: 76px;
   height: 76px;
   object-fit: contain;
   margin-bottom: var(--space-8);
+  animation: fade var(--dur-45) ease;
 }
 .empty-mascot-sm {
   width: 54px;
   height: 54px;
   object-fit: contain;
   margin-bottom: var(--space-6);
+  animation: fade var(--dur-45) ease;
 }
 .about-word {
   font-weight: var(--fw-800);
   font-size: var(--fs-24);
   letter-spacing: -0.02em;
+  animation: rise2 var(--dur-20) ease-out;
 }
 .about-line {
   font-size: var(--fs-13);
   color: var(--muted);
   max-width: 380px;
   line-height: 1.6;
+  animation: fade var(--dur-45) ease;
 }
 .about-meta {
   display: flex;
@@ -920,6 +984,7 @@ textarea {
   gap: var(--space-4);
   font-size: var(--fs-12-5);
   color: var(--muted);
+  animation: fade var(--dur-45) ease;
 }
 .about-meta b {
   color: var(--fg);
@@ -931,6 +996,7 @@ textarea {
   justify-content: center;
   font-size: var(--fs-12);
   color: var(--muted);
+  animation: fade var(--dur-45) ease;
 }
 .about-keys span {
   display: flex;
@@ -952,6 +1018,7 @@ textarea {
   backdrop-filter: var(--glass-blur-md);
   -webkit-backdrop-filter: var(--glass-blur-md);
   border-top: 1px solid var(--tb-line, var(--glass-line));
+  animation: rise2 var(--dur-20) ease-out;
 }
 .tb-left,
 .tb-right {
@@ -983,6 +1050,7 @@ textarea {
   place-items: center;
   flex: none;
   color: var(--tb-fg, var(--fg));
+  transition: background var(--dur-15) ease, color var(--dur-15) ease, transform var(--dur-12) ease;
 }
 .tb-btn:hover,
 .tb-btn.on {
@@ -990,6 +1058,7 @@ textarea {
 }
 .tb-btn:active {
   background: var(--tb-press, var(--press));
+  transform: scale(0.95);
 }
 .tb-btn.agent-btn {
   color: var(--tb-accent, var(--accent-strong));
@@ -1027,6 +1096,7 @@ textarea {
   font-size: var(--fs-13);
   flex: none;
   margin: 0 var(--space-4);
+  transition: border-color var(--dur-15) ease, background var(--dur-15) ease;
 }
 .tb-search:hover {
   border-color: var(--tb-accent, var(--faint));
@@ -1048,6 +1118,7 @@ textarea {
   text-align: left;
   min-width: 0;
   color: var(--tb-fg, var(--fg));
+  transition: background var(--dur-15) ease;
 }
 .tb-site:hover {
   background: var(--tb-hover, var(--hover));
@@ -1072,6 +1143,7 @@ textarea {
   padding: 0 var(--space-10);
   border-radius: var(--radius-8);
   color: var(--tb-fg, var(--fg));
+  transition: background var(--dur-15) ease;
 }
 .tray:hover,
 .clock:hover {
@@ -1089,6 +1161,7 @@ textarea {
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
   color: var(--tb-fg, var(--fg));
+  transition: background var(--dur-15) ease;
 }
 
 /* ---------- FLYOUTS ---------- */
@@ -1139,6 +1212,7 @@ textarea {
   color: var(--muted);
   text-align: left;
   width: 100%;
+  transition: border-color var(--dur-15) ease, background var(--dur-15) ease;
 }
 .fl-search span {
   flex: 1;
@@ -1174,6 +1248,10 @@ textarea {
   border: 1px solid var(--line);
   font-size: var(--fs-12-5);
   font-weight: var(--fw-600);
+  transition: border-color var(--dur-15) ease, background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.agent-pill:active {
+  transform: scale(0.97);
 }
 .agent-pill:hover {
   border-color: var(--accent);
@@ -1236,6 +1314,7 @@ textarea {
   border-radius: var(--radius-6);
   text-align: left;
   font-size: var(--fs-13);
+  transition: background var(--dur-15) ease;
 }
 .power-menu button:hover {
   background: var(--hover);
@@ -1250,6 +1329,7 @@ textarea {
   background: var(--surface);
   border: 1px solid var(--accent);
   color: var(--muted);
+  transition: border-color var(--dur-15) ease, box-shadow var(--dur-15) ease;
 }
 .fl-input input {
   flex: 1;
@@ -1279,6 +1359,7 @@ textarea {
   padding: var(--space-8) var(--space-10);
   border-radius: var(--radius-8);
   text-align: left;
+  transition: background var(--dur-15) ease;
 }
 .sr-item:hover,
 .sr-item.first {
@@ -1307,6 +1388,7 @@ textarea {
   color: var(--muted);
   font-size: var(--fs-12-5);
   text-align: center;
+  animation: fade var(--dur-30) ease;
 }
 
 /* ---------- AGENT PANEL ---------- */
@@ -1328,12 +1410,19 @@ textarea {
   animation: slideIn var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1);
   overflow: hidden;
 }
+.agent-panel.ap-geo-anim {
+  transition:
+    top var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1),
+    right var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1),
+    bottom var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1),
+    width var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-radius var(--dur-22) ease;
+}
 .agent-panel.fullscreen {
   top: 0;
   right: 0;
-  left: 0;
   bottom: 0;
-  width: auto;
+  width: 100%;
   border-radius: 0;
   border-width: 0;
 }
@@ -1346,6 +1435,7 @@ textarea {
   cursor: ew-resize;
   touch-action: none;
   z-index: var(--z-raised);
+  transition: background var(--dur-15) ease;
 }
 .ap-resize-handle:hover {
   background: var(--accent-soft);
@@ -1463,6 +1553,7 @@ textarea {
   white-space: nowrap;
   color: var(--muted);
   border: 1px solid transparent;
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease, color var(--dur-15) ease;
 }
 .ap-tabs button:hover {
   background: var(--hover);
@@ -1527,6 +1618,7 @@ textarea {
   flex-direction: column;
   gap: var(--space-5);
   max-width: 92%;
+  animation: rise2 var(--dur-20) ease-out;
 }
 .msg.user {
   align-self: flex-end;
@@ -1616,6 +1708,7 @@ textarea {
   font-size: var(--fs-12);
   font-weight: var(--fw-600);
   max-width: 100%;
+  animation: winIn var(--dur-18) ease-out;
 }
 .ap-file span {
   min-width: 0;
@@ -1634,6 +1727,7 @@ textarea {
   display: block;
   height: 100%;
   background: var(--accent);
+  transition: width var(--dur-12) linear;
 }
 .ap-ctx {
   display: flex;
@@ -1653,6 +1747,7 @@ textarea {
   border-radius: var(--radius-14);
   background: var(--surface);
   border: 1px solid var(--line);
+  transition: border-color var(--dur-15) ease;
 }
 .ap-input:focus-within {
   border-color: var(--accent);
@@ -1688,6 +1783,10 @@ textarea {
   background: var(--accent);
   color: var(--on-accent);
   flex: none;
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.send:active:not(:disabled) {
+  transform: scale(0.95);
 }
 .send:disabled {
   background: var(--hover);
@@ -1973,6 +2072,7 @@ textarea {
   background: var(--bad-soft);
   color: var(--bad);
   font-size: var(--fs-12);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .ap-history-row {
   display: flex;
@@ -1981,6 +2081,7 @@ textarea {
   border-radius: var(--radius-10);
   border: 1px solid transparent;
   padding-right: var(--space-4);
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease;
 }
 .ap-history-row:hover {
   background: var(--hover);
@@ -2062,6 +2163,7 @@ textarea {
   font-weight: var(--fw-500);
   text-align: left;
   color: var(--fg);
+  transition: background var(--dur-15) ease, color var(--dur-15) ease;
 }
 .ap-popover-menu button:hover {
   background: var(--hover);
@@ -2112,8 +2214,18 @@ textarea {
   color: var(--surface);
 }
 .icon-btn.listening {
+  position: relative;
   background: var(--bad-soft);
   color: var(--bad);
+}
+.icon-btn.listening::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--bad);
+  pointer-events: none;
+  animation: micRipple var(--dur-110) ease-out infinite;
 }
 
 /* ---------- TOASTS ---------- */
@@ -2241,6 +2353,7 @@ textarea {
   font-size: var(--fs-11);
   text-align: left;
   cursor: pointer;
+  transition: background var(--dur-15) ease;
 }
 .trace-head b {
   font-weight: var(--fw-600);
@@ -2292,6 +2405,7 @@ textarea {
   font: inherit;
   font-size: var(--fs-11);
   cursor: pointer;
+  transition: background var(--dur-15) ease, border-color var(--dur-15) ease;
 }
 .msg-artifact:hover {
   background: var(--hover);
@@ -2307,6 +2421,7 @@ textarea {
   background: var(--surface-2);
   font-size: var(--fs-11-5);
   color: var(--fg);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .ap-referral-head {
   display: flex;
@@ -2317,6 +2432,22 @@ textarea {
 .ap-referral-banner small {
   color: var(--muted);
   line-height: 1.4;
+}
+.ap-referral-details::details-content {
+  interpolate-size: allow-keywords;
+  overflow: clip;
+  contain: layout;
+}
+.ap-referral-details:not([open])::details-content {
+  block-size: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ap-referral-details::details-content {
+    transition:
+      block-size var(--dur-20) ease-in-out,
+      content-visibility var(--dur-20) ease-in-out;
+    transition-behavior: allow-discrete;
+  }
 }
 .ap-referral-details summary {
   cursor: pointer;
@@ -2344,6 +2475,7 @@ textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius-8);
   background: var(--surface-2);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .ap-handoff-info {
   display: flex;
@@ -2368,6 +2500,10 @@ textarea {
   font-size: var(--fs-11-5);
   font-weight: var(--fw-600);
   cursor: pointer;
+  transition: opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.ap-handoff-btn:active {
+  transform: scale(0.97);
 }
 .ap-handoff-btn:hover {
   opacity: 0.92;
@@ -2485,6 +2621,10 @@ textarea {
   line-height: 1.2;
   color: var(--fg);
   border: 1px solid transparent;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.mod:active {
+  transform: scale(0.97);
 }
 .mod:hover {
   background: var(--hover);
@@ -2530,6 +2670,10 @@ textarea {
   color: var(--fg);
   font-size: var(--fs-12);
   font-weight: var(--fw-600);
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.domain-refresh:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .domain-refresh:hover:not(:disabled) {
   background: var(--hover);
@@ -2553,6 +2697,7 @@ textarea {
   border-color: var(--bad);
   background: var(--bad-soft);
   color: var(--bad);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .desk-banner {
   position: absolute;
@@ -2561,6 +2706,9 @@ textarea {
   transform: translateX(-50%);
   z-index: var(--z-modal);
   box-shadow: var(--shadow-sm);
+}
+.desk-banner.domain-error {
+  animation: fade var(--dur-30) ease;
 }
 .domain-state {
   padding: var(--space-28) var(--space-14);
@@ -2581,6 +2729,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .domain-card-label {
   font-size: var(--fs-12);
@@ -2622,6 +2771,10 @@ textarea {
   font-weight: var(--fw-600);
   font-size: var(--fs-13);
   color: var(--fg);
+  transition: border-color var(--dur-15) ease, background var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.domain-shortcut:active {
+  transform: scale(0.98);
 }
 .domain-shortcut:hover {
   border-color: var(--accent);
@@ -2666,4 +2819,311 @@ textarea {
   gap: var(--space-6);
   flex-wrap: wrap;
   align-items: center;
+}
+
+/* ---------- SHARED POLA BARU & TRANSISI VUE ---------- */
+.spin {
+  animation: settings-spin var(--dur-90) linear infinite;
+}
+@keyframes settings-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.is-loading {
+  border-radius: var(--radius-8);
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-2) 25%,
+    var(--hover) 50%,
+    var(--surface-2) 75%
+  );
+  background-size: 200% 100%;
+  animation:
+    breathe var(--dur-240) ease-in-out infinite,
+    skeletonShimmer var(--dur-240) linear infinite;
+}
+@keyframes skeletonShimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes errorShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-4px);
+  }
+  40%,
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes micRipple {
+  from {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes winOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes flyoutOut {
+  from {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+}
+
+@keyframes slideOutRight {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slideOutLeft {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+}
+
+@keyframes riseOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@keyframes listOut {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+/* Transisi screen (App.vue) */
+.t-screen-enter-active {
+  animation: fade var(--dur-40) ease;
+}
+.t-screen-leave-active {
+  animation: fadeOut var(--dur-22) ease forwards;
+  pointer-events: none;
+}
+
+/* Transisi fade generik */
+.t-fade-enter-active {
+  animation: fade var(--dur-20) ease;
+}
+.t-fade-leave-active {
+  animation: fadeOut var(--dur-15) ease forwards;
+}
+
+/* Transisi flyout terpusat (StartMenu & SearchFlyout) */
+.t-flyout-enter-active {
+  animation: rise var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.t-flyout-leave-active {
+  animation: flyoutOut var(--dur-15) ease-in forwards;
+  pointer-events: none;
+}
+
+/* Transisi panel chat kanan */
+.t-panel-right-enter-active {
+  animation: slideIn var(--dur-22) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.t-panel-right-leave-active {
+  animation: slideOutRight var(--dur-18) ease-in forwards;
+  pointer-events: none;
+}
+
+/* Transisi jendela (minimize/restore via v-show & close via TransitionGroup) */
+.t-win-enter-active {
+  animation: winIn var(--dur-18) ease-out;
+}
+.t-win-leave-active {
+  animation: winOut var(--dur-15) ease-in forwards;
+  pointer-events: none;
+}
+.t-win-close-leave-active {
+  transition: opacity var(--dur-15) ease-in;
+  pointer-events: none;
+}
+.t-win-close-leave-to {
+  opacity: 0;
+}
+.t-win-close-leave-active > .win {
+  animation: winOut var(--dur-15) ease-in forwards;
+}
+
+/* Transisi taskbar app chip */
+.t-tb-app-enter-active {
+  animation: winIn var(--dur-18) ease-out;
+}
+.t-tb-app-leave-active {
+  animation: winOut var(--dur-12) ease-in forwards;
+  pointer-events: none;
+}
+
+/* Transisi popover & menu */
+.t-pop-enter-active {
+  animation: winIn var(--dur-15) ease-out;
+}
+.t-pop-leave-active {
+  animation: winOut var(--dur-12) ease-in forwards;
+  pointer-events: none;
+}
+.t-pop-up-enter-active {
+  animation: rise2 var(--dur-18) ease-out;
+}
+.t-pop-up-leave-active {
+  animation: riseOut var(--dur-12) ease-in forwards;
+  pointer-events: none;
+}
+
+/* Transisi toast stack */
+.t-toast-enter-active {
+  animation: rise2 var(--dur-20) ease-out;
+}
+.t-toast-leave-active {
+  animation: riseOut var(--dur-15) ease-in forwards;
+}
+.t-toast-move {
+  transition: transform var(--dur-20) ease;
+}
+
+/* Transisi daftar item (ChannelFlagsWindow) */
+.t-list-enter-active {
+  animation: rise2 var(--dur-20) ease-out;
+}
+.t-list-leave-active {
+  animation: listOut var(--dur-15) ease-in forwards;
+}
+.t-list-move {
+  transition: transform var(--dur-20) ease;
+}
+
+/* Transisi slide-in kiri (overlay riwayat sempit) */
+.t-slide-left-enter-active {
+  animation: slideInLeft var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.t-slide-left-leave-active {
+  animation: slideOutLeft var(--dur-15) ease-in forwards;
+  pointer-events: none;
+}
+
+/* Transisi sidebar kiri (mode lebar AgentPanel) */
+.t-sidebar-left-enter-active,
+.t-sidebar-left-leave-active {
+  overflow: hidden;
+  transition:
+    width var(--dur-20) cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity var(--dur-18) ease;
+}
+.t-sidebar-left-enter-from,
+.t-sidebar-left-leave-to {
+  width: 0 !important;
+  opacity: 0;
+}
+
+/* Transisi pindah tab konten (SettingsWindow) */
+.t-tab-enter-active {
+  animation: rise2 var(--dur-18) ease-out;
+}
+.t-tab-leave-active {
+  animation: fadeOut var(--dur-12) ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-skip,
+  .dot.ok,
+  .pending-avatar,
+  .icon-btn.listening::after,
+  .is-loading,
+  .spin,
+  .lock-error,
+  .ap-history-error,
+  .domain-error {
+    animation: none !important;
+  }
+  .btn:active,
+  .tb-btn:active,
+  .icon-btn:active,
+  .chip:active,
+  .desk-icon:active,
+  .send:active,
+  .lock-go:active,
+  .mod:active,
+  .agent-pill:active,
+  .domain-refresh:active,
+  .domain-shortcut:active,
+  .ap-handoff-btn:active {
+    transform: none !important;
+  }
 }

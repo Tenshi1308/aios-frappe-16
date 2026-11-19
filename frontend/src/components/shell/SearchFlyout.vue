@@ -180,7 +180,7 @@ function ask(text: string) {
               <small>{{ item.module.group }}</small>
             </button>
           </template>
-          <div v-else-if="modules.searchLoading" class="empty-note">Mencari modul & dokumen…</div>
+          <div v-else-if="modules.searchLoading" class="empty-note is-loading">Mencari modul & dokumen…</div>
           <div v-else-if="modules.searchError" class="empty-note">{{ modules.searchError }}</div>
           <div v-else class="empty-note">Tidak ada modul yang cocok.</div>
         </div>

@@ -161,10 +161,14 @@ function onKey(e: KeyboardEvent) {
 
       <WindowHost ref="windowHost" :narrow="narrow" />
 
-      <StartMenu v-if="ui.flyout === 'start'" />
-      <SearchFlyout v-else-if="ui.flyout === 'search'" />
+      <Transition name="t-flyout">
+        <StartMenu v-if="ui.flyout === 'start'" />
+        <SearchFlyout v-else-if="ui.flyout === 'search'" />
+      </Transition>
 
-      <AgentPanel v-if="ui.agentOpen" />
+      <Transition name="t-panel-right">
+        <AgentPanel v-if="ui.agentOpen" />
+      </Transition>
 
       <Toasts />
     </div>

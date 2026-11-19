@@ -100,17 +100,19 @@ function openSettings() {
           <button class="tb-btn" :class="{ on: powerOpen }" aria-label="Opsi daya" @click="powerOpen = !powerOpen">
             <AppIcon name="power" :size="18" />
           </button>
-          <div v-if="powerOpen" class="power-menu">
-            <button @click="powerOpen = false; session.lock()">
-              <AppIcon name="lock" :size="16" /> Kunci
-            </button>
-            <button @click="powerOpen = false; session.restart()">
-              <AppIcon name="refresh" :size="16" /> Muat ulang
-            </button>
-            <button @click="powerOpen = false; void session.logout()">
-              <AppIcon name="power" :size="16" /> Keluar
-            </button>
-          </div>
+          <Transition name="t-pop-up">
+            <div v-if="powerOpen" class="power-menu">
+              <button @click="powerOpen = false; session.lock()">
+                <AppIcon name="lock" :size="16" /> Kunci
+              </button>
+              <button @click="powerOpen = false; session.restart()">
+                <AppIcon name="refresh" :size="16" /> Muat ulang
+              </button>
+              <button @click="powerOpen = false; void session.logout()">
+                <AppIcon name="power" :size="16" /> Keluar
+              </button>
+            </div>
+          </Transition>
         </div>
       </div>
     </div>

@@ -28,14 +28,16 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    v-if="open"
-    class="ap-popover-menu"
-    :class="menuClass"
-    role="menu"
-    :aria-label="ariaLabel"
-    @click.stop
-  >
-    <slot />
-  </div>
+  <Transition name="t-pop">
+    <div
+      v-if="open"
+      class="ap-popover-menu"
+      :class="menuClass"
+      role="menu"
+      :aria-label="ariaLabel"
+      @click.stop
+    >
+      <slot />
+    </div>
+  </Transition>
 </template>

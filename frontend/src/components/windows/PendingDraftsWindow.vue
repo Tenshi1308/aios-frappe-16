@@ -203,7 +203,7 @@ onMounted(() => {
       "
       class="pd-panel"
     >
-      <div v-if="isLoading" class="pd-empty">
+      <div v-if="isLoading" class="pd-empty is-loading">
         Memuat draft…
       </div>
       <ErrorState
@@ -256,35 +256,38 @@ onMounted(() => {
             <span>{{ d.document_doctype }} · {{ d.document_name }}</span>
           </a>
           <div v-if="d.status === 'PENDING_APPROVAL' && isRowExpired(d)" class="pd-row-actions">
-            <template v-if="confirmingCloseId === d.name">
+            <Transition name="t-pop" mode="out-in">
+              <div v-if="confirmingCloseId === d.name" key="confirm" class="pd-row-actions">
+                <button
+                  type="button"
+                  class="pd-action-btn confirm"
+                  :disabled="closingId === d.name"
+                  :aria-label="`Konfirmasi tutup draf ${d.name}`"
+                  @click="confirmClose(d.name)"
+                >
+                  {{ closingId === d.name ? 'Menutup…' : 'Konfirmasi Tutup' }}
+                </button>
+                <button
+                  type="button"
+                  class="pd-action-btn"
+                  :disabled="closingId === d.name"
+                  @click="confirmingCloseId = null"
+                >
+                  Batal
+                </button>
+              </div>
               <button
-                type="button"
-                class="pd-action-btn confirm"
-                :disabled="closingId === d.name"
-                :aria-label="`Konfirmasi tutup draf ${d.name}`"
-                @click="confirmClose(d.name)"
-              >
-                {{ closingId === d.name ? 'Menutup…' : 'Konfirmasi Tutup' }}
-              </button>
-              <button
+                v-else
+                key="close"
                 type="button"
                 class="pd-action-btn"
-                :disabled="closingId === d.name"
-                @click="confirmingCloseId = null"
+                :disabled="closingId !== null"
+                :aria-label="`Tutup draf ${d.name}`"
+                @click="confirmingCloseId = d.name"
               >
-                Batal
+                Tutup
               </button>
-            </template>
-            <button
-              v-else
-              type="button"
-              class="pd-action-btn"
-              :disabled="closingId !== null"
-              :aria-label="`Tutup draf ${d.name}`"
-              @click="confirmingCloseId = d.name"
-            >
-              Tutup
-            </button>
+            </Transition>
           </div>
         </div>
       </template>
@@ -323,6 +326,7 @@ onMounted(() => {
   font: inherit;
   font-size: var(--fs-12);
   cursor: pointer;
+  transition: color var(--dur-15) ease;
 }
 .pd-tab:hover {
   color: var(--fg);
@@ -330,11 +334,18 @@ onMounted(() => {
 .pd-tab[aria-selected='true'] {
   color: var(--fg);
 }
-.pd-tab[aria-selected='true']::after {
+.pd-tab::after {
   content: '';
   position: absolute;
-  inset: auto 0 0;
+  left: 50%;
+  bottom: 0;
+  width: 0;
   border-block-end: 2px solid var(--accent);
+  transform: translateX(-50%);
+  transition: width var(--dur-15) ease;
+}
+.pd-tab[aria-selected='true']::after {
+  width: 100%;
 }
 .pd-subfilters {
   display: flex;
@@ -351,6 +362,14 @@ onMounted(() => {
   font-size: var(--fs-11-5);
   font-weight: var(--fw-600);
   cursor: pointer;
+  transition:
+    background var(--dur-15) ease,
+    border-color var(--dur-15) ease,
+    color var(--dur-15) ease,
+    transform var(--dur-12) ease;
+}
+.pd-subfilter:active {
+  transform: scale(0.97);
 }
 .pd-subfilter:hover {
   color: var(--fg);
@@ -374,9 +393,13 @@ onMounted(() => {
   font-weight: var(--fw-600);
   text-decoration: none;
   white-space: nowrap;
+  transition: background var(--dur-15) ease, transform var(--dur-12) ease;
 }
 .pd-doc-link:hover {
   background: var(--hover);
+}
+.pd-doc-link:active {
+  transform: scale(0.97);
 }
 .pd-tab:focus-visible,
 .pd-row-main:focus-visible,
@@ -400,6 +423,7 @@ onMounted(() => {
   background: var(--bad-soft);
   color: var(--bad);
   font-size: var(--fs-12);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .pd-retry {
   display: inline-flex;
@@ -411,6 +435,10 @@ onMounted(() => {
   color: var(--fg);
   font-size: var(--fs-12);
   cursor: pointer;
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.pd-retry:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .pd-retry:hover:not(:disabled) {
   background: var(--hover);
@@ -428,6 +456,8 @@ onMounted(() => {
   border: 1px solid var(--line);
   border-radius: var(--radius-6);
   background: var(--surface-2);
+  transition: background var(--dur-15) ease;
+  animation: rise2 var(--dur-20) ease-out;
 }
 .pd-item:hover {
   background: var(--hover);
@@ -495,6 +525,10 @@ onMounted(() => {
   font: inherit;
   font-size: var(--fs-11);
   cursor: pointer;
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.pd-action-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .pd-action-btn:hover:not(:disabled) {
   background: var(--hover);
@@ -511,5 +545,17 @@ onMounted(() => {
 .pd-empty {
   color: var(--muted);
   font-size: var(--fs-12);
+  animation: fade var(--dur-30) ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pd-error {
+    animation: none;
+  }
+  .pd-subfilter:active,
+  .pd-doc-link:active,
+  .pd-retry:active,
+  .pd-action-btn:active {
+    transform: none;
+  }
 }
 </style>

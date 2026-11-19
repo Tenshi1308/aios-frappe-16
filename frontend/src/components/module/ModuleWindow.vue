@@ -196,7 +196,7 @@ async function onNextPage() {
         aria-label="Muat ulang modul"
         @click="onRefresh"
       >
-        <AppIcon name="refresh" :size="14" />
+        <AppIcon name="refresh" :size="14" :class="{ spin: loading }" />
         <span>{{ loading ? 'Memuat…' : 'Refresh' }}</span>
       </button>
     </header>
@@ -210,7 +210,7 @@ async function onNextPage() {
       @retry="onRefresh"
     />
 
-    <div v-if="loading && !entry" class="mod-state">Memuat data modul…</div>
+    <div v-if="loading && !entry" class="mod-state is-loading">Memuat data modul…</div>
 
     <template v-else-if="entry">
       <section v-if="cards.length" class="mod-cards" aria-label="Ringkasan modul">
@@ -375,6 +375,10 @@ async function onNextPage() {
   color: var(--fg);
   font-size: var(--fs-12);
   font-weight: var(--fw-600);
+  transition: background var(--dur-15) ease, opacity var(--dur-15) ease, transform var(--dur-12) ease;
+}
+.mod-refresh:active:not(:disabled) {
+  transform: scale(0.97);
 }
 .mod-refresh:hover:not(:disabled) {
   background: var(--hover);
@@ -398,6 +402,7 @@ async function onNextPage() {
   border-color: var(--bad);
   background: var(--bad-soft);
   color: var(--bad);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .mod-cards {
   display: grid;
@@ -412,6 +417,7 @@ async function onNextPage() {
   border: 1px solid var(--line);
   border-radius: var(--radius-10);
   background: var(--surface-2);
+  animation: rise2 var(--dur-20) ease-out;
 }
 .mod-card-top {
   display: flex;
@@ -475,6 +481,7 @@ async function onNextPage() {
   background: var(--surface);
   color: var(--fg);
   font-size: var(--fs-12);
+  transition: border-color var(--dur-15) ease;
 }
 .mod-filter-actions {
   display: flex;
@@ -487,6 +494,7 @@ async function onNextPage() {
   font-size: var(--fs-11);
   font-weight: var(--fw-600);
   margin-top: var(--space-4);
+  animation: errorShake var(--dur-30) ease-in-out;
 }
 .mod-state {
   flex: 1;
@@ -499,6 +507,7 @@ async function onNextPage() {
   color: var(--muted);
   font-size: var(--fs-12-5);
   text-align: center;
+  animation: fade var(--dur-30) ease;
 }
 .mod-table-wrap {
   flex: 1;
@@ -519,6 +528,7 @@ async function onNextPage() {
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
+  transition: background var(--dur-15) ease;
 }
 .mod-table th {
   position: sticky;
@@ -555,5 +565,14 @@ async function onNextPage() {
 .mod-page-btns button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mod-error,
+  .mod-filter-error {
+    animation: none;
+  }
+  .mod-refresh:active {
+    transform: none;
+  }
 }
 </style>
