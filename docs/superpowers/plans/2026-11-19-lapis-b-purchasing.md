@@ -299,7 +299,7 @@ git commit -m "feat(desk): tambah modul Supplier Quotation read-only di Ekasa De
 
 ---
 
-### Task 4: Sinkronisasi dokumentasi Batch 1
+### Task 4: Sinkronisasi dokumentasi Batch 1 — SELESAI PENUH 19 Nov 2026 ✅
 
 **Files:**
 - Modify: `docs/10-peta-tampil-semua-modul.md` (keadaan akhir Batch 1: 17 modul, 4 bidang aktif, 7 planned; RFQ tetap di luar)
@@ -312,9 +312,9 @@ git commit -m "feat(desk): tambah modul Supplier Quotation read-only di Ekasa De
 - Consumes: laporan tiap task (commit, angka hitung langsung, temuan) + preseden sinkronisasi Task 6 (commit `387d214`, 3 file).
 - Produces: dokumentasi repo + salinan workspace Muse yang sinkron dengan kode HEAD sesudah Task 3 (1 = 1).
 
-- [ ] **Step 1: Tulis perubahan dokumentasi.** Perbarui file-file di atas (repo + salinan workspace Muse — dua arah, bukan repo saja) dengan keadaan akhir Batch 1 (angka modul/bidang, status RFQ, angka hitung langsung dari Task 1 Step 0). Jangan ubah isi keputusan Ten — hanya status dan angka.
-- [ ] **Step 2: Verifikasi.** `git diff --stat` hanya menyentuh file dokumentasi; tidak ada file kode yang berubah di commit ini.
-- [ ] **Step 3: Commit.**
+- [x] **Step 1: Tulis perubahan dokumentasi.** Perbarui file-file di atas (repo + salinan workspace Muse — dua arah, bukan repo saja) dengan keadaan akhir Batch 1 (angka modul/bidang, status RFQ, angka hitung langsung dari Task 1 Step 0). Jangan ubah isi keputusan Ten — hanya status dan angka.
+- [x] **Step 2: Verifikasi.** `git diff --stat` hanya menyentuh file dokumentasi; tidak ada file kode yang berubah di commit ini.
+- [x] **Step 3: Commit.**
 
 ```bash
 git add docs/10-peta-tampil-semua-modul.md docs/11-tugas-tampil-semua-modul.md docs/superpowers/plans/2026-11-19-lapis-b-purchasing.md
