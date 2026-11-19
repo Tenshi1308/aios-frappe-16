@@ -1,6 +1,6 @@
-# 08 — Desain Ekasa Desk (Antarmuka Desktop OS)
+# 08 — Desain Finto Desk / Ekasa Desk (Antarmuka Desktop OS)
 
-Dokumen ini menetapkan desain antarmuka klien AIOS: **Ekasa Desk**, sebuah *desktop OS* di browser. Sifatnya **normatif** — kode menyesuaikan dokumen ini.
+Dokumen ini menetapkan desain antarmuka klien AIOS: **Finto Desk / Ekasa Desk**, sebuah *desktop OS* di browser. Sifatnya **normatif** — kode menyesuaikan dokumen ini.
 
 > **Sumber kebenaran visual:** untuk desain klasik **Ekasa Desk**, acuan visual tetap `ekasa-desk-prototype/index.html` (susunan/elemen yang tampak mengikuti prototype, sedangkan data nyata dan disiplin token CSS berlaku di `frontend/`). Untuk desain default **Finto Desk / Finto OS**, acuan normatifnya merujuk pada spesifikasi **Branding B2 + keputusan Ten 19 Nov 2026**: `0C` (Desain & Mode Warna dipisah; `Finto` default), `A3` (taskbar ikut Mode Warna — terang di Mode Terang, navy di Mode Gelap), `B3` (lockup penuh), `C1` (maskot Fino kontekstual), `D2` (boot penuh, tidak di-skip), kartu login/register/pending memakai glass transparan (`.lock-card`), favicon Finto OS, avatar Fino outfit per bidang tanpa dot badge, serta ikon desktop pindah kolom saat penuh (`base.css:720-731`).
 
@@ -22,7 +22,7 @@ Kontrak harness (trace, tool, approval) ada di `docs/02` §3 dan `docs/04` Alur 
 
 ### 2.1. Boot
 
-Layar penuh dengan progres bertahap yang mengikuti tema & desain aktif (`--boot-*`): menyambung ke site, memulihkan sesi, mengambil `frappe.boot`, memuat workspace & izin, mendaftarkan agent, membuka kanal realtime, menyiapkan desktop. Pada desain default **Finto OS**, layar boot menampilkan lockup penuh Finto OS (`FintoMark` / `BootScreen.vue:35`), sapaan *"Menyalakan Finto OS…"* (`D2`: boot penuh, tidak di-skip). Progres harus mencerminkan langkah nyata, bukan animasi palsu.
+Layar penuh dengan progres bertahap yang mengikuti tema & desain aktif (`--boot-*`): menyambung ke site, memulihkan sesi, mengambil `frappe.boot`, memuat workspace & izin, mendaftarkan agent, membuka kanal realtime, menyiapkan desktop. Pada desain default **Finto OS**, layar boot menampilkan lockup penuh Finto OS (`FintoMark` + wordmark `FINTO OS` dengan `--fw-300` dan `--boot-word-shadow` gaya video di `BootScreen.vue:30-35`), sapaan *"Menyalakan Finto OS…"* (`D2`: boot penuh, tidak di-skip), dan keluar dengan transisi `t-screen` (`App.vue`). Progres harus mencerminkan langkah nyata, bukan animasi palsu.
 
 ### 2.2. Sign-In
 
@@ -41,7 +41,11 @@ Form email + password, ditambah tautan ke pendaftaran mandiri. Kartu login/regis
 
 ### 2.4. Panel Agent
 
-Menempel di sisi kanan. Berisi riwayat percakapan, composer, pemilih agent, dan **Live Agent Trace** (§3). Panel bisa dilebarkan dan ditutup lewat tombol X; saat ditutup, buka lagi dari taskbar atau `Ctrl+J`. Agent tetap inti produk, jadi tidak ada mode tanpa akses agent.
+Menempel di sisi kanan (lebar default `410px`, dapat di-drag-resize dari tepi kiri antara `340px` hingga `960px` dibatasi `deskW - 20`, serta mendukung mode layar penuh `.agent-panel.fullscreen` di atas taskbar). Berisi riwayat percakapan, composer, pemilih agent, dan **Live Agent Trace** (§3); dapat ditutup lewat tombol `X` dan dibuka lagi dari taskbar atau `Ctrl+J`. Pada layar sempit (`.os.narrow`), panel menempel tepat di atas taskbar (`bottom: 0`). Agent tetap inti produk, jadi tidak ada mode tanpa akses agent.
+
+- **Layout hybrid & sidebar riwayat:** Pada lebar panel `>= 640px` atau mode `fullscreen` (`.agent-panel.wide`), sidebar riwayat (`260px`) tampil permanen di kiri dengan tab agent 2 kolom sejajar tanpa garis pembatas bawah (`.ap-tabs-sidebar`); pada mode sempit, daftar riwayat tampil sebagai overlay slide (`t-slide-left`). Header sidebar memuat tombol `+` untuk percakapan baru, label urutan non-interaktif (`Terbaru`/`Terlama`), tombol lipat/buka daftar (`chevron-down`/`chevron-right` dengan `<AccordionTransition>`), badge `Arsip` saat mode arsip aktif, serta menu titik tiga (`Terbaru`, `Terlama`, `Archived`/`Kembali ke aktif` via `<PopoverMenu>`). Setiap baris percakapan memiliki menu titik tiga hover/fokus (`Pin`, `Rename` inline, `Archive`, `Delete` via `<PopoverMenu>`). Kegagalan muat riwayat menampilkan `<ErrorState>` dengan pesan generik dan tombol `Coba lagi`.
+- **Header panel (`.ap-head`):** Subtitle deskripsi agent disembunyikan dari judul (tersedia via atribut `title` pada tab agent). Di ujung kanan baris judul (`.ap-title`) terdapat satu tombol toggle sidebar (`.ap-head-sidebar-btn`, ikon `sidebar`) yang sejajar dengan lebar kolom sidebar saat terbuka di mode wide/fullscreen (`sidebar-open`) dan menyusut menempel ke judul saat tertutup. Di sisi kanan header hanya ada 3 tombol: menu titik tiga (`Riwayat percakapan` dan `Daftar dan riwayat draft` beserta badge jumlah draft & indikator `!` error), tombol fullscreen, dan tombol tutup (`X`).
+- **Composer & tombol Stop:** `<textarea>` auto-grow hingga maksimal 5 baris (`max-height: 120px`), dengan baris ikon aksi (`.ap-input-actions`) rata kanan di bawah textarea (dikte suara Web Speech API `mic`/`mic-off`, lampiran `paperclip`, tombol kirim/stop `send`/`stop`) sehingga scrollbar kolom ketik berada di ujung kanan di atas baris ikon. Saat streaming berjalan, tombol kirim berubah menjadi tombol `Stop` yang membatalkan `AbortController` lokal dan memanggil `stop_stream` tanpa menimpa teks parsial yang sudah masuk.
 
 #### Lampiran chat
 
@@ -64,7 +68,7 @@ Backend menolak file milik user lain, file publik, file dari conversation lain, 
 Susunan dari atas ke bawah, sesuai prototype:
 
 1. **Tombol pencarian** selebar flyout, ikon + teks + `kbd` `Ctrl K`.
-2. **Grid bidang** — header `Bidang` + jumlah bidang aktif, lalu `.mod-grid` (`display:grid; grid-template-columns:repeat(7,1fr); gap:4px`) berisi tombol `.mod` (tile 44px `.tile.lg` dengan background `var(--domain-*)`, label 12px di bawah, `flex-direction:column`, `align-items:center`). Klik tombol bidang langsung memanggil `modules.openDomain(key)`. **Ini bukan pill agent** — memakai grid bidang tersendiri; blok pill modul lama telah dipindahkan sepenuhnya ke dalam jendela bidang.
+2. **Grid bidang** — header `Bidang` + jumlah bidang aktif, lalu `.mod-grid` (`display:grid; grid-template-columns:repeat(7,1fr); gap:4px`) berisi tombol `.mod` (tile 44px `.tile.lg` dengan background `var(--domain-*)`, label 12px di bawah, `flex-direction:column`, `align-items:center`). Pada desain default `finto` (`isFintoBrand`), ikon baris **Bidang** menggunakan `<AgentAvatar :branch-key="d.key" :name="d.label" size="lg" />` (avatar Fino per bidang), dengan fallback `<AppIcon>` untuk desain klasik `ekasa`. Klik tombol bidang langsung memanggil `modules.openDomain(key)`. **Ini bukan pill agent** — memakai grid bidang tersendiri; blok pill modul lama telah dipindahkan sepenuhnya ke dalam jendela bidang.
 3. **AI agents** — deretan pill (`.agent-pill`) memakai `AgentAvatar.vue`: pada desain default `finto` menampilkan **avatar maskot Fino dengan outfit per bidang tanpa dot badge** (`fino-avatar`), dan pada desain klasik `ekasa` memakai inisial berwarna per cabang (`.agent-dot`).
 4. **Recent** — dua kolom di prototype (tile + nama dokumen + subteks). **Status:** saat ini belum ada endpoint backend untuk riwayat dokumen/Recent, sehingga section ini tidak dirender di UI untuk mencegah data rekaan/palsu.
 5. **Footer** — avatar + nama + peran · site; di kanan tombol Pengaturan dan tombol daya (Kunci / Muat ulang / Keluar).
@@ -97,7 +101,7 @@ Agent dapat membuka modul dan membuat artefak. Aksi tulis **tidak pernah** langs
 
 ## 5. Artefak sebagai File & Jendela
 
-File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**. Approval Card H4 adalah event backend virtual; UI #12 fase 2a mengambil detail dari `get_draft` (jendela kartu dengan Setujui/Tolak, termasuk tampilan read-only blok **Data Pelanggan Baru** dari `payload.customer_info` untuk pesanan tamu, serta penanganan hasil gagal `executed:false` yang dijelaskan dengan code+message di mana draf tetap `APPROVED` dan staf dapat melakukan retry eksekusi atau menolak via `reject_draft`), daftar draft pending milik pemilik lewat `list_pending_drafts`, dan kartu tidak membuat `File`. Daftar draft pending di jendela `PendingDraftsWindow` menampilkan status memuat, daftar kartu, dan kondisi kosong ("Tidak ada draft yang menunggu persetujuan.") hanya bila pemanggilan berhasil; bila pemanggilan gagal, error tidak ditelan melainkan ditampilkan sebagai banner `role="alert"` dengan tombol coba lagi, dilaporkan ke DocType `Error Log` via `log_client_error`, serta memunculkan badge indikator `!` di header Agent Panel (#12 fase 3d-2c):
+File yang dibuat agent disimpan sebagai Private `File` (`docs/02` §3.2) dan tampil sebagai **berkas di desktop**. Approval Card H4 adalah event backend virtual; UI #12 fase 2a mengambil detail dari `get_draft` (jendela kartu dengan Setujui/Tolak, termasuk tampilan read-only blok **Data Pelanggan Baru** dari `payload.customer_info` untuk pesanan tamu, serta penanganan hasil gagal `executed:false` yang dijelaskan dengan code+message di mana draf tetap `APPROVED` dan staf dapat melakukan retry eksekusi atau menolak via `reject_draft`), daftar draft pending maupun riwayat lewat `list_pending_drafts`, dan kartu tidak membuat `File`. Jendela `PendingDraftsWindow` menyediakan tab **Menunggu** dan tab **Riwayat** (sub-filter `Semua`, `Disetujui`, `Dieksekusi`, `Ditolak` beserta status, tanggal, dan tautan dokumen untuk draft `EXECUTED`), menampilkan status memuat, daftar kartu, dan kondisi kosong ("Tidak ada draft yang menunggu persetujuan.") hanya bila pemanggilan berhasil; bila pemanggilan gagal, error tidak ditelan melainkan ditampilkan memakai `<ErrorState>` (`role="alert"`) dengan tombol coba lagi, dilaporkan ke DocType `Error Log` via `log_client_error`, serta memunculkan badge indikator `!` di tombol menu header Agent Panel:
 
 | Jenis | Tampilan |
 |---|---|
@@ -134,7 +138,7 @@ Jendela bidang (window ID `domain:<key>`, diimplementasikan di `frontend/src/com
 - **Header ringkas**: ikon bidang + label + subteks "Bidang · Baca saja" + tombol refresh (`.domain-refresh`).
 - **Kartu KPI** (`.domain-cards`, grid `auto-fit minmax(170px, 1fr)`): tiap kartu (`.domain-card`) berisi label (`.domain-card-label`) dan nilai angka (`.domain-card-value`). Angka dihitung **server** via agregat `desktop.domain()`, klien hanya memformat (angka pemisah ribuan atau mata uang dengan currency response).
 - **Shortcut** (`.domain-shortcuts`): satu tombol per modul anggota (`.domain-shortcut`), berisi ikon + label + jumlah baris dokumen (`row_count`), klik memanggil `modules.openModule(key)` untuk membuka jendela modul yang sudah ada.
-- **Kartu agent** (`.domain-ask`): avatar/penanda agent pemilik bidang (`AgentAvatar.vue` pada panel/Start Menu; catatan follow-up: `DomainWindow.vue:143` dan `SearchFlyout.vue:162` saat ini masih memakai `.agent-dot`) + nama agent + dua saran prompt (`.chip`); klik prompt langsung mengirim pesan ke agent terkait dan membuka panel chat, atau klik "Tanya agent" membuka panel chat di cabang tersebut.
+- **Kartu agent** (`.domain-ask`): avatar agent pemilik bidang (`AgentAvatar.vue`, dipakai juga di `DomainWindow.vue` dan `SearchFlyout.vue`) + nama agent + dua saran prompt (`.chip`); klik prompt langsung mengirim pesan ke agent terkait dan membuka panel chat, atau klik "Tanya agent" membuka panel chat di cabang tersebut.
 
 Jendela modul (window ID `module:<key>`) mempertahankan kontrak yang sudah ada: header + refresh, form filter sesuai deklarasi backend (`date_from`, `date_to`, `status`, `party`), tabel kolom dari server, navigasi halaman.
 
@@ -214,14 +218,18 @@ Dua lapis token di `styles/tokens.css`:
    - **Spacing (`padding`/`margin`/`gap`):** `--space-{1,2,3,4,5,6,7,8,9,10,11,12,13,14,16,18,20,24,28,29}`.
    - **Radius:** `--radius-{3,4,5,6,8,9,10,12,13,14,20}`, `--radius-pill` (`999px`), `--radius-circle` (`50%`), `--radius-window-foot` (`0 0 14px 14px`).
    - **Ukuran font:** `--fs-{10,11,11-5,12,12-5,13,13-5,14,14-5,15,17,18,20,24,30}`.
-   - **Ketebalan font:** `--fw-{400,500,600,700,800}`.
+   - **Ketebalan font:** `--fw-{300,400,500,600,700,800}`.
    - **Z-index:** `--z-base` (`1`), `--z-raised` (`2`), `--z-taskbar` (`50`), `--z-panel` (`55`), `--z-flyout` (`60`), `--z-toast` (`70`).
    - **Durasi:** `--dur-{12,15,18,20,22,30,40,45,50,90}` (`0.12s`…`0.9s`), `--dur-100` (`1s`), `--dur-110` (`1.1s`), `--dur-240` (`2.4s`), `--dur-instant` (`0.01ms`).
    - **Glass blur (`backdrop-filter` & `-webkit-backdrop-filter`):** `--glass-blur-sm` (`blur(24px) saturate(1.3)`), `--glass-blur-md` (`blur(26px) saturate(1.4)`), `--glass-blur-lg` (`blur(30px) saturate(1.4)`).
    - **Dimensi shell:** `--taskbar-h` (`52px`), `--panel-w` (`410px`).
-2. **Semantic & tema** — `--wall-base`, `--wall-1..3`, `--glass`, `--glass-strong`, `--glass-line`, `--surface`, `--surface-2`, `--line`, `--fg`, `--muted`, `--faint`, `--accent`, `--accent-strong`, `--accent-soft`, `--on-accent`, `--ok`, `--ok-soft`, `--warn`, `--warn-soft`, `--bad`, `--bad-soft`, `--hover`, `--press`, `--shadow`, `--shadow-sm`, `--agent-accent-*`, token warna 11 bidang (`--domain-sales`, `--domain-finance`, `--domain-purchasing`, `--domain-inventory`, `--domain-manufacturing`, `--domain-projects`, `--domain-crm`, `--domain-assets`, `--domain-support`, `--domain-quality`, `--domain-accounting`), serta token layar boot yang mengikuti tema (`--boot-bg`, `--boot-fg`, `--boot-bar`, `--boot-status`, `--boot-log`, `--boot-log-ok`, `--boot-skip`) lengkap di `:root`, `@media (prefers-color-scheme: dark) :root:not([data-theme='light'])`, `:root[data-theme='dark']`, dan `:root[data-theme='light']`.
+2. **Semantic & tema** — `--wall-base`, `--wall-1..3`, `--glass`, `--glass-strong`, `--glass-line`, `--surface`, `--surface-2`, `--line`, `--fg`, `--muted`, `--faint`, `--accent`, `--accent-strong`, `--accent-soft`, `--on-accent`, `--ok`, `--ok-soft`, `--warn`, `--warn-soft`, `--bad`, `--bad-soft`, `--hover`, `--press`, `--shadow`, `--shadow-sm`, `--agent-accent-*`, token warna 11 bidang (`--domain-sales`, `--domain-finance`, `--domain-purchasing`, `--domain-inventory`, `--domain-manufacturing`, `--domain-projects`, `--domain-crm`, `--domain-assets`, `--domain-support`, `--domain-quality`, `--domain-accounting`), serta token layar boot yang mengikuti tema (`--boot-bg`, `--boot-fg`, `--boot-bar`, `--boot-status`, `--boot-log`, `--boot-log-ok`, `--boot-skip`, `--boot-word-shadow`) lengkap di `:root`, `@media (prefers-color-scheme: dark) :root:not([data-theme='light'])`, `:root[data-theme='dark']`, dan `:root[data-theme='light']`.
 
 Yang **tidak** perlu token: nilai sekali pakai seperti lebar kolom tabel di satu tempat, serta nilai struktural `0`, `auto`, `100%`, dan `1px` pada `border: 1px solid var(--line)`.
+
+**Scrollbar & animasi global:**
+- **Scrollbar global (`GlassScrollbar.vue` di `App.vue`):** mendefinisikan scrollbar tipis `5px` bergaya glass Apple tanpa tombol panah (`--glass`, `--glass-line`, `--radius-pill`, `--glass-blur-sm`, hover `--faint`) untuk seluruh area scroll, serta `scrollbar-gutter: stable` pada `.win-body`, `.cf-list`, dan `.settings-pane` (area yang sengaja tanpa scrollbar seperti `.tb-center` dan `.ap-tabs` tetap tersembunyi).
+- **Animasi & transisi seluruh Finto Desk:** seluruh permukaan memakai durasi token `--dur-*` dan menghormati `@media (prefers-reduced-motion: reduce)`, meliputi transisi `<Transition>`/`<TransitionGroup>` (`t-screen`, `t-flyout`, `t-panel-right`, `t-win`, `t-win-close`, `t-tb-app`, `t-pop`, `t-pop-up`, `t-toast`, `t-list`, `t-tab`, `t-slide-left`, `t-sidebar-left`), `<AccordionTransition>` (tinggi + opasitas untuk accordion daftar riwayat, trace, `AgentStep`, dan `FilesWindow`), animasi geometri non-drag/non-resize (`.win-geo-anim`, `.ap-geo-anim`), `.is-loading` (`skeletonShimmer`), `errorShake`, `micRipple`, `.spin`, dan press scale `:active`.
 
 **Pemeriksaan otomatis:** `aios_v1/tests/test_frontend_no_hardcode.py` memindai `frontend/src/components/{module,domain,shell,windows}` dan `frontend/src/styles/base.css` (mengecualikan `styles/tokens.css` sebagai sumber kebenaran) terhadap warna literal hex/rgb/rgba.
 
@@ -251,19 +259,23 @@ frontend/
     ├── main.ts
     ├── App.vue
     ├── router/index.ts
-    ├── stores/          session · agents · modules · conversations · ui
+    ├── stores/          branches · chat · modules · session · ui
+    ├── composables/     useWindowManager
     ├── api/
     │   ├── client.ts    apiFetch + CSRF + pesan aman
+    │   ├── branches.ts  katalog cabang & worker
+    │   ├── connector.ts thread · flag · order · tautan Telegram
     │   ├── modules.ts   bootstrap · domain · module · list · search · settings
-    │   ├── chat.ts      chat stream (SSE)
+    │   ├── session.ts   login · register · session context
+    │   ├── chat.ts      chat stream (SSE) · kelola percakapan · stop_stream
     │   └── mock/        data contoh, tidak masuk jalur produksi
     ├── components/
-    │   ├── base/        AppIcon · AgentAvatar · EkasaMark · FintoMark · RichText · Toasts
+    │   ├── base/        AccordionTransition · AgentAvatar · AppIcon · EkasaMark · ErrorState · FintoMark · GlassScrollbar · PopoverMenu · RichText · Toasts
     │   ├── shell/       BootScreen · Taskbar · StartMenu · SearchFlyout · WindowHost
     │   ├── agent/       AgentPanel · AgentStep
     │   ├── domain/      DomainWindow · DomainCards · DomainShortcuts
     │   ├── module/      ModuleWindow
-    │   └── windows/     SettingsWindow · FilesWindow · ArtifactWindow · ApprovalCardWindow · PendingDraftsWindow · AboutWindow
+    │   └── windows/     AboutWindow · ApprovalCardWindow · ArtifactWindow · ChannelFlagsWindow · FilesWindow · PendingDraftsWindow · SettingsWindow
     ├── assets/branding/ logo & maskot Fino (fino-{sales,finance,accounting,purchasing}.png, finto-*)
     ├── views/           LoginView · RegisterView · PendingView · DesktopView
     ├── styles/          tokens.css · base.css
@@ -304,7 +316,12 @@ public/
 | `POST /api/method/aios_v1.api.chat.stream_chat` | stream SSE (`werkzeug.wrappers.Response` ber-generator lewat *Response passthrough* resmi Frappe); header `Cache-Control: no-cache, no-transform`, `Connection: keep-alive`, `X-Accel-Buffering: no`; request membawa `file_ids[]` opsional untuk lampiran; mendukung event kontrol UI terpisah `{"type": "open_domain", "domain": "<key>"}` (untuk jendela bidang `domain:<key>`) dan `{"type": "open_module", "module": "<key>"}` (untuk jendela modul `module:<key>`) dari manager |
 | `POST /api/method/aios_v1.api.chat.upload_file` | multipart `file` + `conversationId` (atau `branch` bila belum ada conversation); membuat Private `File` awalnya terikat conversation; respons `conversationId` + metadata `attachment` — H5 fase 1 |
 | `POST /api/method/aios_v1.api.chat.parse_pdf` | ekstraksi teks/tabel dari PDF yang diunggah |
-| `GET /api/method/aios_v1.api.chat.list_conversations` | daftar percakapan milik user per cabang |
+| `GET /api/method/aios_v1.api.chat.list_conversations` | daftar percakapan milik user per cabang; menerima `branch`, `archived` (`false` default), `sort` (`"desc"`\|`"asc"`), memprioritaskan `isPinned` di atas |
+| `POST /api/method/aios_v1.api.chat.rename_conversation` | ubah judul percakapan milik user (`conversation_id`, `title`) |
+| `POST /api/method/aios_v1.api.chat.set_conversation_pin` | sematkan/lepas sematan percakapan milik user (`conversation_id`, `pinned`) |
+| `POST /api/method/aios_v1.api.chat.set_conversation_archive` | arsipkan/keluarkan dari arsip percakapan milik user (`conversation_id`, `archived`) |
+| `POST /api/method/aios_v1.api.chat.delete_conversation` | hapus percakapan milik user (`conversation_id`) |
+| `POST /api/method/aios_v1.api.chat.stop_stream` | hentikan stream aktif percakapan milik user (`conversation_id`) |
 | `GET /api/method/aios_v1.api.chat.get_conversation` | detail percakapan milik user |
 
 > **Kontrak API Fase 1 (12 Nov 2026, keputusan Ten — Flow Utama langkah 6):** Seluruh rute kustom memakai `@frappe.whitelist()` resmi di `/api/method/aios_v1.api.<module>.<method>`; dispatcher kustom (`api/dispatcher.py`), `lib/auth.py`, hook `before_request`, cookie `aios_session`, `cookie_to_set/clear`, dan CORS manual (`add_cors_headers`) dihapus. Sesi `sid` + CSRF resmi: **semua POST wajib `X-Frappe-CSRF-Token`**, dan **Guest ditolak 403** (`frappe.PermissionError` lewat `is_whitelisted`), bukan 401 dari dispatcher lama. Logout memakai `/api/method/logout` bawaan, bukan `/api/auth/logout`. URL lama `/api/branches`, `/api/chat/*` (termasuk `/api/chat/<branch>/stream`), `/api/connector/*`, `/api/monitoring/usage*` tidak ada lagi. Enam rute legacy dihapus tanpa pengganti: `api/auth/me`, `api/auth/login`, `api/auth/register`, `api/payment/status`, `api/payment/checkout`, `api/connector/health`. Monitoring (`aios_v1.api.monitoring.*`) memakai gate `_is_admin` = Administrator + role `AIOS Admin`; **System Manager tidak lagi diizinkan**. CORS lintas-origin produksi memakai `allow_cors` resmi di `site_config` (saat ini hanya origin DEV `http://localhost:5173` & `http://aios-client1.localhost:5173`; domain produksi belum ada).
