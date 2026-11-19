@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import BootScreen from './components/shell/BootScreen.vue';
+import GlassScrollbar from './components/base/GlassScrollbar.vue';
 import DesktopView from './views/DesktopView.vue';
 import LoginView from './views/LoginView.vue';
 import PendingView from './views/PendingView.vue';
@@ -80,6 +81,7 @@ watch(
 
 <template>
   <main class="os" :class="{ narrow }">
+    <GlassScrollbar />
     <BootScreen v-if="session.phase === 'boot'" />
     <DesktopView v-else-if="session.phase === 'desktop'" :narrow="narrow" />
     <RegisterView v-else-if="session.phase === 'register' && session.canRegister" />

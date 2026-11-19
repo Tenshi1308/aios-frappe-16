@@ -1198,6 +1198,7 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
   padding-right: var(--space-4);
 }
 

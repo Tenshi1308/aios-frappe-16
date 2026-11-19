@@ -856,6 +856,7 @@ textarea {
 .win-body {
   flex: 1;
   overflow: auto;
+  scrollbar-gutter: stable;
   padding: var(--space-18) var(--space-18) var(--space-24);
   min-height: 0;
 }
@@ -1940,44 +1941,6 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-.ap-thread,
-.ap-history-list,
-.ap-input textarea {
-  scrollbar-width: thin;
-  scrollbar-color: var(--glass-line) transparent;
-}
-.ap-thread::-webkit-scrollbar,
-.ap-history-list::-webkit-scrollbar,
-.ap-input textarea::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-.ap-thread::-webkit-scrollbar-button,
-.ap-history-list::-webkit-scrollbar-button,
-.ap-input textarea::-webkit-scrollbar-button {
-  display: none;
-  width: 0;
-  height: 0;
-}
-.ap-thread::-webkit-scrollbar-track,
-.ap-history-list::-webkit-scrollbar-track,
-.ap-input textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-.ap-thread::-webkit-scrollbar-thumb,
-.ap-history-list::-webkit-scrollbar-thumb,
-.ap-input textarea::-webkit-scrollbar-thumb {
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
-  border-radius: var(--radius-pill);
-  backdrop-filter: var(--glass-blur-sm);
-  -webkit-backdrop-filter: var(--glass-blur-sm);
-}
-.ap-thread::-webkit-scrollbar-thumb:hover,
-.ap-history-list::-webkit-scrollbar-thumb:hover,
-.ap-input textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--faint);
 }
 .ap-history-error {
   display: flex;

@@ -302,6 +302,7 @@ onUnmounted(() => window.clearInterval(timer));
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 .cf-item {
   display: flex;
