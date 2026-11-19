@@ -1396,6 +1396,9 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.ap-head-sidebar-btn {
+  flex: none;
+}
 .ap-head-menu-wrap {
   position: relative;
   flex: none;
@@ -1459,11 +1462,17 @@ textarea {
 .ap-thread {
   flex: 1;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: var(--space-14) var(--space-14) var(--space-6);
+  min-height: 0;
+}
+.ap-thread-inner {
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-12);
-  min-height: 0;
 }
 .legacy-files-entry {
   display: flex;
@@ -1880,26 +1889,14 @@ textarea {
   gap: var(--space-4);
   min-width: 0;
 }
-.ap-sort-wrap {
-  position: relative;
-}
 .ap-sort-enum {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-8);
-  border-radius: var(--radius-6);
+  padding: var(--space-4) var(--space-4);
   font-size: var(--fs-12-5);
   font-weight: var(--fw-600);
   color: var(--fg);
-}
-.ap-sort-enum:hover {
-  background: var(--hover);
-}
-.ap-sort-menu {
-  left: 0;
-  right: auto;
-  min-width: 124px;
+  user-select: none;
 }
 .ap-collapse-btn {
   width: 24px;
@@ -1938,10 +1935,49 @@ textarea {
 .ap-history-list {
   flex: 1;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: var(--space-4) var(--space-10) var(--space-12);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+.ap-thread,
+.ap-history-list,
+.ap-input textarea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--glass-line) transparent;
+}
+.ap-thread::-webkit-scrollbar,
+.ap-history-list::-webkit-scrollbar,
+.ap-input textarea::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.ap-thread::-webkit-scrollbar-button,
+.ap-history-list::-webkit-scrollbar-button,
+.ap-input textarea::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.ap-thread::-webkit-scrollbar-track,
+.ap-history-list::-webkit-scrollbar-track,
+.ap-input textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+.ap-thread::-webkit-scrollbar-thumb,
+.ap-history-list::-webkit-scrollbar-thumb,
+.ap-input textarea::-webkit-scrollbar-thumb {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius-pill);
+  backdrop-filter: var(--glass-blur-sm);
+  -webkit-backdrop-filter: var(--glass-blur-sm);
+}
+.ap-thread::-webkit-scrollbar-thumb:hover,
+.ap-history-list::-webkit-scrollbar-thumb:hover,
+.ap-input textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--faint);
 }
 .ap-history-error {
   display: flex;
@@ -1963,7 +1999,10 @@ textarea {
   border: 1px solid transparent;
   padding-right: var(--space-4);
 }
-.ap-history-row:hover,
+.ap-history-row:hover {
+  background: var(--hover);
+  border-color: transparent;
+}
 .ap-history-row.on {
   background: var(--hover);
   border-color: var(--line);
@@ -2004,6 +2043,15 @@ textarea {
 .ap-conv-more {
   width: 26px;
   height: 26px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-12) ease;
+}
+.ap-history-row:hover .ap-conv-more,
+.ap-history-row:focus-within .ap-conv-more,
+.ap-conv-menu-wrap.open .ap-conv-more {
+  opacity: 1;
+  pointer-events: auto;
 }
 .ap-popover-menu {
   position: absolute;

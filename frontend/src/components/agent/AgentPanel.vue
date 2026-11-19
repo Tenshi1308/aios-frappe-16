@@ -60,7 +60,6 @@ const headerMenuOpen = ref(false);
 
 // Menu tiga titik riwayat & aksi per percakapan
 const historyMenuOpen = ref(false);
-const sortMenuOpen = ref(false);
 const historyListCollapsed = ref(false);
 const activeConvMenuId = ref<string | null>(null);
 const renamingConvId = ref<string | null>(null);
@@ -155,9 +154,6 @@ function onDocumentClick(e: MouseEvent) {
   }
   if (historyMenuOpen.value && !target?.closest('.ap-history-menu-wrap')) {
     historyMenuOpen.value = false;
-  }
-  if (sortMenuOpen.value && !target?.closest('.ap-sort-wrap')) {
-    sortMenuOpen.value = false;
   }
   if (activeConvMenuId.value && !target?.closest('.ap-conv-menu-wrap')) {
     activeConvMenuId.value = null;
@@ -335,7 +331,6 @@ async function toggleArchivedList() {
 
 async function changeSort(order: 'asc' | 'desc') {
   historyMenuOpen.value = false;
-  sortMenuOpen.value = false;
   if (!branchKey.value) return;
   await chat.setHistorySort(branchKey.value, order);
 }
@@ -532,6 +527,16 @@ async function onFilesPicked(e: Event) {
 
     <header class="ap-head">
       <div class="ap-title">
+        <button
+          v-if="sidebarVisible"
+          type="button"
+          class="icon-btn ap-head-sidebar-btn"
+          aria-label="Sembunyikan sidebar"
+          title="Sembunyikan sidebar"
+          @click="closeSidebarOrHistory"
+        >
+          <AppIcon name="sidebar" :size="17" />
+        </button>
         <AgentAvatar v-if="branch" :branch-key="branch.key" :name="branch.name" size="lg" />
         <div v-if="branch">
           <b :title="branch.name">{{ branch.name }}</b>
@@ -635,34 +640,7 @@ async function onFilesPicked(e: Event) {
 
         <div class="ap-history-head">
           <div class="ap-history-sort-group">
-            <div class="ap-sort-wrap">
-              <button
-                type="button"
-                class="ap-sort-enum"
-                aria-label="Urutan percakapan"
-                :aria-expanded="sortMenuOpen"
-                @click.stop="sortMenuOpen = !sortMenuOpen"
-              >
-                <span>{{ historySort === 'asc' ? 'Terlama' : 'Terbaru' }}</span>
-                <AppIcon name="chevron-down" :size="13" />
-              </button>
-              <div v-if="sortMenuOpen" class="ap-popover-menu ap-sort-menu" @click.stop>
-                <button
-                  type="button"
-                  :class="{ active: historySort === 'desc' }"
-                  @click="changeSort('desc')"
-                >
-                  <span>Terbaru</span>
-                </button>
-                <button
-                  type="button"
-                  :class="{ active: historySort === 'asc' }"
-                  @click="changeSort('asc')"
-                >
-                  <span>Terlama</span>
-                </button>
-              </div>
-            </div>
+            <span class="ap-sort-enum">{{ historySort === 'asc' ? 'Terlama' : 'Terbaru' }}</span>
             <button
               type="button"
               class="icon-btn ap-collapse-btn"
@@ -712,35 +690,19 @@ async function onFilesPicked(e: Event) {
               </div>
             </div>
             <button
+              v-if="!isArchivedView"
               type="button"
               class="icon-btn"
-              aria-label="Sembunyikan sidebar"
-              title="Sembunyikan sidebar"
-              @click="closeSidebarOrHistory"
+              aria-label="Percakapan baru"
+              title="Percakapan baru"
+              @click="chat.newConversation(branchKey)"
             >
-              <AppIcon name="sidebar" :size="16" />
+              <AppIcon name="plus" :size="16" />
             </button>
           </div>
         </div>
 
         <div v-if="!historyListCollapsed" class="ap-history-list">
-          <button
-            v-if="!isArchivedView"
-            type="button"
-            class="btn ghost wide"
-            @click="chat.newConversation(branchKey)"
-          >
-            <AppIcon name="plus" :size="15" /> Percakapan baru
-          </button>
-          <button
-            v-else
-            type="button"
-            class="btn ghost wide"
-            @click="toggleArchivedList"
-          >
-            <AppIcon name="chevron-left" :size="15" /> Kembali ke daftar aktif
-          </button>
-
           <div
             v-for="c in conversations"
             :key="c.id"
@@ -780,7 +742,7 @@ async function onFilesPicked(e: Event) {
                 </span>
                 <small>{{ fmtDate(c.updatedAt) }}</small>
               </button>
-              <div class="ap-conv-menu-wrap">
+              <div class="ap-conv-menu-wrap" :class="{ open: activeConvMenuId === c.id }">
                 <button
                   type="button"
                   class="icon-btn ap-conv-more"
@@ -856,7 +818,8 @@ async function onFilesPicked(e: Event) {
 
       <div class="ap-main">
         <div ref="threadEl" class="ap-thread">
-          <div v-if="referral" class="ap-referral-banner" role="status">
+          <div class="ap-thread-inner">
+            <div v-if="referral" class="ap-referral-banner" role="status">
             <div class="ap-referral-head">
               <AppIcon name="arrow-right" :size="13" />
               <b>Dialihkan dari {{ referral.fromBranchName }}</b>
@@ -956,6 +919,7 @@ async function onFilesPicked(e: Event) {
           </div>
           <div v-if="showTyping" class="msg agent">
             <div class="bubble typing"><i /><i /><i /></div>
+          </div>
           </div>
         </div>
 
