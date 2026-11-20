@@ -42,9 +42,17 @@ Fondasi yang dibutuhkan Bagian B (dibangun bersama tiga detektor):
 - **Scenario seed + label DEMO.** Data seed hari ini memakai tanggal relatif tetapi tidak punya skenario pemicu yang disengaja. Dibutuhkan seed skenario terpisah: tanggal relatif + pemicu yang disengaja (misalnya 5 Quotation kedaluwarsa besok, 3 SO lewat tanggal kirim, 2 DN tanpa invoice, 1 customer terakhir beli 75 hari lalu), bisa dibersihkan kembali, dan tiap pesan proaktif dari data demo wajib berlabel DEMO.
 - **Unit test aturan deteksi + perkaya skill 4 worker.** Aturan deteksi diuji sebagai fungsi murni dari status dan tanggal. Skill worker yang ada diperkaya dengan perilaku proaktif yang baru; skill benar-benar baru hanya bila tidak ada yang menutupinya.
 
-## Bagian C — Tahap 2 (DIPUTUSKAN Ten 20 Nov 2026 10:40 WIB)
+## Bagian C — Tahap 2 (SELESAI 20 Nov 2026, commit cad237d)
 
-**Status: sudah diputuskan Ten 20 Nov 2026 10:40 WIB.** Ten memilih keempat kandidat di bawah **ditambah** custom scheduler per detektor dari Desk — jadi lima item Tahap 2. Pelaksanaannya belum dijadwalkan — Ten yang menentukan kapan dan urutannya.
+**Status: SELESAI.** Diputuskan Ten 20 Nov 2026 10:40 WIB (keempat kandidat di bawah **ditambah** custom scheduler per detektor dari Desk — lima item Tahap 2), diimplementasi dan diverifikasi, commit **cad237d** (20 Nov 2026, 18 file).
+
+**Hasil verifikasi:**
+- Tes: **11/11** (`test_sales_proactive`, Tahap 1 — tidak ada regresi), **29/29** (`test_sales_proactive_tahap2`), **10/10** (`test_skills_engine`), **5/5** (`test_draft_contract`).
+- DocType `AIOS Proactive Detector Setting` dan `AIOS Proactive Detector Schedule` ada di DB site klien.
+- Data DEMO di site dev bersih (0 sisa).
+- Pemindaian penuh di site klien: **110 temuan**, **58 terkirim**, **0 gagal**.
+
+**Keputusan yang dikunci (K1–K12):** K1 churn 75 hari; K2 churn memakai `Sales Invoice` `docstatus=1` kecuali retur; K3 dedup churn sekali per 7 hari; K4 pola pembelian median interval dikurangi 7 hari dengan minimal 3 pembelian; K5 anomali harga ambang diskon 20% dan bukan `pricing_rules`; K6 overprice ikut ditandai; K7 `valid_till` draf +14 hari; K8 dispatcher per detektor; K9 tab Insight Proaktif di Pengaturan; K10 satu ringkasan gabungan 7 detektor per pemindaian (badge 1, hanya bila ada temuan) dan Drafting hanya menyiapkan bahan; K11 bangun `predict_customer_churn_risk`; K12 tambah entry scheduler baru tanpa mengubah entry harian lama. **Lookback** Churn 730 hari dan Drafting 180 hari (dikonfirmasi Ten 20 Nov 2026, tidak diubah).
 
 1. **Churn & Reactivation Radar.** Menandai customer yang sudah lama tidak membeli (misalnya 60–90 hari) dan menyarankan tindak lanjut.
 2. **Purchase Pattern & Reorder Intelligence.** Membaca pola pembelian customer dan memperkirakan kapan ia kemungkinan memesan lagi, serta item apa.
@@ -114,7 +122,7 @@ Jumat 20 Nov 2026 — Bagian B: SELESAI 10:35 WIB.
 - Hasil: 105 tes hijau, build lolos, terverifikasi live di Desk client, data DEMO dibersihkan. Telegram nyata belum terverifikasi.
 
 Sesudah Bagian B — Bagian C, D, E:
-- Bagian C diputuskan Ten 20 Nov 2026 10:40 WIB: lima item Tahap 2 (empat kandidat + custom scheduler per detektor dari Desk).
+- Bagian C **selesai** 20 Nov 2026 (commit cad237d): lima item Tahap 2 (empat kandidat + custom scheduler per detektor dari Desk) terimplementasi dan terverifikasi.
 - Bagian D dan E belum diputuskan. Tiap fitur yang dipilih mengikuti urutan yang sama (investigasi → review → implementasi → verifikasi). Tidak ada jadwal tetap sampai Ten memilih.
 
 ## Tahap-tahap kerja
@@ -164,9 +172,9 @@ Sesudah Bagian B — Bagian C, D, E:
 - [x] **Step 3 (Gate Reviewer): Verifikasi** — tes, build, kode; lalu verifikasi live dengan scenario seed sesuai cara verifikasi yang dikunci (pesan muncul di chat Desk + label DEMO + kesegaran data, fallback Telegram tanpa duplikat, insight mengutip dokumen yang benar-benar ada, tidak ada draf tanpa disuruh, cek ulang keesokan hari). **Hasil:** 105 tes hijau, build lolos, terverifikasi live di Desk client, data DEMO dibersihkan. **Belum terverifikasi:** pengiriman Telegram nyata.
 - [x] **Step 4: Commit lokal** — commit 67f5f20 (docs sync) setelah verifikasi hijau; tidak di-push tanpa perintah eksplisit Ten.
 
-### Tahap C/D/E: Kandidat berikutnya — Bagian C diputuskan Ten 20 Nov 2026 10:40 WIB (5 item Tahap 2); Bagian D dan E belum diputuskan
+### Tahap C/D/E: Kandidat berikutnya — Bagian C SELESAI 20 Nov 2026 (cad237d, 5 item Tahap 2); Bagian D dan E belum diputuskan
 
-- Bagian C: lima item Tahap 2 sudah diputuskan (empat kandidat + custom scheduler per detektor dari Desk). Pelaksanaannya belum dijadwalkan — Ten yang menentukan kapan dan urutannya.
+- Bagian C: lima item Tahap 2 **selesai** 20 Nov 2026 (commit cad237d) — empat detektor baru (`churn_reactivation`, `purchase_pattern_reorder`, `pricing_discount_anomaly`, `intelligent_drafting`) plus custom scheduler per detektor, dengan tes 11/11, 29/29, 10/10, 5/5 hijau.
 - Bagian D dan E: belum diputuskan — Ten memilih fitur berikutnya dari daftar kandidat.
 - Tiap fitur yang dipilih Ten mengikuti urutan yang sama (investigasi → review → implementasi → verifikasi). Tidak ada tugas yang ditulis sebelum Ten memilih.
 
@@ -174,12 +182,13 @@ Sesudah Bagian B — Bagian C, D, E:
 
 - Bagian A: delapan item terbangun, tes hijau, build hijau, terlihat benar di layar Ten. — **TERPENUHI** (commit d2495a8, 19 Nov 2026 21:13 WIB; diterima Ten 20 Nov 2026).
 - Bagian B: tiga detektor + perbaikan notif + fondasi terbangun; pesan proaktif muncul di chat Desk dengan label DEMO pada data demo; tidak ada duplikat antar kanal; tidak ada draf yang dibuat tanpa disuruh; dedup jalan. — **TERPENUHI** (commit 2749d89 + c08dfaf + b4e0c7a + bfcf34b, 20 Nov 2026 10:35 WIB; 105 tes hijau, build lolos, terverifikasi live di Desk client, DEMO dibersihkan), **kecuali jalur Telegram nyata yang belum terverifikasi**.
+- Bagian C: empat detektor Tahap 2 + custom scheduler per detektor terbangun; tujuh detektor berjalan dalam satu pemindaian dengan satu ringkasan per pemindaian; jadwal tiap detektor bisa diubah dari Desk tanpa deploy; tidak ada draf yang dibuat otomatis. — **TERPENUHI** (commit cad237d, 20 Nov 2026; tes 11/11, 29/29, 10/10, 5/5; DocType ada di DB site klien; DEMO dev bersih; pemindaian penuh client 110 temuan / 58 terkirim / 0 gagal).
 - Keseluruhan: tiap bagian selesai dan diverifikasi dulu sebelum bagian berikutnya dimulai; tidak ada push tanpa perintah Ten; tidak ada bidang baru selama freeze Lapis B.
 
 ## Yang TIDAK masuk rencana ini
 
 - Bidang baru di luar Sales (freeze Lapis B).
-- Sebelas fitur kandidat yang belum dipilih Ten (Bagian D 3 item + Bagian E 8 item) — masuk rencana kerja hanya setelah dipilih. Bagian C (lima item Tahap 2) sudah diputuskan Ten 20 Nov 2026 10:40 WIB; pelaksanaannya belum dijadwalkan.
+- Sebelas fitur kandidat yang belum dipilih Ten (Bagian D 3 item + Bagian E 8 item) — masuk rencana kerja hanya setelah dipilih. Bagian C (lima item Tahap 2) **selesai** 20 Nov 2026 (commit cad237d).
 - Empat tool yang hilang (Bagian F) — dibangun saat fiturnya masing-masing dipilih.
 
 ## Risiko dan bila meleset

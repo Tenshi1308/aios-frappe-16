@@ -160,3 +160,25 @@ Matriks ini berlaku di **site klien**. Di site developer, `AIOS Admin` bekerja l
   - `Quotation`: `valid_till`, `status`, `docstatus`, `party_name`, `customer_name`, `base_grand_total`, serta tautan balik `Sales Order Item.prevdoc_docname`.
   - `Sales Order`: `delivery_date`, `status`, `docstatus`, `per_delivered`, `customer`, `customer_name`, `base_grand_total`.
   - `Delivery Note`: `posting_date`, `status`, `docstatus`, `per_billed`, `is_return`, `customer`, `customer_name`, `base_grand_total`.
+
+## 5. Skema Pengaturan Scheduler Proaktif Tahap 2 Sales (`cad237d`, 20 Nov 2026)
+
+Dua DocType baru menyimpan jadwal per detektor agar dapat diubah dari Desk tanpa deploy (K8/K9). Keduanya termigrasi di site developer `aios-v16.localhost` maupun site klien `aios-client1.localhost`.
+
+- **`AIOS Proactive Detector Setting`** (`aios_v1/aios_v1/doctype/aios_proactive_detector_setting/`):
+  - **Single DocType** (`issingle = 1`), satu baris pengaturan per site — bukan per user.
+  - **Field `detectors`** (`Table` → `AIOS Proactive Detector Schedule`).
+  - **Permission:** `System Manager` dan `AIOS Client Owner` (create/read/write/delete), selaras dengan peran yang boleh memicu pemindaian manual.
+  - **Validasi (`validate`):** tiap baris wajib memilih detektor, tidak boleh ada `detector_key` duplikat, `run_hour` harus 0–23, dan baris berfrekuensi `weekly` wajib memilih hari.
+- **`AIOS Proactive Detector Schedule`** (`aios_v1/aios_v1/doctype/aios_proactive_detector_schedule/`):
+  - **Child table** (`istable = 1`).
+  - **Field:** `detector_key` (`Select`: tujuh kunci detektor), `label` (`Data`), `enabled` (`Check`, default `1`), `frequency` (`Select`: `daily`/`weekly`/`monthly`, default `daily`), `run_hour` (`Int`, default `6`), `day_of_week` (`Select`: nama hari, kosong untuk `daily`/`monthly`).
+  - **Tujuh `detector_key`:** `quotation_followup`, `so_fulfillment`, `delivered_unbilled`, `churn_reactivation`, `purchase_pattern_reorder`, `pricing_discount_anomaly`, `intelligent_drafting`.
+- **Bila pengaturan belum pernah disimpan,** `get_detector_schedules` mengembalikan jadwal bawaan dari `default_detector_settings()` (semua `daily`, `run_hour` 6–8), sehingga Desk tetap menampilkan tujuh baris.
+- **Kunci dedup komposit Tahap 2:** `AIOS Proactive Insight Log.reference_name` menyimpan gabungan `<customer>::<item_code>` (Pola Pembelian) dan `<parent>::<item_code>` (Anomali Harga). Field tetap `Data`, jadi **tidak ada perubahan skema** pada DocType log.
+- **Field ERPNext tambahan yang dibaca detektor Tahap 2 (`sales_proactive.py`):**
+  - `Sales Invoice`: `customer`, `posting_date`, `base_grand_total`, `docstatus`, `is_return`, `company`.
+  - `Sales Invoice Item`: `item_code`, `qty`, `rate`, `price_list_rate`, `discount_percentage`, `pricing_rules`, `parent`.
+  - `Quotation Item` / `Sales Order Item`: `item_code`, `qty`, `rate`, `price_list_rate`, `discount_percentage`, `pricing_rules`.
+  - `Customer`: `customer_name` (dipakai sebagai label temuan).
+  - **Catatan:** `Item Price` **tidak** punya field `company` (site-scoped), sehingga harga pembanding bersifat lintas company di satu site.
