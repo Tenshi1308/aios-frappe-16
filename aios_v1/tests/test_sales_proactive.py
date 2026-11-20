@@ -261,7 +261,7 @@ class TestSalesProactiveDedup(IntegrationTestCase):
         ]
         sent_calls = []
 
-        def fake_deliver(user, summary_text):
+        def fake_deliver(user, summary_text, **kwargs):
             sent_calls.append((user, summary_text))
             return {"status": "SENT_DESK", "channel": "desk", "reason": ""}
 
@@ -301,7 +301,7 @@ class TestSalesProactiveDedup(IntegrationTestCase):
         delivered_texts = []
         fail_next = {"flag": False}
 
-        def flaky_deliver(user, summary_text):
+        def flaky_deliver(user, summary_text, **kwargs):
             if fail_next["flag"]:
                 raise RuntimeError("Simulated delivery failure")
             delivered_texts.append(summary_text)
@@ -537,7 +537,7 @@ class TestSalesProactiveSummary(IntegrationTestCase):
 
         sent_payloads = []
 
-        def fake_deliver_text(u, text):
+        def fake_deliver_text(u, text, **kwargs):
             sent_payloads.append((u, text))
             return {
                 "status": "SENT_DESK",
@@ -567,3 +567,102 @@ class TestSalesProactiveSummary(IntegrationTestCase):
         )
         self.assertEqual(log_count, 10)
         self.assertEqual(get_unread_sales_insights()["unread_count"], 1)
+
+
+class TestSalesProactiveSessionPerScan(IntegrationTestCase):
+    """TDD: Each Desk scan with new findings creates a new Sales conversation titled with scan date."""
+
+    def test_two_scans_different_dates_create_two_dated_conversations_and_repeat_creates_none(self):
+        from aios_v1.api.sales_proactive import get_unread_sales_insights, mark_sales_insights_read
+        from aios_v1.lib.sales_proactive import dispatch_proactive_findings, record_desk_heartbeat
+
+        user = "Administrator"
+        record_desk_heartbeat(user)
+        mark_sales_insights_read()
+
+        conv_count_before = frappe.db.count("AIOS Conversation", {"user": user, "branch": "sales"})
+        finding = [
+            {
+                "rule_key": "quotation_followup",
+                "reference_doctype": "Quotation",
+                "name": "SAL-QTN-SES-01",
+                "customer_name": "PT Sesi Baru",
+                "base_grand_total": 12_000_000.0,
+                "days_delta": 1,
+            }
+        ]
+
+        with patch("aios_v1.lib.sales_proactive.get_sales_proactive_recipients", return_value=[user]):
+            res_day1 = dispatch_proactive_findings(finding, insight_date="2026-11-20")
+            # Second scan same day -> 0 new findings -> no new conversation or message
+            res_day1_repeat = dispatch_proactive_findings(finding, insight_date="2026-11-20")
+
+        self.assertEqual(res_day1["messages_sent"], 1)
+        self.assertEqual(res_day1_repeat["messages_sent"], 0)
+        self.assertEqual(
+            frappe.db.count("AIOS Conversation", {"user": user, "branch": "sales"}),
+            conv_count_before + 1,
+        )
+        self.assertEqual(get_unread_sales_insights()["unread_count"], 1)
+
+        # Scan on different date -> creates a second new conversation
+        with patch("aios_v1.lib.sales_proactive.get_sales_proactive_recipients", return_value=[user]):
+            res_day2 = dispatch_proactive_findings(finding, insight_date="2026-11-21")
+
+        self.assertEqual(res_day2["messages_sent"], 1)
+        self.assertEqual(
+            frappe.db.count("AIOS Conversation", {"user": user, "branch": "sales"}),
+            conv_count_before + 2,
+        )
+        self.assertEqual(get_unread_sales_insights()["unread_count"], 2)
+
+        convs = frappe.get_all(
+            "AIOS Conversation",
+            filters={
+                "user": user,
+                "branch": "sales",
+                "title": ["in", ["Ringkasan Proaktif Sales 2026-11-20", "Ringkasan Proaktif Sales 2026-11-21"]],
+            },
+            fields=["name", "title"],
+            order_by="creation asc",
+        )
+        self.assertEqual(len(convs), 2)
+        self.assertEqual(
+            [c["title"] for c in convs],
+            ["Ringkasan Proaktif Sales 2026-11-20", "Ringkasan Proaktif Sales 2026-11-21"],
+        )
+        for c in convs:
+            self.assertEqual(frappe.db.count("AIOS Message", {"conversation": c["name"]}), 1)
+
+        mark_sales_insights_read()
+        self.assertEqual(get_unread_sales_insights()["unread_count"], 0)
+
+    def test_telegram_delivery_does_not_create_conversation(self):
+        from aios_v1.lib.sales_proactive import dispatch_proactive_findings
+
+        user = "Administrator"
+        frappe.cache.delete_value(f"aios:desk_heartbeat:{user}")
+        conv_count_before = frappe.db.count("AIOS Conversation", {"user": user, "branch": "sales"})
+        finding = [
+            {
+                "rule_key": "so_fulfillment",
+                "reference_doctype": "Sales Order",
+                "name": "SAL-ORD-TG-NOSES-01",
+                "customer_name": "PT Telegram Tanpa Sesi",
+                "base_grand_total": 9_000_000.0,
+                "days_delta": -2,
+            }
+        ]
+        with (
+            patch("aios_v1.lib.sales_proactive.get_sales_proactive_recipients", return_value=[user]),
+            patch("aios_v1.lib.connector.notify._get_linked_telegram_targets", return_value=[(user, "99887766")]),
+            patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True) as tg_mock,
+        ):
+            res = dispatch_proactive_findings(finding, insight_date="2026-11-20")
+
+        self.assertEqual(res["messages_sent"], 1)
+        tg_mock.assert_called_once()
+        self.assertEqual(
+            frappe.db.count("AIOS Conversation", {"user": user, "branch": "sales"}),
+            conv_count_before,
+        )

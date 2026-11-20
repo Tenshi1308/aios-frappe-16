@@ -367,28 +367,22 @@ def get_sales_proactive_recipients() -> list[str]:
     return notify.get_channel_recipients()
 
 
-def _get_or_create_sales_conversation(user: str) -> str:
-    conv_name = frappe.db.get_value(
-        "AIOS Conversation",
-        {"user": user, "branch": SALES_BRANCH, "is_archived": 0},
-        "name",
-        order_by="modified desc",
-    )
-    if conv_name:
-        return str(conv_name)
+def _create_sales_proactive_conversation(user: str, insight_date: str | None = None) -> str:
+    """Create a fresh Sales AIOS Conversation per proactive scan for Desk delivery."""
+    target_date = str(getdate(insight_date or nowdate()))
     conv = frappe.get_doc(
         {
             "doctype": "AIOS Conversation",
             "user": user,
             "branch": SALES_BRANCH,
-            "title": "Insight Proaktif Sales",
+            "title": f"Ringkasan Proaktif Sales {target_date}",
         }
     ).insert(ignore_permissions=True)
     return str(conv.name)
 
 
-def _insert_desk_insight_message(user: str, content: str) -> str:
-    conv_name = _get_or_create_sales_conversation(user)
+def _insert_desk_insight_message(user: str, content: str, insight_date: str | None = None) -> str:
+    conv_name = _create_sales_proactive_conversation(user, insight_date=insight_date)
     frappe.get_doc(
         {
             "doctype": "AIOS Message",
@@ -462,13 +456,13 @@ def build_proactive_summary(findings: list[dict], insight_date: str | None = Non
     return "\n".join(lines)
 
 
-def _deliver_summary_to_user(user: str, summary_text: str) -> dict:
+def _deliver_summary_to_user(user: str, summary_text: str, insight_date: str | None = None) -> dict:
     """Route one summary message to either Desk OR Telegram (never both)."""
     summary = str(summary_text or "").strip()
     away = is_user_away_from_desk(user)
 
     if not away:
-        conv_name = _insert_desk_insight_message(user, summary)
+        conv_name = _insert_desk_insight_message(user, summary, insight_date=insight_date)
         return {
             "status": "SENT_DESK",
             "channel": "desk",
@@ -481,7 +475,7 @@ def _deliver_summary_to_user(user: str, summary_text: str) -> dict:
     if not targets:
         reason = "Pengguna jauh dari Desk dan belum menautkan Telegram; insight disimpan di Desk."
         log_exception("AIOS Sales Proactive Telegram Skipped", context=f"user={user}; {reason}")
-        conv_name = _insert_desk_insight_message(user, summary)
+        conv_name = _insert_desk_insight_message(user, summary, insight_date=insight_date)
         return {
             "status": "SENT_DESK",
             "channel": "desk",
@@ -564,7 +558,7 @@ def dispatch_proactive_findings(findings: list[dict], insight_date: str | None =
 
         summary_text = build_proactive_summary(new_findings, insight_date=target_date)
         try:
-            outcome = _deliver_summary_to_user(user, summary_text)
+            outcome = _deliver_summary_to_user(user, summary_text, insight_date=target_date)
             is_desk = outcome["status"] == "SENT_DESK"
             for idx, log_doc in enumerate(log_docs):
                 log_doc.status = outcome["status"]
