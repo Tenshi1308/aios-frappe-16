@@ -175,7 +175,7 @@ Per SATU bidang planned yang diaktifkan: status `planned` → `active` + minimal
 |---|---|
 | Semua fitur sudah ada | 17 modul tampil + 7 bidang planned kosong. Keenam DocType yang diizinkan sudah tampil semua di Lapis A (Task 1–6). Payroll tidak ada DocType-nya. |
 | Modul tampil = fitur lengkap | **Tidak ada halaman detail dokumen sama sekali** — backend tidak punya endpoint detail, frontend hanya `ModuleWindow` list. Setiap modul baru = list-only. Detail adalah scope terpisah (dicatat sebagai follow-up Quotation). |
-| Approval bisa dipakai untuk semua modul | Kartu approval tidak menampilkan harga (Harga Satuan + Subtotal "—"); notifikasi approval ke tamu hanya untuk Sales Order (`draft_manager.py:1023`, belum `Quotation`); draf CREATE hanya SO/Quotation. |
+| Approval bisa dipakai untuk semua modul | Kartu approval tidak menampilkan harga (Harga Satuan + Subtotal "—"); notifikasi approval ke tamu sudah mencakup `Sales Order` dan `Quotation` (`2749d89`, `draft_manager.py:1054-1112`); draf CREATE hanya SO/Quotation. |
 | HRIS & Penggajian tinggal tampilkan | HRMS tidak terpasang; DocType payroll tidak ada di site. |
 | Menu referensi = daftar modul AIOS | Menu referensi adalah produk sekolah (SPI): PPDB, Murid, Akademik, SPP, Honor — produk lain, bukan modul AIOS. |
 | Finto OS sudah jadi platform | **Branding Finto OS / Fino (B2) SELESAI 19 Nov 2026** (`08084cd`, `82805fb`, `87237c6`, `cc5b48c`): desain default `Finto Desk / Finto OS` + opsi klasik `Ekasa Desk` (`0C/A3/B3/C1/D2`, taskbar & wallpaper ikut Mode Warna, glass login/register/pending, favicon Finto OS, avatar Fino outfit per bidang). |

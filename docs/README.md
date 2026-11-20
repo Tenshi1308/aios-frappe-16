@@ -27,7 +27,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
    - Konfigurasi Provider LLM & pemetaan model per Orchestrator/Sub-Agent berbasis UI & DocType (`AIOS LLM Provider` & `AIOS Agent Model Route` dengan `route_key` unik dan validasi ke `registry.py`, *Zero Hardcode*). **UI dan sumber kebenaran di Developer Control Plane; konfigurasi disalin ke tiap site klien.**
    - Arsitektur **Plugin & MCP Manager (`AIOS Plugin`)**: katalog 7 *Built-in Default Plugins* (didukung `Custom DocPerm` `read=1, report=1` untuk `AIOS Client` pada 17 DocType di `ERP_CLIENT_DOCTYPES`) dan dukungan External MCP Server.
    - **Batas Eksekusi Agen (§2.3):** agen tanpa shell, tanpa akses file server di luar `File` Frappe, tanpa jaringan bebas, identitas tak bisa dipalsukan; isolasi level OS sengaja ditunda.
-   - **Kontrak trace, hand-off & artefak (§3):** 5 event SSE, *hand-off* antar-bidang Opsi B (`handoff_to_branch`), serta catatan celah notifikasi approval `Quotation` ke tamu (`draft_manager.py:1023`).
+   - **Kontrak trace, hand-off & artefak (§3):** 5 event SSE, *hand-off* antar-bidang Opsi B (`handoff_to_branch`), serta detektor proaktif Tahap 1 Sales (`sales_proactive.py`) dan notifikasi approval `Quotation` ke tamu (`draft_manager.py`).
    - **Plugin ERPNext = wrapper tipis** di atas API ERPNext; skema tool diadaptasi dari `@casys/mcp-erpnext` (MIT). Server MCP eksternal dievaluasi dan **tidak dipakai** (§2.3).
    - Desain **Live Agent Trace** (5 event SSE kanonik termasuk `trace_subagent_prompt`, batas rekursi `MAX_DELEGATION_DEPTH = 2`, tanpa emoji dekoratif).
    - Arsitektur **Isolated Workspace (Frappe Private `File`)**; artefak tampil sebagai berkas/jendela desktop (`docs/08`).
@@ -85,7 +85,7 @@ Folder `docs/` ini memuat spesifikasi produk, arsitektur teknis, tata kelola *Si
     - Pemetaan tiga lapis modul ERPNext (Lapis A: 6 DocType sudah ditampilkan 18 Nov; Lapis B: Purchasing selesai 19 Nov, tersisa 7 bidang `planned`; Lapis C: HRIS/Payroll ditunda) beserta implikasi izin, agen (4 cabang aktif), dan keputusan Ten (§9–§10).
 
 11. **[11 — Tugas: Tampilkan Semua Modul + Branding Finto OS](./11-tugas-tampil-semua-modul.md)** — *daftar tugas & status*
-    - Checklist eksekusi per tugas (Lapis A selesai + push 18 Nov 16:34, Batch 1 Purchasing selesai 19 Nov — 17 modul, Branding B2 Finto OS/Fino selesai, Agent Purchasing Opsi A selesai `61f6139`, serta celah notifikasi Quotation) beserta nomor commit dan hasil verifikasi.
+    - Checklist eksekusi per tugas (Lapis A selesai + push 18 Nov 16:34, Batch 1 Purchasing selesai 19 Nov — 17 modul, Branding B2 Finto OS/Fino selesai, Agent Purchasing Opsi A selesai `61f6139`, dan Tahap 1 Sales selesai `2749d89`–`bfcf34b`) beserta nomor commit dan hasil verifikasi.
 
 ### Rencana Implementasi (Superpowers Plans)
 

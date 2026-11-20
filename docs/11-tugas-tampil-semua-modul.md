@@ -155,7 +155,7 @@ Riset mendalam + plan Superpowers untuk fase ini dibuat SETELAH Fase 1 selesai (
 - [x] Urutan vs modul: bersamaan — diputuskan Ten 20:11 (supaya frontend tidak ditulis 2x)
 
 ## Celah Terbuka & Status Verifikasi Server
-- [ ] Celah notifikasi approval `Quotation` ke tamu (`draft_manager.py:1023` baru mengirim untuk `Sales Order`).
+- [x] Celah notifikasi approval `Quotation` ke tamu (selesai pada Tahap 1 Sales `2749d89`, `draft_manager.py:675-676, 1086-1112`).
 - [ ] Server testing Ekasa belum terverifikasi ulang sejak 16 Nov 2026.
 
 ## Ditunda

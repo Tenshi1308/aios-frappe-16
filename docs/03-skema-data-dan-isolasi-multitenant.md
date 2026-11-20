@@ -147,3 +147,16 @@ Matriks ini berlaku di **site klien**. Di site developer, `AIOS Admin` bekerja l
    - Control plane hanya berbicara ke *site* klien lewat route resmi Frappe `/api/method/aios_v1.api.control.<nama>` dengan header `Authorization: token api_key:api_secret` milik role `AIOS Control`; autentikasi token ditangani Frappe, handler juga menolak request tanpa prefix token dan sesi manusia. Token/secret tidak pernah ditulis ke log.
    - Endpoint Control API menolak sesi login manusia; setiap panggilan yang berhasil dicatat sebagai audit melalui `frappe.logger()`. Endpoint hanya mengizinkan operasi lifecycle (`aios_status`, health check, agregat monitoring) serta **sync konfigurasi operator** — **bukan data bisnis**.
    - `AIOS Control` hanya memegang `read` pada `User` dan `AIOS Token Usage`, plus endpoint lifecycle dan sync konfigurasi yang sempit. `activate_user` menulis `aios_status` dan `enabled` bersama via `frappe.db.set_value` — bukan `DocPerm write` pada `User` — karena `set_value` tidak memicu hook `validate`. Audit menggunakan `frappe.logger()` dan semua nilai string disanitasi dengan `sanitize_text()`.
+
+---
+
+## 4. Skema Log Dedup Proaktif Tahap 1 Sales (`AIOS Proactive Insight Log`)
+
+- **DocType `AIOS Proactive Insight Log`** (`aios_v1/aios_v1/doctype/aios_proactive_insight_log/`, termigrasi di site developer `aios-v16.localhost` maupun site klien `aios-client1.localhost`):
+  - **Kunci dedup per dokumen:** kombinasi `(rule_key, reference_doctype, reference_name, insight_date, recipient_user)`.
+  - **Field utama:** `rule_key` (`Data`), `reference_doctype` (`Data`), `reference_name` (`Data`), `insight_date` (`Date`), `recipient_user` (`Link -> User`), `status` (`Select`: `PENDING`, `SENT_DESK`, `SENT_TELEGRAM`, `FAILED`), `channel` (`Data`), `conversation` (`Link -> AIOS Conversation`), `is_read` (`Check`), `reason` (`Small Text`).
+  - **Aturan `is_read`:** dalam satu batch pengiriman Desk (`SENT_DESK`), hanya 1 baris log perwakilan yang berstatus `is_read = 0` sehingga badge Desk bernilai `1` per pemindaian.
+- **Field ERPNext terverifikasi yang dibaca detektor Sales (`sales_proactive.py`):**
+  - `Quotation`: `valid_till`, `status`, `docstatus`, `party_name`, `customer_name`, `base_grand_total`, serta tautan balik `Sales Order Item.prevdoc_docname`.
+  - `Sales Order`: `delivery_date`, `status`, `docstatus`, `per_delivered`, `customer`, `customer_name`, `base_grand_total`.
+  - `Delivery Note`: `posting_date`, `status`, `docstatus`, `per_billed`, `is_return`, `customer`, `customer_name`, `base_grand_total`.
