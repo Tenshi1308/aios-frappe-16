@@ -401,9 +401,70 @@ def _insert_desk_insight_message(user: str, content: str) -> str:
     return conv_name
 
 
-def _deliver_finding_to_user(user: str, finding: dict) -> dict:
-    """Route one insight to either Desk OR Telegram (never both)."""
-    summary = str(finding.get("summary") or "").strip()
+_DETECTOR_LABELS = (
+    ("quotation_followup", "Follow-up Penawaran"),
+    ("so_fulfillment", "Monitor Pengiriman SO"),
+    ("delivered_unbilled", "Surat Jalan Belum Ditagih"),
+)
+
+
+def _format_finding_timing(finding: dict) -> str:
+    rule_key = str(finding.get("rule_key") or "")
+    if rule_key == "quotation_followup":
+        delta = int(finding.get("days_delta") or 0)
+        if delta > 0:
+            return f"berlaku {delta} hari lagi"
+        if delta == 0:
+            return "berakhir hari ini"
+        return f"kedaluwarsa {abs(delta)} hari lalu"
+    if rule_key == "so_fulfillment":
+        delta = int(finding.get("days_delta") or 0)
+        if delta < 0:
+            return f"terlambat {abs(delta)} hari"
+        if delta == 0:
+            return "jatuh tempo hari ini"
+        return f"waspada {delta} hari lagi"
+    if rule_key == "delivered_unbilled":
+        age = int(finding.get("age_days") or 0)
+        return f"umur {age} hari"
+    return "-"
+
+
+def build_proactive_summary(findings: list[dict], insight_date: str | None = None) -> str:
+    """Build one deterministic summary message (no LLM) for a scan batch."""
+    target_date = str(getdate(insight_date or nowdate()))
+    lines = [f"Ringkasan Insight Proaktif Sales ({target_date})", ""]
+
+    for rule_key, label in _DETECTOR_LABELS:
+        group = [f for f in findings if f.get("rule_key") == rule_key]
+        if not group:
+            continue
+        total_val = sum(float(f.get("base_grand_total") or 0.0) for f in group)
+        lines.append(f"- {label}: {len(group)} dokumen (Total {_format_currency_amount(total_val)})")
+
+    top_five = sorted(
+        findings,
+        key=lambda f: (-float(f.get("base_grand_total") or 0.0), str(f.get("name") or "")),
+    )[:5]
+    if top_five:
+        lines.append("")
+        lines.append("5 Temuan Teratas (nilai terbesar):")
+        for idx, item in enumerate(top_five, start=1):
+            demo_prefix = "[DEMO] " if (item.get("is_demo") or _is_demo_row(item)) else ""
+            doc_name = str(item.get("name") or "-")
+            customer = str(item.get("customer_name") or "-")
+            val_str = _format_currency_amount(float(item.get("base_grand_total") or 0.0))
+            timing_str = _format_finding_timing(item)
+            lines.append(f"{idx}. {demo_prefix}{doc_name} | {customer} | {val_str} | {timing_str}")
+
+    lines.append("")
+    lines.append("Catatan: Pemberitahuan proaktif saja; tidak ada draf yang dibuat otomatis.")
+    return "\n".join(lines)
+
+
+def _deliver_summary_to_user(user: str, summary_text: str) -> dict:
+    """Route one summary message to either Desk OR Telegram (never both)."""
+    summary = str(summary_text or "").strip()
     away = is_user_away_from_desk(user)
 
     if not away:
@@ -443,12 +504,22 @@ def _deliver_finding_to_user(user: str, finding: dict) -> dict:
 
 
 def dispatch_proactive_findings(findings: list[dict], insight_date: str | None = None) -> dict:
-    """Persist dedup log per document/user and dispatch to Desk or Telegram."""
+    """Filter per-document dedup, send 1 summary per scan per recipient, and log per document."""
     target_date = str(getdate(insight_date or nowdate()))
     recipients = get_sales_proactive_recipients()
-    stats = {"total_findings": len(findings), "recipients": len(recipients), "sent": 0, "skipped_dedup": 0, "failed": 0}
+    stats = {
+        "total_findings": len(findings),
+        "recipients": len(recipients),
+        "messages_sent": 0,
+        "sent": 0,
+        "skipped_dedup": 0,
+        "failed": 0,
+    }
+    if not findings:
+        return stats
 
     for user in recipients:
+        new_findings: list[dict] = []
         for finding in findings:
             rule_key = str(finding.get("rule_key") or "")
             ref_doctype = str(finding.get("reference_doctype") or "")
@@ -468,45 +539,58 @@ def dispatch_proactive_findings(findings: list[dict], insight_date: str | None =
             if existing:
                 stats["skipped_dedup"] += 1
                 continue
+            new_findings.append(finding)
 
+        if not new_findings:
+            continue
+
+        log_docs = []
+        for finding in new_findings:
             log_doc = frappe.get_doc(
                 {
                     "doctype": INSIGHT_LOG_DOCTYPE,
-                    "rule_key": rule_key,
-                    "reference_doctype": ref_doctype,
-                    "reference_name": ref_name,
+                    "rule_key": str(finding.get("rule_key") or ""),
+                    "reference_doctype": str(finding.get("reference_doctype") or ""),
+                    "reference_name": str(finding.get("name") or ""),
                     "insight_date": target_date,
                     "recipient_user": user,
                     "status": "PENDING",
                     "is_read": 0,
                 }
             ).insert(ignore_permissions=True)
-            if not frappe.flags.in_test:
-                frappe.db.commit()
+            log_docs.append(log_doc)
+        if not frappe.flags.in_test:
+            frappe.db.commit()
 
-            try:
-                outcome = _deliver_finding_to_user(user, finding)
+        summary_text = build_proactive_summary(new_findings, insight_date=target_date)
+        try:
+            outcome = _deliver_summary_to_user(user, summary_text)
+            is_desk = outcome["status"] == "SENT_DESK"
+            for idx, log_doc in enumerate(log_docs):
                 log_doc.status = outcome["status"]
                 log_doc.channel = outcome.get("channel") or ""
                 log_doc.conversation = outcome.get("conversation")
-                log_doc.is_read = int(outcome.get("is_read") or 0)
+                # Only 1 row per summary batch carries is_read=0 so Desk badge = 1 per scan
+                log_doc.is_read = (0 if idx == 0 else 1) if is_desk else 1
                 log_doc.reason = outcome.get("reason") or ""
                 log_doc.save(ignore_permissions=True)
-                if not frappe.flags.in_test:
-                    frappe.db.commit()
-                stats["sent"] += 1
-            except Exception as exc:
-                log_exception(
-                    "AIOS Sales Proactive Dispatch",
-                    exc=exc,
-                    context=f"user={user}; rule={rule_key}; doc={ref_doctype}/{ref_name}",
-                )
+            if not frappe.flags.in_test:
+                frappe.db.commit()
+            stats["messages_sent"] += 1
+            stats["sent"] += len(log_docs)
+        except Exception as exc:
+            log_exception(
+                "AIOS Sales Proactive Dispatch",
+                exc=exc,
+                context=f"user={user}; count={len(log_docs)}",
+            )
+            for log_doc in log_docs:
                 log_doc.status = "FAILED"
                 log_doc.reason = str(exc)[:140]
                 log_doc.save(ignore_permissions=True)
-                if not frappe.flags.in_test:
-                    frappe.db.commit()
-                stats["failed"] += 1
+            if not frappe.flags.in_test:
+                frappe.db.commit()
+            stats["failed"] += len(log_docs)
 
     return stats
 

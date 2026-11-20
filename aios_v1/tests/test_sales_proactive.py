@@ -261,18 +261,20 @@ class TestSalesProactiveDedup(IntegrationTestCase):
         ]
         sent_calls = []
 
-        def fake_deliver(user, finding):
-            sent_calls.append((user, finding["name"]))
+        def fake_deliver(user, summary_text):
+            sent_calls.append((user, summary_text))
             return {"status": "SENT_DESK", "channel": "desk", "reason": ""}
 
         with (
             patch("aios_v1.lib.sales_proactive.get_sales_proactive_recipients", return_value=["Administrator"]),
-            patch("aios_v1.lib.sales_proactive._deliver_finding_to_user", side_effect=fake_deliver),
+            patch("aios_v1.lib.sales_proactive._deliver_summary_to_user", side_effect=fake_deliver),
         ):
             first = dispatch_proactive_findings(findings, insight_date=nowdate())
             second = dispatch_proactive_findings(findings, insight_date=nowdate())
 
+        self.assertEqual(first["messages_sent"], 1)
         self.assertEqual(first["sent"], 1)
+        self.assertEqual(second["messages_sent"], 0)
         self.assertEqual(second["sent"], 0)
         self.assertEqual(second["skipped_dedup"], 1)
         self.assertEqual(len(sent_calls), 1)
@@ -280,46 +282,55 @@ class TestSalesProactiveDedup(IntegrationTestCase):
     def test_mid_scan_failure_does_not_resend_already_logged_documents(self):
         from aios_v1.lib.sales_proactive import dispatch_proactive_findings
 
-        findings = [
-            {
-                "rule_key": "so_fulfillment",
-                "reference_doctype": "Sales Order",
-                "name": "SAL-ORD-TEST-001",
-                "customer_name": "PT Satu",
-                "base_grand_total": 20_000_000.0,
-                "summary": "Pengiriman terlambat.",
-            },
-            {
-                "rule_key": "so_fulfillment",
-                "reference_doctype": "Sales Order",
-                "name": "SAL-ORD-TEST-002",
-                "customer_name": "PT Dua",
-                "base_grand_total": 15_000_000.0,
-                "summary": "Pengiriman terlambat.",
-            },
-        ]
-        delivered = []
-        fail_second = {"flag": True}
+        f1 = {
+            "rule_key": "so_fulfillment",
+            "reference_doctype": "Sales Order",
+            "name": "SAL-ORD-TEST-001",
+            "customer_name": "PT Satu",
+            "base_grand_total": 20_000_000.0,
+            "days_delta": -2,
+        }
+        f2 = {
+            "rule_key": "so_fulfillment",
+            "reference_doctype": "Sales Order",
+            "name": "SAL-ORD-TEST-002",
+            "customer_name": "PT Dua",
+            "base_grand_total": 15_000_000.0,
+            "days_delta": -1,
+        }
+        delivered_texts = []
+        fail_next = {"flag": False}
 
-        def flaky_deliver(user, finding):
-            if finding["name"] == "SAL-ORD-TEST-002" and fail_second["flag"]:
+        def flaky_deliver(user, summary_text):
+            if fail_next["flag"]:
                 raise RuntimeError("Simulated delivery failure")
-            delivered.append(finding["name"])
+            delivered_texts.append(summary_text)
             return {"status": "SENT_DESK", "channel": "desk", "reason": ""}
 
         with (
             patch("aios_v1.lib.sales_proactive.get_sales_proactive_recipients", return_value=["Administrator"]),
-            patch("aios_v1.lib.sales_proactive._deliver_finding_to_user", side_effect=flaky_deliver),
+            patch("aios_v1.lib.sales_proactive._deliver_summary_to_user", side_effect=flaky_deliver),
         ):
-            first = dispatch_proactive_findings(findings, insight_date=nowdate())
-            fail_second["flag"] = False
-            retry = dispatch_proactive_findings(findings, insight_date=nowdate())
+            # Scan 1 succeeds for f1
+            ok1 = dispatch_proactive_findings([f1], insight_date=nowdate())
+            # Scan 2 includes [f1, f2], f1 is deduped, delivery fails for f2
+            fail_next["flag"] = True
+            fail2 = dispatch_proactive_findings([f1, f2], insight_date=nowdate())
+            # Retry scan includes [f1, f2], f1 still deduped, only f2 is sent
+            fail_next["flag"] = False
+            retry = dispatch_proactive_findings([f1, f2], insight_date=nowdate())
 
-        self.assertEqual(first["sent"], 1)
-        self.assertEqual(first["failed"], 1)
+        self.assertEqual(ok1["messages_sent"], 1)
+        self.assertEqual(fail2["messages_sent"], 0)
+        self.assertEqual(fail2["skipped_dedup"], 1)
+        self.assertEqual(fail2["failed"], 1)
+        self.assertEqual(retry["messages_sent"], 1)
         self.assertEqual(retry["sent"], 1)
         self.assertEqual(retry["skipped_dedup"], 1)
-        self.assertEqual(delivered, ["SAL-ORD-TEST-001", "SAL-ORD-TEST-002"])
+        self.assertEqual(len(delivered_texts), 2)
+        self.assertIn("SAL-ORD-TEST-001", delivered_texts[0])
+        self.assertNotIn("SAL-ORD-TEST-001", delivered_texts[1])
+        self.assertIn("SAL-ORD-TEST-002", delivered_texts[1])
 
 
 class TestSalesProactiveRoutingAndScheduler(IntegrationTestCase):
@@ -381,8 +392,11 @@ class TestSalesProactiveRoutingAndScheduler(IntegrationTestCase):
             patch("aios_v1.lib.connector.telegram_client.send_message", return_value=True) as tg_mock2,
         ):
             res_tg = dispatch_proactive_findings(finding_tg, insight_date="2026-11-20")
+        self.assertEqual(res_tg["messages_sent"], 1)
         self.assertEqual(res_tg["sent"], 1)
-        tg_mock2.assert_called_once_with("99887766", "Insight Jauh Telegram")
+        tg_mock2.assert_called_once()
+        self.assertEqual(tg_mock2.call_args[0][0], "99887766")
+        self.assertIn("SAL-ORD-ROUTE-2", tg_mock2.call_args[0][1])
 
         # 3. Desk away + unlinked Telegram -> fallback to Desk (SENT_DESK), unread, reason logged
         finding_unlinked = [
@@ -415,3 +429,141 @@ class TestSalesProactiveRoutingAndScheduler(IntegrationTestCase):
 
         # Zero drafts created during proactive scan/dispatch
         self.assertEqual(frappe.db.count("Pending Action Draft"), draft_count_before)
+
+
+class TestSalesProactiveSummary(IntegrationTestCase):
+    """Task 1: Summary message per scan per recipient (10 findings -> 1 message, 10 dedup logs)."""
+
+    def test_summary_builder_includes_per_detector_totals_top_5_and_demo_label(self):
+        from aios_v1.lib.sales_proactive import build_proactive_summary
+
+        findings = [
+            {
+                "rule_key": "quotation_followup",
+                "reference_doctype": "Quotation",
+                "name": "SAL-QTN-01",
+                "customer_name": "PT Alpha",
+                "base_grand_total": 50_000_000.0,
+                "days_delta": 1,
+                "valid_till": "2026-11-21",
+                "is_demo": False,
+            },
+            {
+                "rule_key": "so_fulfillment",
+                "reference_doctype": "Sales Order",
+                "name": "SAL-ORD-01",
+                "customer_name": "DEMO - PT Beta",
+                "base_grand_total": 40_000_000.0,
+                "days_delta": -3,
+                "delivery_date": "2026-11-17",
+                "is_demo": True,
+            },
+            {
+                "rule_key": "delivered_unbilled",
+                "reference_doctype": "Delivery Note",
+                "name": "MAT-DN-01",
+                "customer_name": "PT Gamma",
+                "base_grand_total": 30_000_000.0,
+                "age_days": 5,
+                "posting_date": "2026-11-15",
+                "is_demo": False,
+            },
+            {
+                "rule_key": "quotation_followup",
+                "reference_doctype": "Quotation",
+                "name": "SAL-QTN-02",
+                "customer_name": "PT Delta",
+                "base_grand_total": 20_000_000.0,
+                "days_delta": -2,
+                "valid_till": "2026-11-18",
+                "is_demo": False,
+            },
+            {
+                "rule_key": "so_fulfillment",
+                "reference_doctype": "Sales Order",
+                "name": "SAL-ORD-02",
+                "customer_name": "PT Epsilon",
+                "base_grand_total": 10_000_000.0,
+                "days_delta": 2,
+                "delivery_date": "2026-11-22",
+                "is_demo": False,
+            },
+            {
+                "rule_key": "delivered_unbilled",
+                "reference_doctype": "Delivery Note",
+                "name": "MAT-DN-02",
+                "customer_name": "PT Zeta",
+                "base_grand_total": 1_000_000.0,
+                "age_days": 3,
+                "posting_date": "2026-11-17",
+                "is_demo": False,
+            },
+        ]
+
+        summary = build_proactive_summary(findings, insight_date="2026-11-20")
+        self.assertIn("2026-11-20", summary)
+        # 3 detector lines with counts and totals
+        self.assertIn("2", summary)
+        self.assertIn("Rp 70.000.000", summary)
+        self.assertIn("Rp 50.000.000", summary)
+        self.assertIn("Rp 31.000.000", summary)
+        # Top 5 included, 6th excluded
+        self.assertIn("SAL-QTN-01", summary)
+        self.assertIn("SAL-ORD-01", summary)
+        self.assertIn("[DEMO]", summary)
+        self.assertIn("MAT-DN-01", summary)
+        self.assertIn("SAL-QTN-02", summary)
+        self.assertIn("SAL-ORD-02", summary)
+        self.assertNotIn("MAT-DN-02", summary)
+
+    def test_dispatch_10_findings_sends_1_summary_and_logs_10_dedup_rows(self):
+        from aios_v1.api.sales_proactive import get_unread_sales_insights
+        from aios_v1.lib.sales_proactive import dispatch_proactive_findings, record_desk_heartbeat
+
+        user = "Administrator"
+        record_desk_heartbeat(user)
+        findings = [
+            {
+                "rule_key": "quotation_followup" if i % 2 == 0 else "so_fulfillment",
+                "reference_doctype": "Quotation" if i % 2 == 0 else "Sales Order",
+                "name": f"DOC-SUM-{i:02d}",
+                "customer_name": f"PT Summary {i}",
+                "base_grand_total": float((i + 1) * 1_000_000),
+                "days_delta": 1 if i % 2 == 0 else -2,
+                "is_demo": False,
+            }
+            for i in range(10)
+        ]
+
+        sent_payloads = []
+
+        def fake_deliver_text(u, text):
+            sent_payloads.append((u, text))
+            return {
+                "status": "SENT_DESK",
+                "channel": "desk",
+                "conversation": None,
+                "reason": "",
+            }
+
+        with (
+            patch("aios_v1.lib.sales_proactive.get_sales_proactive_recipients", return_value=[user]),
+            patch("aios_v1.lib.sales_proactive._deliver_summary_to_user", side_effect=fake_deliver_text),
+        ):
+            first = dispatch_proactive_findings(findings, insight_date="2026-11-20")
+            second = dispatch_proactive_findings(findings, insight_date="2026-11-20")
+            empty = dispatch_proactive_findings([], insight_date="2026-11-20")
+
+        self.assertEqual(len(sent_payloads), 1)
+        self.assertEqual(first["messages_sent"], 1)
+        self.assertEqual(first["sent"], 10)
+        self.assertEqual(second["messages_sent"], 0)
+        self.assertEqual(second["skipped_dedup"], 10)
+        self.assertEqual(empty["messages_sent"], 0)
+
+        log_count = frappe.db.count(
+            "AIOS Proactive Insight Log",
+            {"recipient_user": user, "insight_date": "2026-11-20", "reference_name": ["like", "DOC-SUM-%"]},
+        )
+        self.assertEqual(log_count, 10)
+        self.assertEqual(get_unread_sales_insights()["unread_count"], 1)
