@@ -8,6 +8,8 @@ import type {
   ClientStaffQuota,
   ClientStaffUser,
   ConversationSettingsData,
+  DetectorSchedule,
+  DetectorSchedulesData,
   CreateClientStaffResponse,
   DomainCard,
   DomainDetailData,
@@ -825,7 +827,42 @@ export const modulesApi = {
   createClientStaff,
   setClientStaffStatus,
   regenerateClientStaffInvite,
+  fetchDetectorSchedules,
+  saveDetectorSchedules,
 } satisfies ModulesApi;
 
 export { reportClientError, type ClientErrorPayload } from './client';
 
+const SALES_PROACTIVE_API = '/api/method/aios_v1.api.sales_proactive';
+
+export async function fetchDetectorSchedules(): Promise<DetectorSchedulesData> {
+  const raw = unwrapMessage<unknown>(await apiFetch(`${SALES_PROACTIVE_API}.get_detector_schedules`));
+  if (!isRecord(raw) || !Array.isArray(raw.detectors)) {
+    throw new ApiError('Jadwal detektor tidak valid.');
+  }
+  return {
+    detectors: (raw.detectors as Record<string, unknown>[]).map((row) => ({
+      detector_key: String(row.detector_key ?? ''),
+      label: String(row.label ?? ''),
+      enabled: Number(row.enabled ?? 0),
+      frequency: (row.frequency === 'weekly' || row.frequency === 'monthly' ? row.frequency : 'daily') as DetectorSchedule['frequency'],
+      run_hour: Number(row.run_hour ?? 0),
+      day_of_week: String(row.day_of_week ?? ''),
+    })),
+    frequencies: Array.isArray(raw.frequencies) ? raw.frequencies.map(String) : ['daily', 'weekly', 'monthly'],
+    days: Array.isArray(raw.days)
+      ? raw.days.map(String)
+      : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  };
+}
+
+export async function saveDetectorSchedules(
+  detectors: DetectorSchedule[],
+  csrfToken: string,
+): Promise<void> {
+  await apiFetch(`${SALES_PROACTIVE_API}.save_detector_schedules`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+    body: JSON.stringify({ detectors }),
+  });
+}

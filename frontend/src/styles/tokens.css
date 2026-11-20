@@ -20,6 +20,11 @@
   --accent-strong: #a8650a;
   --accent-soft: rgba(201, 125, 18, 0.13);
   --on-accent: #1b1206;
+  /* Teal aksen kontrol (dropdown Insight Proaktif) — selaras --wall-2. */
+  --teal: #0f766e;
+  --teal-strong: #0b5d56;
+  --teal-soft: rgba(15, 118, 110, 0.12);
+  --teal-line: rgba(15, 118, 110, 0.28);
   --ok: #1d8656;
   --ok-soft: rgba(29, 134, 86, 0.12);
   --warn: #b26f08;
@@ -249,6 +254,10 @@
   --accent-strong: #f6bb63;
   --accent-soft: rgba(240, 164, 58, 0.16);
   --on-accent: #1b1206;
+  --teal: #2dd4bf;
+  --teal-strong: #5eead4;
+  --teal-soft: rgba(45, 212, 191, 0.16);
+  --teal-line: rgba(45, 212, 191, 0.32);
   --ok: #43c08a;
   --ok-soft: rgba(67, 192, 138, 0.14);
   --warn: #f0b443;

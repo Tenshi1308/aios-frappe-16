@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "detector_key",
+  "label",
+  "enabled",
+  "frequency",
+  "run_hour",
+  "day_of_week"
+ ],
+ "fields": [
+  {
+   "fieldname": "detector_key",
+   "fieldtype": "Select",
+   "label": "Detector Key",
+   "reqd": 1,
+   "in_list_view": 1,
+   "options": "quotation_followup\nso_fulfillment\ndelivered_unbilled\nchurn_reactivation\npurchase_pattern_reorder\npricing_discount_anomaly\nintelligent_drafting"
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Label",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "frequency",
+   "fieldtype": "Select",
+   "label": "Frequency",
+   "options": "daily\nweekly\nmonthly",
+   "default": "daily",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "run_hour",
+   "fieldtype": "Int",
+   "label": "Run Hour (0-23)",
+   "default": "6",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "day_of_week",
+   "fieldtype": "Select",
+   "label": "Day of Week (weekly)",
+   "options": "\nMonday\nTuesday\nWednesday\nThursday\nFriday\nSaturday\nSunday"
+  }
+ ],
+ "istable": 1,
+ "module": "AIOS V1",
+ "name": "AIOS Proactive Detector Schedule",
+ "permissions": [],
+ "track_changes": 0
+}

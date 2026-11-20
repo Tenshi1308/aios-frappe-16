@@ -167,10 +167,23 @@ Analisis deret waktu.
         self.assertEqual(get_skills_for_worker(branch="finance", worker_key="treasurer"), [])
         self.assertEqual(get_skills_for_worker(branch="logistics", worker_key="shipping_clerk"), [])
 
-        # Manager tetap mendapat skill orchestrator yang aktif, bukan skill dormant cabangnya.
+        # Manager mendapat skill orchestrator yang aktif, bukan skill dormant cabangnya.
+        # Sejak K11 (Ten, 20 Nov 2026) manager juga menerima skill cabang yang SUDAH
+        # aktif — mis. customer-retention-and-churn-mitigation setelah tool
+        # predict_customer_churn_risk dibangun. Yang dilarang tetap: skill dormant bocor.
+        from aios_v1.lib.skills_loader import is_skill_active
+        from aios_v1.lib.tool_registry import _TOOL_REGISTRY, _ensure_tools_loaded
+
+        _ensure_tools_loaded()
+        available_tools = set(_TOOL_REGISTRY)
         for branch in ("finance", "sales", "planning"):
-            for skill in get_skills_for_worker(branch=branch, worker_key="manager"):
-                self.assertEqual(skill["branch"], "orchestrator")
+            loaded = get_skills_for_worker(branch=branch, worker_key="manager")
+            for skill in loaded:
+                self.assertTrue(
+                    is_skill_active(skill, available_tools),
+                    f"Skill dormant bocor ke manager {branch}: {skill['slug']}",
+                )
+                self.assertIn(skill["branch"], ("orchestrator", branch))
 
     # =========================================================================
     # 6. TEST VALIDATE SKILL DEPENDENCIES
@@ -238,7 +251,10 @@ Analisis deret waktu.
         self.assertNotIn("Corporate Scenario Simulation", dormant_only)
 
     # =========================================================================
-    # 9. TEST REAL SKILLS INTEGRITY & UNIK SLUGS (88 SKILLS: 5 AKTIF, 83 DORMANT)
+    # 9. TEST REAL SKILLS INTEGRITY & UNIK SLUGS (88 SKILLS: 6 AKTIF, 82 DORMANT)
+    # Angka 6/82 dikunci atas keputusan Ten 20 Nov 2026: K11 membangun tool
+    # predict_customer_churn_risk sehingga skill
+    # customer-retention-and-churn-mitigation berubah dari dormant menjadi aktif.
     # =========================================================================
     def test_09_real_skills_integrity_and_uniqueness(self):
         """88 file utuh; skill AKTIF hanya merujuk tool terdaftar; dormant punya tool hilang."""
@@ -265,8 +281,8 @@ Analisis deret waktu.
                 dormant.append(skill)
                 self.assertTrue(missing, f"Skill dormant {skill['slug']} tidak punya tool hilang")
 
-        self.assertEqual(len(active), 5)
-        self.assertEqual(len(dormant), 83)
+        self.assertEqual(len(active), 6)
+        self.assertEqual(len(dormant), 82)
 
         validation = validate_skill_dependencies()
         self.assertFalse(validation["valid"])

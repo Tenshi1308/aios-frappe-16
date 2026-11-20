@@ -355,3 +355,28 @@ def erpnext_doctype_schema(doctype):
             if field.fieldname and not field.fieldname.startswith("_")
         ],
     }
+
+
+@ai_tool(
+    name="predict_customer_churn_risk",
+    description=(
+        "Menghitung risiko churn satu customer dari jeda pembelian terakhir. "
+        "Ambang dan status sama dengan detektor Churn Tahap 2; hanya membaca data."
+    ),
+    branch=["sales"],
+    roles=["sales_data_analyst", "marketing_specialist"],
+    plugin_key="erpnext-core-data",
+    parameters={
+        "customer": {"type": "string", "description": "Nama atau ID Customer"},
+        "days_since_last_order": {
+            "type": "integer",
+            "description": "Jeda hari sejak pembelian terakhir; bila kosong dihitung dari Sales Invoice",
+            "required": False,
+        },
+    },
+)
+def predict_customer_churn_risk_tool(customer, days_since_last_order=None):
+    """Tool wrapper: delegate to the shared churn implementation."""
+    from aios_v1.lib.sales_proactive import predict_customer_churn_risk
+
+    return predict_customer_churn_risk(customer, days_since_last_order)

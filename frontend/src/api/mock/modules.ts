@@ -5,6 +5,8 @@ import type {
   ClientStaffUser,
   ConversationSettingsData,
   CreateClientStaffResponse,
+  DetectorSchedule,
+  DetectorSchedulesData,
   DomainCard,
   DomainDetailData,
   DomainMeta,
@@ -451,4 +453,31 @@ export const modulesApi = {
   createClientStaff,
   setClientStaffStatus,
   regenerateClientStaffInvite,
+  fetchDetectorSchedules,
+  saveDetectorSchedules,
 } satisfies ModulesApi;
+const MOCK_DETECTOR_SCHEDULES: DetectorSchedule[] = [
+  { detector_key: 'quotation_followup', label: 'Follow-up Penawaran', enabled: 1, frequency: 'daily', run_hour: 6, day_of_week: '' },
+  { detector_key: 'so_fulfillment', label: 'Monitor Pengiriman SO', enabled: 1, frequency: 'daily', run_hour: 6, day_of_week: '' },
+  { detector_key: 'delivered_unbilled', label: 'Surat Jalan Belum Ditagih', enabled: 1, frequency: 'daily', run_hour: 6, day_of_week: '' },
+  { detector_key: 'churn_reactivation', label: 'Churn & Reaktivasi', enabled: 1, frequency: 'weekly', run_hour: 7, day_of_week: 'Monday' },
+  { detector_key: 'purchase_pattern_reorder', label: 'Pola Pembelian', enabled: 1, frequency: 'weekly', run_hour: 7, day_of_week: 'Monday' },
+  { detector_key: 'pricing_discount_anomaly', label: 'Anomali Harga', enabled: 1, frequency: 'daily', run_hour: 8, day_of_week: '' },
+  { detector_key: 'intelligent_drafting', label: 'Usulan Draf', enabled: 1, frequency: 'daily', run_hour: 8, day_of_week: '' },
+];
+
+export async function fetchDetectorSchedules(): Promise<DetectorSchedulesData> {
+  return {
+    detectors: MOCK_DETECTOR_SCHEDULES,
+    frequencies: ['daily', 'weekly', 'monthly'],
+    days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  };
+}
+
+export async function saveDetectorSchedules(
+  _detectors: DetectorSchedule[],
+  _csrfToken: string,
+): Promise<void> {
+  return;
+}
+

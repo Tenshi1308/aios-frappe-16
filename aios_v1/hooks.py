@@ -241,6 +241,12 @@ scheduler_events = {
 		"aios_v1.lib.draft_manager.expire_old_drafts",
 		"aios_v1.lib.sales_proactive.run_daily_sales_proactive_scan",
 	],
+	# K8/K12: dispatcher per detektor — jadwal dibaca dari AIOS Proactive Detector
+	# Setting sehingga bisa diubah dari Desk tanpa deploy. Entry "daily" di atas
+	# sengaja dibiarkan utuh (perilaku Tahap 1 tidak berubah).
+	"hourly": [
+		"aios_v1.lib.sales_proactive.run_detector_scheduler_dispatch",
+	],
 }
 
 # Testing

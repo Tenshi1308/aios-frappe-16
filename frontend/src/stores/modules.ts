@@ -3,12 +3,14 @@ import {
   fetchBootstrap,
   fetchBrandSettings,
   fetchConversationSettings,
+  fetchDetectorSchedules,
   fetchDomain,
   fetchList,
   fetchModule,
   fetchSettings,
   saveBrandSettings,
   saveConversationSettings,
+  saveDetectorSchedules,
   saveTheme,
   saveCompanyPersona,
   search as apiSearch,
@@ -31,6 +33,8 @@ import type {
   BrandSettingsData,
   ClientStaffAndRecipientsData,
   ConversationSettingsData,
+  DetectorSchedule,
+  DetectorSchedulesData,
   CreateClientStaffResponse,
   DomainDetailData,
   DomainMeta,
@@ -76,7 +80,8 @@ export const useModulesStore = defineStore('modules', {
       | 'connector'
       | 'personalization'
       | 'receivers'
-      | 'staff',
+      | 'staff'
+      | 'proactive',
     brandSettings: null as BrandSettingsData | null,
     brandSettingsLoading: false,
     brandSettingsSaving: false,
@@ -85,6 +90,10 @@ export const useModulesStore = defineStore('modules', {
     conversationSettingsLoading: false,
     conversationSettingsSaving: false,
     conversationSettingsError: '',
+    detectorSchedules: null as DetectorSchedulesData | null,
+    detectorSchedulesLoading: false,
+    detectorSchedulesSaving: false,
+    detectorSchedulesError: '',
     themeSaving: false,
     telegramStatus: null as TelegramLinkStatus | null,
     telegramDeepLink: '' as string,
@@ -385,7 +394,15 @@ export const useModulesStore = defineStore('modules', {
     },
 
     async openSettings(
-      tab?: 'general' | 'design' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff',
+      tab?:
+        | 'general'
+        | 'design'
+        | 'conversation'
+        | 'connector'
+        | 'personalization'
+        | 'receivers'
+        | 'staff'
+        | 'proactive',
     ) {
       if (tab) {
         this.settingsTab = tab;
@@ -453,6 +470,46 @@ export const useModulesStore = defineStore('modules', {
             : 'Pengaturan percakapan tidak dapat dimuat.';
       } finally {
         this.conversationSettingsLoading = false;
+      }
+    },
+
+    async loadDetectorSchedules(force = false) {
+      if (this.detectorSchedulesLoading || (this.detectorSchedules && !force)) return;
+      this.detectorSchedulesLoading = true;
+      this.detectorSchedulesError = '';
+      try {
+        this.detectorSchedules = await fetchDetectorSchedules();
+      } catch (err) {
+        this.detectorSchedulesError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Jadwal detektor tidak dapat dimuat.';
+      } finally {
+        this.detectorSchedulesLoading = false;
+      }
+    },
+
+    async saveDetectorSchedule(detectors: DetectorSchedule[]) {
+      if (this.detectorSchedulesSaving) return;
+      this.detectorSchedulesSaving = true;
+      this.detectorSchedulesError = '';
+      try {
+        const session = useSessionStore();
+        await saveDetectorSchedules(detectors, session.csrfToken);
+        this.detectorSchedules = {
+          detectors,
+          frequencies: this.detectorSchedules?.frequencies ?? ['daily', 'weekly', 'monthly'],
+          days:
+            this.detectorSchedules?.days ??
+            ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+        };
+      } catch (err) {
+        this.detectorSchedulesError =
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : 'Jadwal detektor tidak dapat disimpan.';
+      } finally {
+        this.detectorSchedulesSaving = false;
       }
     },
 

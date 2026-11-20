@@ -1,0 +1,49 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "detectors"
+ ],
+ "fields": [
+  {
+   "fieldname": "detectors",
+   "fieldtype": "Table",
+   "label": "Detector Schedules",
+   "options": "AIOS Proactive Detector Schedule"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "module": "AIOS V1",
+ "name": "AIOS Proactive Detector Setting",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "AIOS Client Owner",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "track_changes": 1
+}

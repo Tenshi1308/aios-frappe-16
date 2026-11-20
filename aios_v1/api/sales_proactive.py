@@ -6,10 +6,14 @@ import frappe
 
 from aios_v1.lib.error_utils import log_exception
 from aios_v1.lib.sales_proactive import (
+    DETECTOR_KEYS,
     INSIGHT_LOG_DOCTYPE,
     SALES_BRANCH,
+    default_detector_settings,
+    get_detector_settings,
     record_desk_heartbeat,
     run_daily_sales_proactive_scan,
+    run_detector_scheduler_dispatch,
 )
 
 
@@ -86,3 +90,78 @@ def mark_sales_insights_read() -> dict:
     if unread_names and not frappe.flags.in_test:
         frappe.db.commit()
     return {"status": "ok", "marked": len(unread_names)}
+
+
+@frappe.whitelist()
+def get_detector_schedules() -> dict:
+    """Return per-detector schedules for the Insight Proaktif settings tab (K9)."""
+    _require_authenticated_user()
+    rows = get_detector_settings()
+    if not rows:
+        rows = default_detector_settings()
+    return {
+        "detectors": [
+            {
+                "detector_key": str(row.get("detector_key") or ""),
+                "label": str(row.get("label") or ""),
+                "enabled": int(row.get("enabled") or 0),
+                "frequency": str(row.get("frequency") or "daily"),
+                "run_hour": int(row.get("run_hour") or 0),
+                "day_of_week": str(row.get("day_of_week") or ""),
+            }
+            for row in rows
+        ],
+        "frequencies": ["daily", "weekly", "monthly"],
+        "days": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+    }
+
+
+@frappe.whitelist(methods=["POST"])
+def save_detector_schedules(detectors=None) -> dict:
+    """Persist per-detector schedules so Desk can change them without deploy (K9)."""
+    user = _require_authenticated_user()
+    _assert_admin_or_owner(user)
+    try:
+        payload = frappe.parse_json(detectors) if isinstance(detectors, str) else detectors
+        if not isinstance(payload, list) or not payload:
+            frappe.throw("Daftar detektor wajib diisi.", frappe.ValidationError)
+
+        doc = frappe.get_single("AIOS Proactive Detector Setting")
+        doc.set("detectors", [])
+        for row in payload:
+            if not isinstance(row, dict):
+                frappe.throw("Setiap baris detektor harus berupa object.", frappe.ValidationError)
+            key = str(row.get("detector_key") or "").strip()
+            if key not in DETECTOR_KEYS:
+                frappe.throw(f"Detektor tidak dikenal: {key}", frappe.ValidationError)
+            doc.append(
+                "detectors",
+                {
+                    "detector_key": key,
+                    "label": str(row.get("label") or key),
+                    "enabled": 1 if int(row.get("enabled") or 0) else 0,
+                    "frequency": str(row.get("frequency") or "daily"),
+                    "run_hour": int(row.get("run_hour") or 0),
+                    "day_of_week": str(row.get("day_of_week") or ""),
+                },
+            )
+        doc.flags.ignore_permissions = True
+        doc.save(ignore_permissions=True)
+        return {"status": "ok", "saved": len(payload)}
+    except (frappe.AuthenticationError, frappe.PermissionError, frappe.ValidationError):
+        raise
+    except Exception as exc:
+        log_exception("AIOS Detector Schedule Save", exc=exc, context=f"user={user}")
+        frappe.throw("Jadwal detektor gagal disimpan. Silakan periksa Error Log.")
+
+
+@frappe.whitelist()
+def run_detector_dispatch_now() -> dict:
+    """Manual 'jalankan sekarang' for the scheduler dispatcher (admin/owner only)."""
+    user = _require_authenticated_user()
+    _assert_admin_or_owner(user)
+    try:
+        return run_detector_scheduler_dispatch()
+    except Exception as exc:
+        log_exception("AIOS Detector Dispatch Manual", exc=exc, context=f"user={user}")
+        frappe.throw("Dispatcher detektor gagal dijalankan. Silakan periksa Error Log.")

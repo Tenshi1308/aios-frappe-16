@@ -212,3 +212,163 @@ def cleanup_demo_scenarios() -> dict:
 
     frappe.db.commit()
     return {"status": "success", "deleted": deleted}
+
+
+# --- Tahap 2 scenarios (Churn, Purchase Pattern, Pricing Anomaly, Drafting) ---
+DEMO_T2_CUSTOMER_CHURN = "DEMO - PT Churn Sales Tahap 2"
+DEMO_T2_CUSTOMER_PATTERN = "DEMO - PT Pola Pembelian Tahap 2"
+
+
+def _ensure_customer(name: str) -> str:
+    if frappe.db.exists("Customer", name):
+        return name
+    cust_group = frappe.db.get_value("Customer Group", {"is_group": 0}, "name") or "All Customer Groups"
+    territory = frappe.db.get_value("Territory", {"is_group": 0}, "name") or "All Territories"
+    frappe.get_doc(
+        {
+            "doctype": "Customer",
+            "customer_name": name,
+            "customer_type": "Company",
+            "customer_group": cust_group,
+            "territory": territory,
+        }
+    ).insert(ignore_permissions=True)
+    return name
+
+
+def _demo_sales_invoice(company, customer, posting_date, currency, price_list, warehouse, item_code, item_name, qty, rate):
+    si = frappe.get_doc(
+        {
+            "doctype": "Sales Invoice",
+            "customer": customer,
+            "company": company,
+            "posting_date": str(posting_date),
+            "set_posting_time": 1,
+            "currency": currency,
+            "selling_price_list": price_list,
+            "price_list_currency": currency,
+            "plc_conversion_rate": 1.0,
+            "update_stock": 1,
+            "items": [
+                {
+                    "item_code": item_code,
+                    "item_name": item_name,
+                    "qty": qty,
+                    "rate": rate,
+                    "warehouse": warehouse,
+                }
+            ],
+        }
+    )
+    si.insert(ignore_permissions=True)
+    si.submit()
+    return si.name
+
+
+def seed_tahap2_scenarios(company: str | None = None) -> dict:
+    """DEMO data for Tahap 2 detectors: churn, purchase pattern, pricing anomaly."""
+    comp = _resolve_company(company)
+    item_code, warehouse = _resolve_demo_item_and_warehouse(comp)
+    item_doc = frappe.get_doc("Item", item_code)
+    currency = frappe.get_cached_value("Company", comp, "default_currency") or "IDR"
+    price_list = (
+        frappe.db.get_value("Price List", {"selling": 1, "enabled": 1}, "name")
+        or "Standard Selling"
+    )
+    today_dt = getdate(nowdate())
+    item_name = f"{DEMO_TAG} {item_doc.item_name}"
+    standard_rate = float(item_doc.standard_rate or 1500000.0)
+    created = {"invoices": [], "customers": []}
+
+    # Churn: pembelian terakhir 90 hari lalu (> ambang 75 hari)
+    churn_cust = _ensure_customer(DEMO_T2_CUSTOMER_CHURN)
+    created["customers"].append(churn_cust)
+    created["invoices"].append(
+        _demo_sales_invoice(
+            comp, churn_cust, add_days(today_dt, -90), currency, price_list,
+            warehouse, item_code, item_name, 2, standard_rate,
+        )
+    )
+
+    # Purchase Pattern: 3 pembelian berjarak 10 hari, terakhir 40 hari lalu -> jauh lewat jatuh tempo
+    pattern_cust = _ensure_customer(DEMO_T2_CUSTOMER_PATTERN)
+    created["customers"].append(pattern_cust)
+    for offset in (60, 50, 40):
+        created["invoices"].append(
+            _demo_sales_invoice(
+                comp, pattern_cust, add_days(today_dt, -offset), currency, price_list,
+                warehouse, item_code, item_name, 1, standard_rate,
+            )
+        )
+
+    # Pricing anomaly: Quotation dengan diskon 35% (di atas ambang 20%, tanpa pricing_rules)
+    qtn = frappe.get_doc(
+        {
+            "doctype": "Quotation",
+            "quotation_to": "Customer",
+            "party_name": pattern_cust,
+            "customer_name": DEMO_T2_CUSTOMER_PATTERN,
+            "company": comp,
+            "transaction_date": str(add_days(today_dt, -2)),
+            "valid_till": str(add_days(today_dt, 12)),
+            "currency": currency,
+            "selling_price_list": price_list,
+            "price_list_currency": currency,
+            "plc_conversion_rate": 1.0,
+            "items": [
+                {
+                    "item_code": item_code,
+                    "item_name": item_name,
+                    "qty": 5,
+                    "rate": round(standard_rate * 0.65, 2),
+                    "price_list_rate": standard_rate,
+                    "discount_percentage": 35.0,
+                }
+            ],
+        }
+    )
+    qtn.insert(ignore_permissions=True)
+    qtn.submit()
+    created["quotation"] = qtn.name
+
+    frappe.db.commit()
+    return {"status": "success", "company": comp, "created": created}
+
+
+def cleanup_tahap2_scenarios() -> dict:
+    """Hapus data DEMO Tahap 2 dengan aman (cancel lalu delete)."""
+    deleted = {"Sales Invoice": 0, "Quotation": 0, "Customer": 0}
+    for cust in (DEMO_T2_CUSTOMER_CHURN, DEMO_T2_CUSTOMER_PATTERN):
+        for name in frappe.get_all("Sales Invoice", filters={"customer": cust}, pluck="name"):
+            doc = frappe.get_doc("Sales Invoice", name)
+            if doc.docstatus == 1:
+                doc.flags.ignore_permissions = True
+                doc.cancel()
+            frappe.delete_doc("Sales Invoice", name, ignore_permissions=True, force=True, delete_permanently=True)
+            deleted["Sales Invoice"] += 1
+        for name in frappe.get_all("Quotation", filters={"party_name": cust}, pluck="name"):
+            doc = frappe.get_doc("Quotation", name)
+            if doc.docstatus == 1:
+                doc.flags.ignore_permissions = True
+                doc.cancel()
+            frappe.delete_doc("Quotation", name, ignore_permissions=True, force=True, delete_permanently=True)
+            deleted["Quotation"] += 1
+        if frappe.db.exists("Customer", cust):
+            frappe.delete_doc("Customer", cust, ignore_permissions=True, force=True, delete_permanently=True)
+            deleted["Customer"] += 1
+
+    # Bersihkan log insight yang menunjuk dokumen yang sudah tidak ada
+    for row in frappe.get_all(
+        "AIOS Proactive Insight Log", fields=["name", "reference_doctype", "reference_name"]
+    ):
+        ref_dt, ref_name = row.reference_doctype, row.reference_name
+        if ref_dt == "Customer" and "::" in str(ref_name):
+            continue
+        if not frappe.db.exists(ref_dt, ref_name):
+            frappe.delete_doc(
+                "AIOS Proactive Insight Log", row.name,
+                ignore_permissions=True, force=True, delete_permanently=True,
+            )
+
+    frappe.db.commit()
+    return {"status": "success", "deleted": deleted}

@@ -435,6 +435,21 @@ export interface RegenerateStaffInviteResponse {
   invitation_url: string;
 }
 
+export interface DetectorSchedule {
+  detector_key: string;
+  label: string;
+  enabled: number;
+  frequency: 'daily' | 'weekly' | 'monthly';
+  run_hour: number;
+  day_of_week: string;
+}
+
+export interface DetectorSchedulesData {
+  detectors: DetectorSchedule[];
+  frequencies: string[];
+  days: string[];
+}
+
 export interface ModulesApi {
   fetchBootstrap(): Promise<BootstrapData>;
   fetchDomain(key: string): Promise<DomainDetailData>;
@@ -453,6 +468,8 @@ export interface ModulesApi {
   saveBrandSettings(brand: SettingsBrand, csrfToken: string): Promise<SettingsBrand>;
   fetchConversationSettings(): Promise<ConversationSettingsData>;
   saveConversationSettings(handoffMode: HandoffMode, csrfToken: string): Promise<HandoffMode>;
+  fetchDetectorSchedules(): Promise<DetectorSchedulesData>;
+  saveDetectorSchedules(detectors: DetectorSchedule[], csrfToken: string): Promise<void>;
   saveTheme(theme: SettingsTheme, csrfToken: string): Promise<void>;
   saveCompanyPersona(companyContextPersona: string, csrfToken: string): Promise<string>;
   fetchClientStaffAndRecipients(): Promise<ClientStaffAndRecipientsData>;

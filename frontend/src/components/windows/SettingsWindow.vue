@@ -7,8 +7,17 @@ import { formatNumber } from '../../utils/format';
 import { currentBrand, resolveTheme } from '../../utils/theme';
 import AppIcon from '../base/AppIcon.vue';
 import ErrorState from '../base/ErrorState.vue';
+import FintoSelect from '../base/FintoSelect.vue';
 
-type TabId = 'general' | 'design' | 'conversation' | 'connector' | 'personalization' | 'receivers' | 'staff';
+type TabId =
+  | 'general'
+  | 'design'
+  | 'conversation'
+  | 'connector'
+  | 'personalization'
+  | 'receivers'
+  | 'staff'
+  | 'proactive';
 
 interface MenuTab {
   id: TabId;
@@ -27,6 +36,8 @@ const BASE_TABS: MenuTab[] = [
 const OWNER_TABS: MenuTab[] = [
   { id: 'receivers', label: 'Penerima Kanal', icon: 'bell' },
   { id: 'staff', label: 'Kelola Staf', icon: 'users' },
+  // K9: jadwal tiap detektor proaktif Sales diatur dari sini, tanpa deploy.
+  { id: 'proactive', label: 'Insight Proaktif', icon: 'sparkle' },
 ];
 
 const THEME_LABELS: Record<SettingsTheme, string> = {
@@ -62,6 +73,17 @@ const visibleTabs = computed<MenuTab[]>(() =>
 );
 
 const activeTab = ref<TabId>(modules.settingsTab || 'general');
+
+// Tab yang dipilih lewat openSettings() harus ikut memuat datanya, bukan hanya saat diklik.
+watch(
+  activeTab,
+  (tab) => {
+    if (tab === 'proactive' && isClientOwner.value) {
+      void modules.loadDetectorSchedules();
+    }
+  },
+  { immediate: true },
+);
 const tabRefs = ref<HTMLElement[]>([]);
 
 watch(
@@ -127,6 +149,9 @@ function selectTab(id: TabId) {
   activeTab.value = id;
   if ((id === 'receivers' || id === 'staff') && isClientOwner.value && !modules.staffData) {
     void modules.loadClientStaffAndRecipients();
+  }
+  if (id === 'proactive' && isClientOwner.value) {
+    void modules.loadDetectorSchedules();
   }
 }
 
@@ -412,6 +437,53 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   } catch {
     // Error sudah diset di modules.staffError
   }
+}
+// --- K9: tab Insight Proaktif ---
+const detectorRows = computed(() => modules.detectorSchedules?.detectors ?? []);
+const detectorFrequencies = computed(
+  () => modules.detectorSchedules?.frequencies ?? ['daily', 'weekly', 'monthly'],
+);
+const detectorDays = computed(
+  () =>
+    modules.detectorSchedules?.days ??
+    ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+);
+
+const FREQUENCY_LABELS: Record<string, string> = {
+  daily: 'Harian',
+  weekly: 'Mingguan',
+  monthly: 'Bulanan',
+};
+
+const DAY_LABELS: Record<string, string> = {
+  Monday: 'Senin',
+  Tuesday: 'Selasa',
+  Wednesday: 'Rabu',
+  Thursday: 'Kamis',
+  Friday: 'Jumat',
+  Saturday: 'Sabtu',
+  Sunday: 'Minggu',
+};
+
+// Opsi dropdown dibangun sekali; tiap info hanya tampil sekali di kartu.
+const frequencyOptions = computed(() =>
+  detectorFrequencies.value.map((f) => ({ value: f, label: FREQUENCY_LABELS[f] ?? f })),
+);
+
+const hourOptions = Array.from({ length: 24 }, (_, h) => ({
+  value: h,
+  label: `${String(h).padStart(2, '0')}:00`,
+}));
+
+function dayOptions(row: { day_of_week: string }) {
+  const days = detectorDays.value;
+  const list = row.day_of_week && !days.includes(row.day_of_week) ? [row.day_of_week, ...days] : days;
+  return list.map((d) => ({ value: d, label: DAY_LABELS[d] ?? d }));
+}
+
+function patchDetector(index: number, patch: Record<string, unknown>) {
+  const rows = detectorRows.value.map((row, i) => (i === index ? { ...row, ...patch } : row));
+  void modules.saveDetectorSchedule(rows);
 }
 </script>
 
@@ -902,6 +974,85 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
           </section>
         </div>
 
+        <!-- Halaman INSIGHT PROAKTIF (Khusus AIOS Client Owner) -->
+        <div v-else-if="activeTab === 'proactive' && isClientOwner" key="proactive" class="settings-sections">
+          <section class="settings-card" aria-label="Jadwal detektor proaktif Sales">
+            <div class="card-head">
+              <div class="card-title-wrap">
+                <AppIcon name="sparkle" :size="16" />
+                <h5>Jadwal Detektor Proaktif Sales</h5>
+              </div>
+              <span class="status-pill">{{ detectorRows.length }} detektor</span>
+            </div>
+            <p class="tg-info-text">
+              Atur kapan tiap detektor berjalan. Perubahan langsung dipakai pemindaian
+              berikutnya tanpa deploy. Satu ringkasan gabungan dikirim per pemindaian.
+            </p>
+
+            <div v-if="modules.detectorSchedulesLoading && !detectorRows.length" class="tg-loading is-loading">
+              <span>Memuat jadwal detektor…</span>
+            </div>
+
+            <div v-else class="detector-grid">
+              <article
+                v-for="(row, i) in detectorRows"
+                :key="row.detector_key"
+                class="detector-card"
+                :class="{ 'is-off': !row.enabled }"
+              >
+                <header class="detector-card-head">
+                  <h6 class="detector-card-title">{{ row.label || row.detector_key }}</h6>
+                  <button
+                    type="button"
+                    class="detector-toggle"
+                    role="switch"
+                    :aria-checked="!!row.enabled"
+                    :aria-label="'Aktifkan detektor ' + (row.label || row.detector_key)"
+                    :disabled="modules.detectorSchedulesSaving"
+                    @click="patchDetector(i, { enabled: row.enabled ? 0 : 1 })"
+                  >
+                    <span class="detector-toggle-knob" />
+                  </button>
+                </header>
+
+                <div class="detector-card-controls">
+                  <FintoSelect
+                    :model-value="row.frequency"
+                    :options="frequencyOptions"
+                    :ariaLabel="'Frekuensi ' + (row.label || row.detector_key)"
+                    :disabled="modules.detectorSchedulesSaving || !row.enabled"
+                    icon="refresh"
+                    @update:model-value="patchDetector(i, { frequency: String($event) })"
+                  />
+                  <FintoSelect
+                    :model-value="row.run_hour"
+                    :options="hourOptions"
+                    :ariaLabel="'Jam jalan ' + (row.label || row.detector_key)"
+                    :disabled="modules.detectorSchedulesSaving || !row.enabled"
+                    icon="history"
+                    @update:model-value="patchDetector(i, { run_hour: Number($event) })"
+                  />
+                  <FintoSelect
+                    v-if="row.frequency === 'weekly'"
+                    :model-value="row.day_of_week"
+                    :options="dayOptions(row)"
+                    :ariaLabel="'Hari ' + (row.label || row.detector_key)"
+                    :disabled="modules.detectorSchedulesSaving || !row.enabled"
+                    icon="target"
+                    @update:model-value="patchDetector(i, { day_of_week: String($event) })"
+                  />
+                </div>
+              </article>
+            </div>
+
+            <p v-if="modules.detectorSchedulesError" class="tg-error" role="alert">
+              {{ modules.detectorSchedulesError }}
+            </p>
+            <p v-if="modules.detectorSchedulesSaving" class="tg-info-text" role="status">
+              Menyimpan jadwal…
+            </p>
+          </section>
+        </div>
         <!-- Halaman KELOLA STAF (Khusus AIOS Client Owner) -->
         <div v-else-if="activeTab === 'staff' && isClientOwner" key="staff" class="settings-sections">
           <!-- Plafon Pengguna -->
@@ -1675,6 +1826,130 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
   color: var(--bad);
   font-size: var(--fs-12);
   animation: errorShake var(--dur-30) ease-in-out;
+}
+
+/* Insight Proaktif (K9) */
+.detector-grid {
+  display: grid;
+  /* Dua kolom sama lebar — lebar kartu tidak mengikuti panjang teks. */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-10);
+  align-items: stretch;
+}
+
+.detector-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  min-width: 0;
+  padding: var(--space-12);
+  border-radius: var(--radius-12);
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  transition:
+    border-color var(--dur-18) ease,
+    background var(--dur-18) ease,
+    transform var(--dur-18) ease,
+    box-shadow var(--dur-18) ease;
+  animation: rise2 var(--dur-20) ease-out both;
+}
+
+.detector-card:hover {
+  border-color: var(--teal-line);
+  background: var(--surface);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.detector-card.is-off {
+  opacity: 0.62;
+}
+
+/* Kartu masuk berurutan supaya terasa hidup, bukan muncul serentak. */
+.detector-card:nth-child(1) { animation-delay: 0ms; }
+.detector-card:nth-child(2) { animation-delay: 40ms; }
+.detector-card:nth-child(3) { animation-delay: 80ms; }
+.detector-card:nth-child(4) { animation-delay: 120ms; }
+.detector-card:nth-child(5) { animation-delay: 160ms; }
+.detector-card:nth-child(6) { animation-delay: 200ms; }
+.detector-card:nth-child(7) { animation-delay: 240ms; }
+
+.detector-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.detector-card-title {
+  margin: 0;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-600);
+  color: var(--fg);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.detector-toggle {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+  cursor: pointer;
+  transition: background var(--dur-18) ease;
+}
+
+.detector-toggle[aria-checked="true"] {
+  background: var(--teal);
+}
+
+.detector-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.detector-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-circle);
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(16, 28, 40, 0.3);
+  transition: transform var(--dur-18) cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.detector-toggle[aria-checked="true"] .detector-toggle-knob {
+  transform: translateX(14px);
+}
+
+.detector-card-controls {
+  display: grid;
+  /* Ditumpuk selebar kartu supaya label "Harian"/"06:00" tidak terpotong. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+@media (max-width: 720px) {
+  .detector-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .detector-card,
+  .detector-card:hover,
+  .detector-toggle-knob {
+    animation: none;
+    transition: none;
+    transform: none;
+  }
 }
 
 /* Penerima Kanal & Kelola Staf */
