@@ -211,13 +211,8 @@ watch(draft, () => {
 watch(
   [() => ui.agentOpen, () => branches.selectedKey],
   ([open, activeBranch]) => {
-    if (open && activeBranch === 'sales') {
-      if (chat.proactiveConversationId) {
-        void chat.openConversation('sales', chat.proactiveConversationId);
-      }
-      if (chat.proactiveUnreadCount > 0) {
-        void chat.clearProactiveUnread();
-      }
+    if (open && activeBranch === 'sales' && chat.proactiveConversationId && chat.proactiveUnreadCount > 0) {
+      void chat.openConversation('sales', chat.proactiveConversationId);
     }
   },
   { immediate: true },

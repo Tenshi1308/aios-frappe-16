@@ -21,7 +21,6 @@ import {
 import { useBranchesStore } from './branches';
 import { useSessionStore } from './session';
 import { useModulesStore } from './modules';
-import { useUiStore } from './ui';
 import { reportClientError } from '../api/client';
 import type {
   ArtifactEvent,
@@ -205,17 +204,15 @@ export const useChatStore = defineStore('chat', {
     },
     async pollProactiveInsights() {
       const session = useSessionStore();
-      const ui = useUiStore();
-      const branches = useBranchesStore();
       try {
         const res = await fetchUnreadSalesInsights();
         this.proactiveUnreadCount = res.unread_count;
         this.proactiveConversationId = res.conversation_id;
-        if (ui.agentOpen && branches.selectedKey === 'sales' && res.conversation_id) {
-          if (res.unread_count > 0) {
-            await this.openConversation('sales', res.conversation_id);
-            await this.clearProactiveUnread();
-          }
+        if (
+          res.conversation_id &&
+          !(this.conversations.sales ?? []).some((c) => c.id === res.conversation_id)
+        ) {
+          await this.loadConversations('sales');
         }
       } catch (err) {
         console.error('[pollProactiveInsights]', err);
@@ -237,6 +234,14 @@ export const useChatStore = defineStore('chat', {
         this.proactiveUnreadCount = 0;
       } catch (err) {
         console.error('[clearProactiveUnread]', err);
+        void reportClientError(
+          {
+            message: err instanceof Error && err.message.trim() ? err.message : 'Gagal menandai insight proaktif sudah dibaca.',
+            context: 'clearProactiveUnread',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
       }
     },
     async loadConversations(branch: string) {
@@ -408,6 +413,14 @@ export const useChatStore = defineStore('chat', {
         if (history.context) {
           this.contextUsage[conversationId] = history.context;
         }
+      }
+      if (
+        branch === 'sales' &&
+        this.proactiveConversationId &&
+        conversationId === this.proactiveConversationId &&
+        this.proactiveUnreadCount > 0
+      ) {
+        await this.clearProactiveUnread();
       }
     },
     newConversation(branch: string) {

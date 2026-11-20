@@ -96,7 +96,7 @@ const productTag = computed(() => (isFintoBrand.value ? 'Finto OS' : 'AIOS'));
       >
         <AppIcon name="sparkle" :size="21" />
         <Transition name="t-pop">
-          <span v-if="!ui.agentOpen && chat.proactiveUnreadCount > 0" class="bell-badge">
+          <span v-if="chat.proactiveUnreadCount > 0" class="bell-badge">
             {{ chat.proactiveUnreadCount > 99 ? '99+' : chat.proactiveUnreadCount }}
           </span>
         </Transition>
