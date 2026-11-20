@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useBranchesStore } from '../stores/branches';
+import { useChatStore } from '../stores/chat';
 import { useModulesStore } from '../stores/modules';
 import { useSessionStore } from '../stores/session';
 import { useUiStore } from '../stores/ui';
+import { sendDeskHeartbeat } from '../api/chat';
 import { setWindowBounds, useWindowManager } from '../composables/useWindowManager';
 import { currentBrand } from '../utils/theme';
 import AgentPanel from '../components/agent/AgentPanel.vue';
@@ -20,20 +22,35 @@ const props = defineProps<{ narrow: boolean }>();
 
 const session = useSessionStore();
 const branches = useBranchesStore();
+const chat = useChatStore();
 const modules = useModulesStore();
 const ui = useUiStore();
 const wm = useWindowManager();
 
 const deskEl = ref<HTMLElement | null>(null);
 const windowHost = ref<InstanceType<typeof WindowHost> | null>(null);
+let heartbeatTimer: number | undefined;
+let proactivePollTimer: number | undefined;
+
+function pingHeartbeat() {
+  if (!document.hidden && session.csrfToken) {
+    void sendDeskHeartbeat(session.csrfToken).catch(() => {});
+  }
+}
 
 onMounted(() => {
   setWindowBounds(bounds);
   void branches.load();
   void modules.loadBootstrap();
+  pingHeartbeat();
+  void chat.pollProactiveInsights();
+  heartbeatTimer = window.setInterval(pingHeartbeat, 60_000);
+  proactivePollTimer = window.setInterval(() => void chat.pollProactiveInsights(), 30_000);
   window.addEventListener('keydown', onKey);
 });
 onUnmounted(() => {
+  if (heartbeatTimer !== undefined) window.clearInterval(heartbeatTimer);
+  if (proactivePollTimer !== undefined) window.clearInterval(proactivePollTimer);
   window.removeEventListener('keydown', onKey);
 });
 

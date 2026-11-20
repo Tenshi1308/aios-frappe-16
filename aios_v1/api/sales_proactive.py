@@ -1,0 +1,88 @@
+"""Whitelisted API endpoints for Stage 1 Sales proactive insights & Desk heartbeat."""
+
+from __future__ import annotations
+
+import frappe
+
+from aios_v1.lib.error_utils import log_exception
+from aios_v1.lib.sales_proactive import (
+    INSIGHT_LOG_DOCTYPE,
+    SALES_BRANCH,
+    record_desk_heartbeat,
+    run_daily_sales_proactive_scan,
+)
+
+
+def _require_authenticated_user() -> str:
+    user = getattr(frappe.session, "user", None)
+    if not user or user == "Guest":
+        frappe.throw("Autentikasi diperlukan.", frappe.PermissionError)
+    return str(user)
+
+
+def _assert_admin_or_owner(user: str) -> None:
+    if user == "Administrator":
+        return
+    roles = set(frappe.get_roles(user))
+    if not (roles & {"System Manager", "AIOS Admin", "AIOS Client Owner"}):
+        frappe.throw("Hanya admin atau owner yang dapat memicu pemindaian proaktif manual.", frappe.PermissionError)
+
+
+@frappe.whitelist()
+def trigger_sales_proactive_scan() -> dict:
+    """Manual trigger (Admin/Owner) equivalent to Get Alerts for Today for live verification."""
+    user = _require_authenticated_user()
+    _assert_admin_or_owner(user)
+    try:
+        return run_daily_sales_proactive_scan()
+    except Exception as exc:
+        log_exception("AIOS Sales Proactive Manual Trigger", exc=exc, context=f"user={user}")
+        frappe.throw("Pemindaian proaktif Sales gagal dijalankan. Silakan periksa Error Log.")
+
+
+@frappe.whitelist()
+def heartbeat() -> dict:
+    """Lightweight Desk presence ping (no LLM, no AI token cost)."""
+    user = _require_authenticated_user()
+    ts = record_desk_heartbeat(user)
+    return {"status": "ok", "timestamp": ts}
+
+
+@frappe.whitelist()
+def get_unread_sales_insights() -> dict:
+    """Return unread Desk proactive insight count and latest sales conversation id for current user."""
+    user = _require_authenticated_user()
+    unread_count = frappe.db.count(
+        INSIGHT_LOG_DOCTYPE,
+        {
+            "recipient_user": user,
+            "status": "SENT_DESK",
+            "is_read": 0,
+        },
+    )
+    latest_conv = frappe.db.get_value(
+        "AIOS Conversation",
+        {"user": user, "branch": SALES_BRANCH, "is_archived": 0},
+        "name",
+        order_by="modified desc",
+    )
+    return {
+        "unread_count": int(unread_count or 0),
+        "conversation_id": str(latest_conv) if latest_conv else None,
+    }
+
+
+@frappe.whitelist()
+def mark_sales_insights_read() -> dict:
+    """Clear unread badge after user opens the Sales branch conversation."""
+    user = _require_authenticated_user()
+    unread_names = frappe.get_all(
+        INSIGHT_LOG_DOCTYPE,
+        filters={"recipient_user": user, "status": "SENT_DESK", "is_read": 0},
+        pluck="name",
+    )
+    for name in unread_names:
+        frappe.db.set_value(INSIGHT_LOG_DOCTYPE, name, "is_read", 1)
+    if unread_names and not frappe.flags.in_test:
+        frappe.db.commit()
+    return {"status": "ok", "marked": len(unread_names)}

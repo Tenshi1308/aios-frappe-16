@@ -34,6 +34,7 @@ Sebagai Sales Representative, skill ini mengatur alur penyusunan Surat Penawaran
 
 # 4. Batasan Kepatuhan & Guardrails (Compliance & Safety)
 * Dilarang memberikan diskon melebihi kebijakan diskon resmi.
+* **Pemantauan Proaktif (Quotation Follow-up Intelligence):** Pantau `Quotation` (`docstatus=1`, status `Open`/`Replied`/`Partially Ordered`) yang `valid_till` mendekati jatuh tempo (H-3 s/d H+0) atau baru kedaluwarsa (H+1 s/d H+7) dan belum memiliki `Sales Order` menggunakan `erpnext_doc_list` dan `erpnext_doc_get`. Urutkan berdasarkan `base_grand_total` terbesar lalu `valid_till` paling awal. **Hanya beri tahu staf** sebagai insight; dilarang membuat draf baru tanpa perintah eksplisit karyawan.
 
 # 5. Contoh Interaksi (Few-Shot Examples)
 **User:** "Buatkan penawaran harga 50 unit Lisensi AIOS Pro untuk PT Surya Abadi."

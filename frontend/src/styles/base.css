@@ -1168,11 +1168,11 @@ textarea {
 .flyout {
   position: absolute;
   z-index: var(--z-flyout);
-  bottom: calc(var(--taskbar-h) + 10px);
+  bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
   width: min(660px, calc(100% - 16px));
-  max-height: calc(100% - var(--taskbar-h) - 20px);
+  max-height: calc(100% - 20px);
   display: flex;
   flex-direction: column;
   background: var(--glass-strong);
@@ -1397,7 +1397,7 @@ textarea {
   z-index: var(--z-panel);
   top: 10px;
   right: 10px;
-  bottom: calc(var(--taskbar-h) + 10px);
+  bottom: 10px;
   width: min(var(--panel-w), calc(100% - 20px));
   display: flex;
   flex-direction: column;
@@ -2234,7 +2234,7 @@ textarea {
   z-index: var(--z-toast);
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(var(--taskbar-h) + 14px);
+  bottom: 14px;
   display: flex;
   flex-direction: column;
   gap: var(--space-8);

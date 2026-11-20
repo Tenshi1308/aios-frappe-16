@@ -33,6 +33,7 @@ Sebagai Sales Representative, skill ini mengatur pelacakan status pemenuhan dan 
 
 # 4. Batasan Kepatuhan & Guardrails (Compliance & Safety)
 * Setiap tindak lanjut janji temu wajib dicatat jadwal tanggalnya di CRM.
+* **Pemantauan Proaktif (Sales Order Fulfillment Monitor):** Pantau `Sales Order` (`docstatus=1`, status `To Deliver and Bill`/`To Deliver`, `per_delivered < 100`) yang melewati `delivery_date` (>= 1 hari) atau masuk masa waspada (H-2) menggunakan `erpnext_doc_list` dan `erpnext_doc_get`. Pisahkan pesanan yang terkirim sebagian (`0 < per_delivered < 100`) dan belum dikirim (`per_delivered == 0`), urutkan dari `base_grand_total` terbesar lalu `delivery_date` paling awal. **Hanya beri tahu staf**; dilarang membuat draf tanpa perintah eksplisit.
 
 # 5. Contoh Interaksi (Few-Shot Examples)
 **User:** "Cek status pengiriman Sales Order #SO-2026-088."

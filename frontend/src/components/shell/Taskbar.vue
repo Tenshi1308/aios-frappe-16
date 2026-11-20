@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useChatStore } from '../../stores/chat';
 import { useSessionStore } from '../../stores/session';
 import { useUiStore } from '../../stores/ui';
 import { useWindowManager } from '../../composables/useWindowManager';
@@ -9,6 +10,7 @@ import AppIcon from '../base/AppIcon.vue';
 import EkasaMark from '../base/EkasaMark.vue';
 import FintoMark from '../base/FintoMark.vue';
 
+const chat = useChatStore();
 const session = useSessionStore();
 const ui = useUiStore();
 const wm = useWindowManager();
@@ -93,6 +95,11 @@ const productTag = computed(() => (isFintoBrand.value ? 'Finto OS' : 'AIOS'));
         @click="ui.toggleAgent()"
       >
         <AppIcon name="sparkle" :size="21" />
+        <Transition name="t-pop">
+          <span v-if="!ui.agentOpen && chat.proactiveUnreadCount > 0" class="bell-badge">
+            {{ chat.proactiveUnreadCount > 99 ? '99+' : chat.proactiveUnreadCount }}
+          </span>
+        </Transition>
       </button>
       <span v-if="wm.windows.length" class="tb-sep" />
       <TransitionGroup name="t-tb-app">
@@ -128,6 +135,9 @@ const productTag = computed(() => (isFintoBrand.value ? 'Finto OS' : 'AIOS'));
 </template>
 
 <style scoped>
+.agent-btn {
+  position: relative;
+}
 .tray.bell {
   position: relative;
   cursor: pointer;

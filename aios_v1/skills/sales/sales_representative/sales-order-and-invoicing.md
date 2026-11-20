@@ -31,6 +31,7 @@ Sebagai Sales Representative, skill ini mengatur konversi penawaran yang telah d
 
 # 4. Batasan Kepatuhan & Guardrails (Compliance & Safety)
 * Seluruh pembuatan Sales Order wajib melalui kartu otorisasi draf.
+* **Pemantauan Proaktif (Delivered-but-Unbilled Detector):** Pantau `Delivery Note` (`docstatus=1`, `is_return=0`, status `To Bill`/`Partially Billed`, `per_billed < 100`) yang berumur `>= 3` hari dari `posting_date` menggunakan `erpnext_doc_list` dan `erpnext_doc_get`. Urutkan dari `base_grand_total` terbesar lalu `posting_date` terlama. **Hanya beri tahu staf**; dilarang membuat draf faktur tanpa perintah eksplisit karyawan.
 
 # 5. Contoh Interaksi (Few-Shot Examples)
 **User:** "Terbitkan Draf Sales Order untuk PT Mandiri Perkasa dengan 20 unit Genset Portable @Rp 4.000.000."

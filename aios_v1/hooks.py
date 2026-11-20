@@ -239,6 +239,7 @@ scheduler_events = {
 	"daily": [
 		"aios_v1.services.usage.reset_daily_counters",
 		"aios_v1.lib.draft_manager.expire_old_drafts",
+		"aios_v1.lib.sales_proactive.run_daily_sales_proactive_scan",
 	],
 }
 

@@ -1328,3 +1328,66 @@ class TestGuestDraftCustomerCreation(IntegrationTestCase):
                 frappe.delete_doc("AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True)
             if frappe.db.exists("AIOS Conversation", str(conv_id)):
                 frappe.delete_doc("AIOS Conversation", str(conv_id), ignore_permissions=True, force=True, delete_permanently=True)
+
+    def test_proactive_notification_sent_on_quotation_approve_success(self):
+        """Notifikasi proaktif dikirim ke Telegram saat draf CREATE Quotation berhasil di-approve (EXECUTED)."""
+        import re
+        from frappe.utils import add_days
+
+        emoji_pattern = re.compile(r"[\U00010000-\U0010ffff\u2600-\u26ff\u2700-\u27bf]")
+        test_chat_id = "8999777299"
+        cust_name = "_Test Quotation Approve Notif"
+        self.created_customers.append(cust_name)
+        valid_till_str = str(add_days(nowdate(), 7))
+
+        draft = create_draft(
+            task_id="test_task_quotation_approve_notif",
+            action_type="CREATE",
+            branch="sales",
+            payload={
+                "doctype": "Quotation",
+                "source_telegram_chat_id": test_chat_id,
+                "data": {
+                    "quotation_to": "Customer",
+                    "party_name": cust_name,
+                    "company": self.company,
+                    "selling_price_list": self.price_list,
+                    "valid_till": valid_till_str,
+                    "items": [{"item_code": self.item_code, "qty": 3, "rate": 50000}],
+                },
+                "customer_info": {
+                    "customer_type": "Individual",
+                    "customer_name": cust_name,
+                    "mobile_no": "081299990099",
+                    "address": "Jalan Merdeka No. 99, Bandung",
+                },
+            },
+            user=self.USER_EMAIL,
+        )
+
+        sent_messages = []
+        with unittest.mock.patch(
+            "aios_v1.lib.connector.telegram_client.send_message",
+            side_effect=lambda cid, txt: sent_messages.append((cid, txt)) or True,
+        ):
+            res = approve_and_execute_draft(draft.name)
+
+        self.assertTrue(res.get("executed"), res.get("message"))
+        self.assertEqual(res.get("draft_status"), "EXECUTED")
+        qtn_name = res.get("name") or res.get("document")
+        self.assertTrue(qtn_name)
+        self.assertEqual(res.get("valid_till"), valid_till_str)
+
+        self.assertEqual(len(sent_messages), 1, "Pesan Telegram harus dikirim tepat 1 kali saat approve Quotation sukses")
+        self.assertEqual(str(sent_messages[0][0]), test_chat_id)
+        msg_text = sent_messages[0][1]
+        self.assertNotIn(qtn_name, msg_text, "Pesan customer tidak boleh memuat nomor Quotation")
+        self.assertNotIn("SAL-QTN", msg_text, "Pesan customer tidak boleh memuat nomor internal QTN")
+        self.assertNotIn("Quotation", msg_text, "Pesan customer tidak boleh memuat label internal Quotation")
+        self.assertTrue("150.000" in msg_text or "150,000" in msg_text, f"Pesan harus memuat harga dasar terformat: {msg_text}")
+        self.assertTrue("16.500" in msg_text or "16,500" in msg_text, f"Pesan harus memuat PPN 11% terformat: {msg_text}")
+        self.assertTrue("166.500" in msg_text or "166,500" in msg_text, f"Pesan harus memuat total termasuk PPN terformat: {msg_text}")
+        self.assertIn(valid_till_str, msg_text, "Pesan harus memuat tanggal berlaku penawaran (valid_till)")
+        self.assertNotIn("ditahan", msg_text, "Pesan Quotation tidak boleh memuat wording tahan pengiriman SO")
+        self.assertNotIn("Cash (Tunai)", msg_text, "Pesan Quotation tidak boleh memuat wording wajib Cash SO")
+        self.assertFalse(bool(emoji_pattern.search(msg_text)), "Pesan notifikasi Quotation tidak boleh memuat emoji")

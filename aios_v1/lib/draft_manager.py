@@ -672,6 +672,8 @@ def _create_and_submit(doctype: str, data: dict, company: str) -> dict:
         res["currency"] = str(target.get("currency") or "IDR")
         if doctype == "Sales Order":
             res["delivery_date"] = str(target.get("delivery_date") or "")
+        elif doctype == "Quotation":
+            res["valid_till"] = str(target.get("valid_till") or "")
     return res
 
 
@@ -1081,6 +1083,34 @@ def approve_and_execute_draft(draft_id: str) -> dict:
             f"Apabila sampai tanggal pengiriman pembayaran belum dikonfirmasi, maka pengiriman pesanan akan ditahan. Terima kasih."
         )
         _send_proactive_guest_notification(doc, guest_approve_msg)
+    elif doc.type == "CREATE" and payload.get("doctype") == "Quotation":
+        currency_code = result.get("currency") or "IDR"
+        formatted_base = _format_currency_amount(
+            result.get("base_total") or result.get("net_total") or 0,
+            currency_code,
+        )
+        formatted_tax = _format_currency_amount(
+            result.get("tax_amount") or result.get("total_taxes_and_charges") or 0,
+            currency_code,
+        )
+        formatted_total = _format_currency_amount(
+            result.get("grand_total") or 0,
+            currency_code,
+        )
+        valid_till_str = str(
+            result.get("valid_till")
+            or (payload.get("data") or {}).get("valid_till")
+            or "-"
+        )
+        guest_quote_msg = (
+            f"Halo! Penawaran harga Anda telah disetujui. "
+            f"Harga Dasar: {formatted_base}. "
+            f"PPN 11%: {formatted_tax}. "
+            f"Total Penawaran: {formatted_total}. "
+            f"Berlaku Hingga: {valid_till_str}. "
+            f"Silakan hubungi kami apabila Anda ingin melanjutkan ke pemesanan. Terima kasih."
+        )
+        _send_proactive_guest_notification(doc, guest_quote_msg)
 
     return result
 

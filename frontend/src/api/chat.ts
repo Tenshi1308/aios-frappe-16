@@ -507,3 +507,36 @@ export async function confirmDraftCashPayment(
   );
   return raw ?? {};
 }
+
+const SALES_PROACTIVE_API = '/api/method/aios_v1.api.sales_proactive';
+
+export interface UnreadSalesInsightsResult {
+  unread_count: number;
+  conversation_id: string | null;
+}
+
+export async function sendDeskHeartbeat(csrfToken: string): Promise<void> {
+  await apiFetch(`${SALES_PROACTIVE_API}.heartbeat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+    body: JSON.stringify({}),
+  });
+}
+
+export async function fetchUnreadSalesInsights(): Promise<UnreadSalesInsightsResult> {
+  const raw = unwrapMessage<UnreadSalesInsightsResult>(
+    await apiFetch(`${SALES_PROACTIVE_API}.get_unread_sales_insights`),
+  );
+  return {
+    unread_count: Number(raw?.unread_count ?? 0),
+    conversation_id: raw?.conversation_id ?? null,
+  };
+}
+
+export async function markSalesInsightsRead(csrfToken: string): Promise<void> {
+  await apiFetch(`${SALES_PROACTIVE_API}.mark_sales_insights_read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Frappe-CSRF-Token': csrfToken },
+    body: JSON.stringify({}),
+  });
+}

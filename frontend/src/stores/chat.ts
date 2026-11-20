@@ -8,6 +8,8 @@ import {
   fetchConversations,
   fetchMyFiles,
   fetchPendingDrafts,
+  fetchUnreadSalesInsights,
+  markSalesInsightsRead,
   rejectDraft,
   renameConversation as renameConversationApi,
   setConversationArchive as setConversationArchiveApi,
@@ -19,6 +21,7 @@ import {
 import { useBranchesStore } from './branches';
 import { useSessionStore } from './session';
 import { useModulesStore } from './modules';
+import { useUiStore } from './ui';
 import { reportClientError } from '../api/client';
 import type {
   ArtifactEvent,
@@ -74,6 +77,8 @@ export const useChatStore = defineStore('chat', {
     referrals: {} as Record<string, ConversationReferral | null>,
     /** Artefak FILE yang jendelanya pernah dibuka (key = file_id, fallback file_url). */
     artifactWindows: {} as Record<string, ArtifactEvent>,
+    proactiveUnreadCount: 0,
+    proactiveConversationId: null as string | null,
   }),
   getters: {
     /** Thread percakapan aktif (cache per conversationId — trace tidak tertimpa saat pindah sesi). */
@@ -197,6 +202,42 @@ export const useChatStore = defineStore('chat', {
     async confirmDraftCashPayment(draftId: string) {
       const session = useSessionStore();
       return await confirmDraftCashPayment(draftId, session.csrfToken);
+    },
+    async pollProactiveInsights() {
+      const session = useSessionStore();
+      const ui = useUiStore();
+      const branches = useBranchesStore();
+      try {
+        const res = await fetchUnreadSalesInsights();
+        this.proactiveUnreadCount = res.unread_count;
+        this.proactiveConversationId = res.conversation_id;
+        if (ui.agentOpen && branches.selectedKey === 'sales' && res.conversation_id) {
+          if (res.unread_count > 0) {
+            await this.openConversation('sales', res.conversation_id);
+            await this.clearProactiveUnread();
+          }
+        }
+      } catch (err) {
+        console.error('[pollProactiveInsights]', err);
+        void reportClientError(
+          {
+            message: err instanceof Error && err.message.trim() ? err.message : 'Gagal memeriksa insight proaktif Sales.',
+            context: 'pollProactiveInsights',
+            stack: err instanceof Error ? (err.stack ?? '') : '',
+          },
+          session.csrfToken,
+        );
+      }
+    },
+    async clearProactiveUnread() {
+      const session = useSessionStore();
+      if (this.proactiveUnreadCount <= 0) return;
+      try {
+        await markSalesInsightsRead(session.csrfToken);
+        this.proactiveUnreadCount = 0;
+      } catch (err) {
+        console.error('[clearProactiveUnread]', err);
+      }
     },
     async loadConversations(branch: string) {
       const session = useSessionStore();
