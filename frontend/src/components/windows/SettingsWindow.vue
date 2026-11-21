@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { fetchBranches } from '../../api/branches';
 import { useModulesStore } from '../../stores/modules';
 import { useSessionStore } from '../../stores/session';
 import type { ClientStaffUser, HandoffMode, SettingsBrand, SettingsTheme } from '../../types';
@@ -78,6 +79,24 @@ const isClientOwner = computed(() =>
 // D11: kelompok bidang yang punya proaktif; tab tampil bila daftar tidak kosong.
 const proactiveGroups = computed(() => modules.settings?.proactive_branches ?? []);
 const hasProactiveBranch = computed(() => proactiveGroups.value.length > 0);
+
+// Batch D (Gap 4): fitur Telegram melekat pada bidang Sales (keputusan Ten).
+// Sumber status: fetchBranches -> list_branches dengan flag `enabled` per
+// cabang — bukan proactive_branches yang berarti "bidang berproaktif". Gagal
+// memuat katalog dianggap tidak tersedia (fail-closed); backend tetap yang
+// menolak dengan pesan resminya.
+const salesBranchActive = ref(true);
+const telegramDisabled = computed(() => !salesBranchActive.value);
+
+async function loadSalesBranchActive() {
+  try {
+    const branches = await fetchBranches();
+    const sales = branches.find((b) => b.key === 'sales');
+    salesBranchActive.value = sales ? sales.enabled === true : false;
+  } catch {
+    salesBranchActive.value = false;
+  }
+}
 
 const visibleTabs = computed<MenuTab[]>(() => {
   if (!isClientOwner.value) return BASE_TABS;
@@ -247,6 +266,7 @@ onMounted(() => {
   void modules.loadBrandSettings(true);
   void modules.loadConversationSettings(true);
   void modules.loadTelegramStatus();
+  void loadSalesBranchActive();
   if (isClientOwner.value) {
     void modules.loadClientStaffAndRecipients();
   }
@@ -301,6 +321,7 @@ function refresh() {
   void modules.loadBrandSettings(true);
   void modules.loadConversationSettings(true);
   void modules.loadTelegramStatus();
+  void loadSalesBranchActive();
   if (isClientOwner.value) {
     void modules.loadClientStaffAndRecipients();
   }
@@ -309,6 +330,8 @@ function refresh() {
 const copySuccess = ref(false);
 
 async function handleGenerateTelegram() {
+  // Batch D (Gap 4): Sales mati -> tidak ada token baru; backend juga menolak.
+  if (telegramDisabled.value) return;
   await modules.generateTelegramLink();
 }
 
@@ -806,6 +829,11 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
               <span v-if="modules.telegramStatus?.linked" class="badge-linked">Tersambung</span>
             </div>
 
+            <!-- Batch D (Gap 4): Sales mati -> fitur Telegram dinonaktifkan. -->
+            <p v-if="telegramDisabled" class="tg-sales-note" role="note">
+              Fitur ini hanya tersedia untuk bidang Sales
+            </p>
+
             <div v-if="modules.telegramLoading" class="tg-loading is-loading">
               <span>Memproses…</span>
             </div>
@@ -840,6 +868,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                   class="btn-primary-tg-icon"
                   aria-label="Hubungkan ke Telegram"
                   title="Hubungkan ke Telegram"
+                  :disabled="telegramDisabled"
                   @click="handleGenerateTelegram"
                 >
                   <AppIcon name="telegram" :size="16" />
@@ -857,6 +886,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                     class="btn-secondary-copy-icon"
                     :aria-label="copySuccess ? 'Tersalin' : 'Salin tautan Telegram'"
                     :title="copySuccess ? 'Tersalin' : 'Salin tautan Telegram'"
+                    :disabled="telegramDisabled"
                     @click="handleCopyLink"
                   >
                     <AppIcon :name="copySuccess ? 'check' : 'copy'" :size="15" />
@@ -866,6 +896,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                     class="btn-primary-tg-icon"
                     aria-label="Buka Telegram langsung"
                     title="Buka Telegram langsung"
+                    :disabled="telegramDisabled"
                     @click="handleOpenTelegram"
                   >
                     <AppIcon name="external-link" :size="15" />
@@ -1668,6 +1699,21 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
   line-height: 1.5;
   color: var(--muted);
   margin: 0;
+}
+
+/* Batch D (Gap 4): catatan fitur Telegram dinonaktifkan saat Sales mati. */
+.tg-sales-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  margin: 0;
+  padding: var(--space-8) var(--space-10);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-8);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: var(--fs-12);
+  line-height: 1.4;
 }
 
 .btn-primary-tg-icon {

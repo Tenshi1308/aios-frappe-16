@@ -143,3 +143,39 @@ class TestConnectorModulesExist(unittest.TestCase):
         self.assertIn('"fieldname": "max_users"', aios_setting)
         hooks = (LIB.parent / "hooks.py").read_text(encoding="utf-8")
         self.assertIn("aios_v1.permissions.channel_thread_query_conditions", hooks)
+
+
+class TestSettingsTelegramSalesGating(unittest.TestCase):
+    """Batch D (Gap 4): kontrol Telegram di Settings dinonaktifkan saat Sales mati.
+
+    Wiring statis komponen (perilaku runtime bergantung `fetchBranches` dan
+    diverifikasi build + tampilan): catatan persis dari keputusan Ten, tiga
+    kontrol (Hubungkan, Salin, Buka) memakai state `telegramDisabled`, dan
+    sumber status Sales adalah katalog cabang (`enabled`), bukan proaktif.
+    """
+
+    SETTINGS = REPO_ROOT / "frontend" / "src" / "components" / "windows" / "SettingsWindow.vue"
+    NOTE_TEXT = "Fitur ini hanya tersedia untuk bidang Sales"
+
+    def test_connector_section_has_disabled_controls_and_note(self):
+        src = self.SETTINGS.read_text(encoding="utf-8")
+        self.assertIn(self.NOTE_TEXT, src)
+        # Hubungkan, Salin, dan Buka dinonaktifkan dengan state yang sama.
+        self.assertEqual(src.count(':disabled="telegramDisabled"'), 3)
+        # Sumber status: fetchBranches -> list_branches dengan flag enabled.
+        self.assertIn("fetchBranches", src)
+        self.assertIn("salesBranchActive", src)
+        # Tombol putus tautan tidak ikut dinonaktifkan (pengguna tidak boleh
+        # terjebak terhubung).
+        self.assertNotIn('aria-label="Putuskan tautan Telegram"\n                  :disabled', src)
+
+    def test_backend_link_gate_rejects_inactive_sales(self):
+        src = (LIB.parent / "api" / "connector.py").read_text(encoding="utf-8")
+        self.assertIn(self.NOTE_TEXT, src)
+        self.assertIn("_assert_sales_feature_available", src)
+        # Gerbang (baris pemanggilan ber-indent) dipasang sebelum token dibuat.
+        gate_pos = src.index("\n    _assert_sales_feature_available()")
+        token_pos = src.index("_create_link_token(user)")
+        self.assertLess(gate_pos, token_pos)
+        # Is_branch_active dari helper aktivasi yang sudah ada, bukan logika baru.
+        self.assertIn("is_branch_active", src)

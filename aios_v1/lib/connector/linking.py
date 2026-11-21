@@ -270,6 +270,28 @@ def link_thread_to_user(chat_id: str | int, user: str, thread_name: str | None =
     return new_conv
 
 
+def _unlink_rotation_conversation(user: str | None = None) -> str:
+    """Percakapan baru untuk rotasi jalur PUTUS TAUTAN (Gap 4, Batch D).
+
+    Rotasi jalur pesan/linking memakai `_new_conversation_for_user`, yang
+    melewati `get_manager(BRANCH)` dan melempar `ValidationError` saat cabang
+    Sales mati — akibatnya pengguna terjebak terhubung tanpa bisa melepas
+    tautan. Jalur putus tautan hanya butuh baris AIOS Conversation baru, jadi
+    manager dibangun langsung dari definisi cabang (`get_branch`, tanpa gerbang
+    aktivasi) sehingga `ensure_conversation` berperilaku persis sama. Jalur
+    linking untuk pesan masuk, dispatch, dan poller tidak berubah.
+    """
+    from aios_v1.lib.connector import BRANCH
+    from aios_v1.managers.base_manager import BaseManager
+    from aios_v1.plugin_manager.registry import get_branch
+
+    conv_user = (user or "").strip() or "Guest"
+    branch_def = get_branch(BRANCH)
+    if not branch_def:
+        raise LinkError("Definisi cabang Sales tidak ditemukan.", "BRANCH_DEFINITION_MISSING")
+    return str(BaseManager(branch_def).ensure_conversation(conv_user, force_new=True))
+
+
 def unlink_thread(chat_id: str | int) -> bool:
     """Clear linked_user and linked_at for a given chat_id, rotating to a clean Guest conversation."""
     chat_str = str(chat_id)
@@ -283,7 +305,7 @@ def unlink_thread(chat_id: str | int) -> bool:
         return False
 
     old_user = thread["linked_user"]
-    new_conv = _new_conversation_for_user("Guest")
+    new_conv = _unlink_rotation_conversation("Guest")
     frappe.db.set_value(
         THREAD_DOCTYPE,
         thread["name"],
@@ -309,7 +331,7 @@ def unlink_by_user(user: str) -> bool:
         return False
 
     for row in threads:
-        new_conv = _new_conversation_for_user("Guest")
+        new_conv = _unlink_rotation_conversation("Guest")
         frappe.db.set_value(
             THREAD_DOCTYPE,
             row["name"],

@@ -23,7 +23,7 @@ import math
 
 import frappe
 
-from aios_v1.lib.connector import views
+from aios_v1.lib.connector import BRANCH, views
 from aios_v1.lib.connector.linking import LinkError, unlink_by_user
 from aios_v1.lib.connector.linking import create_link_token as _create_link_token
 from aios_v1.lib.connector.linking import get_link_status as _get_link_status
@@ -61,6 +61,19 @@ def _map_workspace_error(exc: WorkspaceError, context: str) -> None:
     if exc.status == 404:
         frappe.throw(exc.message, frappe.DoesNotExistError)
     frappe.throw(exc.message, frappe.ValidationError)
+
+
+def _assert_sales_feature_available() -> None:
+    """Gap 4 (Batch D): fitur Telegram melekat pada bidang Sales (keputusan Ten).
+
+    Saat cabang Sales tidak aktif untuk site ini, tautan baru tidak boleh
+    dibuat — pengguna tidak boleh terjebak terhubung tanpa fungsi. Mengikuti
+    pola `_assert_sales_active` di `api/sales_proactive.py`.
+    """
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    if not is_branch_active(BRANCH):
+        frappe.throw("Fitur ini hanya tersedia untuk bidang Sales.", frappe.PermissionError)
 
 
 # ---------------------------------------------------------------------------
@@ -157,6 +170,8 @@ def review_order(notification_id: str = "") -> dict:
 def create_link_token() -> dict:
     """Buat deep-link token sekali pakai untuk akun sendiri."""
     user = _current_user()
+    # Gap 4 (Batch D): tolak sebelum token apa pun dibuat bila Sales mati.
+    _assert_sales_feature_available()
     body = _body()
     requested_user = body.get("user")
     if requested_user and requested_user != user:

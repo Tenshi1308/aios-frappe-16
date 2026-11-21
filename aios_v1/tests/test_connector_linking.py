@@ -842,6 +842,149 @@ class TestConnectorLinking(IntegrationTestCase):
         self.assertIsNone(frappe.db.get_value(THREAD, thread["name"], "linked_user"))
 
 
+class TestConnectorSalesBranchGating(IntegrationTestCase):
+    """Gap 4 (Batch D): fitur Telegram melekat pada bidang Sales (keputusan Ten).
+
+    - create_link_token ditolak saat Sales mati, berhasil saat Sales aktif.
+    - get_link_status tetap bisa dibaca saat Sales mati (read-only).
+    - Putus tautan tetap bisa dijalankan saat Sales mati (pengguna tidak boleh
+      terjebak terhubung); rotasi putus tautan tidak bergantung pada `get_manager`.
+    - Jalur linking untuk pesan masuk, dispatch, dan poller tidak berubah.
+    """
+
+    EMAIL = "_test.linking.gate@example.com"
+    CHAT = "88119977"
+
+    def setUp(self):
+        super().setUp()
+        frappe.in_test = True
+        frappe.flags.in_test = True
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+        frappe.set_user("Administrator")
+        self._orig_bot = frappe.db.get_single_value(SETTING, "bot_username")
+        frappe.db.set_value(SETTING, SETTING, "bot_username", "test_aios_bot")
+        _ensure_user(self.EMAIL, "Link Gate User", is_receiver=False)
+        frappe.set_user(self.EMAIL)
+
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        threads = frappe.get_all(THREAD, filters={"external_thread_id": self.CHAT}, pluck="name")
+        for t_name in threads:
+            conv = frappe.db.get_value(THREAD, t_name, "conversation")
+            frappe.delete_doc(THREAD, t_name, ignore_permissions=True, force=True, delete_permanently=True)
+            if conv and frappe.db.exists(CONV, conv):
+                for m in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                    frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
+                frappe.delete_doc(CONV, conv, ignore_permissions=True, force=True, delete_permanently=True)
+        for conv in frappe.get_all(CONV, filters={"user": self.EMAIL}, pluck="name"):
+            for m in frappe.get_all("AIOS Message", filters={"conversation": conv}, pluck="name"):
+                frappe.delete_doc("AIOS Message", m, ignore_permissions=True, force=True, delete_permanently=True)
+            frappe.delete_doc(CONV, conv, ignore_permissions=True, force=True, delete_permanently=True)
+        frappe.cache().delete_value(f"aios_tg_user_token:{self.EMAIL}")
+        if frappe.db.exists("Notification Settings", self.EMAIL):
+            frappe.delete_doc(
+                "Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        if frappe.db.exists("User", self.EMAIL):
+            frappe.delete_doc(
+                "User", self.EMAIL, ignore_permissions=True, force=False, delete_permanently=True
+            )
+        frappe.db.set_value(SETTING, SETTING, "bot_username", self._orig_bot)
+        self._restore_and_rollback()
+        super().tearDown()
+
+    def _set_active_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def _with_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches(keys)
+
+    def test_create_link_token_rejected_when_sales_disabled(self):
+        """(a) Tugas 1: tautan baru ditolak saat Sales mati, tanpa token tercipta."""
+        from aios_v1.api import connector as connector_api
+
+        self._with_branches({"finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        with self.assertRaises(frappe.PermissionError) as ctx:
+            connector_api.create_link_token()
+        self.assertIn("hanya tersedia untuk bidang Sales", str(ctx.exception))
+        # Tidak ada token yang tersimpan di cache maupun di dalam tautan.
+        self.assertIsNone(frappe.cache().get_value(f"aios_tg_user_token:{self.EMAIL}"))
+
+    def test_create_link_token_succeeds_when_sales_enabled(self):
+        """(a) Saat Sales aktif, pembuatan tautan berjalan seperti biasa."""
+        from aios_v1.api import connector as connector_api
+
+        self._with_branches({"sales", "finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        res = connector_api.create_link_token()
+        self.assertIn("LINK_", res["deep_link"])
+        self.assertIn("test_aios_bot", res["deep_link"])
+        self.assertGreater(int(res.get("expires_in_seconds") or 0), 0)
+
+    def test_get_link_status_readable_when_sales_disabled(self):
+        """(c) Tugas 3: status tautan tetap bisa dibaca saat Sales mati (read-only)."""
+        from aios_v1.api import connector as connector_api
+
+        thread = dispatch.get_or_create_thread(self.CHAT)
+        linking.link_thread_to_user(self.CHAT, self.EMAIL, thread["name"])
+
+        self._with_branches({"finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        status = connector_api.get_link_status()
+        self.assertTrue(status["linked"])
+        self.assertEqual(str(status["external_thread_id"]), self.CHAT)
+
+    def test_unlink_telegram_still_works_when_sales_disabled(self):
+        """(d) Tugas 3: putus tautan tetap bisa dipakai saat Sales mati; rotasi tanpa `get_manager`."""
+        from aios_v1.api import connector as connector_api
+
+        thread = dispatch.get_or_create_thread(self.CHAT)
+        linking.link_thread_to_user(self.CHAT, self.EMAIL, thread["name"])
+
+        self._with_branches({"finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        res = connector_api.unlink_telegram()
+        self.assertTrue(res["success"])
+        self.assertIsNone(frappe.db.get_value(THREAD, thread["name"], "linked_user"))
+        # Rotasi putus tautan menghasilkan percakapan tamu baru tanpa manager.
+        new_conv = frappe.db.get_value(THREAD, thread["name"], "conversation")
+        self.assertEqual(frappe.db.get_value(CONV, new_conv, "user"), "Guest")
+        self.assertEqual(frappe.db.get_value(CONV, new_conv, "branch"), "sales")
+
+    def test_message_link_rotation_still_gated_by_sales_activation(self):
+        """(e) Tugas 4: jalur linking/dispatch pesan tidak berubah — rotasi jalur pesan tetap melewati `get_manager`."""
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        with self.assertRaises(frappe.ValidationError):
+            linking.rotate_thread_conversation("THREAD-TIDAK-ADA-BATCH-D", self.EMAIL)
+        # Rotasi jalur link tetap memakai `_new_conversation_for_user` (get_manager).
+        self.assertTrue(hasattr(linking, "_new_conversation_for_user"))
+
+
 def run_tests():
     import unittest
     frappe.in_test = True
