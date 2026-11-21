@@ -17,6 +17,7 @@ from aios_v1.lib.draft_manager import (
     _resolve_sales_tax_template,
     _site_company,
     approve_and_execute_draft,
+    assert_draft_target_branch_active,
     confirm_draft_cash_payment,
     create_draft,
     validate_data_fields,
@@ -80,6 +81,11 @@ def erpnext_action_draft_create(action_type, doctype, data, reason="", name=None
         return safe_error("Jenis aksi draft tidak didukung.", "ACTION_TYPE_UNSUPPORTED")
     if doctype not in ALLOWED_DRAFT_DOCTYPES:
         frappe.throw("DocType ini tidak diizinkan untuk draf AIOS.")
+    # Gap 3 (Batch C): tolak lebih awal bila cabang DocType target tidak aktif,
+    # untuk semua jenis aksi, sebelum snapshot/validasi dijalankan. Enum di
+    # decorator tetap statis (D9); eksekusi yang memvalidasi. Gerbang D12 cabang
+    # worker di tool_registry tidak diubah — ini gerbang tambahan target.
+    assert_draft_target_branch_active(doctype)
     if not isinstance(data, dict):
         frappe.throw("data harus berupa object.")
     if action_type != "CREATE" and (not isinstance(name, str) or not name.strip()):

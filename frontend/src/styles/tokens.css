@@ -35,6 +35,9 @@
   --press: rgba(20, 32, 44, 0.1);
   --shadow: 0 22px 60px -14px rgba(16, 28, 40, 0.38), 0 2px 8px rgba(16, 28, 40, 0.08);
   --shadow-sm: 0 6px 20px -8px rgba(16, 28, 40, 0.3);
+  /* Bayangan kecil untuk knob toggle (1px offset) — terlalu rapat untuk
+     --shadow-sm yang berukuran jendela/popover. */
+  --shadow-knob: 0 1px 3px rgba(16, 28, 40, 0.3);
   --taskbar-h: 52px;
 
   /* Token map accent agent berdasarkan branch.key (keputusan owner: (a));

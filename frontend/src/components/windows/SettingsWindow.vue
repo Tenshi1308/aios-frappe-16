@@ -1949,8 +1949,8 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
   width: 16px;
   height: 16px;
   border-radius: var(--radius-circle);
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(16, 28, 40, 0.3);
+  background: var(--surface);
+  box-shadow: var(--shadow-knob);
   transition: transform var(--dur-18) cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 

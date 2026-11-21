@@ -3,13 +3,19 @@
 Butuh site + DB → `bench --site aios-v16.localhost run-tests --app aios_v1`.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import frappe
 from frappe.utils import add_to_date, now_datetime
 
-from aios_v1.lib.draft_manager import approve_draft, expire_old_drafts, reject_draft
+from aios_v1.lib.draft_manager import (
+    approve_draft,
+    confirm_draft_cash_payment,
+    expire_old_drafts,
+    reject_draft,
+)
 
 try:
     from frappe.tests import IntegrationTestCase
@@ -507,3 +513,298 @@ class TestDraftBranchGating(IntegrationTestCase):
         # eksekusi gagal seperti pada test_approve_draft.
         self.assertEqual(result["status"], "APPROVED")
         self.assertFalse(result["executed"])
+
+
+class TestDraftTargetBranchGating(IntegrationTestCase):
+    """Gap 3 (Batch C): cabang DocType TARGET draft harus aktif.
+
+    Gerbang berlaku di creation (create_draft + tool erpnext_action_draft_create)
+    dan execution (execute_draft + approval), terlepas dari cabang worker —
+    gerbang D12 di tool_registry tetap memeriksa cabang worker dan tidak diubah.
+    Cross-branch diizinkan (keputusan Ten): Finance boleh membuat draft Sales
+    Order selama Sales aktif; ditolak hanya saat cabang target mati.
+    """
+
+    EMAIL = "_test.draft.target.gating@example.com"
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+        _make_test_user(self.EMAIL, "_Test Draft Target Gating")
+
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for pad in frappe.get_all("Pending Action Draft", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc(
+                "Pending Action Draft", pad, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        for cname in frappe.get_all("Contact", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.EMAIL):
+            frappe.delete_doc(
+                "Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        if frappe.db.exists("User", self.EMAIL):
+            frappe.delete_doc(
+                "User", self.EMAIL, ignore_permissions=True, force=False, delete_permanently=True
+            )
+        self._restore_and_rollback()
+
+    def _set_active_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def _with_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches(keys)
+
+    def _company(self):
+        return (
+            frappe.db.get_single_value("AIOS Setting", "default_company")
+            or frappe.db.get_single_value("Global Defaults", "default_company")
+        )
+
+    def _tool_create(self, doctype, data, action_type="CREATE", branch="finance", **kwargs):
+        from aios_v1.lib.erpnext_action_drafts import erpnext_action_draft_create
+
+        context = {
+            "user_id": self.EMAIL,
+            "allowed_company": self._company(),
+            "branch": branch,
+            "worker_key": "manager",
+        }
+        with patch("aios_v1.lib.erpnext_action_drafts.get_tool_context", return_value=context):
+            return erpnext_action_draft_create(action_type, doctype, data, **kwargs)
+
+    def _draft(self, branch="finance", doctype="Sales Order", status="PENDING_APPROVAL"):
+        return frappe.get_doc(
+            {
+                "doctype": "Pending Action Draft",
+                "task_id": "TEST-TARGET-GATE-001",
+                "user": self.EMAIL,
+                "type": "CREATE",
+                "branch": branch,
+                "payload": json.dumps({"doctype": doctype, "data": {}}),
+                "status": status,
+                "expires_at": add_to_date(now_datetime(), hours=2),
+            }
+        ).insert(ignore_permissions=True)
+
+    def test_finance_worker_cannot_create_sales_drafts_when_sales_disabled(self):
+        """(a) Gap 3: worker Finance ditolak membuat draft Sales Order/Quotation saat Sales mati."""
+        before = frappe.db.count("Pending Action Draft", {"user": self.EMAIL})
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        for doctype, data in (
+            ("Sales Order", {"delivery_date": "2026-12-01"}),
+            ("Quotation", {"party_name": "_Test Draft Customer"}),
+        ):
+            with self.subTest(doctype=doctype):
+                frappe.set_user(self.EMAIL)
+                with self.assertRaises(frappe.PermissionError) as ctx:
+                    self._tool_create(doctype, data)
+                self.assertIn("tidak aktif", str(ctx.exception))
+
+        self.assertEqual(frappe.db.count("Pending Action Draft", {"user": self.EMAIL}), before)
+
+    def test_finance_worker_creates_sales_draft_when_sales_enabled(self):
+        """(a/e) Cross-branch diizinkan saat target aktif: Finance membuat draft Sales Order."""
+        self._with_branches({"sales", "finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        result = self._tool_create("Sales Order", {"delivery_date": "2026-12-01"})
+
+        self.assertEqual(result["status"], "PENDING_APPROVAL")
+        self.assertEqual(result["doctype"], "Sales Order")
+
+    def test_tool_rejects_inactive_target_for_all_action_types(self):
+        """Tugas 3: gerbang awal tool berlaku untuk CREATE, UPDATE_DRAFT, dan CANCEL_AND_AMEND."""
+        self._with_branches({"finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        for action_type, kwargs in (
+            ("CREATE", {}),
+            ("UPDATE_DRAFT", {"name": "SO-_Test-001", "reason": "koreksi data"}),
+            ("CANCEL_AND_AMEND", {"name": "SO-_Test-001", "reason": "batal dan ubah"}),
+        ):
+            with self.subTest(action_type=action_type):
+                with self.assertRaises(frappe.PermissionError) as ctx:
+                    self._tool_create(
+                        "Sales Order", {"delivery_date": "2026-12-01"}, action_type=action_type, **kwargs
+                    )
+                self.assertIn("tidak aktif", str(ctx.exception))
+
+    def test_create_draft_direct_rejects_inactive_target_branch(self):
+        """(b) create_draft menolak langsung bila cabang DocType target tidak aktif."""
+        from aios_v1.lib.draft_manager import create_draft
+
+        self._with_branches({"finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+
+        with self.assertRaises(frappe.PermissionError) as ctx:
+            create_draft(
+                task_id="TEST-TARGET-GATE-002",
+                action_type="CREATE",
+                payload={"doctype": "Sales Order", "data": {"delivery_date": "2026-12-01"}},
+                branch="finance",
+            )
+        self.assertIn("tidak aktif", str(ctx.exception))
+        self.assertFalse(frappe.db.exists("Pending Action Draft", {"task_id": "TEST-TARGET-GATE-002"}))
+
+    def test_execute_and_approve_reject_stale_sales_draft_when_sales_disabled(self):
+        """(c) draft lama DocType Sales tidak bisa di-approve/dieksekusi saat Sales mati; data tetap ada."""
+        from aios_v1.lib.draft_manager import DraftExecutionError, approve_and_execute_draft, execute_draft
+
+        draft = self._draft(branch="finance", doctype="Sales Order")
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        with self.assertRaises(frappe.PermissionError):
+            approve_and_execute_draft(draft.name)
+        self.assertEqual(
+            frappe.db.get_value("Pending Action Draft", draft.name, "status"),
+            "PENDING_APPROVAL",
+        )
+        self.assertTrue(frappe.db.exists("Pending Action Draft", draft.name))
+
+        with self.assertRaises(DraftExecutionError) as ctx:
+            execute_draft(draft)
+        self.assertEqual(ctx.exception.code, "BRANCH_INACTIVE")
+
+    def test_execute_and_approve_work_again_after_target_branch_enabled(self):
+        """(c/e) setelah Sales dinyalakan: approval lolos gerbang target (eksekusi gagal karena payload dummy)."""
+        from aios_v1.lib.draft_manager import approve_and_execute_draft
+
+        draft = self._draft(branch="finance", doctype="Sales Order")
+        self._with_branches({"finance", "accounting", "purchasing"})
+        self._set_active_branches({"sales", "finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        result = approve_and_execute_draft(draft.name)
+        self.assertEqual(result["status"], "APPROVED")
+        self.assertFalse(result["executed"])
+
+    def test_payment_entry_and_journal_entry_follow_their_branches(self):
+        """(d) Payment Entry mengikuti cabang finance; Journal Entry mengikuti accounting."""
+        from aios_v1.lib.draft_manager import create_draft
+
+        self._with_branches({"sales", "finance", "accounting", "purchasing"})
+        frappe.set_user(self.EMAIL)
+        pe = create_draft(
+            task_id="TEST-TARGET-GATE-PE-1",
+            action_type="CREATE",
+            payload={"doctype": "Payment Entry", "data": {}},
+            branch="finance",
+        )
+        self.assertEqual(pe.status, "PENDING_APPROVAL")
+
+        self._with_branches({"sales", "accounting", "purchasing"})
+        with self.assertRaises(frappe.PermissionError):
+            create_draft(
+                task_id="TEST-TARGET-GATE-PE-2",
+                action_type="CREATE",
+                payload={"doctype": "Payment Entry", "data": {}},
+                branch="finance",
+            )
+
+        self._with_branches({"sales", "finance", "purchasing"})
+        with self.assertRaises(frappe.PermissionError):
+            create_draft(
+                task_id="TEST-TARGET-GATE-JE-1",
+                action_type="CREATE",
+                payload={"doctype": "Journal Entry", "data": {}},
+                branch="accounting",
+            )
+        self._with_branches({"sales", "finance", "accounting", "purchasing"})
+        je = create_draft(
+            task_id="TEST-TARGET-GATE-JE-2",
+            action_type="CREATE",
+            payload={"doctype": "Journal Entry", "data": {}},
+            branch="accounting",
+        )
+        self.assertEqual(je.status, "PENDING_APPROVAL")
+
+    def test_confirm_cash_payment_blocked_when_finance_disabled(self):
+        """Tugas 4: konfirmasi cash payment menulis Payment Entry (finance) -> ditolak saat Finance mati.
+
+        Draft berstatus EXECUTED tetap utuh; konfirmasi hanya tertunda sampai
+        cabang finance aktif kembali.
+        """
+        result_payload = json.dumps(
+            {
+                "doctype": "Sales Order",
+                "data": {},
+                "result": {"doctype": "Sales Order", "name": "SO-_Test-Target-Gate"},
+            }
+        )
+        draft = frappe.get_doc(
+            {
+                "doctype": "Pending Action Draft",
+                "task_id": "TEST-TARGET-GATE-CONFIRM",
+                "user": self.EMAIL,
+                "type": "CREATE",
+                "branch": "finance",
+                "payload": result_payload,
+                "status": "EXECUTED",
+                "expires_at": add_to_date(now_datetime(), hours=2),
+            }
+        ).insert(ignore_permissions=True)
+        self._with_branches({"sales", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        with self.assertRaises(frappe.PermissionError) as ctx:
+            confirm_draft_cash_payment(draft.name)
+        self.assertIn("tidak aktif", str(ctx.exception))
+        self.assertEqual(
+            frappe.db.get_value("Pending Action Draft", draft.name, "status"), "EXECUTED"
+        )
+
+    def test_confirm_cash_payment_not_blocked_when_finance_enabled(self):
+        """Tugas 4: saat Finance aktif, gate target tidak menghalangi konfirmasi cash payment."""
+        result_payload = json.dumps(
+            {
+                "doctype": "Sales Order",
+                "data": {},
+                "result": {"doctype": "Sales Order", "name": "SO-_Test-Target-Gate"},
+            }
+        )
+        draft = frappe.get_doc(
+            {
+                "doctype": "Pending Action Draft",
+                "task_id": "TEST-TARGET-GATE-CONFIRM-2",
+                "user": self.EMAIL,
+                "type": "CREATE",
+                "branch": "finance",
+                "payload": result_payload,
+                "status": "EXECUTED",
+                "expires_at": add_to_date(now_datetime(), hours=2),
+            }
+        ).insert(ignore_permissions=True)
+        self._with_branches({"sales", "finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        try:
+            confirm_draft_cash_payment(draft.name)
+        except frappe.PermissionError as exc:
+            self.fail(f"gerbang target salah menolak saat finance aktif: {exc}")
+        except Exception:
+            # Selain gerbang target, penolakan validasi lain diperbolehkan
+            # (mis. Sales Order bukan dokumen nyata di site tes).
+            pass

@@ -40,6 +40,66 @@ ALLOWED_DRAFT_DOCTYPES = frozenset(
     }
 )
 
+# Gap 3 (Batch C): peta DocType draft -> cabang pemiliknya (keputusan Ten,
+# mengikuti rekomendasi DeepSeek §7.2). Konsisten dengan katalog desktop:
+# MODULE_BRANCH_MAP (yang juga tervalidasi terhadap DOMAIN_BRANCH_MAP saat
+# import), jadi ketidakcocokan dua peta adalah error saat import, bukan
+# perilaku senyap.
+from aios_v1.lib.desktop_modules import get_branch_for_doctype  # noqa: E402
+
+DRAFT_DOCTYPE_BRANCH_MAP = {
+    "Quotation": "sales",
+    "Sales Order": "sales",
+    "Sales Invoice": "sales",
+    "Delivery Note": "sales",
+    "Purchase Order": "purchasing",
+    "Payment Entry": "finance",
+    "Journal Entry": "accounting",
+}
+
+if any(
+    branch_key != get_branch_for_doctype(doctype)
+    for doctype, branch_key in DRAFT_DOCTYPE_BRANCH_MAP.items()
+):
+    raise RuntimeError("Draft doctype branch map does not match the desktop module catalog mapping")
+
+
+def draft_target_branch(doctype: str) -> str | None:
+    """Cabang pemilik DocType draft (peta Gap 3); None bila di luar peta."""
+    return DRAFT_DOCTYPE_BRANCH_MAP.get(doctype)
+
+
+def draft_target_branch_active(doctype: str) -> bool:
+    """True bila cabang DocType target aktif; True untuk DocType di luar peta."""
+    branch_key = draft_target_branch(doctype)
+    if not branch_key:
+        return True
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    return is_branch_active(branch_key)
+
+
+def assert_draft_target_branch_active(doctype: str) -> None:
+    """Gerbang Gap 3 (Batch C): tolak bila cabang DocType TARGET tidak aktif.
+
+    Berlaku untuk semua jalur pembuatan dan eksekusi draft, terlepas dari cabang
+    worker — gerbang D12 di `tool_registry._plugin_scope_allows` tetap memeriksa
+    cabang worker dan tidak diubah. Cross-branch diizinkan (keputusan Ten):
+    Finance boleh membuat draft Sales Order selama Sales aktif; ditolak hanya
+    saat cabang target mati. Draft yang ditolak tidak dihapus.
+    """
+    branch_key = draft_target_branch(doctype)
+    if not branch_key:
+        return
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    if not is_branch_active(branch_key):
+        frappe.throw(
+            f"DocType {doctype} milik cabang '{branch_key}' yang tidak aktif untuk client ini; "
+            "draf untuk DocType ini tidak dapat dibuat atau dieksekusi.",
+            frappe.PermissionError,
+        )
+
 
 def create_draft(
     task_id: str,
@@ -58,6 +118,12 @@ def create_draft(
         frappe.throw("Jenis aksi draft tidak dikenal.")
     if not isinstance(payload, dict):
         frappe.throw("Payload draft harus berupa object JSON.")
+
+    # Gap 3 (Batch C): cabang DocType target harus aktif. `create_draft` adalah
+    # satu-satunya jalur pembuatan draft, jadi gerbang di sini menutup tool
+    # `erpnext_action_draft_create`, `escalate_to_human_approval`, connector,
+    # dan pemanggil internal lainnya sekalian.
+    assert_draft_target_branch_active(str(payload.get("doctype") or ""))
 
     # Rekam chat_id Telegram dari context thread bila belum ada di payload
     if "source_telegram_chat_id" not in payload:
@@ -693,6 +759,17 @@ def execute_draft(doc) -> dict:
     data = payload.get("data")
     if doctype not in ALLOWED_DRAFT_DOCTYPES or not isinstance(data, dict):
         raise DraftExecutionError("DRAFT_INVALID", "Payload draft tidak valid.")
+    # Gap 3 (Batch C): cabang DocType target harus aktif sebelum ada penulisan
+    # apa pun ke ERPNext. Gerbang Batch B di approval hanya memeriksa cabang
+    # worker (`doc.branch`), jadi pemeriksaan target di sini penutup jalur
+    # eksekusi langsung.
+    if not draft_target_branch_active(doctype):
+        branch_key = draft_target_branch(doctype)
+        raise DraftExecutionError(
+            "BRANCH_INACTIVE",
+            f"DocType {doctype} milik cabang '{branch_key}' yang tidak aktif untuk client ini; "
+            "draf untuk DocType ini tidak dapat dibuat atau dieksekusi.",
+        )
     company = _site_company()
     if doc.type == "CREATE":
         if doctype in {"Sales Order", "Quotation"}:
@@ -1021,6 +1098,17 @@ def approve_and_execute_draft(draft_id: str) -> dict:
             "Riwayat draf cabang ini tidak aktif untuk client ini.",
             frappe.PermissionError,
         )
+    # Gap 3 (Batch C): cabang DocType TARGET juga harus aktif — gerbang di atas
+    # hanya memeriksa cabang worker (`doc.branch`). Ditolak sebelum status
+    # berubah, jadi draft lama tetap utuh dan bisa dieksekusi setelah cabang
+    # target dinyalakan.
+    try:
+        target_payload = json.loads(doc.payload or "{}")
+    except (TypeError, ValueError) as exc:
+        log_exception("AIOS Draft Approval Target Parse", exc=exc)
+        target_payload = {}
+    if isinstance(target_payload, dict):
+        assert_draft_target_branch_active(str(target_payload.get("doctype") or ""))
     if doc.status == "EXECUTED":
         try:
             payload = json.loads(doc.payload or "{}")
@@ -1160,6 +1248,10 @@ def confirm_draft_cash_payment(draft_id: str) -> dict:
 
     doc = _lock_draft(draft_id)
     _assert_draft_owner(doc)
+    # Gap 3 (Batch C): tujuan endpoint ini adalah menulis Payment Entry
+    # (cabang finance) ke ERPNext — tolak bila cabang target tidak aktif,
+    # termasuk untuk jalur status already-paid, sebelum ada proses lain.
+    assert_draft_target_branch_active("Payment Entry")
 
     if doc.status != "EXECUTED":
         frappe.throw(

@@ -828,6 +828,15 @@ MODULE_BRANCH_MAP = {
 if any(module["key"] not in MODULE_BRANCH_MAP for module in _MODULES):
     raise RuntimeError("Desktop module catalog contains a module without a branch mapping")
 
+# Peta DocType -> cabang, diturunkan dari katalog (Batch C memakai ini untuk
+# menjaga peta DocType draft tetap sepakat dengan katalog desktop).
+_DOCTYPE_BRANCH_MAP = {module["doctype"]: MODULE_BRANCH_MAP[module["key"]] for module in _MODULES}
+
+
+def get_branch_for_doctype(doctype: str) -> str | None:
+    """Cabang pemilik sebuah DocType menurut katalog desktop; None bila di luar katalog."""
+    return _DOCTYPE_BRANCH_MAP.get(doctype)
+
 
 def get_module_branch(module_key: str) -> str | None:
     """Return the branch that owns one module, or None for unknown keys."""
