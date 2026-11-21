@@ -76,6 +76,10 @@ class FakeDraft:
         self.payload = json.dumps(payload or {})
         self.status = status
         self.expires_at = None
+        # Batch B (D6): gerbang approval membaca `doc.branch` yang selalu ada
+        # pada dokumen asli; `""` berarti draf tidak terikat cabang mana pun,
+        # jadi tes ini tetap mengunci perilaku approval, bukan gerbangnya.
+        self.branch = ""
         self.saves = 0
 
     def save(self, **kwargs):

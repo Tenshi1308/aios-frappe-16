@@ -375,3 +375,135 @@ class TestCloseExpiredDraftAndStatusFilter(IntegrationTestCase):
         scheduler_events = frappe.get_hooks("scheduler_events", app_name="aios_v1")
         daily_jobs = scheduler_events.get("daily") or []
         self.assertIn("aios_v1.lib.draft_manager.expire_old_drafts", daily_jobs)
+
+
+class TestDraftBranchGating(IntegrationTestCase):
+    """D6 (Batch B): draf cabang mati disembunyikan dari akses langsung dan approval.
+
+    Draf disembunyikan, bukan dihapus — setelah cabang dinyalakan lagi, draf
+    bisa dibaca dan di-approve seperti biasa. Draf tanpa branch tidak terikat
+    cabang mana pun dan tetap boleh diakses.
+    """
+
+    EMAIL = "_test.draft.branch.gating@example.com"
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+        _make_test_user(self.EMAIL, "_Test Draft Branch Gating")
+
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for pad in frappe.get_all("Pending Action Draft", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc(
+                "Pending Action Draft", pad, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        for cname in frappe.get_all("Contact", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc("Contact", cname, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.EMAIL):
+            frappe.delete_doc(
+                "Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        if frappe.db.exists("User", self.EMAIL):
+            frappe.delete_doc(
+                "User", self.EMAIL, ignore_permissions=True, force=False, delete_permanently=True
+            )
+        self._restore_and_rollback()
+
+    def _set_active_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def _with_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches(keys)
+
+    def _draft(self, branch="sales", expires_hours=2):
+        values = {
+            "doctype": "Pending Action Draft",
+            "task_id": "TEST-DRAFT-BRANCH-001",
+            "user": self.EMAIL,
+            "type": "CREATE",
+            "payload": '{"doctype": "Sales Order", "data": {}}',
+            "status": "PENDING_APPROVAL",
+            "expires_at": add_to_date(now_datetime(), hours=expires_hours),
+        }
+        if branch:
+            values["branch"] = branch
+        return frappe.get_doc(values).insert(ignore_permissions=True)
+
+    def test_get_draft_rejected_when_branch_disabled(self):
+        from aios_v1.lib.draft_manager import get_draft
+
+        draft = self._draft(branch="sales")
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        with self.assertRaises(frappe.PermissionError):
+            get_draft(draft.name)
+
+        # D6: draf tidak dihapus; hanya akses langsung yang ditolak.
+        self.assertTrue(frappe.db.exists("Pending Action Draft", draft.name))
+
+    def test_get_draft_without_branch_still_allowed(self):
+        """Draf tanpa branch tidak terikat cabang mana pun; tetap bisa dibaca."""
+        from aios_v1.lib.draft_manager import get_draft
+
+        draft = self._draft(branch="")
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        self.assertEqual(get_draft(draft.name).name, draft.name)
+
+    def test_get_draft_works_again_after_branch_enabled(self):
+        from aios_v1.lib.draft_manager import get_draft
+
+        draft = self._draft(branch="sales")
+        self._with_branches({"finance", "accounting", "purchasing"})
+        self._set_active_branches({"sales", "finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        self.assertEqual(get_draft(draft.name).name, draft.name)
+
+    def test_approve_and_execute_draft_rejected_when_branch_disabled(self):
+        from aios_v1.lib.draft_manager import approve_and_execute_draft
+
+        draft = self._draft(branch="sales")
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        frappe.set_user(self.EMAIL)
+        with self.assertRaises(frappe.PermissionError):
+            approve_and_execute_draft(draft.name)
+
+        self.assertEqual(
+            frappe.db.get_value("Pending Action Draft", draft.name, "status"),
+            "PENDING_APPROVAL",
+        )
+
+    def test_approve_and_execute_draft_allowed_when_branch_enabled(self):
+        from aios_v1.lib.draft_manager import approve_and_execute_draft
+
+        draft = self._draft(branch="sales")
+        frappe.set_user(self.EMAIL)
+        result = approve_and_execute_draft(draft.name)
+        # Payload dummy bukan dokumen ERPNext valid: approval lolos gerbang,
+        # eksekusi gagal seperti pada test_approve_draft.
+        self.assertEqual(result["status"], "APPROVED")
+        self.assertFalse(result["executed"])

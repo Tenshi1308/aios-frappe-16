@@ -859,11 +859,25 @@ def expire_old_drafts():
         frappe.log_error(f"{len(drafts)} drafts expired.", "AIOS Draft Manager")
 
 
+def _draft_branch_active(branch_key: str) -> bool:
+    """Gerbang D6 (Batch B): cabang draf aktif untuk site ini."""
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    return is_branch_active(branch_key)
+
+
 @frappe.whitelist()
 def get_draft(draft_id: str) -> dict:
     """Ambil detail draf; hanya pemilik atau Administrator."""
     doc = frappe.get_doc("Pending Action Draft", draft_id, check_permission="read")
     _assert_draft_owner(doc)
+    # D6 (Batch B): draf cabang mati disembunyikan dari akses langsung, bukan
+    # dihapus. Draf tanpa branch tidak terikat cabang mana pun, tetap boleh.
+    if doc.branch and not _draft_branch_active(doc.branch):
+        frappe.throw(
+            "Riwayat draf cabang ini tidak aktif untuk client ini.",
+            frappe.PermissionError,
+        )
     return doc.as_dict()
 
 
@@ -1000,6 +1014,13 @@ def approve_and_execute_draft(draft_id: str) -> dict:
     """Owner approves and executes a draft once; failed APPROVED drafts can retry."""
     doc = _lock_draft(draft_id)
     _assert_draft_owner(doc)
+    # D6 (Batch B): draft cabang mati tidak bisa di-approve/dieksekusi walau
+    # statusnya masih PENDING_APPROVAL; datanya tidak dihapus.
+    if doc.branch and not _draft_branch_active(doc.branch):
+        frappe.throw(
+            "Riwayat draf cabang ini tidak aktif untuk client ini.",
+            frappe.PermissionError,
+        )
     if doc.status == "EXECUTED":
         try:
             payload = json.loads(doc.payload or "{}")

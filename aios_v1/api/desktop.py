@@ -18,6 +18,7 @@ from aios_v1.lib.desktop_domains import (
     get_domain_keys,
 )
 from aios_v1.lib.desktop_modules import (
+    get_module_branch,
     get_module_catalog,
     get_module_definition,
 )
@@ -154,6 +155,11 @@ def _company_context() -> dict:
 def _definition(module_key: str, doctype: str | None = None) -> dict:
     module = get_module_definition(module_key)
     if not module:
+        if get_module_branch(module_key):
+            # Gap 2 (Batch B): modul ada di katalog tetapi cabangnya tidak
+            # aktif untuk site ini — tolak dengan pesan yang jelas, bukan
+            # "tidak ditemukan", sebelum _public_module dipanggil.
+            frappe.throw("Modul ini tidak aktif untuk client ini.", frappe.ValidationError)
         frappe.throw("Modul tidak ditemukan.", frappe.ValidationError)
     if doctype is not None and doctype != module["doctype"]:
         frappe.throw("DocType tidak tersedia pada modul ini.", frappe.ValidationError)

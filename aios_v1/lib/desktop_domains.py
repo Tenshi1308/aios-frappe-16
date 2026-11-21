@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from aios_v1.lib.desktop_modules import get_module_keys
+from aios_v1.lib.desktop_modules import MODULE_BRANCH_MAP, get_module_keys
 from aios_v1.permissions import ERP_CLIENT_DOCTYPES
 
 _DOMAINS = (
@@ -277,6 +277,21 @@ _DOMAINS = (
 )
 
 
+# D8: pemetaan eksplisit 1:1 untuk kunci yang beririsan antara katalog cabang
+# (registry.BRANCHES) dan katalog domain. Domain ikut cabangnya. Domain tanpa
+# padanan cabang (inventory, projects, crm, assets, support) tetap statis, dan
+# cabang tanpa padanan domain (planning, hr, logistics, maintenance, material)
+# tidak memengaruhi katalog ini.
+DOMAIN_BRANCH_MAP = {
+    "sales": "sales",
+    "finance": "finance",
+    "accounting": "accounting",
+    "purchasing": "purchasing",
+    "quality": "quality",
+    "manufacturing": "manufacturing",
+}
+
+
 def _validate_domain_catalog(domains: tuple[dict, ...]) -> dict[str, dict]:
     known_modules = set(get_module_keys())
     seen_keys: set[str] = set()
@@ -293,10 +308,19 @@ def _validate_domain_catalog(domains: tuple[dict, ...]) -> dict[str, dict]:
             raise RuntimeError(f"Desktop domain catalog has duplicate or empty color_token: {color_token!r}")
         if status not in {"active", "planned"}:
             raise RuntimeError(f"Desktop domain {key!r} has invalid status: {status!r}")
+        # Batch B: modul di domain berpasangan cabang wajib memetakan cabang
+        # yang sama di `desktop_modules.MODULE_BRANCH_MAP`, agar gerbang katalog
+        # modul dan gerbang domain tidak pernah berbeda keputusan (D8).
+        expected_branch = DOMAIN_BRANCH_MAP.get(key)
         for module_key in domain.get("modules", ()):
             if module_key not in known_modules:
                 raise RuntimeError(
                     f"Desktop domain {key!r} references unknown module {module_key!r}"
+                )
+            if expected_branch and MODULE_BRANCH_MAP.get(module_key) != expected_branch:
+                raise RuntimeError(
+                    f"Desktop domain {key!r} module {module_key!r} maps to branch "
+                    f"{MODULE_BRANCH_MAP.get(module_key)!r}, expected {expected_branch!r}"
                 )
         for card in domain.get("cards", ()):
             doctype = card.get("doctype")
@@ -313,21 +337,6 @@ def _validate_domain_catalog(domains: tuple[dict, ...]) -> dict[str, dict]:
 
 
 _DOMAINS_BY_KEY = _validate_domain_catalog(_DOMAINS)
-
-
-# D8: pemetaan eksplisit 1:1 untuk kunci yang beririsan antara katalog cabang
-# (registry.BRANCHES) dan katalog domain. Domain ikut cabangnya. Domain tanpa
-# padanan cabang (inventory, projects, crm, assets, support) tetap statis, dan
-# cabang tanpa padanan domain (planning, hr, logistics, maintenance, material)
-# tidak memengaruhi katalog ini.
-DOMAIN_BRANCH_MAP = {
-    "sales": "sales",
-    "finance": "finance",
-    "accounting": "accounting",
-    "purchasing": "purchasing",
-    "quality": "quality",
-    "manufacturing": "manufacturing",
-}
 
 
 def _branch_active(branch_key: str) -> bool:

@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 import frappe
 
 from aios_v1.lib.desktop_domains import get_domain_definition, get_domain_keys
-from aios_v1.lib.desktop_modules import get_module_definition, get_module_keys
+from aios_v1.lib.desktop_modules import get_module_branch, get_module_definition, get_module_keys
 from aios_v1.lib.draft_manager import create_draft
 from aios_v1.lib.error_utils import safe_error
 from aios_v1.lib.swarm_router import get_swarm_router
@@ -73,8 +73,14 @@ def orchestrator_delegate_to_subagent(branch: str, worker_key: str, task_instruc
     },
 )
 def open_module(module: str) -> dict[str, Any]:
-    """Return a validated UI command; data access remains in Desktop API."""
+    """Return a validated UI command; data access remains in Desktop API.
+
+    D9: enum di decorator tetap beku saat import; otoritas sebenarnya ada di
+    sini — modul ditolak bila cabangnya tidak aktif untuk site ini (Gap 2).
+    """
     if not isinstance(module, str) or not get_module_definition(module):
+        if get_module_branch(module):
+            return safe_error("Modul ini tidak aktif untuk client ini.", "MODULE_NOT_ALLOWED")
         return safe_error("Modul tidak tersedia.", "MODULE_NOT_ALLOWED")
     return {"ok": True, "module": module}
 

@@ -48,18 +48,18 @@ class TestWorkspaceFiles(IntegrationTestCase):
         _make_user(self.USER_B, "_Test Workspace Files Beta")
         frappe.set_user("Administrator")
         self.conv_a = frappe.get_doc(
-            {"doctype": "AIOS Conversation", "user": self.USER_A, "branch": "_test_branch", "title": "Alpha"}
+            {"doctype": "AIOS Conversation", "user": self.USER_A, "branch": "sales", "title": "Alpha"}
         ).insert(ignore_permissions=True)
         self.conv_a2 = frappe.get_doc(
             {
                 "doctype": "AIOS Conversation",
                 "user": self.USER_A,
-                "branch": "_test_branch",
+                "branch": "sales",
                 "title": "Alpha second",
             }
         ).insert(ignore_permissions=True)
         self.conv_b = frappe.get_doc(
-            {"doctype": "AIOS Conversation", "user": self.USER_B, "branch": "_test_branch", "title": "Beta"}
+            {"doctype": "AIOS Conversation", "user": self.USER_B, "branch": "sales", "title": "Beta"}
         ).insert(ignore_permissions=True)
 
     def _restore_and_rollback(self):
@@ -258,6 +258,37 @@ class TestWorkspaceFiles(IntegrationTestCase):
         frappe.set_user("Guest")
         with self.assertRaises(frappe.ValidationError):
             list_my_files()
+
+    def _set_active_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def test_files_of_disabled_branch_are_hidden_then_restored(self):
+        """D6 (Batch B): file riwayat cabang mati disembunyikan, bukan dihapus."""
+        from aios_v1.lib import branch_activation
+
+        saved, _ = self._save(self.conv_a, self.USER_A, "alpha-sales-file")
+        frappe.set_user(self.USER_A)
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches({"finance", "accounting", "purchasing"})
+        self.assertEqual(list_my_files(), [])
+        self.assertEqual(list_my_files(str(self.conv_a.name)), [])
+
+        # D6: data tetap ada; setelah cabang dinyalakan, file muncul kembali.
+        self.assertTrue(frappe.db.exists("AIOS Conversation", self.conv_a.name))
+        self.assertTrue(frappe.db.exists("File", saved["file_id"]))
+        self._set_active_branches({"sales", "finance", "accounting", "purchasing"})
+        files = list_my_files()
+        self.assertIn(saved["file_id"], {row["file_id"] for row in files})
 
 
 if __name__ == "__main__":

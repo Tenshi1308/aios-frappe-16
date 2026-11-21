@@ -234,6 +234,108 @@ class TestDesktopModules(IntegrationTestCase):
             with self.subTest(module=module_key):
                 self.assertEqual(desktop_api._definition(module_key)["key"], module_key)
 
+    # ------------------------------------------------------------------
+    # Batch B (Gap 1/2): gerbang aktivasi cabang pada katalog modul.
+    # ------------------------------------------------------------------
+    def _set_active_branches(self, keys: set):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def _with_branches(self, keys: set):
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches(keys)
+
+    def test_module_catalog_hides_modules_of_disabled_branch(self):
+        """Gap 1: katalog modul mengikuti aktivasi cabang (D8)."""
+        from aios_v1.lib.desktop_modules import get_module_branch
+
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        keys = {module["key"] for module in get_module_catalog()}
+        self.assertNotIn("sales_invoice", keys)
+        self.assertNotIn("customer", keys)
+        self.assertIn("payment_entry", keys)
+        self.assertIn("journal_entry", keys)
+        # Katalog dan definisi memakai gerbang yang sama, sehingga tidak ada
+        # konsumen definisi yang lolos dari filter.
+        self.assertIsNone(get_module_definition("sales_invoice"))
+        self.assertIsNotNone(get_module_definition("payment_entry"))
+        # Peta modul -> cabang tetap eksplisit walau modul tidak tampil.
+        self.assertEqual(get_module_branch("sales_invoice"), "sales")
+
+    def test_bootstrap_and_search_hide_disabled_branch_modules(self):
+        """Gap 1: bootstrap.modules dan search tidak menampilkan modul Sales saat mati."""
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        result = frappe.call(desktop_api.bootstrap)
+        module_keys = {module["key"] for module in result["modules"]}
+        self.assertNotIn("sales_invoice", module_keys)
+        self.assertNotIn("customer", module_keys)
+        self.assertIn("payment_entry", module_keys)
+
+        self.assertEqual(frappe.call(desktop_api.search, q="")["results"], [])
+
+        found = frappe.call(desktop_api.search, q="sales")
+        sales_doctypes = {
+            "Sales Invoice",
+            "Sales Order",
+            "Quotation",
+            "Delivery Note",
+            "Customer",
+            "Item",
+            "Item Price",
+        }
+        for item in found["results"]:
+            self.assertNotEqual(item["module"]["group"], "Sales")
+            if item["type"] == "document":
+                self.assertNotIn(item["doctype"], sales_doctypes)
+
+    def test_module_and_list_reject_disabled_branch_module(self):
+        """Gap 2: API module/list menolak modul cabang mati dengan pesan yang jelas."""
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        with self.assertRaises(frappe.ValidationError) as ctx:
+            frappe.call(desktop_api.module, module="sales_invoice")
+        self.assertIn("tidak aktif", str(ctx.exception))
+
+        with self.assertRaises(frappe.ValidationError):
+            frappe.call(desktop_api.list, module="sales_invoice", doctype="Sales Invoice")
+
+        # D6: setelah cabang dinyalakan, modul bisa dibuka seperti biasa.
+        from aios_v1.lib import branch_activation
+
+        self._set_active_branches(set(branch_activation.LEGACY_DEFAULT_BRANCHES))
+        payload = frappe.call(desktop_api.module, module="sales_invoice")
+        self.assertEqual(payload["module"]["key"], "sales_invoice")
+
+    def test_open_module_tool_and_event_reject_disabled_branch_module(self):
+        """Gap 2 (D9): enum tetap statis; eksekusi tool dan event UI menolak."""
+        from aios_v1.lib.ai_manager_tools import open_module
+        from aios_v1.managers.base_manager import _open_module_event
+
+        self._with_branches({"finance", "accounting", "purchasing"})
+
+        result = open_module("sales_invoice")
+        self.assertEqual(result.get("code"), "MODULE_NOT_ALLOWED")
+        self.assertIn("tidak aktif", result.get("error", ""))
+        # Jalur event UI tertutup untuk modul cabang mati.
+        self.assertIsNone(
+            _open_module_event("open_module", json.dumps({"ok": True, "module": "sales_invoice"}))
+        )
+
+        self._set_active_branches({"sales", "finance", "accounting", "purchasing"})
+        self.assertEqual(open_module("sales_invoice"), {"ok": True, "module": "sales_invoice"})
+
     def test_bootstrap_returns_safe_user_company_agents_and_modules(self):
         result = frappe.call(desktop_api.bootstrap)
 

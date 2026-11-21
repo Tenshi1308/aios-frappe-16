@@ -288,6 +288,23 @@ def _require_owned_conversation(conversation_id: str, user: str):
     return conv
 
 
+def _require_active_conversation_branch(conv) -> None:
+    """D6 (Batch B): percakapan cabang yang dimatikan tidak bisa dibaca/diubah langsung.
+
+    Riwayat disembunyikan, bukan dihapus — setelah cabang dinyalakan lagi,
+    percakapan beserta pesan dan lampirannya muncul kembali. Pemeriksaan
+    memakai `conv.branch` (cabang riil percakapan), bukan parameter `branch`
+    yang dikirim client.
+    """
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    if not is_branch_active(str(conv.branch or "")):
+        frappe.throw(
+            "Riwayat percakapan cabang ini tidak aktif untuk client ini.",
+            frappe.PermissionError,
+        )
+
+
 def _read_json_body() -> dict:
     request = getattr(frappe.local, "request", None)
     body = request.get_json(force=True, silent=True) if request is not None else {}
@@ -304,6 +321,7 @@ def rename_conversation(conversation_id: str = "", title: str = "") -> dict:
     if not new_title:
         _raise_safe(400, "TITLE_REQUIRED", "Judul percakapan tidak boleh kosong.")
     conv = _require_owned_conversation(conv_id, user)
+    _require_active_conversation_branch(conv)
     conv.title = new_title[:140]
     conv.save(ignore_permissions=True)
     frappe.db.commit()
@@ -319,6 +337,7 @@ def set_conversation_pin(conversation_id: str = "", pinned: str | int | bool = T
     raw_pinned = body["pinned"] if "pinned" in body else pinned
     is_pinned = 1 if _parse_bool_flag(raw_pinned) else 0
     conv = _require_owned_conversation(conv_id, user)
+    _require_active_conversation_branch(conv)
     conv.is_pinned = is_pinned
     conv.save(ignore_permissions=True)
     frappe.db.commit()
@@ -334,6 +353,7 @@ def set_conversation_archive(conversation_id: str = "", archived: str | int | bo
     raw_archived = body["archived"] if "archived" in body else archived
     is_archived = 1 if _parse_bool_flag(raw_archived) else 0
     conv = _require_owned_conversation(conv_id, user)
+    _require_active_conversation_branch(conv)
     conv.is_archived = is_archived
     conv.save(ignore_permissions=True)
     frappe.db.commit()
@@ -347,6 +367,7 @@ def delete_conversation(conversation_id: str = "") -> dict:
     body = _read_json_body()
     conv_id = str(conversation_id or body.get("conversation_id") or "").strip()
     conv = _require_owned_conversation(conv_id, user)
+    _require_active_conversation_branch(conv)
     frappe.db.delete("AIOS Message", {"conversation": conv.name})
     frappe.delete_doc("AIOS Conversation", conv.name, ignore_permissions=True)
     frappe.db.commit()
@@ -377,6 +398,9 @@ def get_conversation(conversation_id: str, branch: str = "") -> dict:
     conv = frappe.get_doc("AIOS Conversation", conversation_id)
     if not frappe.has_permission("AIOS Conversation", "read", doc=conv):
         frappe.throw("Percakapan tidak ditemukan", frappe.DoesNotExistError)
+    # D6 (Batch B): detail percakapan cabang mati ditolak walau pemiliknya
+    # yang meminta; cabang diambil dari `conv.branch`, bukan parameter client.
+    _require_active_conversation_branch(conv)
 
     msgs = frappe.get_list(
         "AIOS Message",

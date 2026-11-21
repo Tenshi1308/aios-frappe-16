@@ -152,9 +152,13 @@ def list_my_files(conversation_id: str | None = None) -> list[dict]:
 
     requested_id = str(conversation_id or "").strip()
     try:
+        # D6 (Batch B): percakapan cabang yang dimatikan disembunyikan dari
+        # daftar file, bukan dihapus — filter mengikuti cabang yang terlihat.
+        from aios_v1.lib.branch_activation import visible_branch_keys
+
         conversations = frappe.get_all(
             CONVERSATION_DOCTYPE,
-            filters={"user": user},
+            filters={"user": user, "branch": ["in", sorted(visible_branch_keys())]},
             fields=["name", "title", "branch", "creation"],
         )
         conversations_by_id = {str(row.name): row for row in conversations}

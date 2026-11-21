@@ -272,6 +272,38 @@ class TestDesktopDomains(IntegrationTestCase):
                 )
             )
 
+    def test_domain_module_branch_mapping_is_consistent(self):
+        """Batch B: peta modul->cabang wajib konsisten dengan domain->cabang (D8)."""
+        from aios_v1.lib.desktop_domains import DOMAIN_BRANCH_MAP
+        from aios_v1.lib.desktop_modules import MODULE_BRANCH_MAP
+
+        for domain in _DOMAINS:
+            expected_branch = DOMAIN_BRANCH_MAP.get(domain["key"])
+            if not expected_branch:
+                continue
+            for module_key in domain["modules"]:
+                self.assertEqual(
+                    MODULE_BRANCH_MAP.get(module_key),
+                    expected_branch,
+                    f"modul {module_key} di domain {domain['key']} tidak memetakan cabang {expected_branch}",
+                )
+
+        # Validasi import-time menolak domain yang memuat modul cabang lain.
+        with self.assertRaises(RuntimeError):
+            _validate_domain_catalog(
+                (
+                    {
+                        "key": "sales",
+                        "label": "Sales",
+                        "icon": "tag",
+                        "color_token": "domain-bad-branch",
+                        "status": "active",
+                        "modules": ("payment_entry",),
+                        "cards": (),
+                    },
+                )
+            )
+
     def test_bootstrap_includes_domains_and_keeps_modules(self):
         result = frappe.call(desktop_api.bootstrap)
         self.assertIn("domains", result)

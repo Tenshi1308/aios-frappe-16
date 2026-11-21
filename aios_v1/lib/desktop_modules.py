@@ -799,20 +799,77 @@ _MODULES_BY_KEY = {module["key"]: module for module in _MODULES}
 if any(module["doctype"] not in ERP_CLIENT_DOCTYPES for module in _MODULES):
     raise RuntimeError("Desktop module catalog contains a DocType outside ERP_CLIENT_DOCTYPES")
 
+# D8 (Batch B): pemetaan eksplisit modul -> cabang, 1:1 dengan domain yang
+# memuatnya di `desktop_domains.DOMAIN_BRANCH_MAP`. Katalog modul statis tidak
+# menyimpan cabang, jadi peta ini satu-satunya sumber gerbang aktivasi: modul
+# hanya tampil di katalog/pencarian dan bisa dibuka bila cabangnya aktif untuk
+# site ini. Konsistensi peta dengan domain divalidasi saat import di
+# `_validate_domain_catalog` agar tidak ada dua sumber yang berbeda.
+MODULE_BRANCH_MAP = {
+    "sales_invoice": "sales",
+    "sales_order": "sales",
+    "quotation": "sales",
+    "delivery_note": "sales",
+    "customer": "sales",
+    "item": "sales",
+    "item_price": "sales",
+    "purchase_invoice": "finance",
+    "payment_entry": "finance",
+    "supplier": "finance",
+    "journal_entry": "accounting",
+    "gl_entry": "accounting",
+    "account": "accounting",
+    "company": "accounting",
+    "purchase_order": "purchasing",
+    "purchase_receipt": "purchasing",
+    "supplier_quotation": "purchasing",
+}
+
+if any(module["key"] not in MODULE_BRANCH_MAP for module in _MODULES):
+    raise RuntimeError("Desktop module catalog contains a module without a branch mapping")
+
+
+def get_module_branch(module_key: str) -> str | None:
+    """Return the branch that owns one module, or None for unknown keys."""
+    if not isinstance(module_key, str):
+        return None
+    return MODULE_BRANCH_MAP.get(module_key)
+
+
+def _active_branch_keys() -> frozenset[str]:
+    """Cabang aktif untuk site ini; lazy import agar bebas circular import.
+
+    `desktop_domains` sudah mengimpor modul ini di level modul, jadi impor balik
+    ke `branch_activation` (yang tanpa dependensi katalog) dilakukan di sini
+    saat pemanggilan, mengikuti pola `desktop_domains._branch_active`.
+    """
+    from aios_v1.lib.branch_activation import get_active_branches
+
+    return get_active_branches()
+
 
 def get_module_keys() -> list[str]:
-    """Return the catalog keys used to validate API and agent requests."""
+    """Return the catalog keys used to validate API and agent requests (D9: statis)."""
     return list(_MODULES_BY_KEY)
 
 
 def get_module_definition(module_key: str) -> dict | None:
-    """Return a copy of one server-owned module definition."""
+    """Return a copy of one server-owned module definition (cabang aktif saja).
+
+    Modul yang cabangnya tidak aktif diperlakukan tidak ada (Gap 2), sehingga
+    semua konsumen definisi ikut tergerbang tanpa cek terpisah. Key yang tidak
+    dikenal dan key yang cabangnya mati sama-sama mengembalikan None; pembeda
+    pesannya tersedia lewat `get_module_branch`.
+    """
     module = _MODULES_BY_KEY.get(module_key)
-    return deepcopy(module) if module else None
+    if not module or MODULE_BRANCH_MAP.get(module_key) not in _active_branch_keys():
+        return None
+    return deepcopy(module)
 
 
 def get_module_catalog() -> list[dict]:
-    """Return only metadata required by the desktop; omit query internals."""
+    """Return metadata for branch-active modules only; omit query internals."""
+    active = _active_branch_keys()
     return [
         {
             "key": module["key"],
@@ -831,4 +888,5 @@ def get_module_catalog() -> list[dict]:
             ],
         }
         for module in _MODULES
+        if MODULE_BRANCH_MAP.get(module["key"]) in active
     ]

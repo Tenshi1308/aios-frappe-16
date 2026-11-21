@@ -245,3 +245,119 @@ class TestBranchHierarchy(ActivationTestCase):
         self.assertEqual(get_tools_schema_for_worker("sales", "manager"), [])
         with self.assertRaises(frappe.ValidationError):
             get_manager("sales")
+
+
+class TestConversationHistoryGating(ActivationTestCase):
+    """D6 (Batch B): riwayat percakapan cabang mati tidak bisa dibaca/diubah langsung.
+
+    Riwayat disembunyikan, bukan dihapus — setelah cabang dinyalakan lagi,
+    percakapan dan isinya muncul kembali.
+    """
+
+    EMAIL = "_test.branch.history@example.com"
+
+    def setUp(self):
+        super().setUp()
+        self._orig_commit = frappe.db.commit
+        frappe.db.commit = lambda *a, **k: None
+        self.addCleanup(self._restore_and_rollback)
+        if frappe.db.exists("User", self.EMAIL):
+            self.user = frappe.get_doc("User", self.EMAIL)
+        else:
+            self.user = frappe.get_doc(
+                {
+                    "doctype": "User",
+                    "email": self.EMAIL,
+                    "first_name": "_Test Branch History",
+                    "enabled": 1,
+                    "send_welcome_email": 0,
+                    "user_type": "Website User",
+                    "aios_status": "Active",
+                    "roles": [{"role": "AIOS Client"}],
+                }
+            ).insert(ignore_permissions=True)
+        frappe.set_user("Administrator")
+        self.conversation = frappe.get_doc(
+            {
+                "doctype": "AIOS Conversation",
+                "user": self.user.name,
+                "branch": "sales",
+                "title": "Riwayat Sales",
+            }
+        ).insert(ignore_permissions=True)
+        # Nama dokumen Conversation berupa angka; API bertipe `str`.
+        self.conv_id = str(self.conversation.name)
+
+    def _restore_and_rollback(self):
+        frappe.set_user("Administrator")
+        frappe.db.commit = self._orig_commit
+        frappe.db.rollback()
+
+    def tearDown(self):
+        frappe.set_user("Administrator")
+        for conv_name in frappe.get_all("AIOS Conversation", filters={"user": self.EMAIL}, pluck="name"):
+            for msg_name in frappe.get_all("AIOS Message", filters={"conversation": conv_name}, pluck="name"):
+                frappe.delete_doc(
+                    "AIOS Message", msg_name, ignore_permissions=True, force=True, delete_permanently=True
+                )
+            frappe.delete_doc(
+                "AIOS Conversation", conv_name, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        for contact_name in frappe.get_all("Contact", filters={"user": self.EMAIL}, pluck="name"):
+            frappe.delete_doc("Contact", contact_name, ignore_permissions=True, force=True, delete_permanently=True)
+        if frappe.db.exists("Notification Settings", self.EMAIL):
+            frappe.delete_doc(
+                "Notification Settings", self.EMAIL, ignore_permissions=True, force=True, delete_permanently=True
+            )
+        if frappe.db.exists("User", self.EMAIL):
+            frappe.delete_doc(
+                "User", self.EMAIL, ignore_permissions=True, force=False, delete_permanently=True
+            )
+        self._restore_and_rollback()
+        super().tearDown()
+
+    def test_get_conversation_rejected_when_branch_disabled(self):
+        from aios_v1.api import chat
+
+        frappe.set_user(self.user.name)
+        self._set_active_branches({"finance", "accounting", "purchasing"})
+
+        with self.assertRaises(frappe.PermissionError):
+            chat.get_conversation(conversation_id=self.conv_id)
+
+        # D6: data tidak dihapus; hanya akses langsung yang ditolak.
+        self.assertTrue(frappe.db.exists("AIOS Conversation", self.conversation.name))
+
+    def test_get_conversation_works_again_after_branch_enabled(self):
+        from aios_v1.api import chat
+
+        frappe.set_user(self.user.name)
+        self._set_active_branches({"finance", "accounting", "purchasing"})
+        self._set_active_branches({"sales", "finance", "accounting", "purchasing"})
+
+        payload = chat.get_conversation(conversation_id=self.conv_id)
+        self.assertEqual(str(payload["conversation"]["id"]), str(self.conversation.name))
+
+    def test_conversation_mutations_rejected_when_branch_disabled(self):
+        from aios_v1.api import chat
+
+        frappe.set_user(self.user.name)
+        self._set_active_branches({"finance", "accounting", "purchasing"})
+
+        cases = {
+            "rename": lambda: chat.rename_conversation(conversation_id=self.conv_id, title="Judul baru"),
+            "pin": lambda: chat.set_conversation_pin(conversation_id=self.conv_id, pinned=True),
+            "archive": lambda: chat.set_conversation_archive(conversation_id=self.conv_id, archived=True),
+            "delete": lambda: chat.delete_conversation(conversation_id=self.conv_id),
+        }
+        for action, call in cases.items():
+            with self.subTest(action=action):
+                with self.assertRaises(frappe.PermissionError):
+                    call()
+
+        # D6: aksi yang ditolak tidak menghapus atau mengubah apa pun.
+        self.assertTrue(frappe.db.exists("AIOS Conversation", self.conversation.name))
+        self.assertEqual(
+            frappe.db.get_value("AIOS Conversation", self.conversation.name, "title"),
+            "Riwayat Sales",
+        )
