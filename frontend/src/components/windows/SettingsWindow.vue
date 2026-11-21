@@ -36,9 +36,15 @@ const BASE_TABS: MenuTab[] = [
 const OWNER_TABS: MenuTab[] = [
   { id: 'receivers', label: 'Penerima Kanal', icon: 'bell' },
   { id: 'staff', label: 'Kelola Staf', icon: 'users' },
-  // K9: jadwal tiap detektor proaktif Sales diatur dari sini, tanpa deploy.
-  { id: 'proactive', label: 'Insight Proaktif', icon: 'sparkle' },
 ];
+
+// D11: tab Insight Proaktif hanya muncul selama ada bidang aktif yang punya
+// proaktif. Daftarnya datang dari server (settings.proactive_branches).
+const PROACTIVE_TAB: MenuTab = {
+  id: 'proactive',
+  label: 'Insight Proaktif',
+  icon: 'sparkle',
+};
 
 const THEME_LABELS: Record<SettingsTheme, string> = {
   Automatic: 'Ikuti sistem',
@@ -68,9 +74,17 @@ const session = useSessionStore();
 const isClientOwner = computed(() =>
   (session.context?.roles ?? []).includes('AIOS Client Owner'),
 );
-const visibleTabs = computed<MenuTab[]>(() =>
-  isClientOwner.value ? [...BASE_TABS, ...OWNER_TABS] : BASE_TABS,
-);
+
+// D11: kelompok bidang yang punya proaktif; tab tampil bila daftar tidak kosong.
+const proactiveGroups = computed(() => modules.settings?.proactive_branches ?? []);
+const hasProactiveBranch = computed(() => proactiveGroups.value.length > 0);
+
+const visibleTabs = computed<MenuTab[]>(() => {
+  if (!isClientOwner.value) return BASE_TABS;
+  const tabs = [...BASE_TABS, ...OWNER_TABS];
+  if (hasProactiveBranch.value) tabs.push(PROACTIVE_TAB);
+  return tabs;
+});
 
 const activeTab = ref<TabId>(modules.settingsTab || 'general');
 
@@ -78,7 +92,7 @@ const activeTab = ref<TabId>(modules.settingsTab || 'general');
 watch(
   activeTab,
   (tab) => {
-    if (tab === 'proactive' && isClientOwner.value) {
+    if (tab === 'proactive' && hasProactiveBranch.value) {
       void modules.loadDetectorSchedules();
     }
   },
@@ -150,7 +164,7 @@ function selectTab(id: TabId) {
   if ((id === 'receivers' || id === 'staff') && isClientOwner.value && !modules.staffData) {
     void modules.loadClientStaffAndRecipients();
   }
-  if (id === 'proactive' && isClientOwner.value) {
+  if (id === 'proactive' && hasProactiveBranch.value) {
     void modules.loadDetectorSchedules();
   }
 }
@@ -440,6 +454,16 @@ async function handleToggleStaffStatus(user: ClientStaffUser) {
 }
 // --- K9: tab Insight Proaktif ---
 const detectorRows = computed(() => modules.detectorSchedules?.detectors ?? []);
+
+// D11: satu bagian per bidang yang punya proaktif. Bagian Sales hilang saat
+// Sales dimatikan; tab tetap ada selama bidang lain masih punya proaktif.
+// Semua detektor hari ini milik Sales, jadi bagian lain belum punya baris.
+const proactiveSections = computed(() =>
+  proactiveGroups.value.map((group) => ({
+    ...group,
+    detectors: group.branch === 'sales' ? detectorRows.value : [],
+  })),
+);
 const detectorFrequencies = computed(
   () => modules.detectorSchedules?.frequencies ?? ['daily', 'weekly', 'monthly'],
 );
@@ -975,27 +999,32 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
         </div>
 
         <!-- Halaman INSIGHT PROAKTIF (Khusus AIOS Client Owner) -->
-        <div v-else-if="activeTab === 'proactive' && isClientOwner" key="proactive" class="settings-sections">
-          <section class="settings-card" aria-label="Jadwal detektor proaktif Sales">
+        <div v-else-if="activeTab === 'proactive' && hasProactiveBranch" key="proactive" class="settings-sections">
+          <section
+            v-for="group in proactiveSections"
+            :key="group.branch"
+            class="settings-card"
+            :aria-label="'Jadwal detektor proaktif ' + group.label"
+          >
             <div class="card-head">
               <div class="card-title-wrap">
                 <AppIcon name="sparkle" :size="16" />
-                <h5>Jadwal Detektor Proaktif Sales</h5>
+                <h5>Jadwal Detektor Proaktif {{ group.label }}</h5>
               </div>
-              <span class="status-pill">{{ detectorRows.length }} detektor</span>
+              <span class="status-pill">{{ group.detectors.length }} detektor</span>
             </div>
             <p class="tg-info-text">
               Atur kapan tiap detektor berjalan. Perubahan langsung dipakai pemindaian
               berikutnya tanpa deploy. Satu ringkasan gabungan dikirim per pemindaian.
             </p>
 
-            <div v-if="modules.detectorSchedulesLoading && !detectorRows.length" class="tg-loading is-loading">
+            <div v-if="modules.detectorSchedulesLoading && !group.detectors.length" class="tg-loading is-loading">
               <span>Memuat jadwal detektor…</span>
             </div>
 
             <div v-else class="detector-grid">
               <article
-                v-for="(row, i) in detectorRows"
+                v-for="row in group.detectors"
                 :key="row.detector_key"
                 class="detector-card"
                 :class="{ 'is-off': !row.enabled }"
@@ -1009,7 +1038,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                     :aria-checked="!!row.enabled"
                     :aria-label="'Aktifkan detektor ' + (row.label || row.detector_key)"
                     :disabled="modules.detectorSchedulesSaving"
-                    @click="patchDetector(i, { enabled: row.enabled ? 0 : 1 })"
+                    @click="patchDetector(detectorRows.indexOf(row), { enabled: row.enabled ? 0 : 1 })"
                   >
                     <span class="detector-toggle-knob" />
                   </button>
@@ -1022,7 +1051,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                     :ariaLabel="'Frekuensi ' + (row.label || row.detector_key)"
                     :disabled="modules.detectorSchedulesSaving || !row.enabled"
                     icon="refresh"
-                    @update:model-value="patchDetector(i, { frequency: String($event) })"
+                    @update:model-value="patchDetector(detectorRows.indexOf(row), { frequency: String($event) })"
                   />
                   <FintoSelect
                     :model-value="row.run_hour"
@@ -1030,7 +1059,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                     :ariaLabel="'Jam jalan ' + (row.label || row.detector_key)"
                     :disabled="modules.detectorSchedulesSaving || !row.enabled"
                     icon="history"
-                    @update:model-value="patchDetector(i, { run_hour: Number($event) })"
+                    @update:model-value="patchDetector(detectorRows.indexOf(row), { run_hour: Number($event) })"
                   />
                   <FintoSelect
                     v-if="row.frequency === 'weekly'"
@@ -1039,7 +1068,7 @@ function patchDetector(index: number, patch: Record<string, unknown>) {
                     :ariaLabel="'Hari ' + (row.label || row.detector_key)"
                     :disabled="modules.detectorSchedulesSaving || !row.enabled"
                     icon="target"
-                    @update:model-value="patchDetector(i, { day_of_week: String($event) })"
+                    @update:model-value="patchDetector(detectorRows.indexOf(row), { day_of_week: String($event) })"
                   />
                 </div>
               </article>

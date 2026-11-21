@@ -281,6 +281,7 @@ export async function fetchSettings(): Promise<SettingsData> {
       options: [...ALLOWED_THEMES],
     },
     company_context_persona: mockCompanyPersona,
+    proactive_branches: [{ branch: 'sales', label: 'Sales' }],
   };
 }
 

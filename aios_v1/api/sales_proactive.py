@@ -11,6 +11,7 @@ from aios_v1.lib.sales_proactive import (
     SALES_BRANCH,
     default_detector_settings,
     get_detector_settings,
+    is_sales_branch_active,
     record_desk_heartbeat,
     run_daily_sales_proactive_scan,
     run_detector_scheduler_dispatch,
@@ -22,6 +23,19 @@ def _require_authenticated_user() -> str:
     if not user or user == "Guest":
         frappe.throw("Autentikasi diperlukan.", frappe.PermissionError)
     return str(user)
+
+
+def _assert_sales_active() -> None:
+    """Pertahanan berlapis: menyembunyikan tab bukan pengaman (D7/D11).
+
+    Jadwal detektor Sales tidak bisa dibaca atau ditulis saat cabang Sales
+    dimatikan untuk site ini.
+    """
+    if not is_sales_branch_active():
+        frappe.throw(
+            "Cabang Sales tidak aktif untuk client ini.",
+            frappe.PermissionError,
+        )
 
 
 def _assert_admin_or_owner(user: str) -> None:
@@ -56,6 +70,9 @@ def heartbeat() -> dict:
 def get_unread_sales_insights() -> dict:
     """Return unread Desk proactive insight count and latest sales conversation id for current user."""
     user = _require_authenticated_user()
+    # D6/D7: cabang Sales mati -> badge dan riwayat Sales tidak ditampilkan.
+    if not is_sales_branch_active():
+        return {"unread_count": 0, "conversation_id": None}
     unread_count = frappe.db.count(
         INSIGHT_LOG_DOCTYPE,
         {
@@ -96,6 +113,7 @@ def mark_sales_insights_read() -> dict:
 def get_detector_schedules() -> dict:
     """Return per-detector schedules for the Insight Proaktif settings tab (K9)."""
     _require_authenticated_user()
+    _assert_sales_active()
     rows = get_detector_settings()
     if not rows:
         rows = default_detector_settings()
@@ -120,6 +138,7 @@ def get_detector_schedules() -> dict:
 def save_detector_schedules(detectors=None) -> dict:
     """Persist per-detector schedules so Desk can change them without deploy (K9)."""
     user = _require_authenticated_user()
+    _assert_sales_active()
     _assert_admin_or_owner(user)
     try:
         payload = frappe.parse_json(detectors) if isinstance(detectors, str) else detectors

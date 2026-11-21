@@ -616,9 +616,36 @@ def dispatch_proactive_findings(findings: list[dict], insight_date: str | None =
     return stats
 
 
+def is_sales_branch_active() -> bool:
+    """Aktivasi cabang site ini (D7): gerbang tunggal untuk semua jalur pemindaian."""
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    return is_branch_active(SALES_BRANCH)
+
+
+def _sales_inactive_result(insight_date: str) -> dict:
+    return {
+        "status": "skipped",
+        "reason": "Cabang Sales tidak aktif untuk client ini",
+        "insight_date": insight_date,
+        "findings_count": 0,
+        "findings": [],
+        "total_findings": 0,
+        "recipients": 0,
+        "messages_sent": 0,
+        "sent": 0,
+        "skipped_dedup": 0,
+        "failed": 0,
+    }
+
+
 def run_daily_sales_proactive_scan(company: str | None = None, today: date | None = None) -> dict:
     """Scheduled daily entry point for Stage 1 Sales proactive insights."""
     ref_today = getdate(today or nowdate())
+    # D7: satu guard di sini menutup entry scheduler `daily`, entry `hourly`
+    # (run_detector_scheduler_dispatch) dan kedua API manual sekaligus.
+    if not is_sales_branch_active():
+        return _sales_inactive_result(str(ref_today))
     findings = scan_all_sales_detectors(company=company, today=ref_today)
     dispatch_stats = dispatch_proactive_findings(findings, insight_date=str(ref_today))
     return {

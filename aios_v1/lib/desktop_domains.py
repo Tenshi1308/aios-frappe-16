@@ -315,9 +315,40 @@ def _validate_domain_catalog(domains: tuple[dict, ...]) -> dict[str, dict]:
 _DOMAINS_BY_KEY = _validate_domain_catalog(_DOMAINS)
 
 
+# D8: pemetaan eksplisit 1:1 untuk kunci yang beririsan antara katalog cabang
+# (registry.BRANCHES) dan katalog domain. Domain ikut cabangnya. Domain tanpa
+# padanan cabang (inventory, projects, crm, assets, support) tetap statis, dan
+# cabang tanpa padanan domain (planning, hr, logistics, maintenance, material)
+# tidak memengaruhi katalog ini.
+DOMAIN_BRANCH_MAP = {
+    "sales": "sales",
+    "finance": "finance",
+    "accounting": "accounting",
+    "purchasing": "purchasing",
+    "quality": "quality",
+    "manufacturing": "manufacturing",
+}
+
+
+def _branch_active(branch_key: str) -> bool:
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    return is_branch_active(branch_key)
+
+
+def _domain_is_available(domain: dict) -> bool:
+    """Domain aktif secara katalog dan cabangnya (bila berpasangan) ikut aktif."""
+    if domain["status"] != "active":
+        return False
+    branch_key = DOMAIN_BRANCH_MAP.get(domain["key"])
+    if not branch_key:
+        return True
+    return _branch_active(branch_key)
+
+
 def get_domain_keys() -> list[str]:
     """Return active domain keys used to validate API and agent requests."""
-    return [domain["key"] for domain in _DOMAINS if domain["status"] == "active"]
+    return [domain["key"] for domain in _DOMAINS if _domain_is_available(domain)]
 
 
 def get_domain_definition(domain_key: str) -> dict | None:
@@ -339,7 +370,7 @@ def get_domain_catalog() -> list[dict]:
             "module_count": len(domain["modules"]),
         }
         for domain in _DOMAINS
-        if domain["status"] == "active"
+        if _domain_is_available(domain)
     ]
 
 

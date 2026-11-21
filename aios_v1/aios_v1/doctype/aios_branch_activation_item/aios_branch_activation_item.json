@@ -1,0 +1,35 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "branch_key",
+  "enabled"
+ ],
+ "fields": [
+  {
+   "fieldname": "branch_key",
+   "fieldtype": "Data",
+   "label": "Branch Key",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 3,
+   "description": "Kunci cabang AIOS. Divalidasi ke daftar cabang yang punya aktivasi per client."
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1,
+   "columns": 2
+  }
+ ],
+ "istable": 1,
+ "module": "AIOS V1",
+ "name": "AIOS Branch Activation Item",
+ "permissions": [],
+ "track_changes": 0
+}

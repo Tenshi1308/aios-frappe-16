@@ -7,6 +7,7 @@ interface RawBranch {
   description?: unknown;
   tagline?: unknown;
   workers?: unknown;
+  enabled?: unknown;
 }
 
 function asString(value: unknown, fallback = ''): string {
@@ -42,5 +43,6 @@ export async function fetchBranches(): Promise<Branch[]> {
       description: asString(b.description),
       tagline: asString(b.tagline),
       workers: mapWorkers(b.workers),
+      enabled: b.enabled !== false,
     }));
 }

@@ -11,9 +11,11 @@ from frappe.sessions import get_csrf_token
 from frappe.utils import format_datetime, now_datetime
 from frappe.utils.scheduler import is_scheduler_inactive
 
+from aios_v1.lib.branch_activation import get_proactive_branches
 from aios_v1.lib.desktop_domains import (
     get_domain_catalog,
     get_domain_definition,
+    get_domain_keys,
 )
 from aios_v1.lib.desktop_modules import (
     get_module_catalog,
@@ -341,6 +343,10 @@ def _domain_definition(domain_key: str) -> dict:
     definition = get_domain_definition(domain_key)
     if not definition or definition.get("status") != "active":
         frappe.throw("Bidang tidak tersedia.", frappe.ValidationError)
+    # D8: domain yang cabangnya dimatikan tidak boleh dibuka lewat API langsung,
+    # walau ikonnya sudah hilang dari desktop.
+    if domain_key not in get_domain_keys():
+        frappe.throw("Bidang ini tidak aktif untuk client ini.", frappe.ValidationError)
     for card in definition["cards"]:
         doctype = card["doctype"]
         if doctype not in ERP_CLIENT_DOCTYPES:
@@ -621,6 +627,9 @@ def settings():
             "options": [*_THEME_OPTIONS],
         },
         "company_context_persona": company_persona,
+        # D11: bidang aktif yang punya proaktif; tab Insight Proaktif muncul
+        # hanya selama daftar ini tidak kosong.
+        "proactive_branches": get_proactive_branches(),
     }
 
 

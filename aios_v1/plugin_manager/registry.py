@@ -1101,19 +1101,28 @@ BRANCHES = [   {   'description': 'Bidang perencanaan strategis & operasional: a
                                              'Patuhi batas baca-saja dan alihkan kebutuhan bidang lain via handoff_to_branch / cross_branch_consultation.'],
                            'relevantEntities': ['Purchase Order', 'Purchase Receipt', 'Supplier Quotation', 'Supplier', 'Item']}]}]
 
-_PRIORITY_BRANCHES = {"finance", "sales", "accounting", "purchasing"}
+# Cabang yang punya aktivasi per client. Daftar ini hanya dipakai sebagai
+# rujukan validasi DocType; status aktif dibaca dari `AIOS Branch Activation`
+# lewat `aios_v1.lib.branch_activation` (D1/D2).
+_ACTIVATABLE_BRANCHES = ("sales", "finance", "accounting", "purchasing")
 
-for _branch in BRANCHES:
-    _branch["enabled"] = _branch["key"] in _PRIORITY_BRANCHES
+
+def _active_branch_keys() -> frozenset:
+    """Baca aktivasi cabang site ini; fail-closed bila belum dikonfigurasi."""
+    from aios_v1.lib.branch_activation import get_active_branches
+
+    return get_active_branches()
 
 
 def is_branch_enabled(branch_key: str) -> bool:
-    branch = get_branch(branch_key)
-    return bool(branch and branch.get("enabled"))
+    if not get_branch(branch_key):
+        return False
+    return branch_key in _active_branch_keys()
 
 
 def get_branches():
-    return [branch for branch in BRANCHES if branch.get("enabled")]
+    active = _active_branch_keys()
+    return [branch for branch in BRANCHES if branch.get("key") in active]
 
 def get_public_branches():
     """Return display metadata only; keep prompt material inside the server."""
@@ -1123,7 +1132,9 @@ def get_public_branches():
             "name": branch.get("name"),
             "description": branch.get("description"),
             "tagline": branch.get("tagline"),
-            "enabled": branch.get("enabled"),
+            # Aktif = cabang ini lolos filter aktivasi site (get_branches sudah
+            # menyaringnya); field `enabled` mentah di BRANCHES tidak dipakai lagi.
+            "enabled": True,
             "workers": [
                 {
                     "key": worker.get("key"),

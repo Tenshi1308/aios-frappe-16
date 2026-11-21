@@ -175,27 +175,35 @@ class TestCrossBranchHandoff(IntegrationTestCase):
             {"sales", "accounting", "purchasing"},
         )
 
-        # Dynamically enabling an extra branch makes it immediately available without code change
-        hr_branch = get_branch("hr")
-        orig_enabled = hr_branch["enabled"]
-        try:
-            hr_branch["enabled"] = True
-            dynamic_schema = next(
-                s for s in get_tools_schema_for_worker("finance", "manager", user=self.USER)
-                if s["function"]["name"] == "handoff_to_branch"
-            )
-            self.assertIn("hr", dynamic_schema["function"]["parameters"]["properties"]["to_branch"]["enum"])
-            res_hr = json.loads(
-                execute_tool(
-                    "handoff_to_branch",
-                    json.dumps({"to_branch": "hr", "reason": "Urusan HR"}),
-                    context={"user": self.USER, "allowed_company": self.COMPANY, "branch": "finance", "worker_key": "manager"},
-                )
-            )
-            self.assertTrue(res_hr.get("ok"))
-            self.assertEqual(res_hr.get("to_branch"), "hr")
-        finally:
-            hr_branch["enabled"] = orig_enabled
+        # Aktivasi cabang dibaca dari AIOS Branch Activation (bukan flag modul),
+        # jadi mematikan cabang lain langsung mengubah enum tanpa ubah kode.
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._restore_activation, original)
+        self._set_active_branches({"finance", "accounting"})
+        narrowed = next(
+            s for s in get_tools_schema_for_worker("finance", "manager", user=self.USER)
+            if s["function"]["name"] == "handoff_to_branch"
+        )
+        self.assertEqual(
+            set(narrowed["function"]["parameters"]["properties"]["to_branch"]["enum"]),
+            {"accounting"},
+        )
+
+    def _set_active_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def _restore_activation(self, keys):
+        self._set_active_branches(keys)
 
     def test_consultation_readonly_lock_blocks_draft_and_mutation_tools_in_server(self):
         # Schema exclusion

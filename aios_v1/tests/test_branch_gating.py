@@ -17,9 +17,51 @@ except ImportError:
 
 
 class TestBranchGating(IntegrationTestCase):
-    def test_only_priority_branches_are_listed(self):
-        self.assertEqual({branch["key"] for branch in get_branches()}, {"finance", "sales", "accounting", "purchasing"})
+    def test_activation_drives_listed_branches(self):
+        """D1/D2: katalog cabang mengikuti AIOS Branch Activation, bukan konstanta."""
+        from aios_v1.lib.branch_activation import get_active_branches
+
+        active = get_active_branches()
+        self.assertEqual({branch["key"] for branch in get_branches()}, set(active))
         self.assertFalse(is_branch_enabled("hr"))
+
+    def test_disabling_a_branch_removes_it_from_catalog(self):
+        """Aktivasi per client: mematikan cabang menyembunyikannya dari katalog."""
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._restore_branches, original)
+        self._set_active_branches({"sales", "finance"})
+
+        self.assertEqual({b["key"] for b in get_branches()}, {"sales", "finance"})
+        self.assertTrue(is_branch_enabled("sales"))
+        self.assertFalse(is_branch_enabled("accounting"))
+        self.assertFalse(is_branch_enabled("purchasing"))
+
+    def test_fail_closed_when_no_branch_active(self):
+        """D5: tanpa baris aktif, tidak ada cabang yang tersedia."""
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._restore_branches, original)
+        self._set_active_branches(set())
+
+        self.assertEqual(get_branches(), [])
+        self.assertFalse(is_branch_enabled("sales"))
+
+    def _set_active_branches(self, keys: set):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
+
+    def _restore_branches(self, keys: set):
+        self._set_active_branches(keys)
 
     def test_disabled_branch_schema_and_tool_execution_are_denied(self):
         self.assertEqual(get_tools_schema_for_worker("hr", "manager"), [])

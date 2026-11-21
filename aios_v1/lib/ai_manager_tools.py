@@ -93,12 +93,18 @@ def open_module(module: str) -> dict[str, Any]:
     },
 )
 def open_domain(domain: str) -> dict[str, Any]:
-    """Return a validated UI command to open an active domain window."""
+    """Return a validated UI command to open an active domain window.
+
+    D9: enum di decorator tetap beku saat import; otoritas sebenarnya ada di
+    sini — domain ditolak bila cabangnya tidak aktif untuk site ini.
+    """
     if not isinstance(domain, str):
         return safe_error("Bidang tidak tersedia.", "DOMAIN_NOT_ALLOWED")
     domain_def = get_domain_definition(domain)
     if not domain_def or domain_def.get("status") != "active":
         return safe_error("Bidang tidak tersedia.", "DOMAIN_NOT_ALLOWED")
+    if domain not in get_domain_keys():
+        return safe_error("Bidang ini tidak aktif untuk client ini.", "DOMAIN_NOT_ALLOWED")
     return {"ok": True, "domain": domain}
 
 # =========================================================================

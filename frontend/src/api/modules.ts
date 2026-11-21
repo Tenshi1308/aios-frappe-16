@@ -34,6 +34,7 @@ import type {
   ModuleRowValue,
   ModulesApi,
   Pagination,
+  ProactiveBranchGroup,
   RegenerateStaffInviteResponse,
   SearchResult,
   SettingsBrand,
@@ -296,6 +297,7 @@ function mapBranches(raw: unknown): Branch[] {
       description: asString(b.description),
       tagline: asString(b.tagline),
       workers: mapWorkers(b.workers),
+      enabled: b.enabled !== false,
     }));
 }
 
@@ -525,6 +527,15 @@ export async function fetchSettings(): Promise<SettingsData> {
     : [];
   const themeOptions: SettingsTheme[] = rawOptions.length > 0 ? rawOptions : [...ALLOWED_THEMES];
   const companyContextPersona = asString(raw.company_context_persona, '');
+  const proactiveBranches: ProactiveBranchGroup[] = Array.isArray(raw.proactive_branches)
+    ? raw.proactive_branches
+        .filter(isRecord)
+        .filter((g) => typeof g.branch === 'string' && !!g.branch)
+        .map((g) => ({
+          branch: g.branch as string,
+          label: asString(g.label, g.branch as string),
+        }))
+    : [];
 
   return {
     profile: {
@@ -555,6 +566,7 @@ export async function fetchSettings(): Promise<SettingsData> {
       options: themeOptions,
     },
     company_context_persona: companyContextPersona,
+    proactive_branches: proactiveBranches,
   };
 }
 

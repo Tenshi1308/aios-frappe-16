@@ -239,6 +239,11 @@ def upload_file() -> dict:
 def list_conversations(branch: str, archived: str | int | bool = False, sort: str = "desc") -> dict:
     """Daftar conversation milik user pada cabang tertentu (maks. 20)."""
     user = _current_user()
+    # D6: riwayat cabang yang dimatikan disembunyikan, bukan dihapus.
+    from aios_v1.lib.branch_activation import is_branch_active
+
+    if not is_branch_active(branch):
+        return {"conversations": []}
     show_archived = _parse_bool_flag(archived)
     sort_asc = str(sort or "").strip().lower() == "asc"
     archived_filter = 1 if show_archived else ["!=", 1]

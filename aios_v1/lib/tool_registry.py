@@ -233,6 +233,13 @@ def _plugin_enabled(plugin_key: str) -> bool:
 def _plugin_scope_allows(plugin_key: str, branch: str, worker_key: str) -> bool:
     if not branch or not worker_key:
         return False
+    # D12: hirarki dua lapis — aktivasi cabang adalah gerbang masuk, AIOS Plugin
+    # Scope adalah izin tool DI DALAM cabang yang sudah aktif. Cabang yang mati
+    # tidak bisa membuka izin plugin apa pun, walau scope-nya masih enabled.
+    from aios_v1.plugin_manager.registry import is_branch_enabled
+
+    if not is_branch_enabled(branch):
+        return False
     scopes = frappe.get_all(
         "AIOS Plugin Scope",
         filters={

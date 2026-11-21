@@ -30,6 +30,17 @@ except ModuleNotFoundError:
     desktop_api = None
 
 
+def _open_domain_enum_snapshot() -> list:
+    """Enum yang dibekukan saat `ai_manager_tools` di-import (D9).
+
+    Nilai ini sengaja TIDAK dibandingkan dengan katalog dinamis: enum adalah
+    snapshot import-time, sedangkan aktivasi dibaca saat eksekusi.
+    """
+    from aios_v1.lib.tool_registry import _TOOL_REGISTRY
+
+    return list(_TOOL_REGISTRY["open_domain"]["parameters"]["domain"]["enum"])
+
+
 class TestDesktopDomains(IntegrationTestCase):
     USER = "_test.desktop.domains@example.com"
     NON_CLIENT_USER = "_test.desktop.domains.noclient@example.com"
@@ -166,10 +177,46 @@ class TestDesktopDomains(IntegrationTestCase):
 
     def test_catalog_contains_active_only_and_tracks_planned_count(self):
         catalog = get_domain_catalog()
-        self.assertEqual([item["key"] for item in catalog], ["sales", "finance", "accounting", "purchasing"])
-        self.assertEqual(get_domain_keys(), ["sales", "finance", "accounting", "purchasing"])
+        self.assertEqual([item["key"] for item in catalog], get_domain_keys())
         self.assertEqual(get_planned_domain_count(), 7)
         self.assertEqual(len(_DOMAINS), 11)
+        # D8: hanya domain yang cabangnya aktif untuk site ini yang tampil.
+        from aios_v1.lib.branch_activation import get_active_branches
+        from aios_v1.lib.desktop_domains import DOMAIN_BRANCH_MAP
+
+        active = get_active_branches()
+        expected = [
+            domain["key"]
+            for domain in _DOMAINS
+            if domain["status"] == "active"
+            and (domain["key"] not in DOMAIN_BRANCH_MAP or DOMAIN_BRANCH_MAP[domain["key"]] in active)
+        ]
+        self.assertEqual([item["key"] for item in catalog], expected)
+
+    def test_domain_disappears_when_its_branch_is_disabled(self):
+        """D8: domain ikut cabangnya — Sales mati berarti domain sales hilang."""
+        from aios_v1.lib import branch_activation
+        from aios_v1.lib.desktop_domains import DOMAIN_BRANCH_MAP
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches({"finance", "accounting", "purchasing"})
+
+        self.assertNotIn("sales", get_domain_keys())
+        self.assertNotIn("sales", [d["key"] for d in get_domain_catalog()])
+        self.assertIn("finance", get_domain_keys())
+        self.assertTrue(DOMAIN_BRANCH_MAP)
+
+    def _set_active_branches(self, keys: set):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()
         for item in catalog:
             self.assertEqual(
                 set(item.keys()),
@@ -381,9 +428,12 @@ class TestDesktopDomains(IntegrationTestCase):
         open_domain = getattr(ai_manager_tools, "open_domain", None)
         self.assertTrue(callable(open_domain), "Tool open_domain belum terdaftar")
         self.assertIn("open_domain", _TOOL_REGISTRY)
+        # D9: enum dibekukan saat import; otoritas aktivasi ada di eksekusi
+        # `open_domain`, bukan di enum. Karena itu enum tidak dibandingkan
+        # dengan get_domain_keys() yang dinamis, melainkan dengan snapshotnya.
         self.assertEqual(
             _TOOL_REGISTRY["open_domain"]["parameters"]["domain"]["enum"],
-            get_domain_keys(),
+            _open_domain_enum_snapshot(),
         )
         self.assertEqual(open_domain("sales"), {"ok": True, "domain": "sales"})
         self.assertEqual(open_domain("finance"), {"ok": True, "domain": "finance"})
@@ -445,3 +495,27 @@ class TestDesktopDomains(IntegrationTestCase):
         self.assertEqual(acc_dom_ev, {"type": "open_domain", "domain": "accounting"})
         acc_dom_http = self._http_get("domain", {"domain": acc_dom_ev["domain"]})
         self.assertEqual(acc_dom_http.status_code, 200, acc_dom_http.get_data(as_text=True))
+
+    def test_open_domain_rejects_domain_whose_branch_is_disabled(self):
+        """D9: enum tetap, tetapi eksekusi menolak domain yang cabangnya mati."""
+        from aios_v1.lib import ai_manager_tools
+        from aios_v1.lib import branch_activation
+
+        original = set(branch_activation.get_active_branches())
+        self.addCleanup(self._set_active_branches, original)
+        self._set_active_branches({"finance", "accounting", "purchasing"})
+
+        result = ai_manager_tools.open_domain("sales")
+        self.assertEqual(result.get("code"), "DOMAIN_NOT_ALLOWED")
+        self.assertEqual(ai_manager_tools.open_domain("finance"), {"ok": True, "domain": "finance"})
+
+    def _set_active_branches(self, keys):
+        from aios_v1.lib import branch_activation
+
+        doc = frappe.get_single(branch_activation.DOCTYPE)
+        doc.set("branches", [])
+        for key in sorted(keys):
+            doc.append("branches", {"branch_key": key, "enabled": 1})
+        doc.seeded = 1
+        doc.save(ignore_permissions=True)
+        branch_activation.clear_cache()

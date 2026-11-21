@@ -21,6 +21,8 @@ export interface Branch {
   description: string;
   tagline: string;
   workers: BranchWorker[];
+  /** Status aktivasi cabang untuk site ini (AIOS Branch Activation). */
+  enabled: boolean;
 }
 
 export interface ContextUsageStats {
@@ -393,6 +395,13 @@ export interface SettingsData {
     options: SettingsTheme[];
   };
   company_context_persona: string;
+  /** Bidang aktif yang punya proaktif; tab Insight Proaktif tampil bila tidak kosong (D11). */
+  proactive_branches: ProactiveBranchGroup[];
+}
+
+export interface ProactiveBranchGroup {
+  branch: string;
+  label: string;
 }
 
 export interface ClientStaffUser {

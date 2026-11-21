@@ -901,9 +901,18 @@ def list_pending_drafts(limit: int = 50, status: str | None = None) -> list:
         if resolved_status == "HISTORY"
         else resolved_status
     )
+    # D6: draf cabang yang dimatikan disembunyikan dari daftar (tidak dihapus).
+    # Draf tanpa branch tidak terikat cabang mana pun, jadi tetap ditampilkan.
+    from aios_v1.lib.branch_activation import get_active_branches
+
+    active_branches = sorted(get_active_branches())
     rows = frappe.get_all(
         "Pending Action Draft",
-        filters={"user": frappe.session.user, "status": status_filter},
+        filters={
+            "user": frappe.session.user,
+            "status": status_filter,
+            "branch": ["in", [*active_branches, ""]],
+        },
         fields=["name", "type", "branch", "status", "expires_at", "creation", "modified", "payload"],
         order_by="creation desc",
         limit_page_length=limit,

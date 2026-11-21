@@ -23,7 +23,10 @@ K3_SCRIPTS = [
     "read_setting.py",
 ]
 
-EXPECTED_DOCTYPE_COUNT = 12  # 10 lama, minus 2 kanal legacy, plus 2 kanal baru (Thread, Flag)
+# 13 sebelum aktivasi cabang per client (Tahap 2 menambah 2 DocType tanpa
+# mengubah angka ini); +2 di fitur itu: AIOS Branch Activation dan child
+# AIOS Branch Activation Item.
+EXPECTED_DOCTYPE_COUNT = 15
 
 # test file: apps/aios_v1/aios_v1/tests/test_app_structure.py
 REPO_ROOT = Path(__file__).resolve().parents[2]  # apps/aios_v1/
@@ -54,7 +57,7 @@ class TestAppStructure(unittest.TestCase):
         leftover = [s for s in K3_SCRIPTS if (OUTER_PKG / s).exists()]
         self.assertEqual(leftover, [], f"Skrip K3 masih ada: {leftover}")
 
-    def test_doctype_count_is_12(self):
+    def test_doctype_count_is_15(self):
         # doctype hidup di aios_v1/aios_v1/aios_v1/doctype/ (paket frappe yang di-walk bench migrate);
         # salinan lama aios_v1/aios_v1/doctype/{aios_mapping,aios_mapping_entry} dihapus di #2 (A4).
         pkg_doctype = Path(__file__).resolve().parents[1] / "aios_v1" / "doctype"

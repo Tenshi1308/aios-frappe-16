@@ -198,9 +198,21 @@ class TestDesktopSettings(IntegrationTestCase):
         result = frappe.call(method)
         self.assertEqual(
             set(result.keys()),
-            {"profile", "company", "quota", "reset", "theme", "company_context_persona"},
+            {
+                "profile",
+                "company",
+                "quota",
+                "reset",
+                "theme",
+                "company_context_persona",
+                # D11: bidang aktif yang punya proaktif, untuk gating tab.
+                "proactive_branches",
+            },
         )
         self.assertIsInstance(result["company_context_persona"], str)
+        self.assertIsInstance(result["proactive_branches"], list)
+        for group in result["proactive_branches"]:
+            self.assertEqual(set(group.keys()), {"branch", "label"})
         self.assertEqual(set(result["profile"].keys()), {"name", "persona", "status"})
         self.assertEqual(set(result["company"].keys()), {"id", "name", "currency"})
         self.assertEqual(set(result["quota"].keys()), {"limit", "used", "remaining", "percent_used"})
@@ -395,7 +407,15 @@ class TestDesktopSettings(IntegrationTestCase):
         message = response.json["message"]
         self.assertEqual(
             set(message.keys()),
-            {"profile", "company", "quota", "reset", "theme", "company_context_persona"},
+            {
+                "profile",
+                "company",
+                "quota",
+                "reset",
+                "theme",
+                "company_context_persona",
+                "proactive_branches",
+            },
         )
         self.assertIsInstance(message["company_context_persona"], str)
         self.assertEqual(set(message["profile"].keys()), {"name", "persona", "status"})

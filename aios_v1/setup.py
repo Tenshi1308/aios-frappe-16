@@ -11,6 +11,8 @@ from urllib.parse import urlsplit, urlunsplit
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from aios_v1.lib.branch_activation import seed_branch_activation
+
 USER_CUSTOM_FIELDS = {
     "User": [
         {
@@ -68,6 +70,8 @@ AIOS_ROLE_PROFILES = {
 def after_install():
     setup_aios_identity()
     ensure_builtin_plugins()
+    # D5: site baru mulai tanpa cabang aktif; admin wajib mengisi.
+    seed_branch_activation(branches=())
     ensure_signup_utm_source()
     ensure_connector_defaults()
     ensure_sales_tax_template()
@@ -77,6 +81,8 @@ def after_migrate():
     setup_aios_identity()
     migrate_owner_user_to_channel_roles()
     ensure_builtin_plugins()
+    # D4: site yang sudah ada sebelum fitur ini mendapat 4 cabang aktif.
+    seed_branch_activation()
     ensure_signup_utm_source()
     ensure_connector_defaults()
     ensure_sales_tax_template()

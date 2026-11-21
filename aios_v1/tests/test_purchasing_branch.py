@@ -39,7 +39,9 @@ class TestPurchasingBranch(IntegrationTestCase):
         self.assertTrue(is_branch_enabled("purchasing"))
         public = get_public_branches()
         public_keys = [branch["key"] for branch in public]
-        self.assertEqual(set(public_keys), {"finance", "sales", "accounting", "purchasing"})
+        # D1/D2: katalog mengikuti aktivasi site, bukan daftar tetap.
+        self.assertEqual(set(public_keys), {branch["key"] for branch in get_branches()})
+        self.assertIn("purchasing", public_keys)
         for branch in public:
             self.assertNotIn("manager_persona", branch)
 
